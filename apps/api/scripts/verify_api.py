@@ -19,7 +19,7 @@ response = requests.post(
 )
 data = response.json()
 
-print(f'Our Results:')
+print('Our Results:')
 print(f'  Performance %: {data.get("performance_percentage")}%')
 print(f'  WMA Factor: {1/data.get("age_factor", 1):.4f}')
 print(f'  Age Standard: {data.get("age_standard_formatted")}')
@@ -48,7 +48,7 @@ response = requests.post(
 )
 data = response.json()
 
-print(f'Our Results:')
+print('Our Results:')
 print(f'  Performance %: {data.get("performance_percentage")}%')
 print(f'  WMA Factor: {1/data.get("age_factor", 1):.4f}')
 print(f'  Age Standard: {data.get("age_standard_formatted")}')

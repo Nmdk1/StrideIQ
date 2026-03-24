@@ -6,7 +6,6 @@ Extracts structured training plans from coaching books.
 Looks for week-by-week schedules, phase-based plans, and workout prescriptions.
 """
 import sys
-import os
 import json
 import re
 from pathlib import Path

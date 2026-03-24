@@ -6,7 +6,6 @@ Helper script to extract coaching principles from text using AI.
 Can be used with book excerpts, web content, or any text source.
 """
 import sys
-import os
 import json
 from pathlib import Path
 
@@ -39,7 +38,7 @@ def extract_and_store(text: str, source: str, methodology: str, source_type: str
             print(f"Extracting RPI formula from {source}...")
             rpi_data = extract_rpi_formula(text)
             if rpi_data:
-                print(f"✅ Extracted RPI formula")
+                print("✅ Extracted RPI formula")
                 # Store in knowledge base
                 entry = CoachingKnowledgeEntry(
                     source=source,
@@ -58,7 +57,7 @@ def extract_and_store(text: str, source: str, methodology: str, source_type: str
             print(f"Extracting periodization principles from {source}...")
             periodization_data = extract_periodization_principles(text, methodology)
             if periodization_data:
-                print(f"✅ Extracted periodization principles")
+                print("✅ Extracted periodization principles")
                 entry = CoachingKnowledgeEntry(
                     source=source,
                     methodology=methodology,
@@ -75,7 +74,7 @@ def extract_and_store(text: str, source: str, methodology: str, source_type: str
         print(f"Extracting general principles from {source}...")
         general_data = extract_general_principles(text, source, methodology)
         if general_data:
-            print(f"✅ Extracted general principles")
+            print("✅ Extracted general principles")
             entry = CoachingKnowledgeEntry(
                 source=source,
                 methodology=methodology,

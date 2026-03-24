@@ -11,7 +11,7 @@ def download_google_drive_file(file_id: str, output_path: str):
     # Try direct download URL
     url = f"https://drive.google.com/uc?export=download&id={file_id}"
     
-    print(f"Downloading from Google Drive...")
+    print("Downloading from Google Drive...")
     print(f"File ID: {file_id}")
     print(f"URL: {url}")
     

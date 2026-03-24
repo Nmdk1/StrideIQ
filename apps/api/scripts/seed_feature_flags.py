@@ -4,9 +4,7 @@ Seed feature flags for plan generation.
 Creates the feature_flag table if needed and populates required flags.
 """
 from sqlalchemy import create_engine, text
-from sqlalchemy.orm import Session
 import os
-import uuid
 
 db_url = os.environ.get('DATABASE_URL', 'postgresql://postgres:postgres@postgres:5432/running_app')
 engine = create_engine(db_url)

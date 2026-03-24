@@ -11,7 +11,6 @@ Usage:
 Note: This is a manual process until we have Garmin API access.
 """
 
-import os
 import sys
 import json
 from datetime import datetime
@@ -30,13 +29,13 @@ def parse_garmin_timestamp(ts_str: str) -> Optional[datetime]:
         # Handle "2025-10-01T22:45:00.0"
         clean = ts_str.split('.')[0] if '.' in ts_str else ts_str
         return datetime.fromisoformat(clean.replace('Z', ''))
-    except:
+    except Exception:
         pass
     
     # Try Garmin's weird format: "Wed Aug 07 16:58:23 GMT 2024"
     try:
         return datetime.strptime(ts_str, "%a %b %d %H:%M:%S GMT %Y")
-    except:
+    except Exception:
         pass
     
     return None

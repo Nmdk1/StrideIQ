@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Download Lasse Storgaard Jacobsen lecture PDF."""
 import requests
-import sys
 
 url = 'https://www.lassestorgaardjacobsen.dk/literature/al_lecture.pdf'
 

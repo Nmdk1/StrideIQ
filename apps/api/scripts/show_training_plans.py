@@ -62,7 +62,7 @@ for i, plan in enumerate(plans, 1):
 daniels_plans = [p for p in plans if "Daniels" in p.source]
 pfitz_plans = [p for p in plans if "Marathoning" in p.source]
 
-print(f"\n📊 Summary:")
+print("\n📊 Summary:")
 print(f"   Daniels' Running Formula: {len(daniels_plans)} plans")
 print(f"   Advanced Marathoning: {len(pfitz_plans)} plans")
 

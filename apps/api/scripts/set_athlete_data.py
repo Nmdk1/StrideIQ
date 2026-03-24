@@ -64,7 +64,7 @@ def set_athlete_data():
 
         db.commit()
 
-        print(f"\n✅ Updated athlete:")
+        print("\n✅ Updated athlete:")
         print(f"  Birthdate: {athlete.birthdate}")
         print(f"  Sex: {athlete.sex}")
 

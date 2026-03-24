@@ -349,7 +349,7 @@ def main():
         print("='*75}")
         
         print(f"\nSample size: n = {len(activities)}")
-        print(f"For this sample size, correlations with |r| > 0.22 are likely significant (p < 0.05)")
+        print("For this sample size, correlations with |r| > 0.22 are likely significant (p < 0.05)")
         
         significant = [c for c in correlations if abs(c['r']) > 0.22]
         nonsig = [c for c in correlations if abs(c['r']) <= 0.22]
@@ -379,7 +379,7 @@ def main():
         result = conn.execute(text("SELECT COUNT(*) FROM body_composition WHERE athlete_id = :id"), {"id": michael_id})
         body = result.scalar()
         
-        print(f"\nData Availability:")
+        print("\nData Availability:")
         print(f"  - Daily check-ins (sleep, stress, soreness): {checkins} entries")
         print(f"  - Nutrition logs: {nutrition} entries")
         print(f"  - Body composition: {body} entries")

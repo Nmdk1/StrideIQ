@@ -8,7 +8,6 @@ sys.path.insert(0, '/app')
 
 from services.wma_age_factors import (
     get_wma_age_factor,
-    get_wma_open_standard_seconds,
     _get_age_group_start,
 )
 

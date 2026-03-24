@@ -32,7 +32,7 @@ findings = (
     db.query(CorrelationFinding)
     .filter(
         CorrelationFinding.athlete_id == user.id,
-        CorrelationFinding.is_active == True,
+        CorrelationFinding.is_active.is_(True),
     )
     .order_by(CorrelationFinding.times_confirmed.desc())
     .all()

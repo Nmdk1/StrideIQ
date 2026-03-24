@@ -8,11 +8,9 @@ Navigates through all pages and extracts text.
 import sys
 import os
 import time
-import json
-from pathlib import Path
 
 try:
-    from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeout
+    from playwright.sync_api import sync_playwright
     PLAYWRIGHT_AVAILABLE = True
 except ImportError:
     PLAYWRIGHT_AVAILABLE = False
@@ -96,7 +94,7 @@ def extract_vitalsource_book(
                                 page.locator(selector).first.click(timeout=5000)
                                 submitted = True
                                 break
-                        except:
+                        except Exception:
                             continue
                     
                     if submitted:
@@ -112,7 +110,7 @@ def extract_vitalsource_book(
                 print("   Continuing...")
             
             # Step 2: Navigate to book
-            print(f"\n📚 Opening book...")
+            print("\n📚 Opening book...")
             page.goto(book_url, wait_until="networkidle")
             time.sleep(5)  # Wait for reader to load
             
@@ -141,7 +139,7 @@ def extract_vitalsource_book(
                             if text and len(text) > 30 and text not in seen:
                                 seen.add(text)
                                 text_parts.append(text)
-                    except:
+                    except Exception:
                         pass
                 
                 # Also get body text
@@ -179,13 +177,13 @@ def extract_vitalsource_book(
                     else:
                         no_change_count += 1
                         if no_change_count >= 3:
-                            print(f"\n✅ Reached end of book (no new content for 3 pages)")
+                            print("\n✅ Reached end of book (no new content for 3 pages)")
                             break
                 else:
                     print(f"   ⚠️ Page {pages_extracted + 1} has little/no text, trying next...")
                     no_change_count += 1
                     if no_change_count >= 5:
-                        print(f"\n✅ Reached end of book")
+                        print("\n✅ Reached end of book")
                         break
                 
                 # Try to navigate to next page
@@ -212,7 +210,7 @@ def extract_vitalsource_book(
                             next_clicked = True
                             time.sleep(2)  # Wait for page to load
                             break
-                    except:
+                    except Exception:
                         pass
                 
                 # If no button found, try arrow key
@@ -221,7 +219,7 @@ def extract_vitalsource_book(
                         page.keyboard.press("ArrowRight")
                         time.sleep(2)
                         next_clicked = True
-                    except:
+                    except Exception:
                         pass
                 
                 # If still no navigation, try scrolling and clicking
@@ -232,7 +230,7 @@ def extract_vitalsource_book(
                         # Click on right side of page to advance
                         page.click('body', position={'x': 1800, 'y': 500})
                         time.sleep(2)
-                    except:
+                    except Exception:
                         pass
                 
                 # Small delay between pages
@@ -250,7 +248,7 @@ def extract_vitalsource_book(
                 with open(output_file, 'w', encoding='utf-8') as f:
                     f.write(full_text)
                 
-                print(f"\n✅ Extraction complete!")
+                print("\n✅ Extraction complete!")
                 print(f"   📄 Pages extracted: {pages_extracted}")
                 print(f"   📝 Total characters: {len(full_text)}")
                 print(f"   💾 Saved to: {output_file}")

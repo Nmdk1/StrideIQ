@@ -16,7 +16,6 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from datetime import date, timedelta
 from uuid import uuid4
 from unittest.mock import MagicMock
-import json
 
 from services.model_driven_plan_generator import generate_model_driven_plan
 
@@ -45,26 +44,26 @@ def print_plan_sample(plan, distance):
     print(f"SAMPLE PLAN: {distance.upper()}")
     print(f"{'='*70}")
     
-    print(f"\n📊 PLAN SUMMARY")
+    print("\n📊 PLAN SUMMARY")
     print(f"  Distance: {plan.race_distance.replace('_', ' ').title()}")
     print(f"  Race Date: {plan.race_date}")
     print(f"  Total Weeks: {plan.total_weeks}")
     print(f"  Total Miles: {plan.total_miles:.1f}")
     print(f"  Total TSS: {plan.total_tss:.0f}")
     
-    print(f"\n🧮 MODEL PARAMETERS (Individualized)")
+    print("\n🧮 MODEL PARAMETERS (Individualized)")
     print(f"  τ1 (Fitness Time Constant): {plan.tau1:.1f} days")
     print(f"  τ2 (Fatigue Time Constant): {plan.tau2:.1f} days")
     print(f"  Model Confidence: {plan.model_confidence}")
     
     if plan.prediction:
         pred = plan.prediction
-        print(f"\n🎯 RACE PREDICTION")
+        print("\n🎯 RACE PREDICTION")
         print(f"  Predicted Time: {format_time(pred.predicted_time_seconds)}")
         print(f"  Confidence Interval: ±{pred.confidence_interval_seconds//60:.0f} minutes")
         print(f"  Projected RPI: {pred.projected_rpi:.1f}")
     
-    print(f"\n💡 PERSONALIZED INSIGHTS")
+    print("\n💡 PERSONALIZED INSIGHTS")
     if plan.counter_conventional_notes:
         for note in plan.counter_conventional_notes:
             print(f"  • {note}")
@@ -110,7 +109,7 @@ def print_plan_sample(plan, distance):
             print(f"    {day.day_of_week}: {day.name}")
     
     # TSS progression
-    print(f"\n📈 TSS PROGRESSION (Week by Week)")
+    print("\n📈 TSS PROGRESSION (Week by Week)")
     tss_values = [f"{w.target_tss:.0f}" for w in plan.weeks]
     print(f"  {' → '.join(tss_values)}")
 

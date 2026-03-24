@@ -24,7 +24,7 @@ def download_google_doc(doc_id: str, output_path: str, format: str = "txt"):
         print(f"❌ Unknown format: {format}")
         return False
     
-    print(f"Downloading Google Doc...")
+    print("Downloading Google Doc...")
     print(f"Doc ID: {doc_id}")
     print(f"Format: {format}")
     print(f"URL: {url}")

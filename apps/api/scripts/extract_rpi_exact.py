@@ -11,12 +11,10 @@ Aggregates all Daniels entries from knowledge base and extracts:
 Stores in structured format for use by RPI calculator.
 """
 import sys
-import os
 import json
 import re
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
-from collections import defaultdict
+from typing import Dict
 
 # Add parent directory to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -359,7 +357,7 @@ def store_rpi_extraction(rpi_data: Dict):
             print("✅ Created new RPI extraction entry")
         
         db.commit()
-        print(f"✅ Stored RPI extraction data")
+        print("✅ Stored RPI extraction data")
         
     except Exception as e:
         print(f"❌ Error storing RPI extraction: {e}")

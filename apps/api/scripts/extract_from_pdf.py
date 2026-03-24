@@ -5,8 +5,6 @@ PDF Extraction Script
 Extracts text from PDF files and processes them for knowledge extraction.
 """
 import sys
-import os
-from pathlib import Path
 
 try:
     import PyPDF2
@@ -120,7 +118,7 @@ def main():
         f.write(text)
     
     print(f"✅ Extracted {len(text)} characters to {output_file}")
-    print(f"✅ Ready for knowledge extraction!")
+    print("✅ Ready for knowledge extraction!")
 
 
 if __name__ == "__main__":

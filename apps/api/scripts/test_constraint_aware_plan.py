@@ -50,7 +50,7 @@ def main():
         marathon_date = date(2026, 3, 15)   # March 15, 2026 (Sunday)
         ten_mile_date = date(2026, 3, 7)    # March 7, 2026 (Saturday)
         
-        print(f"\n📅 RACE SCHEDULE")
+        print("\n📅 RACE SCHEDULE")
         print(f"  Goal Race: Marathon on {marathon_date}")
         print(f"  Tune-Up:   10 Mile on {ten_mile_date}")
         print(f"  Days Between: {(marathon_date - ten_mile_date).days}")
@@ -65,7 +65,7 @@ def main():
         ]
         
         # Generate plan
-        print(f"\nGenerating plan...")
+        print("\nGenerating plan...")
         plan = generate_constraint_aware_plan(
             athlete_id=athlete.id,
             race_date=marathon_date,
@@ -75,7 +75,7 @@ def main():
         )
         
         # Summary
-        print(f"\n📋 PLAN SUMMARY")
+        print("\n📋 PLAN SUMMARY")
         print(f"  Total weeks: {plan.total_weeks}")
         print(f"  Total miles: {plan.total_miles:.0f}")
         print(f"  Model: τ1={plan.tau1:.0f}d, τ2={plan.tau2:.0f}d ({plan.model_confidence})")
@@ -83,20 +83,20 @@ def main():
         
         # Fitness Bank summary
         fb = plan.fitness_bank
-        print(f"\n🏦 FITNESS BANK")
+        print("\n🏦 FITNESS BANK")
         print(f"  Peak: {fb['peak']['weekly_miles']:.0f}mpw, {fb['peak']['long_run']:.0f}mi long, {fb['peak']['mp_long_run']:.0f}@MP")
         print(f"  Current: {fb['current']['weekly_miles']:.0f}mpw")
         print(f"  Constraint: {fb['constraint']['type']}")
         print(f"  Experience: {fb['experience']}")
         
         # Week themes
-        print(f"\n📆 WEEK THEMES")
+        print("\n📆 WEEK THEMES")
         for week in plan.weeks:
             theme = week.theme.value if hasattr(week.theme, 'value') else week.theme
             print(f"  Week {week.week_number}: {theme:20s} {week.total_miles:5.0f}mi  {week.start_date}")
         
         # Validate theme alternation
-        print(f"\n✅ VALIDATION CHECKS")
+        print("\n✅ VALIDATION CHECKS")
         
         themes = [w.theme.value if hasattr(w.theme, 'value') else w.theme for w in plan.weeks]
         
@@ -126,7 +126,7 @@ def main():
         print(f"  {'✅' if elite_appropriate else '❌'} Peak volume appropriate ({max_week_miles:.0f}mi)")
         
         # Sample week detail
-        print(f"\n📋 SAMPLE WEEK DETAIL")
+        print("\n📋 SAMPLE WEEK DETAIL")
         
         # Find a build week
         build_week = None
@@ -153,7 +153,7 @@ def main():
                     print(f"    {days[day.day_of_week]}: REST")
         
         # Tune-up week detail
-        print(f"\n🏃 TUNE-UP RACE WEEK")
+        print("\n🏃 TUNE-UP RACE WEEK")
         for w in plan.weeks:
             theme_val = w.theme.value if hasattr(w.theme, 'value') else w.theme
             if theme_val == 'tune_up':
@@ -172,7 +172,7 @@ def main():
                 break
         
         # Race week detail
-        print(f"\n🏁 RACE WEEK")
+        print("\n🏁 RACE WEEK")
         race_week = plan.weeks[-1]
         print(f"  Week {race_week.week_number} ({race_week.total_miles:.0f} miles)")
         days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
@@ -185,12 +185,12 @@ def main():
                 print(f"    {days[day.day_of_week]}: REST")
         
         # Counter-conventional notes
-        print(f"\n💡 PERSONALIZED INSIGHTS")
+        print("\n💡 PERSONALIZED INSIGHTS")
         for note in plan.counter_conventional_notes:
             print(f"  • {note}")
         
         # Final validation
-        print(f"\n" + "=" * 80)
+        print("\n" + "=" * 80)
         print("FINAL VALIDATION")
         print("=" * 80)
         
@@ -211,9 +211,9 @@ def main():
         print(f"\n  Result: {passed}/{len(checks)} checks passed")
         
         if passed == len(checks):
-            print(f"\n  ✅ FRAMEWORK VALIDATED")
+            print("\n  ✅ FRAMEWORK VALIDATED")
         else:
-            print(f"\n  ⚠️  Some checks failed - review output above")
+            print("\n  ⚠️  Some checks failed - review output above")
         
     finally:
         db.close()

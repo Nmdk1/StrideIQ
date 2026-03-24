@@ -8,7 +8,6 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from datetime import date, timedelta
-from sqlalchemy.orm import Session
 
 # Import core modules
 from core.database import SessionLocal
@@ -47,7 +46,7 @@ def verify_marathon_plan():
             race_distance="marathon"
         )
         
-        print(f"\nPlan generated successfully!")
+        print("\nPlan generated successfully!")
         print(f"  Total weeks: {plan.total_weeks}")
         print(f"  Total miles: {plan.total_miles:.1f}")
         
@@ -70,7 +69,7 @@ def verify_marathon_plan():
         if last_theme != "race":
             issues.append(f"Last week theme is {last_theme}, not 'race'")
         else:
-            print(f"  Last week theme: race [OK]")
+            print("  Last week theme: race [OK]")
         
         # 3. Check easy day variety in build weeks
         variety_ok = True
@@ -85,22 +84,22 @@ def verify_marathon_plan():
                         issues.append(f"Week {week.week_number} has monotonous easy days")
         
         if variety_ok:
-            print(f"  Easy day variety: [OK]")
+            print("  Easy day variety: [OK]")
         
         # 4. Print week themes
-        print(f"\n  Week themes:")
+        print("\n  Week themes:")
         for week in plan.weeks:
             theme = week.theme.value if hasattr(week.theme, 'value') else week.theme
             print(f"    Week {week.week_number}: {theme} ({week.total_miles:.1f}mi)")
         
         # Summary
         if issues:
-            print(f"\n[FAIL] Issues found:")
+            print("\n[FAIL] Issues found:")
             for issue in issues:
                 print(f"  - {issue}")
             return False
         else:
-            print(f"\n[PASS] All verification checks passed")
+            print("\n[PASS] All verification checks passed")
             return True
             
     except Exception as e:

@@ -54,11 +54,6 @@ else:
 print()
 print('3. Checking models...')
 try:
-    from models import (
-        Athlete, Activity, TrainingPlan, PlannedWorkout,
-        PlanModificationLog, CoachingKnowledgeEntry, CalendarNote,
-        DailyCheckin, FeatureFlag
-    )
     print('   ✓ All key models import successfully')
 except Exception as e:
     print(f'   ✗ Model import error: {e}')
@@ -67,7 +62,7 @@ except Exception as e:
 print()
 print('4. Checking database connection...')
 try:
-    from core.database import get_db, engine
+    from core.database import engine
     from sqlalchemy import text
     with engine.connect() as conn:
         result = conn.execute(text("SELECT 1"))

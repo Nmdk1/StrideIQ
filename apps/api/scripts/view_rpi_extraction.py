@@ -27,7 +27,7 @@ def main():
         print("=" * 60)
         
         formulas = data.get("formulas", {})
-        print(f"\n📐 FORMULAS:")
+        print("\n📐 FORMULAS:")
         print(f"  Calculation methods: {len(formulas.get('calculation_methods', []))}")
         if formulas.get('calculation_methods'):
             print(f"    Sample: {formulas['calculation_methods'][0][:200]}...")
@@ -37,7 +37,7 @@ def main():
         print(f"  Percentage formulas: {len(formulas.get('percentage_formulas', []))}")
         
         pace_tables = data.get("pace_tables", {})
-        print(f"\n🏃 PACE TABLES:")
+        print("\n🏃 PACE TABLES:")
         print(f"  E pace entries: {len(pace_tables.get('e_pace', []))}")
         print(f"  M pace entries: {len(pace_tables.get('m_pace', []))}")
         print(f"  T pace entries: {len(pace_tables.get('t_pace', []))}")
@@ -47,12 +47,12 @@ def main():
         print(f"  Tabular data: {len(pace_tables.get('tabular_data', []))}")
         
         equivalent = data.get("equivalent_tables", {})
-        print(f"\n⏱️ EQUIVALENT PERFORMANCE TABLES:")
+        print("\n⏱️ EQUIVALENT PERFORMANCE TABLES:")
         print(f"  RPI to race times: {len(equivalent.get('rpi_to_race_times', []))}")
         print(f"  Equivalent performances: {len(equivalent.get('equivalent_performances', []))}")
         
         zones = data.get("zone_formulas", {})
-        print(f"\n📊 ZONE FORMULAS:")
+        print("\n📊 ZONE FORMULAS:")
         print(f"  Zone relationships: {len(zones.get('zone_relationships', []))}")
         if zones.get('zone_relationships'):
             print(f"    Sample: {zones['zone_relationships'][0][:200]}...")

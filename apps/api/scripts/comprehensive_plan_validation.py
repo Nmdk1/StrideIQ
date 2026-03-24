@@ -25,8 +25,7 @@ from datetime import date, timedelta
 from uuid import uuid4
 from unittest.mock import MagicMock
 from dataclasses import dataclass, field
-from typing import List, Dict, Optional, Tuple
-import json
+from typing import List
 
 from services.model_driven_plan_generator import generate_model_driven_plan
 
@@ -281,7 +280,7 @@ def validate_taper_duration(plan, distance: str) -> ValidationResult:
         passed=passed,
         severity="major",
         details=f"Taper weeks: {taper_weeks}, Expected: {expected_taper}",
-        evidence=f"Marathon needs 3 weeks, HM needs 2, shorter needs 1-2"
+        evidence="Marathon needs 3 weeks, HM needs 2, shorter needs 1-2"
     )
 
 
@@ -480,8 +479,6 @@ def validate_workout_variety(plan, distance: str) -> ValidationResult:
     for week in plan.weeks:
         for day in week.days:
             workout_types.add(day.workout_type.lower())
-    
-    specs = DISTANCE_SPECS.get(distance, DISTANCE_SPECS["marathon"])
     
     # Check for expected workouts
     has_threshold = any(t in workout_types for t in ["threshold", "tempo", "t_work"])
@@ -689,7 +686,7 @@ def test_pace_override():
     
     passed = (
         workout["current_pace"] == overridden_pace and
-        workout["user_modified"] == True
+        workout["user_modified"]
     )
     
     return ValidationResult(
@@ -774,23 +771,23 @@ def run_comprehensive_validation():
             all_reports.append(report)
             
             # Print results
-            print(f"\nPlan Summary:")
+            print("\nPlan Summary:")
             print(f"  Total weeks: {report.weeks}")
             print(f"  Total miles: {report.total_miles:.1f}")
             
-            print(f"\nValidation Results:")
+            print("\nValidation Results:")
             print(f"  Passed: {report.passed_count}/{len(report.results)}")
             print(f"  Critical failures: {len(report.critical_failures)}")
             print(f"  Major failures: {len(report.major_failures)}")
             print(f"  Minor failures: {len(report.minor_failures)}")
             
             if report.critical_failures:
-                print(f"\n  CRITICAL FAILURES:")
+                print("\n  CRITICAL FAILURES:")
                 for r in report.critical_failures:
                     print(f"    ✗ {r.rule_id}: {r.details}")
             
             if report.major_failures:
-                print(f"\n  MAJOR FAILURES:")
+                print("\n  MAJOR FAILURES:")
                 for r in report.major_failures:
                     print(f"    ! {r.rule_id}: {r.details}")
             
@@ -829,13 +826,13 @@ def run_comprehensive_validation():
     
     edit_passed = sum(1 for t in edit_tests if t.passed)
     
-    print(f"\nPlan Generation Tests:")
+    print("\nPlan Generation Tests:")
     print(f"  Total tests: {total_tests}")
     print(f"  Passed: {total_passed} ({total_passed/total_tests*100:.1f}%)")
     print(f"  Critical failures: {total_critical}")
     print(f"  Major failures: {total_major}")
     
-    print(f"\nEdit Capability Tests:")
+    print("\nEdit Capability Tests:")
     print(f"  Passed: {edit_passed}/{len(edit_tests)}")
     
     all_exceptional = all(r.is_exceptional for r in all_reports)

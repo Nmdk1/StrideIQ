@@ -31,7 +31,6 @@ def main():
         
         # Define race dates
         half_pr_date = datetime(2025, 11, 29)
-        tenk_pr_date = datetime(2025, 12, 13)
         
         # Get all activities in the 8 weeks before half PR (Oct 4 - Nov 29)
         result = conn.execute(text("""
@@ -73,7 +72,7 @@ def main():
                 'pace_min_km': float(row[9])
             })
         
-        print(f"\n8 WEEKS BEFORE HALF MARATHON PR (Nov 29)")
+        print("\n8 WEEKS BEFORE HALF MARATHON PR (Nov 29)")
         print(f"Period: {(half_pr_date - timedelta(weeks=8)).strftime('%Y-%m-%d')} to {half_pr_date.strftime('%Y-%m-%d')}")
         print(f"Total activities: {len(activities)}")
         print("-" * 80)
@@ -103,32 +102,32 @@ def main():
             else:
                 easy_runs.append(a)
         
-        print(f"\nWORKOUT BREAKDOWN:")
+        print("\nWORKOUT BREAKDOWN:")
         print(f"  Long runs (>90min or >16km): {len(long_runs)}")
         print(f"  Likely tempo/threshold: {len(tempo_workouts)}")
         print(f"  Likely intervals/speed: {len(interval_workouts)}")
         print(f"  Easy/other: {len(easy_runs)}")
         
         # Show long runs
-        print(f"\n--- LONG RUNS ---")
+        print("\n--- LONG RUNS ---")
         for a in sorted(long_runs, key=lambda x: x['date']):
             hr_str = f"HR:{a['avg_hr']:.0f}" if a['avg_hr'] else "HR:N/A"
             print(f"  {a['date'].strftime('%m/%d')} | {a['distance_km']:.1f}km | {a['duration_min']:.0f}min | {a['pace_min_km']:.2f}/km | {hr_str}")
         
         # Show tempo workouts
-        print(f"\n--- TEMPO / THRESHOLD WORKOUTS ---")
+        print("\n--- TEMPO / THRESHOLD WORKOUTS ---")
         for a in sorted(tempo_workouts, key=lambda x: x['date']):
             hr_str = f"HR:{a['avg_hr']:.0f}" if a['avg_hr'] else "HR:N/A"
             print(f"  {a['date'].strftime('%m/%d')} | {a['distance_km']:.1f}km | {a['duration_min']:.0f}min | {a['pace_min_km']:.2f}/km | {hr_str}")
         
         # Show interval workouts
-        print(f"\n--- INTERVAL / SPEED WORKOUTS ---")
+        print("\n--- INTERVAL / SPEED WORKOUTS ---")
         for a in sorted(interval_workouts, key=lambda x: x['date']):
             hr_str = f"HR:{a['avg_hr']:.0f}" if a['avg_hr'] else "HR:N/A"
             print(f"  {a['date'].strftime('%m/%d')} | {a['distance_km']:.1f}km | {a['duration_min']:.0f}min | {a['pace_min_km']:.2f}/km | {hr_str}")
         
         # Weekly summary
-        print(f"\n--- WEEKLY VOLUME & QUALITY ---")
+        print("\n--- WEEKLY VOLUME & QUALITY ---")
         weekly = defaultdict(lambda: {'km': 0, 'runs': 0, 'long': 0, 'quality': 0})
         for a in activities:
             week_key = a['date'].strftime('%Y-W%W')
@@ -145,7 +144,7 @@ def main():
             print(f"  {week}: {w['km']:5.1f}km | {w['runs']} runs | {w['long']} long | {w['quality']} quality | {bar}")
         
         # Find standout workouts
-        print(f"\n--- STANDOUT WORKOUTS (by pace + HR combo) ---")
+        print("\n--- STANDOUT WORKOUTS (by pace + HR combo) ---")
         # Best efficiency (fastest pace at reasonable HR)
         quality_runs = [a for a in activities if a['avg_hr'] and a['avg_hr'] > 130 and a['distance_km'] > 5]
         if quality_runs:
@@ -155,7 +154,7 @@ def main():
                 print(f"  {a['date'].strftime('%m/%d')} | {a['distance_km']:.1f}km @ {a['pace_min_km']:.2f}/km | HR:{a['avg_hr']:.0f}")
         
         # Find the race itself
-        print(f"\n--- THE RACE (Nov 29) ---")
+        print("\n--- THE RACE (Nov 29) ---")
         result = conn.execute(text("""
             SELECT sport, distance_m, duration_s, avg_hr, max_hr,
                    (duration_s / 60.0) / (distance_m / 1000.0) as pace_min_km
@@ -175,7 +174,7 @@ def main():
             print(f"  Avg HR: {race[3]:.0f}" if race[3] else "  Avg HR: N/A")
         
         # Look at progression of similar workouts
-        print(f"\n--- WORKOUT PROGRESSION PATTERNS ---")
+        print("\n--- WORKOUT PROGRESSION PATTERNS ---")
         print("(Looking for improvements in same-type workouts over time)")
         
         # Group by approximate distance buckets
@@ -209,7 +208,7 @@ def main():
         total_runs = len(activities)
         weeks = 8
         
-        print(f"\n8-WEEK BUILD STATS:")
+        print("\n8-WEEK BUILD STATS:")
         print(f"  Total volume: {total_km:.0f} km")
         print(f"  Weekly average: {total_km/weeks:.0f} km/week")
         print(f"  Total runs: {total_runs}")

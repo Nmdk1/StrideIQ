@@ -27,7 +27,6 @@ from datetime import datetime, date, timedelta
 from dataclasses import dataclass, field, asdict
 from typing import List, Dict, Optional, Tuple
 from pathlib import Path
-from uuid import UUID
 
 # Add parent to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))

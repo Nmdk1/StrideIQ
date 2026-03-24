@@ -7,8 +7,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from services.rpi_lookup import (
     calculate_rpi_from_race_time_lookup,
-    get_training_paces_from_rpi,
-    get_equivalent_race_times
+    get_training_paces_from_rpi
 )
 
 def test_rpi_calculation():

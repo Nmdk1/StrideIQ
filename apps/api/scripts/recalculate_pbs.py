@@ -34,7 +34,7 @@ def recalculate_pbs():
         print("\n🔄 Recalculating all Personal Bests...")
         result = recalculate_all_pbs(athlete, db)
         
-        print(f"\n✅ Recalculation complete!")
+        print("\n✅ Recalculation complete!")
         print(f"   PBs created: {result['created']}")
         print(f"   Total PBs: {result['total']}")
         

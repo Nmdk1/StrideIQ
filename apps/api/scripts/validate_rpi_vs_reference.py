@@ -11,12 +11,9 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from services.rpi_calculator import (
     calculate_rpi_from_race_time,
-    calculate_training_paces,
-    calculate_equivalent_race_time
+    calculate_training_paces
 )
 from services.rpi_lookup import (
-    calculate_rpi_from_race_time_lookup,
-    get_training_paces_from_rpi,
     get_equivalent_race_times
 )
 
@@ -74,7 +71,7 @@ def parse_pace(pace_str: str) -> int:
             return int(parts[0]) * 60 + int(parts[1])
         elif len(parts) == 3:
             return int(parts[0]) * 3600 + int(parts[1]) * 60 + int(parts[2])
-    except:
+    except Exception:
         pass
     return 0
 
@@ -123,7 +120,7 @@ def test_rpi_calculation():
         
         # Test training paces
         if calculated_rpi and "expected_paces" in test_case:
-            print(f"\n  Training Paces:")
+            print("\n  Training Paces:")
             paces = calculate_training_paces(calculated_rpi)
             expected_paces = test_case["expected_paces"]
             
@@ -146,7 +143,7 @@ def test_rpi_calculation():
         # Test equivalent race times
         # Use expected RPI for lookup (not calculated) to test lookup table accuracy
         if calculated_rpi and "expected_equivalents" in test_case:
-            print(f"\n  Equivalent Race Times:")
+            print("\n  Equivalent Race Times:")
             expected_rpi = test_case.get("expected_rpi")
             # Use expected RPI if available, otherwise use calculated
             rpi_for_lookup = expected_rpi if expected_rpi else calculated_rpi

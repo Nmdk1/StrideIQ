@@ -207,9 +207,6 @@ def test_tss_trajectory():
     # Taper should reduce TSS
     taper_reduction = weekly_tss[-1] < weekly_tss[-3]
     
-    # Peak should be highest
-    peak_is_high = max(weekly_tss) == weekly_tss[-3] or max(weekly_tss) == weekly_tss[-4]
-    
     passed = taper_reduction
     record_result("TSS Trajectory (Taper)", passed, f"Final: {weekly_tss[-1]} < Pre-taper: {weekly_tss[-3]}")
 
@@ -264,9 +261,6 @@ def test_db_schema_compatibility():
 def test_edit_preserves_model():
     """Verify edits preserve original model params."""
     original_model = {"tau1": 38.5, "tau2": 6.8}
-    
-    # Simulate workout edit
-    edited_workout = {"pace": "7:30/mi", "notes": "User adjusted"}
     
     # Model should be unchanged
     passed = original_model["tau1"] == 38.5 and original_model["tau2"] == 6.8

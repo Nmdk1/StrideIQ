@@ -12,7 +12,6 @@ import json
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from services.ai_coaching_engine import translate_recommendation_for_client
-from services.neutral_terminology import strip_methodology_references
 
 print("=" * 70)
 print("Testing Client-Facing Translation Layer")

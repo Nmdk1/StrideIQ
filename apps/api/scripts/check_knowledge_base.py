@@ -51,7 +51,7 @@ for source_tuple in all_sources:
     print(f"      - Total entries: {source_total}")
     print(f"      - Principle entries: {source_principles}")
     print(f"      - Training plans: {source_plans}")
-    print(f"")
+    print("")
 
 db.close()
 

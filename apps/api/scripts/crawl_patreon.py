@@ -6,12 +6,9 @@ Extracts publicly available content from Patreon creators.
 Note: Most Patreon content requires authentication/subscription.
 """
 import sys
-import os
 import json
-import time
 import re
 from pathlib import Path
-from urllib.parse import urljoin, urlparse
 
 # Add parent directory to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -111,7 +108,7 @@ def extract_patreon_content(url: str):
             db.add(entry)
             db.commit()
             
-            print(f"✅ Stored public content preview")
+            print("✅ Stored public content preview")
             print(f"   Title: {content['title']}")
             print(f"   Description length: {len(content['description'])} chars")
             print(f"   Post previews: {len(content['posts_preview'])}")
