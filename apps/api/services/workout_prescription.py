@@ -1118,7 +1118,7 @@ class WorkoutPrescriptionGenerator:
         shakeout_miles = 3
         strides_miles = 5
         
-        remaining = target - race_miles - shakeout_miles - strides_miles
+        remaining = max(0.0, target - race_miles - shakeout_miles - strides_miles)
         easy_days = [d for d in range(7) if d not in [rest_day, race_day, shakeout_day, strides_day]]
         easy_miles_list = self._distribute_easy_miles(remaining, easy_days, strides_day)
         
@@ -1127,7 +1127,9 @@ class WorkoutPrescriptionGenerator:
         assignments[strides_day] = ("easy_strides", strides_miles)
         
         for i, d in enumerate(easy_days):
-            assignments[d] = ("easy", easy_miles_list[i])
+            if easy_miles_list[i] > 0:
+                assignments[d] = ("easy", easy_miles_list[i])
+            # else: budget exhausted — day becomes rest (no assignment)
     
     def _distribute_easy_miles(self, total_miles: float, easy_days: List[int], 
                                quality_day: int, long_day: int = 6) -> List[float]:

@@ -253,6 +253,15 @@ class PlanGenerator:
     # Weekly structure by days per week
     # Maps day index (0=Monday, 6=Sunday) to workout type
     WEEKLY_STRUCTURES = {
+        4: {
+            0: "rest",           # Monday - rest
+            1: "easy",           # Tuesday
+            2: "rest",           # Wednesday - rest
+            3: "quality",        # Thursday - quality session
+            4: "rest",           # Friday - rest
+            5: "easy_strides",   # Saturday - easy + strides
+            6: "long",           # Sunday - long run
+        },
         5: {
             0: "rest",           # Monday - rest
             1: "easy",           # Tuesday
@@ -702,6 +711,7 @@ class PlanGenerator:
         
         # Priority 3: Strava training estimate (conservative)
         recent_activities = []
+        best_run = None  # scoped here; only set if activities exist
         if not paces:
             if self.db is not None:
                 recent_activities = (
@@ -944,8 +954,26 @@ class PlanGenerator:
                 start_date = start_date - timedelta(days=weekday)
                 logger.info(f"Adjusted start_date to Monday: {start_date}")
         
-        # Get weekly structure
+        # Get weekly structure — fall back to nearest available if exact key missing
         structure = self.WEEKLY_STRUCTURES.get(days_per_week, self.WEEKLY_STRUCTURES[6])
+
+        # Trim excess slots to honour days_per_week.
+        # Priority of removal (lowest to highest): easy_strides, easy, medium_long.
+        # Never remove: long, quality, recovery, rest.
+        TRIM_ORDER = ("easy_strides", "easy", "medium_long")
+        non_rest_count = sum(1 for v in structure.values() if v != "rest")
+        if non_rest_count > days_per_week:
+            structure = dict(structure)  # copy — don't mutate class attribute
+            excess = non_rest_count - days_per_week
+            for trim_type in TRIM_ORDER:
+                for day_idx in sorted(structure.keys(), reverse=True):
+                    if excess <= 0:
+                        break
+                    if structure[day_idx] == trim_type:
+                        structure[day_idx] = "rest"
+                        excess -= 1
+                if excess <= 0:
+                    break
         
         # Track MP/HMP long run weeks for progressive loading
         mp_long_run_count = 0
@@ -1264,6 +1292,23 @@ class PlanGenerator:
         
         # --- Volume Fill: weighted easy miles (P2) — same weekly total, textured days ---
         self._apply_weighted_easy_volume_fill(week_workouts, weekly_volume)
+
+        # --- Invariant: medium_long must be < long run (post-fill enforcement) ---
+        # Runs after volume fill because fill treats medium_long as an easy slot
+        # and can re-inflate its distance. This is a hard contract — no phase/tier bypasses it.
+        long_workout = next(
+            (w for w in week_workouts if w.workout_type in ("long", "long_mp", "long_hmp")), None
+        )
+        ml_workout = next(
+            (w for w in week_workouts if w.workout_type in ("medium_long", "medium_long_mp")), None
+        )
+        if long_workout and ml_workout:
+            lr = float(long_workout.distance_miles or 0)
+            ml = float(ml_workout.distance_miles or 0)
+            if ml >= lr and lr > 0:
+                capped = round(max(lr - 2.0, lr * 0.75), 1)
+                ml_workout.distance_miles = capped
+                ml_workout.title = f"Medium Long: {capped:.0f} mi"
         
         return week_workouts
 
@@ -1277,6 +1322,9 @@ class PlanGenerator:
         adjacency weights (Vega): shorter after quality, moderate before long,
         longer on standalone easy days. Preserves total target when possible
         within per-slot [3, 12] mi caps.
+
+        Medium_long is capped below the week's long run to enforce the
+        medium_long < long invariant before the post-fill safety check.
         """
         easy_types = {"easy", "easy_strides", "recovery", "medium_long"}
         non_easy_miles = sum(
@@ -1290,6 +1338,13 @@ class PlanGenerator:
         if not easy_workouts:
             return
 
+        # Find long run distance to cap medium_long below it
+        long_run_miles = next(
+            (float(w.distance_miles or 0) for w in week_workouts
+             if w.workout_type in ("long", "long_mp", "long_hmp")),
+            None,
+        )
+
         by_day = {w.day: w for w in week_workouts}
         remaining = float(weekly_volume) - non_easy_miles
         n = len(easy_workouts)
@@ -1300,7 +1355,12 @@ class PlanGenerator:
         sw = sum(weights) or 1.0
         raw = [remaining * (weights[i] / sw) for i in range(n)]
 
-        miles = [max(3.0, min(12.0, round(raw[i], 1))) for i in range(n)]
+        def _slot_cap(wo: "GeneratedWorkout") -> float:
+            if wo.workout_type in ("medium_long", "medium_long_mp") and long_run_miles:
+                return max(3.0, long_run_miles - 1.0)
+            return 12.0
+
+        miles = [max(3.0, min(_slot_cap(easy_sorted[i]), round(raw[i], 1))) for i in range(n)]
         target = round(remaining, 1)
         delta = round(target - sum(miles), 1)
 
@@ -1313,7 +1373,7 @@ class PlanGenerator:
                 for i in idx:
                     if delta <= 0:
                         break
-                    room = 12.0 - miles[i]
+                    room = _slot_cap(easy_sorted[i]) - miles[i]
                     if room >= 0.05:
                         d = min(delta, room, 1.0)
                         miles[i] = round(miles[i] + d, 1)
