@@ -17,8 +17,8 @@ _ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 
-from core.database import SessionLocal
-from services import coach_tools
+from core.database import SessionLocal  # noqa: E402
+from services import coach_tools  # noqa: E402
 
 
 TOOLS = [
