@@ -24,7 +24,7 @@ from core.database import get_db
 from models import Athlete, Activity, DailyCheckin, CorrelationFinding, TrainingPlan
 from services.n1_insight_generator import friendly_signal_name
 from routers.auth import get_current_user
-from core.cache import get_cache, set_cache as _set_cache, invalidate_pattern
+from core.cache import get_cache, set_cache as _set_cache
 
 # Module-level so tests can patch routers.progress.anthropic
 try:
@@ -1429,8 +1429,6 @@ def _assemble_patterns_data(
     forming: Optional[PatternsFormingResponse] = None
 
     try:
-        from services.correlation_persistence import get_surfaceable_findings
-
         # Get all active findings regardless of cooldown for display
         from models import CorrelationFinding
         findings = (

@@ -17,9 +17,6 @@ from core.auth import get_current_athlete
 from models import Athlete
 from services.research_data.population_comparison import (
     PopulationComparisonService,
-    PeerComparison,
-    ProgressionComparison,
-    PopulationInsight
 )
 
 router = APIRouter(prefix="/v1/population", tags=["Population Insights"])

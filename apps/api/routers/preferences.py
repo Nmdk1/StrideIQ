@@ -4,7 +4,7 @@ User Preferences API Router
 Manages athlete preferences like units (metric/imperial), timezone, etc.
 """
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, ConfigDict
 from typing import Literal

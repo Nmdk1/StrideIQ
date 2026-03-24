@@ -1626,7 +1626,7 @@ async def update_workout(
     
     if request.description is not None:
         workout.description = normalize_text(request.description)
-        changes.append(f"description updated")
+        changes.append("description updated")
     
     if request.target_distance_km is not None:
         old_dist = workout.target_distance_km
@@ -1636,12 +1636,12 @@ async def update_workout(
     
     if request.target_duration_minutes is not None:
         workout.target_duration_minutes = request.target_duration_minutes
-        changes.append(f"duration updated")
+        changes.append("duration updated")
         structural_changed = True
     
     if request.coach_notes is not None:
         workout.coach_notes = normalize_text(request.coach_notes)
-        changes.append(f"notes updated")
+        changes.append("notes updated")
 
     # Always normalize existing fields too (fix mojibake already stored).
     normalize_workout_text_fields(workout)
@@ -2201,7 +2201,6 @@ def _save_constraint_aware_plan(
 ) -> TrainingPlan:
     """Save constraint-aware plan to database with all workouts."""
     from models import TrainingPlan, PlannedWorkout
-    from datetime import datetime
     
     # Distance mapping
     DISTANCE_METERS = {
