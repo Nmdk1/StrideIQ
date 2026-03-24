@@ -7,6 +7,7 @@ Handles user feedback on insights to refine correlation engine thresholds.
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 from typing import List, Optional
+from core.database import get_db
 from core.auth import get_current_user
 from models import Athlete, InsightFeedback
 from schemas import InsightFeedbackCreate, InsightFeedbackResponse
