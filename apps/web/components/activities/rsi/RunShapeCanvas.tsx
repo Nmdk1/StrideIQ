@@ -1124,7 +1124,7 @@ export function RunShapeCanvas({
   const paceStroke = hasEffortGradient ? 'url(#paceEffortGradient)' : PACE_FALLBACK_COLOR;
 
   // Recharts margin (must match overlay positioning)
-  const margin = { top: 5, right: 5, bottom: 5, left: 5 };
+  const margin = { top: 5, right: 0, bottom: 5, left: 0 };
 
   return (
     <div data-testid="rsi-canvas" className="relative w-full">
@@ -1228,11 +1228,12 @@ export function RunShapeCanvas({
               tick={{ fontSize: 10 }}
               tickFormatter={(t: number) => `${Math.floor(t / 60)}m`}
             />
-            <YAxis yAxisId="hr" orientation="left" hide />
+            <YAxis yAxisId="hr" orientation="left" hide width={0} />
             <YAxis
               yAxisId="pace"
               orientation="right"
               hide
+              width={0}
               reversed
               domain={paceDomain ?? ['auto', 'auto']}
               allowDataOverflow={false}
@@ -1241,6 +1242,7 @@ export function RunShapeCanvas({
               yAxisId="altitude"
               orientation="left"
               hide
+              width={0}
               domain={altitudeDomain ?? ['auto', 'auto']}
               allowDataOverflow={!!altitudeDomain}
             />
@@ -1248,6 +1250,7 @@ export function RunShapeCanvas({
               yAxisId="cadence"
               orientation="right"
               hide
+              width={0}
               domain={cadenceDomain ?? ['auto', 'auto']}
               allowDataOverflow={!!cadenceDomain}
             />
@@ -1255,6 +1258,7 @@ export function RunShapeCanvas({
               yAxisId="grade"
               orientation="right"
               hide
+              width={0}
               domain={gradeDomain ?? ['auto', 'auto']}
               allowDataOverflow={!!gradeDomain}
             />
