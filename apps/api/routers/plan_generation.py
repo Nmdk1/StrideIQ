@@ -1310,8 +1310,8 @@ async def adjust_week_load(
     week_workouts = db.query(PlannedWorkout).filter(
         PlannedWorkout.plan_id == plan_id,
         PlannedWorkout.week_number == request.week_number,
-        PlannedWorkout.completed == False,
-        PlannedWorkout.skipped == False,
+        PlannedWorkout.completed.is_(False),
+        PlannedWorkout.skipped.is_(False),
     ).all()
     
     if not week_workouts:
