@@ -17,11 +17,8 @@ from core.auth import get_current_athlete
 from models import Athlete, Activity
 from services.run_analysis_engine import (
     RunAnalysisEngine,
-    RunAnalysis,
-    WorkoutType,
     TrendDirection,
     TrendAnalysis,
-    RootCauseHypothesis
 )
 
 router = APIRouter(prefix="/v1/run-analysis", tags=["Run Analysis"])

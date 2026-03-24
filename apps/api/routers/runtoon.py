@@ -19,11 +19,10 @@ Privacy invariant: storage keys are NEVER returned in API responses.
 All image access is via signed URLs with 15-minute TTL.
 """
 
-import hashlib
 import logging
 import uuid
 from datetime import datetime, timezone
-from typing import List, Optional
+from typing import Any, List, Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
@@ -111,7 +110,7 @@ def _require_feature_flag(db: Session, athlete_id) -> None:
         )
 
 
-def _get_storage() -> "storage_service":  # type: ignore[return]
+def _get_storage() -> Any:
     from services import storage_service
     return storage_service
 
@@ -177,7 +176,7 @@ async def upload_photo(
     # Slot check
     active_count = (
         db.query(sa_func.count(AthletePhoto.id))
-        .filter(AthletePhoto.athlete_id == current_user.id, AthletePhoto.is_active == True)
+        .filter(AthletePhoto.athlete_id == current_user.id, AthletePhoto.is_active.is_(True))
         .scalar()
     ) or 0
     if active_count >= PHOTO_MAX:
@@ -244,7 +243,7 @@ def list_photos(
 
     photos = (
         db.query(AthletePhoto)
-        .filter(AthletePhoto.athlete_id == current_user.id, AthletePhoto.is_active == True)
+        .filter(AthletePhoto.athlete_id == current_user.id, AthletePhoto.is_active.is_(True))
         .order_by(AthletePhoto.created_at)
         .all()
     )
@@ -338,7 +337,7 @@ def get_runtoon(
         .filter(
             RuntoonImage.activity_id == activity_id,
             RuntoonImage.athlete_id == current_user.id,
-            RuntoonImage.is_visible == True,
+            RuntoonImage.is_visible.is_(True),
         )
         .order_by(RuntoonImage.attempt_number.desc())
         .first()
@@ -580,7 +579,7 @@ def get_pending(
         db.query(sa_func.count(AthletePhoto.id))
         .filter(
             AthletePhoto.athlete_id == current_user.id,
-            AthletePhoto.is_active == True,
+            AthletePhoto.is_active.is_(True),
         )
         .scalar()
     ) or 0
@@ -630,7 +629,7 @@ def get_pending(
         .filter(
             RuntoonImage.activity_id == candidate.id,
             RuntoonImage.athlete_id == current_user.id,
-            RuntoonImage.is_visible == True,
+            RuntoonImage.is_visible.is_(True),
         )
         .order_by(sa_desc(RuntoonImage.attempt_number))
         .first()

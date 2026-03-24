@@ -313,7 +313,6 @@ def calculate_age_grade(request: AgeGradeRequest):
         close_performances.append(actual_entry)
     
     # Remove duplicate is_current flags
-    seen_current = False
     for entry in close_performances:
         if entry.get("is_current") and entry["percentage"] != round(performance_pct, 2):
             entry["is_current"] = False
