@@ -20,6 +20,7 @@ from sqlalchemy import desc
 from pydantic import BaseModel, ConfigDict
 import asyncio
 import logging
+import redis  # noqa: F401 — imported for test patching via 'routers.home.redis'
 
 from core.database import get_db
 from core.auth import get_current_user
