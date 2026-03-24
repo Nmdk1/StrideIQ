@@ -14,7 +14,7 @@ Usage:
     plan = ab_test.generate_with_tracking(athlete_id, race_date, distance)
 """
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, date
 from typing import List, Dict, Optional, Tuple
 from uuid import UUID

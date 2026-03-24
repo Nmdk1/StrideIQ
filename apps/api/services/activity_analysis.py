@@ -17,15 +17,13 @@ Based on exercise physiology research:
 - Trends must be confirmed over multiple runs to filter out noise
 """
 from sqlalchemy.orm import Session
-from sqlalchemy import func, and_, or_
+from sqlalchemy import or_
 from typing import Optional, Dict, List, Tuple
 from datetime import datetime, timedelta
-from decimal import Decimal
 import logging
-from statistics import mean, stdev
+from statistics import mean
 
 from models import Activity, Athlete, PersonalBest, ActivitySplit
-from services.performance_engine import calculate_age_at_date
 from services.efficiency_calculation import calculate_activity_efficiency_with_decoupling
 
 logger = logging.getLogger(__name__)
@@ -239,8 +237,6 @@ class ActivityAnalysis:
         
         # Find PR for this distance (within ~5% distance tolerance)
         distance_tolerance = self.metrics.distance_m * 0.05
-        min_distance = self.metrics.distance_m - distance_tolerance
-        max_distance = self.metrics.distance_m + distance_tolerance
         
         # PersonalBest uses distance_category, not distance_m
         # We need to map distance_m to category and get HR from linked activity
@@ -312,8 +308,8 @@ class ActivityAnalysis:
             Activity.distance_m >= min_distance,
             Activity.distance_m <= max_distance,
             or_(
-                Activity.user_verified_race == True,
-                Activity.is_race_candidate == True
+                Activity.user_verified_race,
+                Activity.is_race_candidate
             ),
             Activity.avg_hr.isnot(None),
             Activity.average_speed.isnot(None)
