@@ -23,6 +23,37 @@ def test_home_briefing_contract_accepts_factual_assessment_with_valid_structure(
     assert _valid_home_briefing_contract(payload, checkin_data=None, race_data=None) is True
 
 
+def test_home_briefing_contract_does_not_require_checkin_reaction_for_garmin_only_metadata():
+    payload = {
+        "coach_noticed": "You held steady aerobic work this week.",
+        "today_context": "Keep tomorrow easy and recover.",
+        "week_assessment": "Trend is stable.",
+    }
+    assert _valid_home_briefing_contract(
+        payload,
+        checkin_data={"garmin_sleep_h": 7.2},
+        race_data=None,
+    ) is True
+
+
+def test_home_briefing_contract_requires_race_assessment_only_when_race_is_near():
+    payload = {
+        "coach_noticed": "Your threshold durability is improving.",
+        "today_context": "Keep today controlled to stay fresh for quality work.",
+        "week_assessment": "You are absorbing this block well.",
+    }
+    assert _valid_home_briefing_contract(
+        payload,
+        checkin_data=None,
+        race_data={"days_remaining": 67, "race_name": "Goal 10K"},
+    ) is True
+    assert _valid_home_briefing_contract(
+        payload,
+        checkin_data=None,
+        race_data={"days_remaining": 14, "race_name": "Goal 10K"},
+    ) is False
+
+
 def test_progress_card_contract_accepts_aia_shape():
     card = ProgressCoachCard(
         id="fitness_momentum",

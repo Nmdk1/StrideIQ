@@ -1179,9 +1179,26 @@ def _valid_home_briefing_contract(result: dict, checkin_data: Optional[dict], ra
     action_sources = [today_context, result.get("checkin_reaction"), result.get("race_assessment")]
     if not any(_looks_like_action(s) for s in action_sources if isinstance(s, str)):
         return False
-    if checkin_data and not result.get("checkin_reaction"):
+    # Require checkin_reaction only when we have a real athlete check-in payload.
+    # `checkin_data` may be populated with Garmin metadata only (e.g. garmin_sleep_h),
+    # which should not force a hard A->I->A failure.
+    checkin_requires_reaction = bool(
+        checkin_data
+        and isinstance(checkin_data, dict)
+        and any(k != "garmin_sleep_h" for k in checkin_data.keys())
+    )
+    if checkin_requires_reaction and not result.get("checkin_reaction"):
         return False
-    if race_data and not result.get("race_assessment"):
+
+    # Require race_assessment only when the race is meaningfully near.
+    # Long-horizon plans often include race metadata months out; forcing this
+    # field at all times caused avoidable deterministic fallbacks.
+    race_requires_assessment = False
+    if race_data and isinstance(race_data, dict):
+        days_remaining = race_data.get("days_remaining")
+        if isinstance(days_remaining, int) and days_remaining <= 21:
+            race_requires_assessment = True
+    if race_requires_assessment and not result.get("race_assessment"):
         return False
     return True
 
