@@ -27,9 +27,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from datetime import date, timedelta
 from uuid import uuid4
 from unittest.mock import MagicMock
-from dataclasses import dataclass, field
-from typing import List, Dict, Optional, Tuple
-import json
+from dataclasses import dataclass
 import statistics
 
 from services.model_driven_plan_generator import generate_model_driven_plan
@@ -201,7 +199,6 @@ def check_long_run_progression(plan, distance: str) -> QualityCheck:
     
     distances = [lr["miles"] for lr in regular_long_runs]
     peak_distance = max(distances)
-    peak_week_idx = distances.index(peak_distance)
     
     # Expected peak distances
     expected_peak = {
