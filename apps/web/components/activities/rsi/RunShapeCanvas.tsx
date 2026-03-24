@@ -364,9 +364,9 @@ function CrosshairTooltip({
           {Math.round(point.hr)} bpm
         </p>
       )}
-      {point.pace != null && (
+      {(point.smoothedPace ?? point.pace) != null && (
         <p className="text-blue-400" data-testid="tooltip-pace">
-          {formatPace(point.pace)}
+          {formatPace((point.smoothedPace ?? point.pace)!)}
         </p>
       )}
       {point.altitude != null && (
@@ -1284,7 +1284,7 @@ export function RunShapeCanvas({
             )}
             <Line
               yAxisId="pace"
-              type="linear"
+              type="stepAfter"
               dataKey="smoothedPace"
               stroke={paceStroke}
               dot={false}
@@ -1294,7 +1294,7 @@ export function RunShapeCanvas({
             {showAdjustedOverlay && (
               <Line
                 yAxisId="pace"
-                type="linear"
+                type="stepAfter"
                 dataKey="adjustedPace"
                 stroke="rgba(255,255,255,0.55)"
                 dot={false}
