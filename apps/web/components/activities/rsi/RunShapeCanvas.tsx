@@ -99,9 +99,11 @@ interface ChartPoint {
 const MAX_DISPLAY_POINTS = 500;
 const CHART_HEIGHT = 256;
 
-/** RSI chart scaling — altitude relief (meters, MSL) */
-const ALTITUDE_MIN_SPAN_METERS = 40;
-const ALTITUDE_PAD_RATIO = 0.05;
+/** RSI chart scaling — altitude relief (meters, MSL).
+ * Min span prevents gentle rolling terrain from looking like mountains.
+ * Pad ratio keeps terrain at ~50-65% of chart height (similar to Strava). */
+const ALTITUDE_MIN_SPAN_METERS = 150;
+const ALTITUDE_PAD_RATIO = 0.25;
 
 /** RSI chart scaling — pace (seconds per km) */
 const PACE_MIN_SPAN_S_PER_KM = 60;
@@ -155,8 +157,12 @@ function computeAltitudeDomainMeters(alts: number[]): [number, number] | undefin
   const minAlt = Math.min(...valid);
   const maxAlt = Math.max(...valid);
   const span = maxAlt - minAlt;
-  const effectiveSpan = Math.max(span, ALTITUDE_MIN_SPAN_METERS);
-  const pad = Math.max(1, effectiveSpan * ALTITUDE_PAD_RATIO);
+  if (span < ALTITUDE_MIN_SPAN_METERS) {
+    const center = (minAlt + maxAlt) / 2;
+    const half = ALTITUDE_MIN_SPAN_METERS / 2;
+    return [center - half, center + half];
+  }
+  const pad = Math.max(5, span * ALTITUDE_PAD_RATIO);
   return [minAlt - pad, maxAlt + pad];
 }
 
