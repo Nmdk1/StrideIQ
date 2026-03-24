@@ -6,10 +6,14 @@ Create Date: 2026-03-24
 
 WS-A spec: allow one anchor row per distance key per athlete, preserving the best
 result for each distance (10K, half, marathon, etc.) independently.
+
+Production schema note: the existing single-athlete unique constraint lives as index
+'uq_race_anchor_athlete' on athlete_id; 'ix_race_anchor_athlete_id' (non-unique) and
+'ix_race_anchor_distance_key' already exist and are left unchanged.
 """
 from __future__ import annotations
 
-import sqlalchemy as sa  # noqa: F401 — used by op.create_index future compatibility
+import sqlalchemy as sa  # noqa: F401 — reserved for future op compatibility
 from alembic import op
 
 # revision identifiers, used by Alembic.
@@ -20,17 +24,14 @@ depends_on = None
 
 
 def upgrade() -> None:
-    # Remove the single-athlete unique constraint (index + unique column constraint)
-    op.drop_index("ix_athlete_race_result_anchor_athlete_id", table_name="athlete_race_result_anchor")
-    # The unique=True in SQLAlchemy creates both an index and a unique constraint.
-    # Drop the unique constraint by recreating the index as non-unique:
-    op.create_index(
-        "ix_athlete_race_result_anchor_athlete_id",
-        "athlete_race_result_anchor",
-        ["athlete_id"],
-        unique=False,
+    # Drop the old single-athlete unique index (named uq_race_anchor_athlete in production).
+    # Use IF EXISTS so this is safe whether the index name is the production variant or
+    # the SQLAlchemy-generated default from a fresh schema.
+    op.execute(
+        "DROP INDEX IF EXISTS uq_race_anchor_athlete;"
+        "DROP INDEX IF EXISTS ix_athlete_race_result_anchor_athlete_id;"
     )
-    # Add composite unique: one anchor per athlete per distance
+    # Add composite unique: one anchor row per (athlete, distance)
     op.create_unique_constraint(
         "uq_anchor_athlete_distance",
         "athlete_race_result_anchor",
@@ -40,9 +41,9 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     op.drop_constraint("uq_anchor_athlete_distance", "athlete_race_result_anchor", type_="unique")
-    op.drop_index("ix_athlete_race_result_anchor_athlete_id", table_name="athlete_race_result_anchor")
+    # Restore single-athlete uniqueness under the production index name.
     op.create_index(
-        "ix_athlete_race_result_anchor_athlete_id",
+        "uq_race_anchor_athlete",
         "athlete_race_result_anchor",
         ["athlete_id"],
         unique=True,
