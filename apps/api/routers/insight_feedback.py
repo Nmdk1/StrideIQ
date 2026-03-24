@@ -85,12 +85,12 @@ def get_feedback_stats(
     
     helpful_count = db.query(InsightFeedback).filter(
         InsightFeedback.athlete_id == current_user.id,
-        InsightFeedback.helpful == True
+        InsightFeedback.helpful.is_(True)
     ).count()
     
     not_helpful_count = db.query(InsightFeedback).filter(
         InsightFeedback.athlete_id == current_user.id,
-        InsightFeedback.helpful == False
+        InsightFeedback.helpful.is_(False)
     ).count()
     
     return {

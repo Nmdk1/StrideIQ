@@ -9,7 +9,7 @@ result for each distance (10K, half, marathon, etc.) independently.
 """
 from __future__ import annotations
 
-import sqlalchemy as sa
+import sqlalchemy as sa  # noqa: F401 — used by op.create_index future compatibility
 from alembic import op
 
 # revision identifiers, used by Alembic.

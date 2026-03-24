@@ -7,7 +7,7 @@ for downstream analytics and response metadata consistency.
 """
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
-from sqlalchemy import or_, and_
+from sqlalchemy import or_
 from typing import List, Optional
 from uuid import UUID
 import json

@@ -506,7 +506,7 @@ class WorkoutScaler:
             segments=[
                 {"type": "warmup", "distance_miles": 2, "pace": "easy"},
                 {"type": "threshold", "duration_min": nmin, "pace": "threshold",
-                 "distance_miles": min(round(tempo_duration * 0.17, 1), math.floor(max_t_miles * 10) / 10.0)},
+                 "distance_miles": min(round(tempo_duration * 0.17, 1), (math.floor(max_t_miles * 10) - 1) / 10.0)},
                 {"type": "cooldown", "distance_miles": 1, "pace": "easy"},
             ],
             pace_description="comfortably hard, sustainable for the full duration",

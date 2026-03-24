@@ -14,10 +14,9 @@ Endpoints:
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
-from sqlalchemy import desc
 from typing import Optional, List, Literal
 from uuid import UUID
-from datetime import date, timedelta
+from datetime import date
 from pydantic import BaseModel, ConfigDict
 
 from core.database import get_db
@@ -26,7 +25,6 @@ from models import Athlete, CalendarInsight
 from services.insight_aggregator import (
     InsightAggregator,
     get_active_insights,
-    InsightType,
 )
 
 router = APIRouter(prefix="/v1/insights", tags=["Insights"])
