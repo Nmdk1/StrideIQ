@@ -117,7 +117,33 @@ services:
     volumes:
       - ./.uploads:/uploads
       - ./books:/books
-    command: celery -A tasks worker --loglevel=info --pool=gevent --concurrency=16 -Q briefing_high,briefing,default
+    command: celery -A tasks worker --loglevel=info --pool=prefork --concurrency=4 --max-tasks-per-child=200 -Q briefing_high,briefing
+    stop_signal: SIGTERM
+    stop_grace_period: 30s
+
+  worker_default:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    container_name: strideiq_worker_default
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    volumes:
+      - ./.uploads:/uploads
+      - ./books:/books
+    command: celery -A tasks worker --loglevel=info --pool=prefork --concurrency=6 --max-tasks-per-child=200 -Q default
     stop_signal: SIGTERM
     stop_grace_period: 30s
 
