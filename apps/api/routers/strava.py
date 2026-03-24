@@ -8,15 +8,13 @@ Scopes requested: read,read_all,activity:read_all,profile:read_all
 See services/strava_service.py for scope documentation.
 """
 import logging
-import traceback
 from datetime import datetime, timezone
+
+import requests
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import RedirectResponse
+from sqlalchemy import func
 from sqlalchemy.orm import Session
-from sqlalchemy import func, text
-import requests
-
-logger = logging.getLogger(__name__)
 
 from core.database import get_db
 from core.auth import get_current_user
@@ -25,10 +23,7 @@ from models import Athlete, Activity, ActivitySplit
 from services.strava_service import (
     get_auth_url,
     exchange_code_for_token,
-    poll_activities,
-    get_activity_laps,
     get_activity_details,
-    ensure_fresh_token,
     StravaOAuthCapacityError,
 )
 from services.performance_engine import (
@@ -37,6 +32,8 @@ from services.performance_engine import (
     detect_race_candidate,
 )
 from services.oauth_state import create_oauth_state, verify_oauth_state
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/v1/strava", tags=["strava"])
 
