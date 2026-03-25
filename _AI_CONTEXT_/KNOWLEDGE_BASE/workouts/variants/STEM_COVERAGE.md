@@ -13,6 +13,7 @@
 | `long` | `long_run_pilot_v1.md` | **`generator.py`** — weekly long slot (easy long) **before** scaling. |
 | `long_run` | `long_run_pilot_v1.md` | **`ScaledWorkout.workout_type`** from `_scale_long_run` when input is `long` or `long_run` — same easy-long intent as `long`. |
 | `medium_long` | `long_run_pilot_v1.md` | Mid-week endurance |
+| `medium_long_mp` | `long_run_pilot_v1.md` | Mid-week endurance with marathon-pace segment (Structure A MP touch) |
 | `long_mp` | `long_run_pilot_v1.md` | Option B may emit `long_mp_intervals` — same family |
 | `mp_touch` | `long_run_pilot_v1.md` | Short mid-week run with small MP block (`_scale_mp_touch`) — cutback consolidation for mid/high marathon |
 | `long_hmp` | `long_run_pilot_v1.md` | |
