@@ -378,8 +378,13 @@ def _evaluate_5k_rules(weeks: List[Any], reasons: List[str], invariant_conflicts
     distance_artifact = False
     has_any_interval = False
     for week in weeks:
-        theme = str(getattr(getattr(week, "theme", None), "value", "")).lower()
-        race_like_theme = theme in ("sharpen", "peak", "race", "taper_1", "taper_2")
+        theme_obj = getattr(week, "theme", None)
+        # Support both WeekTheme enum (legacy) and plain string (framework phase name).
+        theme = (theme_obj.value if hasattr(theme_obj, "value") else str(theme_obj or "")).lower()
+        race_like_theme = theme in (
+            "sharpen", "peak", "race", "taper_1", "taper_2",  # legacy WeekTheme
+            "race_specific", "taper",                          # framework phase_type
+        )
         for day in getattr(week, "days", []):
             wt = (day.workout_type or "").lower()
             if wt in ("long_mp", "long_hmp"):

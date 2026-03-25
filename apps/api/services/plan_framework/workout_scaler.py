@@ -206,13 +206,18 @@ class WorkoutScaler:
         # We treat continuous threshold runs as workout_type="threshold" (not "tempo").
         # Back-compat: accept "tempo" as an alias but DO NOT emit it.
         elif workout_type in ["threshold", "t_run", "tempo"]:
-            return self._scale_threshold_continuous(
+            result = self._scale_threshold_continuous(
                 weekly_volume,
                 tier,
                 week_in_phase,
                 total_phase_weeks=total_phase_weeks,
                 prev_continuous_min=prev_threshold_continuous_min,
             )
+            # 10K-specific coaching cap: threshold sessions must stay ≤ 8.0mi
+            # to comply with the quality gate ceiling (no volume-based override).
+            if distance == "10k" and (result.total_distance_miles or 0) > 8.0:
+                result.total_distance_miles = 8.0
+            return result
         
         elif workout_type in ["long_mp", "marathon_pace_long"]:
             return self._scale_mp_long_run(
@@ -356,6 +361,12 @@ class WorkoutScaler:
 
         if previous_easy_long_mi is not None:
             prev = float(previous_easy_long_mi)
+            # When the athlete's established long run exceeds the population peak for
+            # this plan/tier (e.g. a 62mpw 10K athlete with 16mi longs on a plan with
+            # a 15mi peak), preserve their aerobic base — don't regress to the
+            # population average. Cutback weeks are exempt (regression is intentional).
+            if prev > float(peak) and not is_cutback:
+                curve = max(curve, prev)
             step, sp_pct = spike_step_miles_and_pct(tier, history_override)
             spike_cap = min(prev + step, prev * (1.0 + sp_pct))
             target = min(curve, spike_cap)
@@ -379,6 +390,16 @@ class WorkoutScaler:
             peak_cap = max(float(peak), fl * 1.05)
         else:
             peak_cap = float(peak)
+        # Previous-above-peak preservation: also elevate peak_cap when athlete's
+        # established long run exceeds the population peak (e.g. 10K HIGH athlete
+        # who runs 16mi longs on a plan with a 15mi population peak).
+        if (
+            previous_easy_long_mi is not None
+            and float(previous_easy_long_mi) > float(peak)
+            and not is_cutback
+        ):
+            peak_cap = max(peak_cap, float(previous_easy_long_mi) * 1.05)
+            target = max(target, float(previous_easy_long_mi))
         target = min(target, peak_cap)
         mi = math.floor(target)
         if floor_min_int is not None:

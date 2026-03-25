@@ -101,7 +101,7 @@ def _workouts_to_week_plan(
     total = sum(d.target_miles for d in days)
     return WeekPlan(
         week_number=week_num,
-        theme=phase.name,  # T3-3: plain string, not WeekTheme enum
+        theme=phase.phase_type.value,  # T3-3: phase_type string (e.g. "race_specific")
         start_date=week_start,
         days=days,
         total_miles=round(total, 1),
@@ -274,9 +274,11 @@ class ConstraintAwarePlanner:
         # run. The 6-day structure keeps Saturday as easy_strides.
         days_per_week = max(3, min(6, 7 - len(bank.typical_rest_days or [])))
 
-        # Easy-long floor: prefer L30 max seed from load_ctx, fall back to bank average
+        # Easy-long floor: prefer L30 max seed from load_ctx, fall back to bank's
+        # current long run miles (more recent than the average), then average.
         l30_floor = (
             (load_ctx.l30_max_easy_long_mi if load_ctx is not None else None)
+            or getattr(bank, "current_long_run_miles", None)
             or getattr(bank, "average_long_run_miles", None)
         )
 
@@ -385,14 +387,14 @@ class ConstraintAwarePlanner:
                         easy_long_state["floor_mi"] = None
                         easy_long_state["floor_applied"] = True
 
-                # T3-4: W1 long run cap — spec: min(volume/days*2, 10mi).
-                # Also honour the bank's 8-week median proxy (40% cap) if available;
-                # take the minimum of both to remain conservative.
+                # T3-4: W1 long run cap — spec: min(volume/days*2, median*0.40).
+                # No absolute ceiling: high-mileage athletes must not be capped below
+                # their historical long-run floor. The per-component formulas already
+                # provide appropriate protection for low-volume athletes.
                 if week_num == 1 and bank.current_weekly_miles:
                     w1_long_cap = bank.current_weekly_miles / max(1, days_per_week) * 2.0
                     if bank.recent_8w_median_weekly_miles:
                         w1_long_cap = min(w1_long_cap, bank.recent_8w_median_weekly_miles * 0.40)
-                    w1_long_cap = min(w1_long_cap, 10.0)
                     long_types = {"long", "long_run", "long_mp", "long_hmp", "easy_long"}
                     for wo in workouts:
                         if wo.workout_type in long_types and (wo.distance_miles or 0) > w1_long_cap:
