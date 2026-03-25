@@ -124,6 +124,20 @@ def ingest_strava_activity_by_id(
 
     pb = regenerate_personal_bests(athlete, db)
 
+    # Sync race anchors if this activity could be a race result.
+    # This ensures AthleteRaceResultAnchor is populated on import without
+    # requiring a full FitnessBank rebuild to be triggered separately.
+    if act.user_verified_race or act.is_race_candidate:
+        try:
+            from services.fitness_bank import sync_race_anchors_for_activities
+            sync_race_anchors_for_activities(
+                athlete_id=athlete.id,
+                activities=[act],
+                db=db,
+            )
+        except Exception:
+            pass  # Non-fatal — anchor sync is best-effort on single import
+
     return IngestResult(
         created_activity=created,
         activity_id=str(act.id),

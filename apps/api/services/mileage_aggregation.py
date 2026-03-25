@@ -157,6 +157,9 @@ def compute_peak_and_current_weekly_miles(
     """
     Return (peak_weekly_miles, current_weekly_miles).
 
+    peak_weekly_miles  = best 4-consecutive-week rolling average.
+                         A single outlier week (race trip, vacation burst) does
+                         NOT inflate the athlete's tier classification.
     current_weekly_miles = average of observed weeks in the trailing 4-week window.
     """
     if now is None:
@@ -166,7 +169,20 @@ def compute_peak_and_current_weekly_miles(
     if not weekly_miles:
         return 0.0, 0.0
 
-    peak_weekly = max(weekly_miles.values())
+    # Sort weeks ascending for rolling window
+    sorted_weeks = sorted(weekly_miles.keys())
+    mileage_list = [weekly_miles[w] for w in sorted_weeks]
+
+    # Best 4-consecutive-week rolling average (or fewer if history is short)
+    window = 4
+    if len(mileage_list) <= window:
+        peak_weekly = sum(mileage_list) / len(mileage_list)
+    else:
+        peak_weekly = max(
+            sum(mileage_list[i:i + window]) / window
+            for i in range(len(mileage_list) - window + 1)
+        )
+
     four_weeks_ago = now - timedelta(days=28)
     trailing = [m for ws, m in weekly_miles.items() if ws >= four_weeks_ago]
     current_weekly = (sum(trailing) / len(trailing)) if trailing else 0.0

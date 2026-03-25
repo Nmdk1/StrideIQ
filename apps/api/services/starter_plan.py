@@ -202,11 +202,28 @@ def ensure_starter_plan(db: Session, *, athlete: Athlete) -> Optional[TrainingPl
 
     responses = intake.responses
     goal_distance = _goal_distance_from_intake(responses)
-    goal_date = _goal_date_from_intake(responses) or (date.today() + timedelta(weeks=8))
+    raw_goal_date = _goal_date_from_intake(responses)
 
     # Constraints from intake
     days_per_week = _clamp_int(responses.get("days_per_week", 6), 5, 7)
     weekly_miles = _clamp_float(responses.get("weekly_mileage_target", 30), 10.0, 150.0)
+
+    # When no race date is present, generate a base-building plan whose length
+    # scales with the athlete's stated weekly mileage (proxy for experience).
+    # Do NOT default to a fictional 8-week race plan — that produces taper phases
+    # and MP workouts for athletes who have no race goal.
+    if raw_goal_date is None:
+        if weekly_miles >= 45:
+            base_weeks = 18  # experienced: full base/threshold cycle
+        elif weekly_miles >= 25:
+            base_weeks = 16  # intermediate: standard base block
+        else:
+            base_weeks = 12  # beginner: conservative intro block
+        goal_date = date.today() + timedelta(weeks=base_weeks)
+        _is_base_building = True
+    else:
+        goal_date = raw_goal_date
+        _is_base_building = False
 
     # Start next Monday so we never back-date workouts into "missed" immediately.
     start_date = _next_monday(date.today())
@@ -234,7 +251,9 @@ def ensure_starter_plan(db: Session, *, athlete: Athlete) -> Optional[TrainingPl
 
         plan = None
         generation_kind = "starter_v1_effort"
-        if has_valid_anchor:
+        # For base-building plans (no race date), skip semi-custom entirely —
+        # it generates taper phases and MP workouts which are wrong without a race goal.
+        if has_valid_anchor and not _is_base_building:
             try:
                 plan = gen.generate_semi_custom(
                     distance=goal_distance,

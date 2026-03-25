@@ -1171,3 +1171,22 @@ def get_fitness_bank(athlete_id: UUID, db: Session) -> FitnessBank:
     """Get athlete's fitness bank."""
     calculator = FitnessBankCalculator(db)
     return calculator.calculate(athlete_id)
+
+
+def sync_race_anchors_for_activities(
+    athlete_id: UUID,
+    activities: List,
+    db: Session,
+) -> None:
+    """
+    Public hook: sync AthleteRaceResultAnchor rows from a list of activities.
+
+    Call this after any batch of activities is imported for an athlete so that
+    race anchors are populated without requiring a full FitnessBank rebuild.
+    Silently no-ops if no authoritative races are found in the list.
+    """
+    calc = FitnessBankCalculator(db)
+    calc._sync_anchor_from_authoritative_race_signals(
+        athlete_id=athlete_id,
+        activities=activities,
+    )
