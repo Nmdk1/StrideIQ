@@ -1446,8 +1446,8 @@ If you need more data to answer well, call the tools. That's why they're there."
         messages.append({
             "role": "user",
             "content": (
-                "Before answering, call get_weekly_volume and get_recent_runs "
-                "to ground your response in the athlete's actual data.\n\n"
+                "MANDATORY: You MUST call get_weekly_volume and get_recent_runs "
+                "BEFORE generating any response. Do NOT answer without tool data.\n\n"
                 f"{message}"
             ),
         })
@@ -1458,13 +1458,20 @@ If you need more data to answer well, call the tools. That's why they're there."
         total_output_tokens = 0
         response = None
         kimi_tools = self._kimi_tools()
+        is_reasoning_model = model_name.lower() in ("kimi-k2.5",)
         for iteration in range(5):
+            use_thinking_disabled = is_reasoning_model and iteration == 0
+            extra_body: dict = {}
+            if use_thinking_disabled:
+                extra_body["thinking"] = {"type": "disabled"}
+            tc = "required" if iteration == 0 else "auto"
             response = await client.chat.completions.create(
                 model=model_name,
                 messages=[{"role": "system", "content": system_prompt}] + messages,
                 max_tokens=COACH_MAX_OUTPUT_TOKENS,
                 tools=kimi_tools,
-                tool_choice="auto",
+                tool_choice=tc,
+                extra_body=extra_body if extra_body else None,
             )
             usage = getattr(response, "usage", None)
             total_input_tokens += int(getattr(usage, "prompt_tokens", 0) or 0)
