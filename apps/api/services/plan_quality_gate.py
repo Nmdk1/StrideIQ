@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 
 MILES_EPS = 0.25
@@ -224,6 +224,7 @@ def _enforce_personal_floor_in_early_weeks(
         return
     long_run_max = _suggested_long_run_max(race_distance)
     floor_tolerance = _early_week_floor_tolerance(race_distance)
+    prev_long_miles: Optional[float] = None
     for week in weeks:
         if int(getattr(week, "week_number", 999)) > 2:
             continue
@@ -231,13 +232,26 @@ def _enforce_personal_floor_in_early_weeks(
         effective_floor = min(floor, long_run_max, week_total * 0.33) if week_total > 0 else min(floor, long_run_max)
         required_floor = max(0.0, effective_floor - floor_tolerance)
         long_miles = _week_long_miles(week)
-        if long_miles > 0 and long_miles + 1e-6 < required_floor:
+        # Cutback exemption: when the long run drops ≥ 30% week-over-week in the
+        # early window, it is an intentional cutback week (PhaseBuilder assigns
+        # cutback_weeks every N weeks regardless of plan position). Enforcing the
+        # personal floor on cutback W2 would incorrectly flag a planned recovery
+        # dip as a breach. Skip the floor check for this week only.
+        is_cutback_week = (
+            prev_long_miles is not None
+            and prev_long_miles > 0
+            and long_miles > 0
+            and long_miles <= prev_long_miles * 0.72  # ≥ 28% reduction ≈ 0.70× factor
+        )
+        if not is_cutback_week and long_miles > 0 and long_miles + 1e-6 < required_floor:
             reasons.append(
                 f"{race_distance.upper()} personal long-run floor breach in week {week.week_number}: "
                 f"{long_miles:.1f} < {required_floor:.1f} (target floor {effective_floor:.1f})."
             )
             invariant_conflicts.append("personal_long_run_floor_breach")
             return
+        if long_miles > 0:
+            prev_long_miles = long_miles
 
 
 def _early_week_floor_tolerance(race_distance: str) -> float:
