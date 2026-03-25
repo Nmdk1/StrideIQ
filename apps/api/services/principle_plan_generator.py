@@ -1,13 +1,15 @@
 """
 Principle-Based Plan Generator
 
-Generates training plans by synthesizing principles from the knowledge base.
-Supports flexible durations (4-18 weeks) with abbreviated builds.
+DEPRECATED (T4-2): This module is superseded by the canonical plan generation
+engine in `services/plan_framework/`. It will be removed once all callers have
+been migrated to `generate_constraint_aware_plan` (v2 path).
 
-ARCHITECTURE:
-- Modular phase allocation (base/build/sharpen/taper)
-- Dynamic duration based on weeks_to_race
-- Principle synthesis from KB queries
+Known callers:
+- `services/plan_generation.py` → `generate_principle_based_plan`
+
+Do not add new callers. Do not extend this module.
+"""
 - RPI-based workout prescriptions
 """
 
@@ -347,6 +349,9 @@ def generate_principle_based_plan(
     db_session = None
 ) -> Dict:
     """
+    DEPRECATED (T4-2): Use generate_constraint_aware_plan() from
+    services/constraint_aware_planner.py instead.
+
     Generate a training plan from principles (not templates).
     
     Args:
@@ -361,6 +366,13 @@ def generate_principle_based_plan(
     Returns:
         Generated training plan (client-facing)
     """
+    import warnings
+    warnings.warn(
+        "generate_principle_based_plan is deprecated (T4-2). "
+        "Use generate_constraint_aware_plan from services.constraint_aware_planner instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     # Validate weeks_to_race
     weeks_to_race = max(4, min(18, weeks_to_race))
     

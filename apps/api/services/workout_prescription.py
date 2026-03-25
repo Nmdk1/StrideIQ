@@ -362,16 +362,6 @@ class WorkoutPrescriptionGenerator:
         "marathon": True   # MP long runs are key
     }
     
-    # Primary quality focus by distance
-    QUALITY_FOCUS = {
-        "5k": ["vo2max", "speed", "threshold"],
-        "10k": ["threshold", "vo2max"],
-        "10_mile": ["threshold", "mp"],
-        "half": ["threshold", "mp"],
-        "half_marathon": ["threshold", "mp"],
-        "marathon": ["mp", "threshold"]
-    }
-    
     # Neuromuscular work types for variety rotation
     NEUROMUSCULAR_TYPES = [
         "strides",          # Flat strides, 6x100m
@@ -493,7 +483,6 @@ class WorkoutPrescriptionGenerator:
             self.long_run_cap = min(self.long_run_cap, 18.0)
         
         self.use_mp_long_runs = self.USE_RACE_PACE_LONG_RUNS.get(self.race_distance, True)
-        self.quality_focus = self.QUALITY_FOCUS.get(self.race_distance, ["threshold"])
         
         # Format paces for display
         self.pace_strs = {k: format_pace(v) for k, v in self.paces.items()}

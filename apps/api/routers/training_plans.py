@@ -18,7 +18,6 @@ from datetime import date, datetime, timedelta
 from core.database import get_db
 from core.auth import get_current_athlete
 from models import Athlete, Activity, TrainingPlan, PlannedWorkout
-from services.plan_generator import PlanGenerator
 from services.plan_lifecycle import get_active_plan_for_athlete
 
 router = APIRouter(prefix="/v1/training-plans", tags=["Training Plans"])
@@ -113,66 +112,26 @@ class WeeklyPlanResponse(BaseModel):
 
 # ============ Endpoints ============
 
-@router.post("", response_model=PlanSummary, status_code=status.HTTP_201_CREATED)
+@router.post("", status_code=status.HTTP_410_GONE)
 async def create_plan(
     request: CreatePlanRequest,
     athlete: Athlete = Depends(get_current_athlete),
     db: Session = Depends(get_db),
 ):
     """
-    Create a new training plan.
-    
-    Generates a full periodized training plan based on:
-    - Goal race (distance, date, target time)
-    - Athlete's current fitness
-    - Training availability preferences
-    """
-    # Check for existing active plan
-    existing = db.query(TrainingPlan).filter(
-        TrainingPlan.athlete_id == athlete.id,
-        TrainingPlan.status == "active"
-    ).first()
-    
-    if existing:
-        # Archive the old plan
-        existing.status = "archived"
-        db.commit()
-    
-    # Generate new plan
-    generator = PlanGenerator(db)
-    plan = generator.generate_plan(
-        athlete_id=athlete.id,
-        goal_race_name=request.goal_race_name,
-        goal_race_date=request.goal_race_date,
-        goal_race_distance_m=request.goal_race_distance_m,
-        goal_time_seconds=request.goal_time_seconds,
-        plan_start_date=request.plan_start_date,
-    )
-    
-    # Calculate current week and progress
-    current_week = _calculate_current_week(plan)
-    progress = _calculate_progress(plan)
-    
-    # ADR-065: trigger home briefing refresh on plan creation
-    try:
-        from tasks.home_briefing_tasks import enqueue_briefing_refresh
-        enqueue_briefing_refresh(str(athlete.id))
-    except Exception:
-        pass
+    [FROZEN — T4-1] v1 plan creation is disabled. Use POST /v2/plans/constraint-aware.
 
-    return PlanSummary(
-        id=str(plan.id),
-        name=plan.name,
-        status=plan.status,
-        goal_race_name=plan.goal_race_name,
-        goal_race_date=plan.goal_race_date,
-        goal_race_distance_m=plan.goal_race_distance_m,
-        goal_time_seconds=plan.goal_time_seconds,
-        plan_start_date=plan.plan_start_date,
-        plan_end_date=plan.plan_end_date,
-        total_weeks=plan.total_weeks,
-        current_week=current_week,
-        progress_percent=progress,
+    This endpoint previously called ArchetypePlanGenerator / PlanGenerator (legacy path).
+    New plan creation must go through the canonical engine at /v2/plans/constraint-aware.
+    Read and calendar endpoints below remain fully functional for existing plans.
+    """
+    raise HTTPException(
+        status_code=status.HTTP_410_GONE,
+        detail={
+            "error_code": "v1_plan_creation_frozen",
+            "message": "v1 plan creation is no longer available. Use POST /v2/plans/constraint-aware.",
+            "migration": "/v2/plans/constraint-aware",
+        },
     )
 
 
