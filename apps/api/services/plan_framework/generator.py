@@ -1500,6 +1500,10 @@ class PlanGenerator:
             # convert the mid-week medium long to the "touch" session.
             # T2-5: Lower gate from 55 → 40mpw for race-specific phases,
             #        and to 25mpw for 5K/10K race-specific (experience proxy).
+            # POLICY MONITOR: The 25mpw threshold for 5K/10K race-specific is a
+            # meaningful coaching load increase for lower-mileage athletes.
+            # Track via matrix test test_45mpw_10k_race_specific_gets_two_quality_sessions.
+            # If injury signal emerges, raise back to 35mpw here first.
             if is_hmp_long_week:
                 return "medium_long"
             _secondary_threshold = (
@@ -1513,6 +1517,16 @@ class PlanGenerator:
             return "medium_long"
         
         if structure_type == "long":
+            # T2-3 source-of-truth fix: for marathon MP phases, is_mp_long_week is
+            # already derived from MPProgressionPlanner (set in _generate_workouts loop).
+            # Using it directly prevents desync when marathon_specific/race_specific
+            # lengths are odd (phase boundary resets week_in_phase to 1, which flips
+            # the local odd/even parity vs the planner's global sequence).
+            if (
+                distance == "marathon"
+                and phase.phase_type.value in ("marathon_specific", "race_specific")
+            ):
+                return "long_mp" if is_mp_long_week else "long"
             return self._get_long_run_type(phase, week_in_phase, is_cutback, distance)
         
         if structure_type == "quality":

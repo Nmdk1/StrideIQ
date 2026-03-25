@@ -105,6 +105,39 @@ class TestT2MPProgressionPlanner:
             f"Got {len(unique_weeks)} (weeks: {sorted(unique_weeks)})"
         )
 
+    def test_plan_level_cumulative_mp_miles_before_taper(self):
+        """
+        Should-Address 1: Plan-level (not planner-estimate) cumulative MP-mile check.
+        Sum total_distance_miles for all long_mp + medium_long_mp workouts that fall
+        before the taper phase in an 18w mid-tier marathon plan. Must be ≥35 miles.
+        """
+        gen = PlanGenerator()
+        plan = gen.generate_standard(
+            distance="marathon",
+            duration_weeks=18,
+            tier="mid",
+            days_per_week=6,
+        )
+        builder = PhaseBuilder()
+        phases = builder.build_phases(distance="marathon", duration_weeks=18, tier="mid")
+
+        taper_start = min(
+            (w for p in phases if p.phase_type.value == "taper" for w in p.weeks),
+            default=19,
+        )
+
+        mp_types = {"long_mp", "medium_long_mp", "mp_touch"}
+        total_mp_miles = sum(
+            w.distance_miles or 0
+            for w in plan.workouts
+            if w.workout_type in mp_types and w.week < taper_start
+        )
+        assert total_mp_miles >= 35, (
+            f"18w mid-tier marathon plan: cumulative MP workout miles before taper "
+            f"should be ≥35. Got {total_mp_miles:.1f}mi "
+            f"(taper starts week {taper_start})"
+        )
+
     def test_no_mp_work_in_base_or_threshold_phases(self):
         """MP workout types must not appear in base_speed or threshold phases."""
         gen = PlanGenerator()
@@ -171,9 +204,9 @@ class TestT2StructureVariantsAndQualityGate:
 
     def test_45mpw_10k_race_specific_gets_two_quality_sessions(self):
         """
-        T2-5: 10K athlete in race-specific phase must receive 2 quality sessions
-        (secondary quality gate lowered to 25mpw for 5K/10K race-specific).
-        Pre-T2-5 gate was 55mpw — a 45mpw athlete would have been blocked.
+        T2-5: 10K athlete in race-specific phase must receive 2 hard quality sessions
+        per non-cutback week (secondary quality gate lowered to 25mpw for 5K/10K race-specific).
+        Pre-T2-5 gate was 55mpw — a 45mpw athlete would have been blocked to only 1.
         """
         gen = PlanGenerator()
         plan = gen.generate_standard(
@@ -193,8 +226,9 @@ class TestT2StructureVariantsAndQualityGate:
             for wk in non_cutback_weeks:
                 week_workouts = [w for w in plan.workouts if w.week == wk]
                 quality_count = sum(1 for w in week_workouts if w.workout_type in hard_quality)
-                assert quality_count >= 1, (
-                    f"Week {wk} (10K race_specific): expected ≥1 hard quality session. "
+                assert quality_count >= 2, (
+                    f"Week {wk} (10K race_specific): expected ≥2 hard quality sessions "
+                    f"(T2-5b lowered gate to 25mpw). "
                     f"Got {quality_count}. Sessions: "
                     f"{[w.workout_type for w in week_workouts]}"
                 )
