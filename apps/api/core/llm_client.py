@@ -145,11 +145,12 @@ def _call_kimi(
     oai_messages = [{"role": "system", "content": system}] + list(messages)
 
     extra_kwargs: dict = {}
+    extra_body: dict = {}
     is_reasoning = _is_kimi_reasoning_model(model)
     if response_mode == "json":
         extra_kwargs["response_format"] = {"type": "json_object"}
         if is_reasoning:
-            extra_kwargs["thinking"] = {"type": "disabled"}
+            extra_body["thinking"] = {"type": "disabled"}
     if not is_reasoning:
         extra_kwargs["temperature"] = temperature
 
@@ -158,6 +159,7 @@ def _call_kimi(
         model=model,
         messages=oai_messages,
         max_tokens=max_tokens,
+        extra_body=extra_body if extra_body else None,
         **extra_kwargs,
     )
     latency_ms = (time.monotonic() - t0) * 1000
