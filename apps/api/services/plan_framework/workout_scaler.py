@@ -521,7 +521,7 @@ class WorkoutScaler:
             category=WorkoutCategory.THRESHOLD,
             title=f"Threshold Intervals: {reps}x{duration} min",
             description=description,
-            total_distance_miles=round(3.5 + (reps * duration * 0.17), 1),
+            total_distance_miles=round(3.5 + t_miles, 1),
             duration_minutes=int(25 + reps * (duration + 2)),
             segments=segments,
             pace_description="comfortably hard - can speak in short sentences",

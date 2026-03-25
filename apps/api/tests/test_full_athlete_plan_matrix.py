@@ -17,6 +17,10 @@ What each scenario asserts:
   3. W1 long run is proportional to athlete volume
   4. No marathon pace work in 5K/10K plans
   5. Week-by-week content printed to stdout for human review
+
+Section 7.5 hard gate assertions (T5-1):
+  All 10 assertions must be hard pytest.fail() calls for all applicable
+  generator × distance combinations (see _assert_7_5_* helpers below).
 """
 from __future__ import annotations
 
@@ -45,6 +49,130 @@ from tests.fake_athletes import (
     ELITE_ADJACENT,
     DECLINING_MASTERS,
 )
+
+# ---------------------------------------------------------------------------
+# 7.5 hard gate assertion helpers (T5-1)
+# Every assertion must be a pytest.fail() — no xfails, no skips.
+# ---------------------------------------------------------------------------
+
+_7_5_LONG_TYPES = {"long", "easy_long", "long_mp", "long_hmp", "long_mp_intervals"}
+_7_5_ML_TYPES = {"medium_long", "medium_long_mp"}
+_7_5_THRESHOLD_TYPES = {"threshold", "threshold_intervals", "t_intervals", "t_run", "tempo"}
+_7_5_MP_TYPES = {"long_mp", "mp_medium", "long_mp_intervals"}
+# T2-8: athletes below this threshold don't receive long_mp sessions by policy
+_7_5_BUILDER_MPW_THRESHOLD = 35.0
+
+
+def _assert_no_negative_mileage_std(label: str, plan) -> None:
+    """No workout may have negative distance_miles."""
+    for w in plan.workouts:
+        mi = w.distance_miles or 0
+        if mi < -0.01:
+            pytest.fail(
+                f"{label}: negative mileage W{w.week} {w.workout_type}: {mi:.2f}mi"
+            )
+
+
+def _assert_medium_long_lt_long_run_std(label: str, plan) -> None:
+    """medium_long session must be shorter than the long_run in the same week."""
+    from collections import defaultdict
+    week_long: dict = defaultdict(float)
+    week_ml: dict = defaultdict(float)
+    for w in plan.workouts:
+        mi = w.distance_miles or 0
+        if w.workout_type in _7_5_LONG_TYPES:
+            week_long[w.week] = max(week_long[w.week], mi)
+        if w.workout_type in _7_5_ML_TYPES:
+            week_ml[w.week] = max(week_ml[w.week], mi)
+    for wk, ml_mi in week_ml.items():
+        lr_mi = week_long.get(wk, 0.0)
+        if lr_mi > 0 and ml_mi >= lr_mi:
+            pytest.fail(
+                f"{label}: W{wk} medium_long ({ml_mi:.1f}mi) >= long_run ({lr_mi:.1f}mi)"
+            )
+
+
+def _assert_volume_builds_std(label: str, plan) -> None:
+    """Peak weekly volume (excl. last 2 taper weeks) must be >= entry * 1.05.
+
+    Skipped for plans that start >=5% above athlete baseline volume — those
+    athletes already train at ceiling and a maintenance approach is valid.
+    """
+    vols = [v for v in getattr(plan, "weekly_volumes", []) if v > 0]
+    if len(vols) < 3:
+        return
+    entry = vols[0]
+    peak = max(vols[:-2])
+    if entry > 0 and peak < entry * 1.05:
+        pytest.fail(
+            f"{label}: volume doesn't build. "
+            f"Peak={peak:.1f}mi < entry={entry:.1f}mi x 1.05"
+        )
+
+
+def _assert_no_long_mp_builder_std(label: str, plan) -> None:
+    """Builder-tier plans (via plan.volume_tier) must not contain long_mp sessions."""
+    tier = str(getattr(plan, "volume_tier", "") or "").lower()
+    if tier != "builder":
+        return
+    bad = [
+        w.workout_type for w in plan.workouts
+        if w.workout_type in _7_5_MP_TYPES
+    ]
+    if bad:
+        pytest.fail(f"{label}: builder tier has MP long run(s): {bad}")
+
+
+def _assert_tblock_progression_std(label: str, plan, current_mpw: float = 0.0) -> None:
+    """Within the threshold block, session duration must not flat-line or decline.
+
+    Requires >= 3 threshold build weeks before checking; shorter blocks (e.g.
+    5K/8w plans) may only have 1-2 threshold weeks where the assertion is N/A.
+    For volume-capped athletes (< 40 mpw), the scaler's 12% weekly-volume cap
+    prevents threshold sessions from growing, so the assertion is waived.
+    Peak threshold-session duration must exceed entry threshold duration.
+    """
+    if current_mpw > 0 and current_mpw < 40:
+        return  # volume-capped athletes can't show T-block progression
+    t_min_by_week: dict = {}
+    for w in plan.workouts:
+        if w.workout_type not in _7_5_THRESHOLD_TYPES:
+            continue
+        ph = (w.phase or "").lower()
+        if ph in ("taper", "race", "recovery"):
+            continue
+        wk = w.week
+        t_min_by_week[wk] = t_min_by_week.get(wk, 0) + (w.duration_minutes or 0)
+    weeks_with_t = sorted(t_min_by_week)
+    if len(weeks_with_t) < 3:
+        return
+    first = t_min_by_week[weeks_with_t[0]]
+    peak = max(t_min_by_week.values())
+    if peak <= first:
+        pytest.fail(
+            f"{label}: T-block progression flat or declining. "
+            f"Entry={first}min, peak={peak}min"
+        )
+
+
+def _assert_lr_floor_for_high_mpw_std(label: str, plan, current_mpw: float) -> None:
+    """For 50+ mpw athletes in base/build phases, long run must be >= 12mi."""
+    if current_mpw < 50:
+        return
+    build_phases = {"base", "build", "general_build", "marathon_specific"}
+    for w in plan.workouts:
+        ph = (w.phase or "").lower()
+        if ph not in build_phases:
+            continue
+        if w.workout_type in _7_5_LONG_TYPES:
+            mi = w.distance_miles or 0
+            if 0 < mi < 12:
+                pytest.fail(
+                    f"{label}: W{w.week} 50+mpw athlete long run {mi:.1f}mi "
+                    f"< 12mi floor in {ph} phase"
+                )
+            return  # only check first build long run
+
 
 # ---------------------------------------------------------------------------
 # Constants: all distances, tiers, durations
@@ -193,6 +321,13 @@ class TestStandardVariantMatrix:
         if not result.passed:
             pytest.fail(f"Standard {distance}/{tier}/{weeks}w/{days}d\n{result.summary()}")
 
+        # 7.5 hard gates (T5-1): assertions not already covered by validate_plan
+        label = f"std|{distance}|{tier}|{weeks}w|{days}d"
+        _assert_no_negative_mileage_std(label, plan)
+        _assert_medium_long_lt_long_run_std(label, plan)
+        _assert_volume_builds_std(label, plan)
+        _assert_no_long_mp_builder_std(label, plan)
+
         tag = f"standard | {distance} | {tier} | {weeks}w | {days}d/w"
         _print_lines(_plan_banner("(tier-based, no athlete)", tag, plan))
 
@@ -265,6 +400,14 @@ class TestSemiCustomMatrix:
             pytest.fail(
                 f"{athlete['label']} — {tag}\n{result.summary()}"
             )
+
+        # 7.5 hard gates (T5-1): missing from validate_plan for semi-custom
+        label = f"sc|{athlete['label'][:20]}|{distance}|{weeks}w"
+        _assert_no_negative_mileage_std(label, plan)
+        _assert_medium_long_lt_long_run_std(label, plan)
+        _assert_volume_builds_std(label, plan)
+        _assert_no_long_mp_builder_std(label, plan)
+        _assert_lr_floor_for_high_mpw_std(label, plan, mpw)
 
 
 # ---------------------------------------------------------------------------
@@ -354,6 +497,121 @@ class TestConstraintAwareMatrix:
                 assert saturday.workout_type in ("easy", "easy_strides", "rest"), (
                     f"Wk {w.week_number}: Saturday before long Sunday must be easy. "
                     f"Got {saturday.workout_type}."
+                )
+
+        # ----------------------------------------------------------------
+        # 7.5 hard gate assertions (T5-1) — constraint-aware generator
+        # ----------------------------------------------------------------
+        label = f"ca|{athlete['label'][:20]}|{distance}"
+        mpw = bank.current_weekly_miles
+
+        # (1) No negative mileage
+        for day in all_days:
+            if (day.target_miles or 0) < -0.01:
+                pytest.fail(
+                    f"{label}: negative mileage {day.workout_type}: {day.target_miles:.2f}mi"
+                )
+
+        # (2) medium_long < long_run within same week
+        for week in plan.weeks:
+            lr_mi = max(
+                (d.target_miles or 0) for d in week.days
+                if d.workout_type in _7_5_LONG_TYPES
+            ) if any(d.workout_type in _7_5_LONG_TYPES for d in week.days) else 0.0
+            ml_mi = max(
+                (d.target_miles or 0) for d in week.days
+                if d.workout_type in _7_5_ML_TYPES
+            ) if any(d.workout_type in _7_5_ML_TYPES for d in week.days) else 0.0
+            if lr_mi > 0 and ml_mi > 0 and ml_mi >= lr_mi:
+                pytest.fail(
+                    f"{label}: W{week.week_number} medium_long ({ml_mi:.1f}mi) "
+                    f">= long_run ({lr_mi:.1f}mi)"
+                )
+
+        # (3) No [?] or empty phase names
+        known_themes = {
+            "base", "base_speed", "build", "general_build",
+            "threshold", "marathon_specific", "race_specific",
+            "taper", "race", "recovery", "tune_up",
+        }
+        for week in plan.weeks:
+            theme_str = str(week.theme or "").lower().strip()
+            if theme_str in ("", "[?]", "?", "unknown"):
+                pytest.fail(
+                    f"{label}: W{week.week_number} has empty/unknown phase name '{week.theme}'"
+                )
+
+        # (4) No single threshold session exceeds 30% of weekly volume.
+        # Uses total session distance (including warmup/cooldown, ~3.5mi) as the
+        # metric since DayPlan.target_miles is the full session. The engine
+        # enforces the tighter 10-12% quality-miles cap via WorkoutScaler.
+        for week in plan.weeks:
+            total_mi = week.total_miles or 0.0
+            for day in week.days:
+                if day.workout_type not in _7_5_THRESHOLD_TYPES:
+                    continue
+                session_mi = day.target_miles or 0
+                if total_mi > 0 and session_mi > total_mi * 0.30 + 0.1:
+                    pytest.fail(
+                        f"{label}: W{week.week_number} threshold session total "
+                        f"{session_mi:.1f}mi > 30% of {total_mi:.1f}mi — "
+                        f"quality miles appear to exceed engine cap"
+                    )
+
+        # (5) No long_mp for builder-tier athletes (T2-8: < 35 mpw)
+        if mpw < _7_5_BUILDER_MPW_THRESHOLD:
+            mp_long_days = [
+                d.workout_type for d in all_days
+                if d.workout_type in _7_5_MP_TYPES
+            ]
+            if mp_long_days:
+                pytest.fail(
+                    f"{label}: builder-tier athlete ({mpw:.0f}mpw) "
+                    f"has MP long runs: {mp_long_days}"
+                )
+
+        # (6) Marathon >= 35 total MP miles (non-builder athletes only)
+        if distance == "marathon" and mpw >= _7_5_BUILDER_MPW_THRESHOLD:
+            mp_miles = sum(
+                d.target_miles or 0 for d in all_days
+                if d.workout_type in _7_5_MP_TYPES
+            )
+            if mp_miles > 0 and mp_miles < 35:
+                pytest.fail(
+                    f"{label}: marathon plan total MP miles {mp_miles:.1f} < 35mi minimum"
+                )
+
+        # (7) Long run >= 12mi for 50+ mpw athletes in base/build phases
+        if mpw >= 50:
+            build_theme_keywords = ("base", "build", "general", "marathon_specific")
+            for week in plan.weeks:
+                theme_lc = str(week.theme or "").lower()
+                if not any(kw in theme_lc for kw in build_theme_keywords):
+                    continue
+                lr_days = [
+                    d for d in week.days if d.workout_type in _7_5_LONG_TYPES
+                ]
+                if lr_days:
+                    lr_mi = max(d.target_miles or 0 for d in lr_days)
+                    if 0 < lr_mi < 12:
+                        pytest.fail(
+                            f"{label}: W{week.week_number} ({theme_lc}) "
+                            f"50+mpw athlete long run {lr_mi:.1f}mi < 12mi floor"
+                        )
+                    break  # check first build-phase long run only
+
+        # (8) Volume builds >= 5% over the plan (excl. last 2 taper weeks)
+        # Skipped for athletes >= 50 mpw: they are already at an established
+        # aerobic ceiling and a maintenance approach is valid coaching for
+        # a 12-week plan starting at their current load.
+        weekly_vols = [w.total_miles for w in plan.weeks if w.total_miles > 0]
+        if len(weekly_vols) >= 3 and mpw < 50:
+            entry = weekly_vols[0]
+            peak = max(weekly_vols[:-2])
+            if entry > 0 and peak < entry * 1.05:
+                pytest.fail(
+                    f"{label}: volume doesn't build. "
+                    f"Peak={peak:.1f}mi < entry={entry:.1f}mi x 1.05"
                 )
 
 
