@@ -27,7 +27,6 @@ Sources:
 
 from dataclasses import dataclass, field
 from typing import List, Optional, Dict, Set
-import re
 
 
 # Workout type classifications
@@ -312,7 +311,7 @@ class PlanValidator:
 
                 # Intervals ≤ spec% and ≤ abs mi (quality miles only)
                 if wtype in INTERVAL_TYPES:
-                    q_miles = self._quality_miles(w, {"interval", "intervals", "vo2max", "vo2", "10k_pace"})
+                    q_miles = self._quality_miles(w, {"interval", "intervals", "vo2max", "vo2", "10k_pace", "5k_pace"})
                     if q_miles > week_miles * i_cap:
                         self._fail(
                             "B1-I-PCT",

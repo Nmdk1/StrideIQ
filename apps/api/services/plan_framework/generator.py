@@ -999,6 +999,21 @@ class PlanGenerator:
         # Phase-boundary cutback weeks (T2-4): last week of each build phase.
         cutback_weeks = self.phase_builder.get_cutback_weeks(phases)
 
+        # T2-3: MP sequence for marathon plans — builds the alternating Structure A/B pattern
+        # and designates which Structure A weeks get an MP medium-long touch.
+        from .mp_progression import MPProgressionPlanner
+        _mp_planner = MPProgressionPlanner()
+        _mp_block_phases = {"marathon_specific", "race_specific"}
+        _mp_block_weeks_list = [
+            w for p in phases if p.phase_type.value in _mp_block_phases for w in p.weeks
+        ]
+        _total_mp_weeks = len(_mp_block_weeks_list) if distance == "marathon" else 0
+        _mp_block_start = min(_mp_block_weeks_list) if _mp_block_weeks_list else 0
+        _mp_sequence = (
+            {mw.week_in_phase: mw for mw in _mp_planner.build_sequence(tier, _total_mp_weeks)}
+            if _total_mp_weeks > 0 else {}
+        )
+
         for week in range(1, duration_weeks + 1):
             # Get phase for this week
             phase = self.phase_builder.get_phase_for_week(phases, week)
@@ -1018,12 +1033,27 @@ class PlanGenerator:
             # secondary quality) but the VOLUME is already correct from the progression.
             
             # Check if this week will have an MP long run (marathon)
-            will_have_mp_long = self._will_week_have_mp_long(
-                phase=phase,
-                week_in_phase=week_in_phase,
-                is_cutback=is_cutback,
-                distance=distance
-            )
+            # T2-3: Use MPProgressionPlanner sequence for marathon MP phases;
+            #       fall back to the legacy alternation rule for other phases.
+            if (
+                distance == "marathon"
+                and _mp_block_start > 0
+                and phase.phase_type.value in ("marathon_specific", "race_specific")
+            ):
+                _mp_block_week = week - _mp_block_start + 1
+                _mp_info = _mp_sequence.get(_mp_block_week)
+                will_have_mp_long = bool(_mp_info and _mp_info.long_type == "long_mp")
+                will_have_mp_medium_long = bool(
+                    _mp_info and _mp_info.medium_long_type == "medium_long_mp"
+                )
+            else:
+                will_have_mp_long = self._will_week_have_mp_long(
+                    phase=phase,
+                    week_in_phase=week_in_phase,
+                    is_cutback=is_cutback,
+                    distance=distance,
+                )
+                will_have_mp_medium_long = False
             
             # Check if this week will have an HMP long run (half marathon)
             will_have_hmp_long = self._will_week_have_hmp_long(
@@ -1045,6 +1075,7 @@ class PlanGenerator:
                 week_in_phase=week_in_phase,
                 is_mp_long_week=will_have_mp_long,
                 is_hmp_long_week=will_have_hmp_long,
+                is_mp_medium_long_week=will_have_mp_medium_long,
                 weekly_volume=weekly_volume,
                 tier=tier,
                 distance=distance,
@@ -1134,6 +1165,7 @@ class PlanGenerator:
         week_in_phase: int,
         is_mp_long_week: bool = False,
         is_hmp_long_week: bool = False,
+        is_mp_medium_long_week: bool = False,
         weekly_volume: float = 0,
         tier: str = "mid",
         distance: str = "marathon",
@@ -1201,6 +1233,7 @@ class PlanGenerator:
                 weekly_volume=weekly_volume,
                 athlete_ctx=athlete_ctx,
                 tier=tier,
+                is_mp_medium_long_week=is_mp_medium_long_week,
             )
             
             easy_long_floor_for: Optional[float] = None
@@ -1412,6 +1445,7 @@ class PlanGenerator:
         weekly_volume: float,
         athlete_ctx: Dict[str, Any],
         tier: str = "mid",
+        is_mp_medium_long_week: bool = False,
     ) -> str:
         """
         Determine actual workout type based on structure slot and phase.
@@ -1453,19 +1487,27 @@ class PlanGenerator:
                 )
             ):
                 return "mp_touch"
+            # T2-5: Structure B week (MP long run) — Tuesday is easy recovery, NOT
+            # medium-long. The MP long IS the quality stimulus; a 11-13mi mid-week
+            # run on top would be overloading.
+            if is_mp_long_week:
+                return "easy"
+            # T2-3: MP touch in medium-long on select Structure A weeks
+            # (is_mp_medium_long_week flag set by MPProgressionPlanner)
+            if is_mp_medium_long_week:
+                return "medium_long_mp"
             # If the phase calls for 2 quality sessions and the athlete can handle it,
             # convert the mid-week medium long to the "touch" session.
-            # This is the focus+touch model: the second session is a touch, not another sledgehammer.
-            #
-            # ALTERNATION RULE (Source B): MP long run weeks get NO threshold.
-            # The MP long IS the second quality — adding threshold creates overload.
-            if is_mp_long_week:
-                return "medium_long"  # Keep as easy-ish volume, not another quality session
-            # HMP long weeks: the HMP long is one quality session, the threshold
-            # slot is the other. Don't add a THIRD quality via secondary.
+            # T2-5: Lower gate from 55 → 40mpw for race-specific phases,
+            #        and to 25mpw for 5K/10K race-specific (experience proxy).
             if is_hmp_long_week:
                 return "medium_long"
-            if phase.quality_sessions >= 2 and not is_cutback and weekly_volume >= 55:
+            _secondary_threshold = (
+                25 if distance in ("5k", "10k") and phase.phase_type.value == "race_specific"
+                else 40 if phase.phase_type.value in ("race_specific", "marathon_specific")
+                else 55
+            )
+            if phase.quality_sessions >= 2 and not is_cutback and weekly_volume >= _secondary_threshold:
                 raw_secondary = self._get_secondary_quality(phase, distance, week_in_phase, weekly_volume, athlete_ctx)
                 return self._apply_phase_guard(raw_secondary, phase)
             return "medium_long"

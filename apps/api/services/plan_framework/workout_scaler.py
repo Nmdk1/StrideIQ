@@ -907,14 +907,15 @@ class WorkoutScaler:
         pw = plan_week or 1
 
         if phase == "race_specific" or pw >= 10:
-            # 1200m reps at 10K pace with shorter rest
+            # 1200m reps at 5K pace — faster than 10K race pace to stress the VO2max system.
+            # The threshold base is built; now sharpen above race pace, not at race pace.
             rep_m = 1200
             rep_miles = 1200 / 1609.344
             reps = min(6, max(4, int(max_i_miles / rep_miles)))
             rest_desc = "90 sec jog recovery"
             rest_val = 1.5  # minutes
-            pace_desc = "10K race pace — controlled, sustainable for all reps"
-            pace_label = "10K_pace"
+            pace_desc = "5K effort — faster than 10K race pace to stress the VO2max system"
+            pace_label = "5K_pace"
         elif pw >= 7:
             # 1000m classic VO2
             rep_m = 1000
