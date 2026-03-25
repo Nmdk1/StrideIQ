@@ -16,18 +16,16 @@ Features:
 import os
 import json
 import re
-import asyncio
 from datetime import date, datetime, timedelta
 from enum import Enum
 from typing import Optional, Dict, List, Any, Tuple
 from uuid import UUID, uuid4
 from sqlalchemy.orm import Session
-from sqlalchemy import func
 import logging
 from datetime import timezone
 
 logger = logging.getLogger(__name__)
-from core.date_utils import calculate_age
+from core.date_utils import calculate_age  # noqa: E402
 
 # =============================================================================
 # ADR-061: HYBRID MODEL ARCHITECTURE WITH COST CAPS
@@ -169,7 +167,7 @@ except ImportError:
     genai_types = None
     logger.info("Google GenAI not installed - bulk queries will use GPT-4o-mini fallback")
 
-from models import (
+from models import (  # noqa: E402
     Athlete,
     Activity,
     TrainingPlan,
@@ -178,22 +176,18 @@ from models import (
     GarminDay,
     PersonalBest,
     IntakeQuestionnaire,
-    CoachIntentSnapshot,
     CoachUsage,
     CoachChat,
 )
-from services import coach_tools
-from services.training_load import TrainingLoadCalculator
-from services.efficiency_analytics import get_efficiency_trends
-from core.config import settings
+from services import coach_tools  # noqa: E402
+from core.config import settings  # noqa: E402
 
 # Phase 4/5 Modular Coach Components
-from services.coach_modules import (
+from services.coach_modules import (  # noqa: E402
     MessageRouter,
     MessageType,
     ContextBuilder,
     ConversationQualityManager,
-    DetailLevel,
 )
 
 
@@ -1389,7 +1383,7 @@ If you need more data to answer well, call the tools. That's why they're there."
         except Exception as e:
             logger.error(f"Sonnet query failed for {athlete_id}: {e}")
             return {
-                "response": f"I encountered an error processing your request. Please try again.",
+                "response": "I encountered an error processing your request. Please try again.",
                 "error": True,
                 "model": self.MODEL_HIGH_STAKES,
                 "error_detail": str(e),
@@ -1416,7 +1410,7 @@ If you need more data to answer well, call the tools. That's why they're there."
 
         try:
             import openai
-        except ImportError as exc:
+        except ImportError:
             logger.warning("kimi_fallback athlete_id=%s fallback_reason=import_error", athlete_id)
             return await self.query_opus(
                 athlete_id=athlete_id,
@@ -2223,7 +2217,7 @@ ATHLETE BRIEF:
                 .filter(
                     CoachChat.athlete_id == athlete_id,
                     CoachChat.context_type == "open",
-                    CoachChat.is_active == True,
+                    CoachChat.is_active == True,  # noqa: E712
                 )
                 .order_by(CoachChat.updated_at.desc())
                 .first()
@@ -2261,7 +2255,7 @@ ATHLETE BRIEF:
                 .filter(
                     CoachChat.athlete_id == athlete_id,
                     CoachChat.context_type == "open",
-                    CoachChat.is_active == True,
+                    CoachChat.is_active == True,  # noqa: E712
                 )
                 .order_by(CoachChat.updated_at.desc())
                 .first()
@@ -2299,7 +2293,7 @@ ATHLETE BRIEF:
                 .filter(
                     CoachChat.athlete_id == athlete_id,
                     CoachChat.context_type == "open",
-                    CoachChat.is_active == True,
+                    CoachChat.is_active == True,  # noqa: E712
                 )
                 .order_by(CoachChat.updated_at.desc())
                 .first()
@@ -2591,7 +2585,7 @@ ATHLETE BRIEF:
                 add(
                     f"Today's {dist_mi:.1f}mi run",
                     f"{pace_str} over {dist_mi:.1f}mi — what did it do for your build?",
-                    f"What effect did today's run have on my fitness and fatigue? Was the effort appropriate for where I am in my training? What should I do tomorrow based on how today loaded me?",
+                    "What effect did today's run have on my fitness and fatigue? Was the effort appropriate for where I am in my training? What should I do tomorrow based on how today loaded me?",
                 )
         except Exception:
             pass
@@ -2854,7 +2848,7 @@ ATHLETE BRIEF:
         # Founder always gets Sonnet — no keyword gating
         if athlete_id and self._is_founder(athlete_id):
             if self.anthropic_client:
-                logger.info(f"Routing to Sonnet: founder_bypass")
+                logger.info("Routing to Sonnet: founder_bypass")
                 return self.MODEL_HIGH_STAKES, True
             return self.MODEL_DEFAULT, False
 
@@ -3015,7 +3009,6 @@ ATHLETE BRIEF:
             used_baseline = bool(history_thin and baseline and (not baseline_needed))
         except Exception:
             history_thin = False
-            history_snapshot = {}
             baseline = None
             baseline_needed = False
             used_baseline = False
@@ -3704,7 +3697,7 @@ ATHLETE BRIEF:
                         
                         if run_summary:
                             instructions.append(
-                                f"PREFETCHED DATA (last 7 days):\n" +
+                                "PREFETCHED DATA (last 7 days):\n" +
                                 "\n".join(run_summary[:5]) +
                                 f"\nTotal: ~{total_distance:.1f}mi in {len(runs)} runs\n"
                                 "Use this data directly. You may still call tools for more detail."
@@ -4106,7 +4099,6 @@ ATHLETE BRIEF:
         units = (day_ctx.get("data", {}) or {}).get("preferred_units") or (recent_42.get("data", {}) or {}).get("preferred_units") or "metric"
 
         planned = (day_ctx.get("data", {}) or {}).get("planned_workout") or {}
-        planned_id = planned.get("planned_workout_id")
         planned_title = planned.get("title")
         planned_phase = (planned.get("phase") or "").lower() if planned.get("phase") else None
         planned_mi = planned.get("target_distance_mi")
@@ -4117,12 +4109,6 @@ ATHLETE BRIEF:
         # Compute baseline from recent runs
         distances_mi = [r.get("distance_mi") for r in runs if r.get("distance_mi") is not None]
         max_run_mi = max(distances_mi) if distances_mi else None
-        total_14_mi = None
-        try:
-            recent_14 = coach_tools.get_recent_runs(self.db, athlete_id, days=14)
-            total_14_mi = (recent_14.get("data", {}) or {}).get("total_distance_mi")
-        except Exception:
-            total_14_mi = None
 
         # Detect plan/history mismatch (very conservative planned distance vs known baseline)
         plan_conflict = False
@@ -4625,7 +4611,7 @@ ATHLETE BRIEF:
         This is the critical context injection for high-stakes queries.
         Kept minimal (~800 tokens) but includes all safety-relevant data.
         """
-        from models import Athlete, Activity, DailyCheckin
+        from models import Athlete, DailyCheckin
         
         state_lines = []
         
