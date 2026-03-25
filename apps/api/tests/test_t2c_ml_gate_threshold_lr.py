@@ -232,6 +232,25 @@ class TestT2MPHMPGate:
             f"weeks {[v.week for v in violations]}"
         )
 
+    def test_builder_half_marathon_produces_zero_long_hmp(self):
+        """
+        T2-8 HMP gate: builder-tier half-marathon plans must produce zero long_hmp
+        sessions. The gate in _get_workout_for_day blocks HMP long runs for builder
+        tier, matching the marathon long_mp gate.
+        """
+        gen = PlanGenerator()
+        plan = gen.generate_standard(
+            distance="half_marathon",
+            duration_weeks=16,
+            tier="builder",
+            days_per_week=5,
+        )
+        hmp_count = sum(1 for w in plan.workouts if w.workout_type == "long_hmp")
+        assert hmp_count == 0, (
+            f"Builder-tier half-marathon plan should have 0 long_hmp sessions. "
+            f"Got {hmp_count}."
+        )
+
 
 # ---------------------------------------------------------------------------
 # T2-9: Threshold session volume cap for low-mileage athletes

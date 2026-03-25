@@ -794,7 +794,8 @@ class WorkoutScaler:
             base_distance = 10
 
         # T2-7: 0–10% progression ramp across the phase
-        build_factor = 1.0 + (week_in_phase / max(1, total_phase_weeks)) * 0.10
+        # week_in_phase-1 in numerator ensures week 1 = 0% lift, last week = +10%.
+        build_factor = 1.0 + ((week_in_phase - 1) / max(1, total_phase_weeks - 1)) * 0.10
         distance = base_distance * build_factor
 
         # T2-7: Taper / race-week reductions
