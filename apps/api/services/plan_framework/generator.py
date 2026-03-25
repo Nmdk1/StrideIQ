@@ -996,6 +996,9 @@ class PlanGenerator:
         prev_threshold_continuous_min: Optional[int] = None
         prev_threshold_intervals: Optional[Tuple[int, int]] = None
 
+        # Phase-boundary cutback weeks (T2-4): last week of each build phase.
+        cutback_weeks = self.phase_builder.get_cutback_weeks(phases)
+
         for week in range(1, duration_weeks + 1):
             # Get phase for this week
             phase = self.phase_builder.get_phase_for_week(phases, week)
@@ -1004,10 +1007,10 @@ class PlanGenerator:
             # Get weekly volume target
             weekly_volume = weekly_volumes[week - 1] if week <= len(weekly_volumes) else weekly_volumes[-1]
             
-            # Check if cutback week
-            tier_enum = VolumeTier(tier)
-            cutback_freq = self.tier_classifier.get_tier_params(tier_enum, distance).get("cutback_frequency", 4)
-            is_cutback = week % cutback_freq == 0 and week < duration_weeks - 2
+            # Check if cutback week — use phase-boundary lookup (T2-4).
+            # Cutbacks land on the last week of each build phase rather than
+            # by arithmetic (week % freq). This prevents mid-block interruptions.
+            is_cutback = week in cutback_weeks and week < duration_weeks - 2
             
             # NOTE: Do NOT multiply weekly_volume here — calculate_volume_progression()
             # already applies tier-specific cutback reductions for cutback weeks.
@@ -1220,6 +1223,7 @@ class PlanGenerator:
                 athlete_ctx=athlete_ctx,
                 plan_week=week,
                 duration_weeks=duration_weeks,
+                total_phase_weeks=len(phase.weeks),
                 is_cutback=is_cutback,
                 previous_easy_long_mi=easy_long_state.get("previous_mi"),
                 history_override=history_override,
@@ -1462,7 +1466,8 @@ class PlanGenerator:
             if is_hmp_long_week:
                 return "medium_long"
             if phase.quality_sessions >= 2 and not is_cutback and weekly_volume >= 55:
-                return self._get_secondary_quality(phase, distance, week_in_phase, weekly_volume, athlete_ctx)
+                raw_secondary = self._get_secondary_quality(phase, distance, week_in_phase, weekly_volume, athlete_ctx)
+                return self._apply_phase_guard(raw_secondary, phase)
             return "medium_long"
         
         if structure_type == "long":
@@ -1476,7 +1481,10 @@ class PlanGenerator:
                 return "easy_strides"
             # Half marathon HMP weeks: threshold STAYS as the quality session.
             # HMP long run is moderate, threshold is primary emphasis — don't kill it.
-            return self._get_quality_workout(phase, week_in_phase, is_cutback, distance, weekly_volume, athlete_ctx)
+            return self._apply_phase_guard(
+                self._get_quality_workout(phase, week_in_phase, is_cutback, distance, weekly_volume, athlete_ctx),
+                phase,
+            )
         
         if structure_type == "quality_or_easy":
             # ALTERNATION RULE: MP long run weeks already have quality via the MP long.
@@ -1488,7 +1496,8 @@ class PlanGenerator:
                 return "easy"
             # Second quality only in certain phases
             if phase.quality_sessions >= 2 and not is_cutback:
-                return self._get_secondary_quality(phase, distance, week_in_phase, weekly_volume, athlete_ctx)
+                raw_secondary = self._get_secondary_quality(phase, distance, week_in_phase, weekly_volume, athlete_ctx)
+                return self._apply_phase_guard(raw_secondary, phase)
             return "easy"
         
         return "easy"
@@ -1527,6 +1536,29 @@ class PlanGenerator:
         # --- 10K / 5K: easy long runs only (quality comes from intervals) ---
         return "long"
     
+    def _apply_phase_guard(self, workout_type: str, phase: TrainingPhase) -> str:
+        """
+        Enforce that the selected quality workout is in phase.allowed_workouts.
+
+        When the existing if/else logic proposes a type that falls outside the
+        phase's declared boundaries (e.g., 'intervals' in a base phase that
+        only allows 'strides/hills'), this guard falls back to the first key
+        session that IS in allowed_workouts, keeping phase integrity intact.
+        """
+        allowed = set(phase.allowed_workouts)
+        if workout_type in allowed:
+            return workout_type
+        # Prefer the phase's declared key sessions as fallback
+        for ks in phase.key_sessions:
+            if ks in allowed:
+                return ks
+        # Last resort: any non-volume workout that is allowed
+        non_volume = {"strides", "easy_strides", "hills", "recovery", "easy"}
+        for candidate in non_volume:
+            if candidate in allowed:
+                return candidate
+        return "easy_strides"
+
     def _get_quality_workout(
         self,
         phase: TrainingPhase,

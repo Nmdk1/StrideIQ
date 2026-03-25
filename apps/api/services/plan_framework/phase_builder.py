@@ -631,3 +631,20 @@ class PhaseBuilder:
             if week in phase.weeks:
                 return phase
         return phases[-1]  # Default to last phase
+
+    def get_cutback_weeks(self, phases: List[TrainingPhase]) -> set:
+        """
+        Return week numbers designated as cutback weeks.
+
+        Cutbacks land on the LAST week of each build phase (not taper/race).
+        This ensures every phase completes its full progression before the
+        recovery drop, instead of arithmetic-based interruptions mid-block.
+
+        Example: 18-week marathon plan (4-4-4-4 build + 2 taper) → {4, 8, 12, 16}
+        """
+        taper_race_values = {Phase.TAPER.value, Phase.RACE.value}
+        cutback: set = set()
+        for phase in phases:
+            if phase.phase_type.value not in taper_race_values and phase.weeks:
+                cutback.add(phase.weeks[-1])
+        return cutback

@@ -148,6 +148,7 @@ class WorkoutScaler:
         athlete_ctx: Optional[Dict[str, Any]] = None,
         plan_week: Optional[int] = None,
         duration_weeks: Optional[int] = None,
+        total_phase_weeks: Optional[int] = None,
         is_cutback: bool = False,
         previous_easy_long_mi: Optional[float] = None,
         history_override: bool = False,
@@ -197,6 +198,7 @@ class WorkoutScaler:
                 weekly_volume,
                 tier,
                 week_in_phase,
+                total_phase_weeks=total_phase_weeks,
                 prev_intervals=prev_threshold_intervals,
             )
         
@@ -208,6 +210,7 @@ class WorkoutScaler:
                 weekly_volume,
                 tier,
                 week_in_phase,
+                total_phase_weeks=total_phase_weeks,
                 prev_continuous_min=prev_threshold_continuous_min,
             )
         
@@ -405,41 +408,56 @@ class WorkoutScaler:
         tier: str,
         week_in_phase: int,
         *,
+        total_phase_weeks: Optional[int] = None,
         prev_intervals: Optional[Tuple[int, int]] = None,
     ) -> ScaledWorkout:
         """
-        Scale threshold intervals with progression.
-        
-        T-block progression:
-        Week 1: 4x5 min
-        Week 2: 5x5 min
-        Week 3: 4x7 min or 3x10 min
-        Week 4: 4x10 min or 35 min continuous
+        Scale threshold intervals with 6-step proportional progression.
+
+        6 canonical steps are mapped proportionally to the threshold block length.
+        The LAST week of the phase is always threshold_continuous (handled by
+        _scale_threshold_continuous). This function covers steps 1..N-1.
+
+        Tier starting formats:
+          low:   4×4min → 4×5 → 3×7 → 3×9 → 2×12
+          mid:   5×5min → 4×7 → 4×8 → 3×10 → 2×15
+          high/elite: 6×5min → 5×7 → 4×8 → 3×10 → 2×15
         """
+        # 5 interval steps per tier (step 6 is continuous, handled separately)
+        _STEPS: dict = {
+            "low":   [(4, 4), (4, 5), (3, 7), (3, 9), (2, 12)],
+            "mid":   [(5, 5), (4, 7), (4, 8), (3, 10), (2, 15)],
+            "high":  [(6, 5), (5, 7), (4, 8), (3, 10), (2, 15)],
+            "elite": [(6, 5), (5, 7), (4, 8), (3, 10), (2, 15)],
+        }
+        steps = _STEPS.get(tier, _STEPS["mid"])
+
+        if total_phase_weeks and total_phase_weeks > 1:
+            # Map week_in_phase (1..total-1) to one of the 5 steps proportionally
+            interval_weeks = max(1, total_phase_weeks - 1)
+            step_idx = min(len(steps) - 1, int((week_in_phase - 1) / interval_weeks * len(steps)))
+        else:
+            # Fallback: legacy 4-step behaviour when phase length unknown
+            if week_in_phase <= 1:
+                step_idx = 0
+            elif week_in_phase == 2:
+                step_idx = 1
+            elif week_in_phase == 3:
+                step_idx = 2
+            else:
+                step_idx = 3
+
+        reps, duration = steps[step_idx]
+
         # Max threshold volume per session (10%)
         max_t_miles = weekly_volume * self.limits["threshold_pct"]
         max_t_minutes = max_t_miles * 6  # ~6 min/mile at T
-        
-        # Progress through T-block
-        if week_in_phase <= 1:
-            reps, duration = 4, 5
-        elif week_in_phase == 2:
-            reps, duration = 5, 5
-        elif week_in_phase == 3:
-            reps, duration = 3, 10
-        else:
-            reps, duration = 4, 10
-        
+
         total_t_time = reps * duration
-        
-        # Cap at 10% rule
         if total_t_time > max_t_minutes:
-            # Reduce volume
             reps = max(2, int(max_t_minutes / duration))
-        
+
         # Hard cap: t_miles must not exceed Source B 10% limit.
-        # Use (floor - 1) to stay strictly below the cap on all platforms
-        # regardless of how the validator computes week_miles * 0.10.
         t_miles = round(reps * duration * 0.17, 1)
         t_miles_cap = (math.floor(max_t_miles * 10) - 1) / 10.0
         t_miles = min(t_miles, t_miles_cap)
@@ -472,22 +490,39 @@ class WorkoutScaler:
         tier: str,
         week_in_phase: int,
         *,
+        total_phase_weeks: Optional[int] = None,
         prev_continuous_min: Optional[int] = None,
     ) -> ScaledWorkout:
-        """Scale continuous threshold run (T pace)."""
+        """
+        Scale continuous threshold run (T pace).
+
+        The terminal step of the T-block (step 6). Base duration is tier-scaled
+        and then progresses within multi-week threshold blocks:
+          low:   20 min base → +3min/week
+          mid:   25 min base → +3min/week
+          high/elite: 30 min base → +5min/week
+        """
+        # Tier-specific starting duration for the continuous step
+        _BASE: dict = {"low": 20, "mid": 25, "high": 30, "elite": 30}
+        _INCREMENT: dict = {"low": 3, "mid": 3, "high": 5, "elite": 5}
+        base = _BASE.get(tier, 25)
+        increment = _INCREMENT.get(tier, 3)
+
         # Max threshold volume
         max_t_miles = weekly_volume * self.limits["threshold_pct"]
         max_t_minutes = max_t_miles * 6
-        
-        # Progress: 15 → 20 → 25 → 30+ min
-        base = 15
-        progression = min(week_in_phase * 5, 20)  # Max +20 min
-        tempo_duration = min(base + progression, max_t_minutes)
-        # Floor: 15 min for effective stimulus, but defer to the 10% cap
-        # when weekly volume is too low to support 15 min of threshold work.
-        min_duration = max(10, min(15, max_t_minutes))
+
+        # When multiple continuous weeks exist, progress across them
+        if total_phase_weeks and total_phase_weeks > 1:
+            # week_in_phase is likely the last N weeks of the phase
+            continuous_week = max(0, week_in_phase - max(1, total_phase_weeks - 1))
+        else:
+            continuous_week = week_in_phase - 1  # legacy: direct offset
+
+        tempo_duration = min(base + continuous_week * increment, max_t_minutes)
+        min_duration = max(10, min(base, max_t_minutes))
         tempo_duration = max(tempo_duration, min_duration)
-        
+
         total_distance = 3 + (tempo_duration * 0.17)  # WU/CD + tempo
 
         nmin = int(tempo_duration)
