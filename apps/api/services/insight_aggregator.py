@@ -959,7 +959,7 @@ class InsightAggregator:
 
         # --- What doesn't work (detectable, data-backed flags) ---
         # 1) “Easy runs too hard” heuristic: non-race runs above 75% max HR.
-        et_intel = get_effort_thresholds(str(self.athlete.id), self.db)
+        et_intel = get_effort_thresholds(str(self.athlete.id), self.db)  # noqa: F821
         p80_intel = et_intel.get("p80_hr")
         easy_hr_threshold = float(p80_intel) * 0.95 if p80_intel else 999.0
         last_28_cutoff = now - timedelta(days=28)

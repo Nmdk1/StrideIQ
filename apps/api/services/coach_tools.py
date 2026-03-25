@@ -22,34 +22,34 @@ import re
 from datetime import datetime, timedelta, date
 
 logger = logging.getLogger(__name__)
-from typing import Any, Dict, List, Optional, Tuple
-from uuid import UUID
+from typing import Any, Dict, List, Optional, Tuple  # noqa: E402
+from uuid import UUID  # noqa: E402
 
-from sqlalchemy.orm import Session
-from sqlalchemy import func
+from sqlalchemy.orm import Session  # noqa: E402
+from sqlalchemy import func  # noqa: E402
 
-from models import Activity, TrainingPlan, PlannedWorkout, Athlete, ActivitySplit, ActivityStream
-from core.date_utils import calculate_age
-from services.efficiency_analytics import (
+from models import Activity, TrainingPlan, PlannedWorkout, Athlete, ActivitySplit, ActivityStream  # noqa: E402
+from core.date_utils import calculate_age  # noqa: E402
+from services.efficiency_analytics import (  # noqa: E402
     get_efficiency_trends,
     is_quality_activity,
     calculate_efficiency_factor,
 )
-from services.training_load import TrainingLoadCalculator
-from services.correlation_engine import analyze_correlations
-from services.race_predictor import RacePredictor
-from services.recovery_metrics import (
+from services.training_load import TrainingLoadCalculator  # noqa: E402
+from services.correlation_engine import analyze_correlations  # noqa: E402
+from services.race_predictor import RacePredictor  # noqa: E402
+from services.recovery_metrics import (  # noqa: E402
     calculate_recovery_half_life,
     calculate_durability_index,
     detect_false_fitness,
     detect_masked_fatigue,
 )
-from services.insight_aggregator import get_active_insights as fetch_insights, generate_insights_for_athlete
-from services.correlation_engine import (
+from services.insight_aggregator import get_active_insights as fetch_insights, generate_insights_for_athlete  # noqa: E402
+from services.correlation_engine import (  # noqa: E402
     aggregate_efficiency_by_effort_zone,
     aggregate_efficiency_trend,
 )
-from services.rpi_calculator import calculate_race_time_from_rpi, calculate_training_paces
+from services.rpi_calculator import calculate_race_time_from_rpi, calculate_training_paces  # noqa: E402
 
 
 def _iso(dt: datetime) -> str:

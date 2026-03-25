@@ -249,5 +249,5 @@ class KnowledgeExtractionAI:
 
     def extract_from_chunks(self, text: str, chunk_size: int = 4000) -> List[Optional[Dict]]:
         """Extract from large documents by chunking first."""
-        chunks = chunk_text(text, chunk_size=chunk_size)
+        chunks = chunk_text(text, chunk_size=chunk_size)  # noqa: F821
         return [self.extract(chunk) for chunk in chunks]

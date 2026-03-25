@@ -112,7 +112,7 @@ def extract_best_efforts_from_activity(
         if start_date_str:
             try:
                 achieved_at = datetime.fromisoformat(start_date_str.replace('Z', '+00:00'))
-            except:
+            except Exception:
                 achieved_at = activity.start_time
         else:
             achieved_at = activity.start_time

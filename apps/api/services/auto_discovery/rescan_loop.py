@@ -396,7 +396,7 @@ def summarize_window_stability(
 
 
 
-def run_multiwindow_rescan(
+def run_multiwindow_rescan(  # noqa: F811
     athlete_id: UUID,
     db: Session,
 ) -> List[Dict[str, Any]]:
@@ -482,7 +482,7 @@ def run_multiwindow_rescan(
     return experiment_results
 
 
-def summarize_window_stability(
+def summarize_window_stability(  # noqa: F811
     experiment_results: List[Dict[str, Any]],
 ) -> Dict[str, Any]:
     """

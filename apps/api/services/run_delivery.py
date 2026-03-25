@@ -65,7 +65,7 @@ def format_insight_message(insight: str, improvement_pct: float, baseline_type: 
         # Try to extract from insight string
         try:
             improvement_pct = float(insight.split("%")[0].split()[-1])
-        except:
+        except Exception:
             improvement_pct = 0
     
     # Determine tone based on baseline type and improvement

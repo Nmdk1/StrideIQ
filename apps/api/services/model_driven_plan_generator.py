@@ -44,7 +44,7 @@ from services.mileage_aggregation import get_canonical_run_activities
 
 logger = logging.getLogger(__name__)
 
-import json
+import json  # noqa: E402
 
 
 # =============================================================================

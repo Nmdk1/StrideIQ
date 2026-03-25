@@ -141,7 +141,7 @@ def sync_strava_best_efforts(
                     achieved_at = datetime.fromisoformat(start_date_str.replace('Z', '+00:00'))
                 else:
                     achieved_at = activity.start_time
-            except:
+            except Exception:
                 achieved_at = activity.start_time
             
             # Check for existing effort (avoid duplicates)

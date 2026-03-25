@@ -110,7 +110,7 @@ class TokenEncryption:
             base64.b64decode(token)
             # If it decodes successfully and is reasonably long, likely encrypted
             return len(token) > 20
-        except:
+        except Exception:
             return False
 
 

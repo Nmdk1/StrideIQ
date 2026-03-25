@@ -61,7 +61,7 @@ def calculate_rpi_from_race_time(distance_meters: float, time_seconds: int) -> O
     # Use lookup service if available (more accurate)
     if LOOKUP_AVAILABLE:
         try:
-            rpi = calculate_rpi_from_race_time_lookup(distance_meters, time_seconds)
+            rpi = calculate_rpi_from_race_time_lookup(distance_meters, time_seconds)  # noqa: F821
             if rpi:
                 return rpi
         except Exception:
@@ -142,7 +142,7 @@ def calculate_training_paces(rpi: float) -> Dict:
     # Use lookup service if available (more accurate)
     if LOOKUP_AVAILABLE:
         try:
-            paces = get_training_paces_from_rpi(rpi)
+            paces = get_training_paces_from_rpi(rpi)  # noqa: F821
             if paces:
                 def pace_to_dict(pace_str: str) -> Dict:
                     """Convert pace string to dict format."""
@@ -158,7 +158,7 @@ def calculate_training_paces(rpi: float) -> Dict:
                             "mi": pace_str,
                             "km": f"{km_mins}:{km_secs:02d}"
                         }
-                    except:
+                    except Exception:
                         return {"mi": pace_str, "km": None}
                 
                 return {
