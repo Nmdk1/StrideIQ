@@ -1579,8 +1579,9 @@ def generate_coach_home_briefing(
     import hashlib
     import json as _json
 
-    # Build data fingerprint for cache key
+    # Build data fingerprint for cache key (date included to prevent cross-day staleness)
     cache_input = _json.dumps({
+        "date": date.today().isoformat(),
         "completed": today_completed,
         "planned": planned_workout,
         "checkin": checkin_data,

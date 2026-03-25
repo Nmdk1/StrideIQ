@@ -63,7 +63,7 @@ def _build_data_fingerprint(
     from models import Activity, DailyCheckin, TrainingPlan
 
     today = date.today()
-    parts = [athlete_id, f"schema:{BRIEFING_FINGERPRINT_VERSION}"]
+    parts = [athlete_id, f"schema:{BRIEFING_FINGERPRINT_VERSION}", f"date:{today.isoformat()}"]
 
     try:
         latest_activity = (
