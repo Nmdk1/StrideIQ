@@ -664,7 +664,9 @@ class PlanValidator:
                 tier_val = str(vt).strip().lower()
 
         if tier_val == "builder":
-            mp_min = 15 if self.strict else 10
+            # T2-8: Builder-tier athletes (< 35mpw) do not receive long_mp sessions
+            # by coaching policy. The validator exempts them from the MP total gate.
+            mp_min = 0
         elif tier_val == "low":
             # Relaxed floor matches segment-based MP accounting (true @MP miles only).
             mp_min = 25 if self.strict else 12
@@ -819,8 +821,16 @@ class PlanValidator:
                 f"({threshold_count}). Threshold should be primary."
             )
 
-        # Marathon should have MP work
-        if mp_count == 0 and self.plan.duration_weeks >= 12:
+        # Marathon should have MP work — exempt builder tier (T2-8: no MP for < 35mpw athletes)
+        _tier_val_mp = None
+        if self.profile:
+            _tier_val_mp = self.profile.volume_tier.value
+        else:
+            _vt = getattr(self.plan, "volume_tier", None)
+            if _vt:
+                _tier_val_mp = str(_vt).strip().lower()
+
+        if mp_count == 0 and self.plan.duration_weeks >= 12 and _tier_val_mp != "builder":
             self._fail(
                 "DIST-M-NO-MP",
                 f"Marathon {self.plan.duration_weeks}w plan has no MP long runs"
@@ -873,7 +883,16 @@ class PlanValidator:
             )
 
         # HMP long runs should appear in race-specific phase (plans >= 12 weeks)
-        if self.plan.duration_weeks >= 12 and hmp_count == 0:
+        # T2-8: Exempt builder tier — < 35mpw athletes don't receive HMP long runs.
+        _tier_val_hm = None
+        if self.profile:
+            _tier_val_hm = self.profile.volume_tier.value
+        else:
+            _vt_hm = getattr(self.plan, "volume_tier", None)
+            if _vt_hm:
+                _tier_val_hm = str(_vt_hm).strip().lower()
+
+        if self.plan.duration_weeks >= 12 and hmp_count == 0 and _tier_val_hm != "builder":
             self._fail(
                 "DIST-HM-NO-HMP",
                 f"Half marathon {self.plan.duration_weeks}w plan has no "

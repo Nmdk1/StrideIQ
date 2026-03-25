@@ -1054,6 +1054,15 @@ class PlanGenerator:
                     distance=distance,
                 )
                 will_have_mp_medium_long = False
+
+            # T2-8: Gate MP/HMP long runs on tier + plan position.
+            # Block MP long only for "builder" tier (< 35mpw). The "low" tier is
+            # 35-45mpw — these athletes may be experienced and should receive MP work
+            # in the appropriate phases. The phase structure (marathon_specific /
+            # race_specific) provides the primary gate for all tiers above builder.
+            if tier == "builder":
+                will_have_mp_long = False
+                will_have_mp_medium_long = False
             
             # Check if this week will have an HMP long run (half marathon)
             will_have_hmp_long = self._will_week_have_hmp_long(
@@ -1234,6 +1243,7 @@ class PlanGenerator:
                 athlete_ctx=athlete_ctx,
                 tier=tier,
                 is_mp_medium_long_week=is_mp_medium_long_week,
+                duration_weeks=duration_weeks,
             )
             
             easy_long_floor_for: Optional[float] = None
@@ -1446,6 +1456,7 @@ class PlanGenerator:
         athlete_ctx: Dict[str, Any],
         tier: str = "mid",
         is_mp_medium_long_week: bool = False,
+        duration_weeks: int = 18,
     ) -> str:
         """
         Determine actual workout type based on structure slot and phase.
@@ -1527,6 +1538,10 @@ class PlanGenerator:
                 and phase.phase_type.value in ("marathon_specific", "race_specific")
             ):
                 return "long_mp" if is_mp_long_week else "long"
+            # T2-8: Half marathon HMP gate — same tier rule as MP long.
+            # Builder tier never gets HMP long runs; higher tiers rely on phase gates.
+            if distance == "half_marathon" and tier == "builder":
+                return "long"
             return self._get_long_run_type(phase, week_in_phase, is_cutback, distance)
         
         if structure_type == "quality":

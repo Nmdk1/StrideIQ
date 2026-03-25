@@ -228,7 +228,17 @@ class WorkoutScaler:
             return self._scale_hmp_long_run(weekly_volume, tier, distance, week_in_phase)
         
         elif workout_type in ["medium_long", "medium_long_mp"]:
-            return self._scale_medium_long(weekly_volume, tier, week_in_phase)
+            _is_taper = phase in ("taper",)
+            _is_race_week = phase in ("race",)
+            return self._scale_medium_long(
+                weekly_volume,
+                tier,
+                week_in_phase,
+                total_phase_weeks=total_phase_weeks or 1,
+                is_taper=_is_taper,
+                is_race_week=_is_race_week,
+                workout_type=workout_type,
+            )
 
         elif workout_type == "mp_touch":
             return self._scale_mp_touch(weekly_volume)
@@ -364,8 +374,9 @@ class WorkoutScaler:
             # Example: 14mi activity stored as meters can surface as 13.99.. miles.
             # floor(13.99..) would undercut the intended floor by 1 mile.
             floor_min_int = int(math.ceil(fl - 1e-9))
-            # Tier peak can sit below L30 seed (e.g. low peak_long_miles); do not clip floor.
-            peak_cap = max(float(peak), fl)
+            # T2-10: Athlete history takes precedence over population-average caps.
+            # Add 5% buffer above the historical floor so the plan can progress beyond it.
+            peak_cap = max(float(peak), fl * 1.05)
         else:
             peak_cap = float(peak)
         target = min(target, peak_cap)
@@ -457,6 +468,18 @@ class WorkoutScaler:
         if total_t_time > max_t_minutes:
             reps = max(2, int(max_t_minutes / duration))
 
+        # T2-9: Absolute T-work cap for low-tier athletes.
+        # low tier: T work ≤ min(weekly_volume × 0.12, 3.5mi) ≈ min(weekly × 0.72, 21) min
+        # mid tier (< 35mpw): T work ≤ min(weekly_volume × 0.15, 5.0mi) ≈ min(weekly × 0.9, 30) min
+        if tier == "low":
+            t29_cap_min = max(duration, min(weekly_volume * 0.72, 21.0))
+            while reps > 1 and reps * duration > t29_cap_min:
+                reps -= 1
+        elif tier == "mid" and weekly_volume < 35:
+            t29_cap_min = max(duration, min(weekly_volume * 0.9, 30.0))
+            while reps > 1 and reps * duration > t29_cap_min:
+                reps -= 1
+
         # Hard cap: t_miles must not exceed Source B 10% limit.
         t_miles = round(reps * duration * 0.17, 1)
         t_miles_cap = (math.floor(max_t_miles * 10) - 1) / 10.0
@@ -520,8 +543,19 @@ class WorkoutScaler:
             continuous_week = week_in_phase - 1  # legacy: direct offset
 
         tempo_duration = min(base + continuous_week * increment, max_t_minutes)
-        min_duration = max(10, min(base, max_t_minutes))
+        min_duration = max(5, min(base, max_t_minutes))  # never let min exceed the volume cap
         tempo_duration = max(tempo_duration, min_duration)
+
+        # T2-9: Absolute T-work cap by tier to protect low-mileage athletes.
+        # Cap is on the WORK portion only (WU/CD overhead is excluded).
+        # low  tier: T work ≤ min(weekly_volume × 0.12, 3.5mi) ≈ min(weekly × 0.72, 21) min
+        # mid  tier (< 35mpw): T work ≤ min(weekly_volume × 0.15, 5.0mi) ≈ min(weekly × 0.9, 30) min
+        if tier == "low":
+            t29_cap_min = min(weekly_volume * 0.72, 21.0)
+            tempo_duration = min(tempo_duration, max(5.0, t29_cap_min))
+        elif tier == "mid" and weekly_volume < 35:
+            t29_cap_min = min(weekly_volume * 0.9, 30.0)
+            tempo_duration = min(tempo_duration, max(10.0, t29_cap_min))
 
         total_distance = 3 + (tempo_duration * 0.17)  # WU/CD + tempo
 
@@ -737,28 +771,44 @@ class WorkoutScaler:
         self,
         weekly_volume: float,
         tier: str,
-        week_in_phase: int
+        week_in_phase: int,
+        total_phase_weeks: int = 1,
+        is_taper: bool = False,
+        is_race_week: bool = False,
+        workout_type: str = "medium_long",
     ) -> ScaledWorkout:
         """Scale medium-long run (mid-week endurance).
 
         Hard cap: 15 miles regardless of weekly volume.
+        T2-7: Applies a 0–10% build ramp across the phase, then reduces for taper/race weeks.
         Source: _AI_CONTEXT_/KNOWLEDGE_BASE/03_WORKOUT_TYPES.md §3.
         """
-        # Proportion of weekly volume, capped at 15 miles always
+        # Volume-based base distance
         if weekly_volume >= 70:
-            distance = 15
+            base_distance = 15
         elif weekly_volume >= 55:
-            distance = 13
+            base_distance = 13
         elif weekly_volume >= 40:
-            distance = 11
+            base_distance = 11
         else:
-            distance = 10
+            base_distance = 10
+
+        # T2-7: 0–10% progression ramp across the phase
+        build_factor = 1.0 + (week_in_phase / max(1, total_phase_weeks)) * 0.10
+        distance = base_distance * build_factor
+
+        # T2-7: Taper / race-week reductions
+        if is_race_week:
+            distance *= 0.50
+        elif is_taper:
+            distance *= 0.70
 
         # Enforce the absolute 15-mile cap (coaching rule, not a safety concern)
         distance = min(distance, 15)
-        
+        distance = round(distance, 1)
+
         return ScaledWorkout(
-            workout_type="medium_long",
+            workout_type=workout_type,
             category=WorkoutCategory.LONG,
             # Avoid the phrase "Long Run" in the title (tests/UI treat "Long Run" as the weekly anchor).
             title=f"Medium Long: {distance} mi",
