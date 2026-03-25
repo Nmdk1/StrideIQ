@@ -690,6 +690,54 @@ class TestLastGarminSyncUpdate:
         mock_enq.assert_not_called()
 
 
+class TestDeferredDetailReplay:
+    def test_summary_ingestion_replays_deferred_details(self):
+        """When summary arrives after detail, deferred details are replayed automatically."""
+        from tasks.garmin_webhook_tasks import process_garmin_activity_task
+
+        mock_db = _make_mock_db()
+        mock_athlete = _make_mock_athlete()
+
+        # New activity path: no existing Garmin idempotency hit, no dedup candidates.
+        mock_db.query.return_value.filter.return_value.first.return_value = None
+        mock_db.query.return_value.filter.return_value.all.return_value = []
+
+        deferred_payload = {"dummy": "detail"}
+
+        with patch("tasks.garmin_webhook_tasks.get_db_sync", return_value=mock_db), \
+             patch("tasks.garmin_webhook_tasks._find_athlete_in_db", return_value=mock_athlete), \
+             patch("tasks.garmin_webhook_tasks._pop_deferred_activity_detail_payloads", return_value=[deferred_payload]), \
+             patch("tasks.garmin_webhook_tasks.process_garmin_activity_detail_task") as mock_detail_task:
+            mock_detail_task.apply_async = MagicMock()
+            result = process_garmin_activity_task.run(ATHLETE_ID, _RUNNING_RAW)
+
+        assert result["status"] == "ok"
+        assert result["created"] == 1
+        mock_detail_task.apply_async.assert_called_once()
+        _, kwargs = mock_detail_task.apply_async.call_args
+        assert kwargs["args"][0] == ATHLETE_ID
+        assert kwargs["args"][1] == [deferred_payload]
+        assert kwargs["countdown"] == 5
+
+    def test_summary_ingestion_without_deferred_details_does_not_enqueue_replay(self):
+        from tasks.garmin_webhook_tasks import process_garmin_activity_task
+
+        mock_db = _make_mock_db()
+        mock_athlete = _make_mock_athlete()
+
+        mock_db.query.return_value.filter.return_value.first.return_value = None
+        mock_db.query.return_value.filter.return_value.all.return_value = []
+
+        with patch("tasks.garmin_webhook_tasks.get_db_sync", return_value=mock_db), \
+             patch("tasks.garmin_webhook_tasks._find_athlete_in_db", return_value=mock_athlete), \
+             patch("tasks.garmin_webhook_tasks._pop_deferred_activity_detail_payloads", return_value=[]), \
+             patch("tasks.garmin_webhook_tasks.process_garmin_activity_detail_task") as mock_detail_task:
+            mock_detail_task.apply_async = MagicMock()
+            process_garmin_activity_task.run(ATHLETE_ID, _RUNNING_RAW)
+
+        mock_detail_task.apply_async.assert_not_called()
+
+
 class TestFirstSessionSweepTrigger:
     def test_first_session_sweep_enqueued_on_new_athlete_batch(self):
         from tasks.garmin_webhook_tasks import process_garmin_activity_task
@@ -844,12 +892,14 @@ class TestStreamIngestionTask:
         assert activity.stream_fetch_status == "success"
 
     def test_unknown_garmin_activity_id_is_skipped(self):
-        """If no Activity matches the activityId, skip gracefully (no add)."""
-        result, mock_db = self._run_task(_DETAIL_PAYLOAD, activity=None)
+        """If no Activity matches, payload is deferred and no stream row is created."""
+        with patch("tasks.garmin_webhook_tasks._defer_activity_detail_payload") as mock_defer:
+            result, mock_db = self._run_task(_DETAIL_PAYLOAD, activity=None)
 
         assert result["status"] == "ok"
         assert result["processed"] == 0
         mock_db.add.assert_not_called()
+        mock_defer.assert_called_once()
 
     def test_missing_activity_id_in_payload_skipped(self):
         """Payload without activityId is skipped."""

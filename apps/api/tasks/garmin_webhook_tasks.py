@@ -24,6 +24,7 @@ See docs/PHASE2_GARMIN_INTEGRATION_AC.md §D5, §D6
 """
 
 import logging
+import json
 import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
@@ -51,6 +52,8 @@ _BACKFILL_PROGRESS_TTL_S = 24 * 60 * 60
 _FIRST_SESSION_SWEEP_LOCK_TTL_S = 600
 _BRIEFING_COALESCE_WINDOW_S = 45
 _BRIEFING_PENDING_TTL_S = 180
+_DEFERRED_DETAIL_TTL_S = 6 * 60 * 60
+_DEFERRED_DETAIL_MAX_PER_ACTIVITY = 8
 
 
 # ---------------------------------------------------------------------------
@@ -140,6 +143,86 @@ def _briefing_coalesce_key(athlete_id: str) -> str:
 
 def _briefing_pending_key(athlete_id: str) -> str:
     return f"home_briefing_pending:{athlete_id}"
+
+
+def _deferred_detail_key(athlete_id: str, garmin_activity_id: int) -> str:
+    return f"garmin_detail_pending:{athlete_id}:{garmin_activity_id}"
+
+
+def _defer_activity_detail_payload(
+    athlete_id: str,
+    garmin_activity_id: int,
+    raw_item: Dict[str, Any],
+) -> None:
+    """
+    Store out-of-order Garmin detail payloads until summary ingestion creates the
+    parent Activity row. This closes the detail-before-summary webhook race.
+    """
+    r = get_redis_client()
+    if not r:
+        return
+    key = _deferred_detail_key(str(athlete_id), int(garmin_activity_id))
+    try:
+        r.rpush(key, json.dumps(raw_item))
+        # Bound memory per activity in pathological retry storms.
+        r.ltrim(key, -_DEFERRED_DETAIL_MAX_PER_ACTIVITY, -1)
+        r.expire(key, _DEFERRED_DETAIL_TTL_S)
+    except Exception as exc:
+        logger.warning(
+            "Failed to defer Garmin detail payload athlete=%s garmin_activity_id=%s: %s",
+            athlete_id,
+            garmin_activity_id,
+            exc,
+        )
+
+
+def _pop_deferred_activity_detail_payloads(
+    athlete_id: str,
+    garmin_activity_id: int,
+) -> List[Dict[str, Any]]:
+    """
+    Read and clear deferred detail payloads for one Garmin activity.
+    """
+    r = get_redis_client()
+    if not r:
+        return []
+    key = _deferred_detail_key(str(athlete_id), int(garmin_activity_id))
+    try:
+        raw_values = r.lrange(key, 0, -1) or []
+        r.delete(key)
+    except Exception:
+        return []
+
+    out: List[Dict[str, Any]] = []
+    for raw in raw_values:
+        try:
+            parsed = json.loads(raw)
+            if isinstance(parsed, dict):
+                out.append(parsed)
+        except Exception:
+            continue
+    return out
+
+
+def _replay_deferred_activity_details(
+    athlete_id: str,
+    garmin_activity_ids: List[int],
+) -> int:
+    """
+    Enqueue deferred detail payloads after summary ingestion succeeds.
+    Returns the number of payload dicts replayed.
+    """
+    replayed = 0
+    for garmin_activity_id in garmin_activity_ids:
+        payloads = _pop_deferred_activity_detail_payloads(athlete_id, int(garmin_activity_id))
+        if not payloads:
+            continue
+        process_garmin_activity_detail_task.apply_async(
+            args=[str(athlete_id), payloads],
+            countdown=5,
+        )
+        replayed += len(payloads)
+    return replayed
 
 
 def _progress_hincr(athlete_id: str, field: str, amount: int) -> None:
@@ -485,8 +568,9 @@ def _ingest_activity_detail_item(
         .first()
     )
     if activity is None:
+        _defer_activity_detail_payload(athlete_id, garmin_activity_id_int, raw_item)
         logger.warning(
-            "Activity detail for unknown garmin_activity_id=%s (athlete=%s) — skipping",
+            "Activity detail for unknown garmin_activity_id=%s (athlete=%s) — deferred",
             garmin_activity_id_int,
             athlete_id,
         )
@@ -650,13 +734,22 @@ def process_garmin_activity_task(
         created = 0
         updated = 0
         skipped = 0
+        replay_candidates: List[int] = []
 
         for raw_item in items:
             result = _ingest_activity_item(raw_item, athlete, db)
             if result == "created":
                 created += 1
+                adapted = adapt_activity_summary(raw_item)
+                garmin_activity_id = adapted.get("garmin_activity_id")
+                if isinstance(garmin_activity_id, int):
+                    replay_candidates.append(garmin_activity_id)
             elif result == "updated":
                 updated += 1
+                adapted = adapt_activity_summary(raw_item)
+                garmin_activity_id = adapted.get("garmin_activity_id")
+                if isinstance(garmin_activity_id, int):
+                    replay_candidates.append(garmin_activity_id)
             else:
                 skipped += 1
 
@@ -664,6 +757,19 @@ def process_garmin_activity_task(
         db.commit()
         from core.cache import invalidate_athlete_cache
         invalidate_athlete_cache(str(athlete_id))
+
+        replayed_detail_payloads = 0
+        if replay_candidates:
+            replayed_detail_payloads = _replay_deferred_activity_details(
+                str(athlete_id),
+                replay_candidates,
+            )
+            if replayed_detail_payloads > 0:
+                logger.info(
+                    "Replayed %d deferred Garmin detail payload(s) for athlete=%s",
+                    replayed_detail_payloads,
+                    athlete_id,
+                )
         # Ensure home coach briefing reflects newly ingested activities.
         # We only trigger when data actually changed (created/updated), not for all-skipped payloads.
         if created > 0 or updated > 0:
@@ -726,11 +832,12 @@ def process_garmin_activity_task(
         # Auto-generation removed per RUNTOON_SHARE_FLOW_SPEC.md — Mar 2026.
 
         logger.info(
-            "process_garmin_activity_task: athlete=%s created=%d updated=%d skipped=%d",
+            "process_garmin_activity_task: athlete=%s created=%d updated=%d skipped=%d replayed_detail_payloads=%d",
             athlete_id,
             created,
             updated,
             skipped,
+            replayed_detail_payloads,
         )
         return {"status": "ok", "created": created, "updated": updated, "skipped": skipped}
 
