@@ -2838,28 +2838,27 @@ ATHLETE BRIEF:
         # Check if high-stakes routing is enabled
         if not self.high_stakes_routing_enabled:
             return self.MODEL_DEFAULT, False
-        
-        # Free users always get Gemini (no Sonnet for unpaid)
-        if athlete_id:
-            athlete = self.db.query(Athlete).filter(Athlete.id == athlete_id).first()
-            if athlete and not getattr(athlete, "has_active_subscription", False):
-                return self.MODEL_DEFAULT, False
 
-        # Founder always gets Sonnet — no keyword gating
+        # Founder and VIP bypass subscription check — they always get premium
         if athlete_id and self._is_founder(athlete_id):
             if self.anthropic_client:
-                logger.info("Routing to Sonnet: founder_bypass")
+                logger.info("Routing to premium: founder_bypass")
                 return self.MODEL_HIGH_STAKES, True
             return self.MODEL_DEFAULT, False
 
-        # VIP athletes always get Sonnet (budget checked but not keyword-gated)
         if athlete_id and self.is_athlete_vip(athlete_id):
             allowed, reason = self.check_budget(athlete_id, is_opus=True, is_vip=True)
             if allowed and self.anthropic_client:
-                logger.info(f"Routing to Sonnet: vip_always, athlete={athlete_id}")
+                logger.info(f"Routing to premium: vip_always, athlete={athlete_id}")
                 return self.MODEL_HIGH_STAKES, True
             else:
-                logger.info(f"VIP Sonnet fallback: reason={reason}, has_anthropic={bool(self.anthropic_client)}")
+                logger.info(f"VIP premium fallback: reason={reason}, has_anthropic={bool(self.anthropic_client)}")
+                return self.MODEL_DEFAULT, False
+
+        # Free users get default model (no premium for unpaid)
+        if athlete_id:
+            athlete = self.db.query(Athlete).filter(Athlete.id == athlete_id).first()
+            if athlete and not getattr(athlete, "has_active_subscription", False):
                 return self.MODEL_DEFAULT, False
 
         # Determine if query needs Sonnet (high-stakes OR high-complexity)
