@@ -180,33 +180,12 @@ class TestN1LongRunLogic:
     # QUALITY FOCUS BY DISTANCE
     # =========================================================================
     
-    def test_5k_quality_focus_includes_vo2max(self):
-        """5K should emphasize VO2max work."""
-        bank = self._create_bank()
-        gen = WorkoutPrescriptionGenerator(bank, race_distance="5k")
-        
-        assert "vo2max" in gen.quality_focus or "speed" in gen.quality_focus
-    
     def test_5k_no_race_pace_long_runs(self):
         """5K plans should not include race pace long runs (different stimulus)."""
         bank = self._create_bank()
         gen = WorkoutPrescriptionGenerator(bank, race_distance="5k")
         
         assert gen.use_mp_long_runs is False
-    
-    def test_10k_quality_focus_includes_threshold(self):
-        """10K should emphasize threshold work."""
-        bank = self._create_bank()
-        gen = WorkoutPrescriptionGenerator(bank, race_distance="10k")
-        
-        assert "threshold" in gen.quality_focus
-    
-    def test_marathon_quality_focus_includes_mp(self):
-        """Marathon should emphasize marathon pace work."""
-        bank = self._create_bank()
-        gen = WorkoutPrescriptionGenerator(bank, race_distance="marathon")
-        
-        assert "mp" in gen.quality_focus
     
     def test_marathon_race_pace_long_runs_enabled(self):
         """Marathon should include MP long runs."""

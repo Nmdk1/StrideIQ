@@ -638,45 +638,29 @@ class TestTriggers:
             assert result["status"] == "success"
 
     def test_trigger_plan_change_enqueues_refresh(self, db_session, test_athlete):
-        """Test 25: plan creation endpoint calls enqueue_briefing_refresh at runtime."""
+        """Test 25: v1 plan creation is frozen (410). PlanGenerator is not called."""
         from core.auth import get_current_user, get_current_athlete
         from core.database import get_db
         from main import app
         from fastapi.testclient import TestClient
 
-        mock_plan = MagicMock()
-        mock_plan.id = uuid4()
-        mock_plan.name = "Test Plan"
-        mock_plan.status = "active"
-        mock_plan.goal_race_name = "Marathon"
-        mock_plan.goal_race_date = date(2026, 6, 1)
-        mock_plan.goal_race_distance_m = 42195
-        mock_plan.goal_time_seconds = 14400
-        mock_plan.plan_start_date = date(2026, 2, 18)
-        mock_plan.plan_end_date = date(2026, 5, 31)
-        mock_plan.total_weeks = 15
-        mock_plan.weeks = []
-
         app.dependency_overrides[get_current_user] = lambda: test_athlete
         app.dependency_overrides[get_current_athlete] = lambda: test_athlete
         app.dependency_overrides[get_db] = lambda: db_session
         try:
-            with patch("tasks.home_briefing_tasks.enqueue_briefing_refresh") as mock_enqueue, \
-                 patch("routers.training_plans.PlanGenerator") as mock_gen_cls:
-                mock_enqueue.return_value = True
-                mock_gen_cls.return_value.generate_plan.return_value = mock_plan
-                with TestClient(app) as tc:
-                    response = tc.post("/v1/training-plans", json={
-                        "goal_race_name": "Marathon",
-                        "goal_race_date": "2026-06-01",
-                        "goal_race_distance_m": 42195,
-                        "goal_time_seconds": 14400,
-                        "plan_start_date": "2026-02-18",
-                    })
-                assert response.status_code == 201, (
-                    f"Plan creation failed: {response.status_code} {response.text}"
-                )
-                mock_enqueue.assert_called_once_with(str(test_athlete.id))
+            with TestClient(app) as tc:
+                response = tc.post("/v1/training-plans", json={
+                    "goal_race_name": "Marathon",
+                    "goal_race_date": "2026-06-01",
+                    "goal_race_distance_m": 42195,
+                    "goal_time_seconds": 14400,
+                    "plan_start_date": "2026-02-18",
+                })
+            assert response.status_code == 410, (
+                f"Expected 410 Gone (v1 plan creation frozen). Got: {response.status_code} {response.text}"
+            )
+            detail = response.json().get("detail", {})
+            assert detail.get("error_code") == "v1_plan_creation_frozen"
         finally:
             app.dependency_overrides.pop(get_current_user, None)
             app.dependency_overrides.pop(get_current_athlete, None)
