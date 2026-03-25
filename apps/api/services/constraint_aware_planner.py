@@ -26,8 +26,8 @@ from services.fitness_bank import (
     ExperienceLevel
 )
 from services.week_theme_generator import (
-    WeekThemeGenerator, 
-    WeekTheme, 
+    WeekThemeGenerator,
+    WeekTheme,
     WeekThemePlan
 )
 from services.workout_prescription import (
@@ -36,9 +36,76 @@ from services.workout_prescription import (
     DayPlan
 )
 from services.plan_framework.load_context import build_load_context, history_anchor_date
+from services.plan_framework.phase_builder import PhaseBuilder
+from services.plan_framework.volume_tiers import VolumeTierClassifier
+from services.plan_framework.mp_progression import MPProgressionPlanner, MPWeek
+from services.plan_framework.week_generator import generate_plan_week
 from services.race_signal_contract import normalize_distance_alias
 
 logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Module-level helpers for GeneratedWorkout → WeekPlan conversion (T3)
+# ---------------------------------------------------------------------------
+
+_INTENSITY_MAP: Dict[str, str] = {
+    "easy": "easy",
+    "recovery": "easy",
+    "rest": "rest",
+    "easy_strides": "easy",
+    "long": "easy",
+    "long_run": "easy",
+    "easy_long": "easy",
+    "long_mp": "moderate",
+    "long_hmp": "moderate",
+    "medium_long": "easy",
+    "medium_long_mp": "moderate",
+    "quality": "hard",
+    "threshold": "threshold",
+    "threshold_intervals": "threshold",
+    "threshold_continuous": "threshold",
+    "intervals": "hard",
+    "vo2max": "hard",
+    "strides": "easy",
+    "hills": "hard",
+}
+
+
+def _workout_intensity(workout_type: Optional[str]) -> str:
+    return _INTENSITY_MAP.get(workout_type or "rest", "easy")
+
+
+def _workouts_to_week_plan(
+    workouts: List[Any],
+    week_num: int,
+    phase: Any,
+    week_start: date,
+) -> WeekPlan:
+    """Convert List[GeneratedWorkout] → WeekPlan.
+
+    T3-3: sets ``theme`` to the phase name (a plain string) instead of a
+    ``WeekTheme`` enum value, eliminating ``[?]`` display in clients.
+    """
+    days = []
+    for wo in workouts:
+        days.append(DayPlan(
+            day_of_week=wo.day,
+            workout_type=wo.workout_type or "rest",
+            name=wo.title or wo.workout_type or "",
+            description=wo.description or "",
+            target_miles=float(wo.distance_miles or 0),
+            intensity=_workout_intensity(wo.workout_type),
+            paces={"default": wo.pace_description} if wo.pace_description else {},
+            notes=[],
+        ))
+    total = sum(d.target_miles for d in days)
+    return WeekPlan(
+        week_number=week_num,
+        theme=phase.name,  # T3-3: plain string, not WeekTheme enum
+        start_date=week_start,
+        days=days,
+        total_miles=round(total, 1),
+    )
 
 
 @dataclass
@@ -176,76 +243,172 @@ class ConstraintAwarePlanner:
         except Exception as ex:
             logger.warning("constraint-aware load_context unavailable, continuing with fitness-bank only: %s", ex)
         
-        # 2. Generate week themes
-        themes = self.theme_generator.generate(
-            bank=bank,
-            race_date=race_date,
-            race_distance=race_distance,
-            tune_up_races=tune_up_races
-        )
-        
-        if not themes:
-            logger.warning("No themes generated - race date too soon?")
-            return self._generate_minimal_plan(bank, race_date, race_distance)
-        
-        # 3. Apply constraint overrides
-        themes = self._apply_constraint_overrides(themes, bank, tune_up_races)
-        
-        # 4. Fill workouts for each week
-        workout_generator = WorkoutPrescriptionGenerator(
-            bank,
-            race_distance=race_distance,
-            load_easy_long_floor_mi=(load_ctx.l30_max_easy_long_mi if load_ctx is not None else None),
-            load_history_override_easy_long=bool(load_ctx.history_override_easy_long) if load_ctx is not None else False,
-            load_count_long_15plus=int(load_ctx.count_long_15plus) if load_ctx is not None else 0,
-            load_count_long_18plus=int(load_ctx.count_long_18plus) if load_ctx is not None else 0,
-            load_recency_last_18plus_days=load_ctx.recency_last_18plus_days if load_ctx is not None else None,
-        )
-        weeks = []
-        
-        for theme_plan in themes:
-            target_miles = theme_plan.target_volume_pct * float(volume_contract.get("applied_peak", bank.peak_weekly_miles))
-            target_miles = self._apply_volume_contract_bounds(target_miles, volume_contract)
-            
-            # Only clamp early weeks if injury return - allow progression to peak
-            if bank.constraint_type == ConstraintType.INJURY and theme_plan.week_number <= 4:
-                max_weekly = self._calculate_safe_weekly(
-                    bank.current_weekly_miles,
-                    theme_plan.week_number,
-                    bank.tau1,
-                    bank.peak_weekly_miles
-                )
-                target_miles = min(target_miles, max_weekly)
-            
-            week_plan = workout_generator.generate_week(
-                theme=theme_plan.theme,
-                week_number=theme_plan.week_number,
-                total_weeks=len(themes),
-                target_miles=target_miles,
-                start_date=theme_plan.start_date
-            )
+        # 2. Build phase structure and volume progression via framework engine (T3-1)
+        horizon_weeks = max(4, (race_date - date.today()).days // 7)
 
-            # T3-4: Cap W1 long run — prevent a beginner from receiving a long run
-            # that exceeds 40% of their recent median weekly volume in week 1.
-            # This is the most dangerous single-week miscalibration point.
-            if theme_plan.week_number == 1 and bank.recent_8w_median_weekly_miles:
-                w1_cap = bank.recent_8w_median_weekly_miles * 0.40
-                long_types = {"long", "easy_long", "long_mp", "long_hmp"}
-                for day in week_plan.days:
-                    if day.workout_type in long_types and day.target_miles > w1_cap:
-                        day.target_miles = round(w1_cap, 1)
-            
-            # Add theme notes to week
-            week_plan.notes.extend(theme_plan.notes)
-            
-            weeks.append(week_plan)
+        tier_classifier = VolumeTierClassifier()
+        tier = tier_classifier.classify(bank.current_weekly_miles, race_distance)
+
+        phase_builder = PhaseBuilder()
+        phases = phase_builder.build_phases(
+            distance=race_distance,
+            duration_weeks=horizon_weeks,
+            tier=tier.value,
+        )
+
+        if not phases:
+            logger.warning("No phases generated - race date too soon?")
+            return self._generate_minimal_plan(bank, race_date, race_distance)
+
+        volumes = tier_classifier.calculate_volume_progression(
+            tier=tier,
+            distance=race_distance,
+            starting_volume=bank.current_weekly_miles,
+            plan_weeks=horizon_weeks,
+        )
+        cutback_weeks_set = phase_builder.get_cutback_weeks(phases)
+
+        # Days per week: infer from bank rest pattern.
+        # Cap at 6 for constraint-aware plans — the 7-day structure puts a
+        # second quality session on Saturday (day 5), the day before the long
+        # run. The 6-day structure keeps Saturday as easy_strides.
+        days_per_week = max(3, min(6, 7 - len(bank.typical_rest_days or [])))
+
+        # Easy-long floor: prefer L30 max seed from load_ctx, fall back to bank average
+        l30_floor = (
+            (load_ctx.l30_max_easy_long_mi if load_ctx is not None else None)
+            or getattr(bank, "average_long_run_miles", None)
+        )
+
+        # Marathon MP block — compute per-week long/medium-long types
+        mp_sequence: Dict[int, MPWeek] = {}
+        mp_block_start_week = 0
+        if race_distance == "marathon":
+            mp_phase_weeks = [
+                w for p in phases
+                if p.phase_type.value in ("marathon_specific", "race_specific")
+                for w in p.weeks
+            ]
+            if mp_phase_weeks:
+                mp_block_start_week = min(mp_phase_weeks)
+                mp_tier = tier.value if tier.value in ("low", "mid", "high", "elite") else "mid"
+                sequence = MPProgressionPlanner().build_sequence(mp_tier, len(mp_phase_weeks))
+                mp_sequence = {s.week_in_phase: s for s in sequence}
+
+        # Plan start = Monday of week 1
+        plan_start = race_date - timedelta(weeks=horizon_weeks)
+
+        # 3. Generate each week via the public framework interface (T3-2)
+        weeks: List[WeekPlan] = []
+        easy_long_state: Dict[str, Any] = {
+            "previous_mi": None,
+            "floor_mi": l30_floor,
+            "floor_applied": False,
+        }
+        mp_long_run_count = 0
+
+        for phase in phases:
+            for week_num in phase.weeks:
+                if week_num > horizon_weeks:
+                    continue
+
+                week_idx = week_num - 1
+                week_volume = float(
+                    volumes[week_idx] if week_idx < len(volumes) else volumes[-1]
+                )
+                week_volume = self._apply_volume_contract_bounds(week_volume, volume_contract)
+
+                # Injury return: conservatively cap early weeks
+                if bank.constraint_type == ConstraintType.INJURY and week_num <= 4:
+                    safe_max = self._calculate_safe_weekly(
+                        bank.current_weekly_miles, week_num, bank.tau1, bank.peak_weekly_miles
+                    )
+                    week_volume = min(week_volume, safe_max)
+
+                week_in_phase = week_num - phase.weeks[0] + 1
+                is_cutback = week_num in cutback_weeks_set
+
+                # MP / HMP flags
+                will_have_mp_long = False
+                will_have_mp_medium_long = False
+                will_have_hmp_long = False
+                if (
+                    race_distance == "marathon"
+                    and phase.phase_type.value in ("marathon_specific", "race_specific")
+                    and tier.value != "builder"
+                ):
+                    mp_block_week = week_num - mp_block_start_week + 1
+                    mp_info = mp_sequence.get(mp_block_week)
+                    if mp_info:
+                        will_have_mp_long = mp_info.long_type == "long_mp"
+                        will_have_mp_medium_long = mp_info.medium_long_type == "medium_long_mp"
+                elif race_distance == "half_marathon" and tier.value != "builder":
+                    from services.plan_framework.generator import PlanGenerator as _PG
+                    will_have_hmp_long = _PG()._will_week_have_hmp_long(
+                        phase=phase,
+                        week_in_phase=week_in_phase,
+                        is_cutback=is_cutback,
+                        distance=race_distance,
+                    )
+
+                if will_have_mp_long:
+                    mp_long_run_count += 1
+
+                week_start = plan_start + timedelta(weeks=week_idx)
+                week_easy_long_state = dict(easy_long_state)
+
+                workouts = generate_plan_week(
+                    week=week_num,
+                    phase=phase,
+                    week_in_phase=week_in_phase,
+                    weekly_volume=week_volume,
+                    days_per_week=days_per_week,
+                    distance=race_distance,
+                    tier=tier.value,
+                    duration_weeks=horizon_weeks,
+                    is_cutback=is_cutback,
+                    is_mp_long_week=will_have_mp_long,
+                    is_hmp_long_week=will_have_hmp_long,
+                    is_mp_medium_long_week=will_have_mp_medium_long,
+                    mp_week=mp_long_run_count,
+                    easy_long_state=week_easy_long_state,
+                    start_date=week_start,
+                )
+
+                # Track long run for next week's easy_long_state
+                for wo in workouts:
+                    if (
+                        wo.workout_type in {"long", "long_run", "long_mp", "long_hmp"}
+                        and (wo.distance_miles or 0) > 0
+                    ):
+                        easy_long_state["previous_mi"] = wo.distance_miles
+                        easy_long_state["floor_mi"] = None
+                        easy_long_state["floor_applied"] = True
+
+                # T3-4: W1 long run cap — spec: min(volume/days*2, 10mi).
+                # Also honour the bank's 8-week median proxy (40% cap) if available;
+                # take the minimum of both to remain conservative.
+                if week_num == 1 and bank.current_weekly_miles:
+                    w1_long_cap = bank.current_weekly_miles / max(1, days_per_week) * 2.0
+                    if bank.recent_8w_median_weekly_miles:
+                        w1_long_cap = min(w1_long_cap, bank.recent_8w_median_weekly_miles * 0.40)
+                    w1_long_cap = min(w1_long_cap, 10.0)
+                    long_types = {"long", "long_run", "long_mp", "long_hmp", "easy_long"}
+                    for wo in workouts:
+                        if wo.workout_type in long_types and (wo.distance_miles or 0) > w1_long_cap:
+                            wo.distance_miles = round(w1_long_cap, 1)
+
+                # Convert List[GeneratedWorkout] → WeekPlan (T3-3: theme = phase name)
+                week_start_date = plan_start + timedelta(weeks=week_idx)
+                week_plan = _workouts_to_week_plan(workouts, week_num, phase, week_start_date)
+                weeks.append(week_plan)
         
         # 5. Insert tune-up race specifics
         if tune_up_races:
             weeks = self._insert_tune_up_details(weeks, tune_up_races, bank)
         
         # 6. Generate counter-conventional notes
-        notes = self._generate_insights(bank, themes, tune_up_races)
+        notes = self._generate_insights(bank, weeks, tune_up_races)
         
         # 7. Calculate predictions
         predicted, ci, scenarios, prediction_rationale_tags, uncertainty_reason = self._predict_race(
@@ -547,7 +710,7 @@ class ConstraintAwarePlanner:
     
     def _generate_insights(self,
                           bank: FitnessBank,
-                          themes: List[WeekThemePlan],
+                          weeks_or_themes: Any,
                           tune_up_races: Optional[List[Dict]]) -> List[str]:
         """Generate counter-conventional notes based on individual data."""
         

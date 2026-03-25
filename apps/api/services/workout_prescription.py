@@ -11,7 +11,7 @@ Tone: Sparse, precise, no motivational BS.
 
 from dataclasses import dataclass, field
 from datetime import date, timedelta
-from typing import List, Dict, Optional, Tuple
+from typing import Any, List, Dict, Optional, Tuple
 import logging
 import random
 
@@ -271,16 +271,18 @@ class DayPlan:
 class WeekPlan:
     """A full week's workout plan."""
     week_number: int
-    theme: WeekTheme
+    # T3-3: accept either WeekTheme (legacy path) or str (framework phase name).
+    theme: Any
     start_date: date
     days: List[DayPlan]
     total_miles: float
     notes: List[str] = field(default_factory=list)
     
     def to_dict(self) -> Dict:
+        theme_str = self.theme.value if hasattr(self.theme, "value") else str(self.theme)
         return {
             "week": self.week_number,
-            "theme": self.theme.value,
+            "theme": theme_str,
             "start_date": self.start_date.isoformat(),
             "days": [d.to_dict() for d in self.days],
             "total_miles": round(self.total_miles, 1),
