@@ -26,7 +26,6 @@ from services.fitness_bank import (
     ExperienceLevel
 )
 from services.week_theme_generator import (
-    WeekThemeGenerator,
     WeekTheme,
     WeekThemePlan
 )
@@ -190,7 +189,6 @@ class ConstraintAwarePlanner:
     
     def __init__(self, db: Session):
         self.db = db
-        self.theme_generator = WeekThemeGenerator()
     
     def generate_plan(self,
                      athlete_id: UUID,
@@ -350,7 +348,7 @@ class ConstraintAwarePlanner:
                         will_have_mp_medium_long = mp_info.medium_long_type == "medium_long_mp"
                 elif race_distance == "half_marathon" and tier.value != "builder":
                     from services.plan_framework.generator import PlanGenerator as _PG
-                    will_have_hmp_long = _PG()._will_week_have_hmp_long(
+                    will_have_hmp_long = _PG().will_week_have_hmp_long(
                         phase=phase,
                         week_in_phase=week_in_phase,
                         is_cutback=is_cutback,

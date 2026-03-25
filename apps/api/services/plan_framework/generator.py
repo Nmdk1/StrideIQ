@@ -1143,6 +1143,21 @@ class PlanGenerator:
 
         return False
 
+    def will_week_have_hmp_long(
+        self,
+        phase: TrainingPhase,
+        week_in_phase: int,
+        is_cutback: bool,
+        distance: str
+    ) -> bool:
+        """Public interface for HMP long-week detection."""
+        return self._will_week_have_hmp_long(
+            phase=phase,
+            week_in_phase=week_in_phase,
+            is_cutback=is_cutback,
+            distance=distance,
+        )
+
     def _will_week_have_hmp_long(
         self,
         phase: TrainingPhase,
@@ -1167,6 +1182,57 @@ class PlanGenerator:
 
         return False
     
+    def generate_week(
+        self,
+        week: int,
+        phase: TrainingPhase,
+        week_in_phase: int,
+        is_mp_long_week: bool = False,
+        is_hmp_long_week: bool = False,
+        is_mp_medium_long_week: bool = False,
+        weekly_volume: float = 0,
+        tier: str = "mid",
+        distance: str = "marathon",
+        days_per_week: int = 6,
+        structure: Dict[int, str] = None,
+        start_date: Optional[date] = None,
+        paces: Optional[TrainingPaces] = None,
+        is_cutback: bool = False,
+        mp_week: int = 1,
+        athlete_ctx: Optional[Dict[str, Any]] = None,
+        duration_weeks: int = 18,
+        easy_long_state: Optional[Dict[str, Any]] = None,
+        history_override: bool = False,
+        prev_mp_miles: Optional[int] = None,
+        prev_threshold_continuous_min: Optional[int] = None,
+        prev_threshold_intervals: Optional[Tuple[int, int]] = None,
+    ) -> List[GeneratedWorkout]:
+        """Public interface for single-week generation. See _generate_week for implementation."""
+        return self._generate_week(
+            week=week,
+            phase=phase,
+            week_in_phase=week_in_phase,
+            is_mp_long_week=is_mp_long_week,
+            is_hmp_long_week=is_hmp_long_week,
+            is_mp_medium_long_week=is_mp_medium_long_week,
+            weekly_volume=weekly_volume,
+            tier=tier,
+            distance=distance,
+            days_per_week=days_per_week,
+            structure=structure,
+            start_date=start_date,
+            paces=paces,
+            is_cutback=is_cutback,
+            mp_week=mp_week,
+            athlete_ctx=athlete_ctx,
+            duration_weeks=duration_weeks,
+            easy_long_state=easy_long_state,
+            history_override=history_override,
+            prev_mp_miles=prev_mp_miles,
+            prev_threshold_continuous_min=prev_threshold_continuous_min,
+            prev_threshold_intervals=prev_threshold_intervals,
+        )
+
     def _generate_week(
         self,
         week: int,

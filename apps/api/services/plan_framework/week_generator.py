@@ -5,10 +5,7 @@ This module exposes `generate_plan_week` as the stable public API consumed by
 both `PlanGenerator._generate_workouts` (via delegation) and by
 `ConstraintAwarePlanner` (T3 convergence).
 
-Design: this is a thin facade over `PlanGenerator._generate_week`. The
-implementation lives in `generator.py`; moving it here in a future pass
-(T5+) would make `_generate_week` a literal one-liner wrapper, but the
-interface contract is established here for T3.
+Design: thin facade over `PlanGenerator.generate_week` (public method).
 """
 
 from __future__ import annotations
@@ -81,7 +78,7 @@ def generate_plan_week(
     # Resolve the daily slot structure from the shared WEEKLY_STRUCTURES table.
     structure = gen.WEEKLY_STRUCTURES.get(days_per_week, gen.WEEKLY_STRUCTURES[6])
 
-    return gen._generate_week(
+    return gen.generate_week(
         week=week,
         phase=phase,
         week_in_phase=week_in_phase,

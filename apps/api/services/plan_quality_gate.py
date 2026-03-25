@@ -232,7 +232,7 @@ def _enforce_personal_floor_in_early_weeks(
         effective_floor = min(floor, long_run_max, week_total * 0.33) if week_total > 0 else min(floor, long_run_max)
         required_floor = max(0.0, effective_floor - floor_tolerance)
         long_miles = _week_long_miles(week)
-        # Cutback exemption: when the long run drops ≥ 30% week-over-week in the
+        # Cutback exemption: when the long run drops ≥ 28% week-over-week in the
         # early window, it is an intentional cutback week (PhaseBuilder assigns
         # cutback_weeks every N weeks regardless of plan position). Enforcing the
         # personal floor on cutback W2 would incorrectly flag a planned recovery
