@@ -62,9 +62,20 @@ def test_plan_framework_high_volume_experienced_gets_vo2_touch_and_year_round_st
         week_workouts = plan.get_week(week)
         assert any(w.workout_type == "easy_strides" for w in week_workouts), f"Week {week} missing easy_strides"
 
-    # VO2 touch should appear in base_speed for experienced high-volume runner (week 2 in 12-week plan).
+    # VO2 touch (intervals) must NOT appear in marathon base_speed phase (T2-1 phase guard).
+    # The base_speed allowed_workouts for marathon are: easy, long, strides, hills, recovery.
+    # High-volume athletes in base phase get hills/easy_strides, not intervals.
     wk2 = plan.get_week(2)
-    assert any(w.workout_type == "intervals" for w in wk2), "Expected a VO2 intervals touch in base_speed (week 2)"
+    assert not any(w.workout_type == "intervals" for w in wk2), (
+        "T2-1 violation: 'intervals' appeared in marathon base_speed phase (week 2). "
+        "Phase guard must redirect to an allowed quality workout (hills/strides/easy_strides)."
+    )
+    # Quality session must still be present (hills or easy_strides is the correct substitute)
+    base_quality_types = {"hills", "easy_strides", "strides"}
+    assert any(w.workout_type in base_quality_types for w in wk2), (
+        f"Week 2 (base_speed) should have a quality session (hills/strides). "
+        f"Got: {[w.workout_type for w in wk2]}"
+    )
 
     # Terminology invariant: never emit ambiguous 'tempo' as a workout_type.
     assert all("tempo" not in (w.workout_type or "").lower() for w in plan.workouts)
