@@ -42,16 +42,6 @@ def validate_production_config(
         raise ValueError(
             "Production config invalid: POSTGRES_PASSWORD must not be default/weak (min 12 chars) when ENVIRONMENT=production"
         )
-    # Guardrail: kimi-k2.5 is a reasoning model and is not supported on
-    # JSON briefing surfaces (can return empty/faulty structured payloads).
-    for field_name, model in (
-        ("BRIEFING_PRIMARY_MODEL", briefing_primary_model),
-        ("KIMI_CANARY_MODEL", kimi_canary_model),
-    ):
-        if (model or "").strip().lower() == "kimi-k2.5":
-            raise ValueError(
-                f"Production config invalid: {field_name} must not be kimi-k2.5 on briefing JSON surfaces"
-            )
 
 
 class Settings(BaseSettings):
@@ -239,7 +229,7 @@ class Settings(BaseSettings):
     WORKOUT_NARRATIVE_MODEL: str = Field(default="gemini-2.5-flash")
 
     # Kimi briefing canary model
-    KIMI_CANARY_MODEL: str = Field(default="kimi-k2-turbo-preview")
+    KIMI_CANARY_MODEL: str = Field(default="kimi-k2.5")
     # Kimi coach canary model (reasoning lane with tool calls)
     COACH_CANARY_MODEL: str = Field(default="kimi-k2.5")
 

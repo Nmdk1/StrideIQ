@@ -1442,7 +1442,15 @@ If you need more data to answer well, call the tools. That's why they're there."
                 if role not in ("user", "assistant"):
                     role = "user"
                 messages.append({"role": role, "content": msg.get("content", "")})
-        messages.append({"role": "user", "content": message})
+
+        messages.append({
+            "role": "user",
+            "content": (
+                "Before answering, call get_weekly_volume and get_recent_runs "
+                "to ground your response in the athlete's actual data.\n\n"
+                f"{message}"
+            ),
+        })
 
         system_prompt = self._build_coach_system_prompt(athlete_id)
 
@@ -1451,13 +1459,12 @@ If you need more data to answer well, call the tools. That's why they're there."
         response = None
         kimi_tools = self._kimi_tools()
         for iteration in range(5):
-            tool_choice = "required" if iteration == 0 else "auto"
             response = await client.chat.completions.create(
                 model=model_name,
                 messages=[{"role": "system", "content": system_prompt}] + messages,
                 max_tokens=COACH_MAX_OUTPUT_TOKENS,
                 tools=kimi_tools,
-                tool_choice=tool_choice,
+                tool_choice="auto",
             )
             usage = getattr(response, "usage", None)
             total_input_tokens += int(getattr(usage, "prompt_tokens", 0) or 0)

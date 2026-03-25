@@ -124,11 +124,9 @@ def _call_kimi(
     """
     Kimi (Moonshot) via OpenAI-compatible SDK.
 
-    Target model: kimi-k2-turbo-preview — 60-100 tok/s, ~800ms, supports
-    response_format json_object, configurable temperature.
-
-    All LLM calls in StrideIQ are narrative generation against structured engine
-    output — not reasoning tasks. Fast JSON-compliant generation is the requirement.
+    Supports both kimi-k2-turbo-preview and kimi-k2.5. For k2.5 in JSON
+    mode, thinking is disabled so output goes to `content` normally.
+    K2.5 uses fixed temperature (1.0 thinking, 0.6 non-thinking).
     """
     try:
         from openai import OpenAI
@@ -147,9 +145,12 @@ def _call_kimi(
     oai_messages = [{"role": "system", "content": system}] + list(messages)
 
     extra_kwargs: dict = {}
+    is_reasoning = _is_kimi_reasoning_model(model)
     if response_mode == "json":
         extra_kwargs["response_format"] = {"type": "json_object"}
-    if not _is_kimi_reasoning_model(model):
+        if is_reasoning:
+            extra_kwargs["thinking"] = {"type": "disabled"}
+    if not is_reasoning:
         extra_kwargs["temperature"] = temperature
 
     t0 = time.monotonic()
@@ -425,11 +426,11 @@ def resolve_briefing_model(athlete_id: Optional[str] = None) -> str:
     Return the model to use for briefing generation.
 
     If KIMI_CANARY_ENABLED and the athlete is in KIMI_CANARY_ATHLETE_IDS,
-    returns KIMI_CANARY_MODEL (default: kimi-k2-turbo-preview).
+    returns KIMI_CANARY_MODEL (default: kimi-k2.5).
     Otherwise returns BRIEFING_PRIMARY_MODEL.
 
-    Note: kimi-k2.5 is a reasoning model unsuitable for JSON briefings (returns
-    empty content). Use kimi-k2-turbo-preview which is fast (~800ms) and correct.
+    K2.5 is used with thinking disabled (via _call_kimi adapter) so it
+    outputs JSON to `content` like a standard model.
     """
     if athlete_id and _canary_enabled():
         if athlete_id in _canary_athlete_ids():
