@@ -23,10 +23,8 @@ Follows the adaptation_narrator.py pattern:
 import base64
 import hashlib
 import logging
-import os
 import time
 from dataclasses import dataclass, field
-from datetime import date, datetime
 from typing import List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
@@ -620,8 +618,6 @@ def recompose_stories(
 
     CANVAS_W, CANVAS_H = 1080, 1920
     BG_COLOR = (30, 41, 59)      # #1e293b — slate-800 dark
-    TEXT_COLOR = (226, 232, 240)  # #e2e8f0 — slate-200
-    ACCENT_COLOR = (249, 115, 22) # #f97316 — orange-500
 
     # Load source image and scale to canvas width
     source = Image.open(io.BytesIO(source_image_bytes)).convert("RGBA")

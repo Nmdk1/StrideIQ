@@ -15,14 +15,14 @@ Anchors come from:
 
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
-from typing import List, Dict, Optional, Tuple
+from typing import Optional
 from uuid import UUID
 import logging
 
 from sqlalchemy.orm import Session
-from sqlalchemy import func, and_, or_
+from sqlalchemy import or_
 
-from models import Activity, Athlete
+from models import Activity
 
 logger = logging.getLogger(__name__)
 
@@ -248,7 +248,7 @@ class AnchorFinder:
                 Activity.start_time <= datetime.combine(race_window_end, datetime.min.time()),
                 or_(
                     Activity.workout_type == "race",
-                    Activity.is_race_candidate == True
+                    Activity.is_race_candidate
                 )
             ).first()
             
@@ -418,7 +418,7 @@ class AnchorFinder:
             Activity.athlete_id == self.athlete_id,
             or_(
                 Activity.workout_type == "race",
-                Activity.is_race_candidate == True
+                Activity.is_race_candidate
             )
         ).order_by(Activity.start_time.desc()).limit(20).all()
         
@@ -518,7 +518,7 @@ class AnchorFinder:
                     Activity.start_time <= datetime.combine(race_window_end, datetime.min.time()),
                     or_(
                         Activity.workout_type == "race",
-                        Activity.is_race_candidate == True
+                        Activity.is_race_candidate
                     )
                 ).first()
                 

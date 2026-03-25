@@ -11,11 +11,9 @@ Based on Manifesto Section 2: Secondary Signals
 
 from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional, Tuple
-from decimal import Decimal
 from sqlalchemy.orm import Session
-from sqlalchemy import func, and_
 
-from models import Activity, DailyCheckin, ActivityFeedback, Athlete
+from models import Activity, DailyCheckin, Athlete
 
 import logging
 
@@ -64,7 +62,7 @@ def calculate_recovery_half_life(
         DailyCheckin.date >= start_date.date()
     ).all()
     
-    checkin_by_date = {c.date: c for c in checkins}
+    {c.date: c for c in checkins}
     
     # Find pairs of hard session followed by easy/rest days
     recovery_times = []
@@ -219,7 +217,6 @@ def update_athlete_metrics(db: Session, athlete_id: str) -> Dict[str, Optional[f
     Returns:
         Dict with calculated metrics
     """
-    from models import Athlete
     
     recovery_half_life = calculate_recovery_half_life(db, athlete_id)
     durability_index = calculate_durability_index(db, athlete_id)

@@ -20,8 +20,6 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta, date
 from typing import List, Dict, Optional, Any
 from uuid import UUID
-from enum import Enum
-import math
 import logging
 
 from sqlalchemy.orm import Session
@@ -34,7 +32,6 @@ from services.individual_performance_model import (
 from services.optimal_load_calculator import (
     OptimalLoadCalculator,
     LoadTrajectory,
-    TaperPlan,
     WeeklyLoadTarget,
     TrainingPhase
 )
@@ -1765,8 +1762,8 @@ class ModelDrivenPlanGenerator:
                         f"hold pace on tired legs - exactly what you'll face in the race. "
                         f"Your {proven_mp:.0f}mi @ MP history shows you can handle {mp_miles}mi in build phase."
                         if proven_mp > 0 else
-                        f"Marathon pace at the END of a long run when fatigued teaches your body to "
-                        f"hold pace on tired legs - exactly what you'll face in the race."
+                        "Marathon pace at the END of a long run when fatigued teaches your body to "
+                        "hold pace on tired legs - exactly what you'll face in the race."
                     )
                 )
             elif phase == TrainingPhase.PEAK and race_distance in ("marathon", "half_marathon"):
@@ -1965,20 +1962,20 @@ class ModelDrivenPlanGenerator:
                         # Determine effort description based on purpose
                         if tr_purpose == "threshold":
                             description = (
-                                f"Race this HARD - it's your final threshold before the marathon. "
-                                f"This is your last quality effort. Run for a PR."
+                                "Race this HARD - it's your final threshold before the marathon. "
+                                "This is your last quality effort. Run for a PR."
                             )
                             intensity = "race"
                         elif tr_purpose == "sharpening":
                             description = (
-                                f"Controlled effort - stay relaxed, don't empty the tank. "
-                                f"Use as a dress rehearsal for race day routines."
+                                "Controlled effort - stay relaxed, don't empty the tank. "
+                                "Use as a dress rehearsal for race day routines."
                             )
                             intensity = "moderate"
                         else:  # tune_up, fitness_check
                             description = (
-                                f"Tune-up race. Run comfortably hard but save something. "
-                                f"Focus on feeling good, not crushing it."
+                                "Tune-up race. Run comfortably hard but save something. "
+                                "Focus on feeling good, not crushing it."
                             )
                             intensity = "moderate"
                         

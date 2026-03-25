@@ -7,8 +7,8 @@ for the Home page Glance layer.
 ADR-013: Home Glance Signals Integration
 """
 
-from datetime import datetime, date, timedelta
-from typing import List, Dict, Optional, Any
+from datetime import datetime
+from typing import List, Dict, Optional
 from dataclasses import dataclass
 from enum import Enum
 from uuid import UUID

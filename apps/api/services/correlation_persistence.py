@@ -18,11 +18,10 @@ Principles:
 
 import logging
 from datetime import datetime, timedelta, timezone
-from typing import Dict, List, Optional
+from typing import Dict, List
 from uuid import UUID
 
 from sqlalchemy.orm import Session
-from sqlalchemy import and_
 
 from models import CorrelationFinding
 

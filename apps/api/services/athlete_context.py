@@ -11,16 +11,16 @@ The context block includes:
 - Performance trends
 """
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import List, Dict, Any, Optional
 from uuid import UUID
 from sqlalchemy.orm import Session
-from sqlalchemy import func, desc, text
+from sqlalchemy import desc, text
 import statistics
 import json
 
-from models import Activity, DailyCheckin, BodyComposition, Athlete
+from models import Activity, DailyCheckin, BodyComposition
 
 
 @dataclass

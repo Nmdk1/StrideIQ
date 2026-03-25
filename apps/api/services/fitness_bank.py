@@ -9,8 +9,8 @@ Key Principle: The athlete's history IS the data. Generic plans fail because
 they ignore what the athlete has already proven they can do.
 """
 
-from dataclasses import dataclass, field
-from datetime import date, datetime, timedelta
+from dataclasses import dataclass
+from datetime import date, timedelta
 from enum import Enum
 from typing import List, Dict, Optional, Tuple
 from uuid import UUID
@@ -219,7 +219,6 @@ def calculate_rpi(distance_m: float, time_seconds: int) -> float:
 
 def rpi_equivalent_time(rpi: float, distance_m: float) -> int:
     """Calculate equivalent time for a distance given RPI."""
-    import math
     
     # Binary search for time that gives this RPI at this distance
     low, high = 60, 36000  # 1 min to 10 hours

@@ -21,9 +21,9 @@ Design:
     6. Outcome tracking populated asynchronously (next-day efficiency, check-in)
 """
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import date, datetime, timedelta
-from typing import Optional, Dict, Any, List, Tuple
+from typing import Optional, Dict, Any, List
 from uuid import UUID
 
 import logging
@@ -140,9 +140,9 @@ class SelfRegulationDetector:
                 deltas.append(delta)
 
         # Case 2: Unplanned activities (no corresponding planned workout)
-        planned_dates = {pw.scheduled_date for pw in planned}
+        {pw.scheduled_date for pw in planned}
         for act in activities:
-            act_date = act.start_time.date() if hasattr(act.start_time, 'date') else act.start_time
+            act.start_time.date() if hasattr(act.start_time, 'date') else act.start_time
             matched = any(
                 pw.completed_activity_id == act.id
                 for pw in planned
@@ -210,7 +210,7 @@ class SelfRegulationDetector:
             planned_is_easy = planned.workout_type in EASY_TYPES
             actual_is_easy = actual_type in EASY_TYPES
             type_changed = (planned_is_quality != actual_is_quality) or (
-                planned_is_easy and not actual_is_easy and not actual_type in REST_TYPES
+                planned_is_easy and not actual_is_easy and actual_type not in REST_TYPES
             ) or (
                 not planned_is_easy and actual_is_easy
             )

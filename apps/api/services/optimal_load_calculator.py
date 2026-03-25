@@ -31,9 +31,7 @@ from sqlalchemy.orm import Session
 from services.individual_performance_model import (
     BanisterModel, 
     get_or_calibrate_model,
-    ModelConfidence,
-    DEFAULT_TAU1,
-    DEFAULT_TAU2
+    ModelConfidence
 )
 
 logger = logging.getLogger(__name__)
@@ -687,7 +685,7 @@ class OptimalLoadCalculator:
     ) -> LoadTrajectory:
         """Create minimal trajectory when race is very close."""
         today = date.today()
-        days_to_race = (race_date - today).days
+        (race_date - today).days
         
         # Just taper
         week = WeeklyLoadTarget(

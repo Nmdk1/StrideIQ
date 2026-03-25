@@ -19,7 +19,7 @@ ADR: docs/ADR_062_TAPER_DEMOCRATIZATION.md
 
 import logging
 from dataclasses import dataclass
-from typing import Any, List, Optional
+from typing import Any, Optional
 
 from services.plan_framework.constants import (
     TAPER_DAYS_BY_REBOUND,
@@ -210,9 +210,9 @@ class TaperCalculator:
                 f"losing the fitness you've built."
             ),
             disclosure=(
-                f"Your taper length is based on how quickly you bounce back "
-                f"from hard training. We measured your recovery rate from "
-                f"your training history."
+                "Your taper length is based on how quickly you bounce back "
+                "from hard training. We measured your recovery rate from "
+                "your training history."
             ),
         )
 
@@ -288,8 +288,8 @@ class TaperCalculator:
                 f"As we learn more about your training, this will become personalized."
             ),
             disclosure=(
-                f"Your taper uses a standard template — we don't yet have "
-                f"enough data to personalize it. This will improve as you "
-                f"train and race with the system."
+                "Your taper uses a standard template — we don't yet have "
+                "enough data to personalize it. This will improve as you "
+                "train and race with the system."
             ),
         )

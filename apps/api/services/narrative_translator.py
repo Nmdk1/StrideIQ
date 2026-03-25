@@ -12,23 +12,17 @@ Philosophy: The skeleton can repeat. The anchors make it fresh.
 """
 
 from dataclasses import dataclass, field
-from datetime import date, datetime, timedelta
-from typing import List, Dict, Optional, Tuple
+from datetime import date, timedelta
+from typing import List, Dict, Optional
 from uuid import UUID
 import logging
 import hashlib
 
 from sqlalchemy.orm import Session
 
-from services.fitness_bank import FitnessBank, ConstraintType, ExperienceLevel
+from services.fitness_bank import FitnessBank, ConstraintType
 from services.anchor_finder import (
     AnchorFinder,
-    InjuryReboundAnchor,
-    WorkoutAnchor,
-    EfficiencyAnchor,
-    LoadStateAnchor,
-    RaceAnchor,
-    MilestoneAnchor,
     format_date_relative,
     format_pace
 )
@@ -187,8 +181,8 @@ class NarrativeTranslator:
         else:
             # First time this structure
             text = (
-                f"First time we've prescribed this exact structure. "
-                f"Based on your history, you're ready."
+                "First time we've prescribed this exact structure. "
+                "Based on your history, you're ready."
             )
             anchors_used = []
             priority = 50
@@ -232,7 +226,7 @@ class NarrativeTranslator:
             elif weeks_since_injury == anchor.weeks_to_recover:
                 comparison = f" — same pace as the {format_date_relative(anchor.injury_date)} comeback"
             else:
-                comparison = f" — you've been patient, it's paying off"
+                comparison = " — you've been patient, it's paying off"
             
             text = (
                 f"{weeks_since_injury} weeks ago you were off. "

@@ -8,7 +8,7 @@ This is intentionally deterministic (no LLM calls) and built on existing analyti
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 from sqlalchemy.orm import Session
 

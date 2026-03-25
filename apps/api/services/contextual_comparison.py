@@ -12,15 +12,15 @@ This engine:
 No other platform offers this level of contextual analysis.
 """
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import List, Optional, Dict, Any, Tuple
 from uuid import UUID
 import math
-from sqlalchemy import func, and_
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from models import Activity, ActivitySplit, Athlete
+from models import Activity, ActivitySplit
 
 
 # =============================================================================
@@ -1089,7 +1089,7 @@ class ContextualComparisonService:
                 impact = "negative" if diff > 100 else ("positive" if diff < -100 else "neutral")
                 
                 if diff > 0:
-                    explanation = f"More climbing requires more effort. Expect ~10-15 sec/km slower per 100m extra elevation."
+                    explanation = "More climbing requires more effort. Expect ~10-15 sec/km slower per 100m extra elevation."
                 else:
                     explanation = f"Less climbing typically means faster times. You gained {abs(diff):.0f}m less than usual."
                 

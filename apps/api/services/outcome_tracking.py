@@ -4,8 +4,7 @@ Outcome Tracking Service
 Tracks coaching recommendations and their outcomes.
 Enables learning system to identify what works/doesn't work.
 """
-from typing import Dict, List, Optional
-from datetime import datetime, timedelta
+from typing import Dict
 from sqlalchemy.orm import Session
 import logging
 

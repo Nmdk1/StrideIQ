@@ -9,11 +9,10 @@ Statistically rigorous efficiency trend analysis:
 ADR-008: Efficiency Factor Trending Enhancement
 """
 
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import List, Dict, Optional, Tuple
 from dataclasses import dataclass
 from enum import Enum
-import statistics
 import math
 from scipy.stats import t as t_dist
 
@@ -275,15 +274,15 @@ def _generate_trend_insight(
         elif confidence == TrendConfidence.MODERATE:
             return f"Efficiency trending better over {weeks:.0f} weeks. Pattern suggests fitness gains."
         else:
-            return f"Slight efficiency improvement detected. Continue current approach to confirm."
+            return "Slight efficiency improvement detected. Continue current approach to confirm."
     
     elif direction == TrendDirection.DECLINING:
         if confidence == TrendConfidence.HIGH:
             return f"Efficiency declining over {weeks:.0f} weeks ({abs(change_percent or 0):.1f}% worse). Consider recovery or load adjustment."
         elif confidence == TrendConfidence.MODERATE:
-            return f"Efficiency trending worse. May indicate fatigue accumulation."
+            return "Efficiency trending worse. May indicate fatigue accumulation."
         else:
-            return f"Slight efficiency decline detected. Monitor for continued pattern."
+            return "Slight efficiency decline detected. Monitor for continued pattern."
     
     else:  # STABLE
         if sample_size >= 20:

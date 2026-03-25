@@ -11,7 +11,7 @@ Key principles:
 - Build perception ↔ performance correlation dataset
 """
 from sqlalchemy.orm import Session
-from typing import Optional, Dict, List
+from typing import Dict, List
 from datetime import datetime, timedelta
 from uuid import UUID
 from models import Activity, ActivityFeedback, Athlete

@@ -14,7 +14,7 @@ No LLM/AI dependency - pure calculation.
 ADR-022: Individual Performance Model for Plan Generation
 """
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timedelta, date
 from typing import List, Dict, Optional, Tuple
 from uuid import UUID
@@ -23,7 +23,6 @@ import statistics
 import logging
 
 from sqlalchemy.orm import Session
-from sqlalchemy import func
 
 from models import Activity
 from services.individual_performance_model import (

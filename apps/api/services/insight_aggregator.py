@@ -20,19 +20,16 @@ from datetime import datetime, timedelta, date, timezone
 from typing import List, Optional, Dict, Any, Tuple
 from uuid import UUID
 from enum import Enum
-from decimal import Decimal
 import statistics
 import logging
 
-from sqlalchemy import func, and_, or_, desc
+from sqlalchemy import func, desc
 from sqlalchemy.orm import Session
 
 from core.tier_utils import normalize_tier
 from models import (
     Activity,
     Athlete,
-    DailyCheckin,
-    BodyComposition,
     CalendarInsight,
     TrainingPlan,
     PlannedWorkout,
@@ -419,7 +416,7 @@ class InsightAggregator:
         # (simplified - would need workout type classification)
         # Flag if avg HR > 75% of max on runs that aren't race-flagged
         
-        from services.effort_classification import get_effort_thresholds, classify_effort_bulk
+        from services.effort_classification import get_effort_thresholds
         et = get_effort_thresholds(str(self.athlete.id), self.db)
         p80 = et.get("p80_hr")
         threshold_hr = p80 * 0.95 if p80 else None
@@ -614,7 +611,7 @@ class InsightAggregator:
         # Calculate current week
         if active_plan.plan_start_date:
             days_in = (date.today() - active_plan.plan_start_date).days
-            current_week = (days_in // 7) + 1
+            (days_in // 7) + 1
             
             if active_plan.goal_race_date:
                 days_to_race = (active_plan.goal_race_date - date.today()).days
@@ -1203,7 +1200,7 @@ def get_active_insights(
     )
     
     if not include_dismissed:
-        query = query.filter(CalendarInsight.is_dismissed == False)
+        query = query.filter(not CalendarInsight.is_dismissed)
     
     return (
         query

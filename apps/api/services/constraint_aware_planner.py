@@ -13,7 +13,7 @@ Produces exceptional, personalized plans from N=1 data.
 
 from dataclasses import dataclass, field
 from datetime import date, timedelta
-from typing import List, Dict, Optional, Tuple, Any
+from typing import List, Dict, Optional, Any
 from uuid import UUID
 import logging
 
@@ -28,8 +28,7 @@ from services.fitness_bank import (
 from services.week_theme_generator import (
     WeekThemeGenerator, 
     WeekTheme, 
-    WeekThemePlan,
-    generate_week_themes
+    WeekThemePlan
 )
 from services.workout_prescription import (
     WorkoutPrescriptionGenerator,

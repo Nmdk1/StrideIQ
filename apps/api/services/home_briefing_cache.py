@@ -13,7 +13,6 @@ The Celery task calls write_briefing_cache() after generating a briefing.
 
 import json
 import logging
-import os
 from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Dict, Optional, Tuple

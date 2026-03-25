@@ -88,9 +88,6 @@ def get_pace_decay_attribution(
     """
     try:
         from services.pace_decay import (
-            calculate_decay_metrics,
-            classify_split_pattern,
-            compare_to_historical,
             get_athlete_decay_profile
         )
 

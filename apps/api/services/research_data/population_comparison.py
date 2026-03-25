@@ -14,7 +14,7 @@ Key Questions We Answer:
 - What does a typical progression look like for someone like me?
 """
 
-from typing import Optional, Dict, List, Tuple
+from typing import Optional, Dict, List
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from uuid import UUID
@@ -26,11 +26,6 @@ import logging
 from sqlalchemy.orm import Session
 
 from models import Athlete, Activity
-from .age_grading import (
-    age_grade_performance,
-    classify_performance_level,
-    get_population_percentile_by_age_grade
-)
 
 logger = logging.getLogger(__name__)
 
@@ -353,7 +348,7 @@ class PopulationComparisonService:
         higher_is_better: Optional[bool]
     ) -> str:
         """Generate human-readable interpretation"""
-        cohort_desc = f"runners at your level"
+        cohort_desc = "runners at your level"
         
         if percentile < 25:
             position = f"below most {cohort_desc}"
@@ -413,7 +408,7 @@ class PopulationComparisonService:
             notes = f"Building faster than most {cohort} runners. Good if recovering well."
         elif vol_change_pct < 0:
             assessment = "declining"
-            notes = f"Volume decreasing. Could be intentional (taper, recovery) or concerning."
+            notes = "Volume decreasing. Could be intentional (taper, recovery) or concerning."
         else:
             assessment = "on_track"
             notes = f"Progression rate is typical for {cohort} runners."
@@ -684,5 +679,5 @@ class PopulationComparisonService:
         elif percentile >= 25:
             return f"Plenty of room to improve. You're still ahead of ~{int(percentile)}% of {cohort_desc}."
         else:
-            return f"Early in your journey. Every race is a data point. Keep building."
+            return "Early in your journey. Every race is a data point. Keep building."
 

@@ -14,11 +14,11 @@ Contract:
 
 import logging
 from datetime import date, timedelta, timezone, datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict
 from uuid import UUID
 
 from sqlalchemy.orm import Session
-from sqlalchemy import func, and_
+from sqlalchemy import func
 
 from models import Athlete, GarminDay
 
@@ -88,7 +88,7 @@ def compute_garmin_coverage(db: Session) -> Dict[str, Any]:
     )
 
     stats_by_athlete: Dict[UUID, Dict] = {r.athlete_id: r for r in rows}
-    athlete_by_id: Dict[UUID, Athlete] = {a.id: a for a in connected_athletes}
+    {a.id: a for a in connected_athletes}
 
     results = []
     below_threshold = 0

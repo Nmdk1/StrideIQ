@@ -22,7 +22,6 @@ from datetime import datetime, timezone
 from dataclasses import dataclass
 
 from sqlalchemy.orm import Session
-from sqlalchemy import func
 
 logger = logging.getLogger(__name__)
 
@@ -96,7 +95,7 @@ def process_activity_feedback(
     Returns:
         FeedbackCaptureResult with processing details
     """
-    from models import Activity, AthleteWorkoutResponse, AthleteLearning
+    from models import Activity, AthleteWorkoutResponse
     
     # Get the activity
     activity = db.query(Activity).filter(Activity.id == activity_id).first()
@@ -249,7 +248,7 @@ def _check_for_learnings(
     existing = db.query(AthleteLearning).filter(
         AthleteLearning.athlete_id == athlete_id,
         AthleteLearning.subject == f"stimulus:{stimulus_type}",
-        AthleteLearning.is_active == True
+        AthleteLearning.is_active
     ).first()
     
     if existing:
@@ -360,8 +359,6 @@ def capture_race_outcome(
         performance_vs_prediction: Seconds difference (negative = faster)
         db: Database session
     """
-    from models import AthleteLearning, TrainingPlan, PlannedWorkout
-    import uuid
     
     # Find the training plan that led to this race
     # This is complex - for now, log the outcome for future analysis
@@ -435,7 +432,7 @@ def get_athlete_learnings_summary(
     
     learnings = db.query(AthleteLearning).filter(
         AthleteLearning.athlete_id == athlete_id,
-        AthleteLearning.is_active == True
+        AthleteLearning.is_active
     ).all()
     
     result = {

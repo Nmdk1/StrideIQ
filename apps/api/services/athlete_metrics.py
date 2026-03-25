@@ -9,7 +9,7 @@ Implements the Performance Physics Engine's derived signals per Manifesto Sectio
 These metrics are calculated periodically and stored on the Athlete model.
 """
 from datetime import datetime, timedelta, timezone
-from typing import List, Dict, Optional
+from typing import Dict, Optional
 from sqlalchemy.orm import Session
 from models import Athlete, Activity
 
@@ -206,7 +206,7 @@ def estimate_rpi(
     # Prefer race-verified PBs, but use any PB if no races
     best_pb = db.query(PersonalBest).filter(
         PersonalBest.athlete_id == athlete.id,
-        PersonalBest.is_race == True
+        PersonalBest.is_race
     ).order_by(PersonalBest.achieved_at.desc()).first()
     
     if not best_pb:

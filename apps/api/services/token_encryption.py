@@ -14,7 +14,6 @@ from cryptography.fernet import Fernet
 from typing import Optional
 import os
 import logging
-from core.config import settings
 
 logger = logging.getLogger(__name__)
 

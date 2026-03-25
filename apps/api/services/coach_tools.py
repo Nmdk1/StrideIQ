@@ -46,7 +46,6 @@ from services.recovery_metrics import (
 )
 from services.insight_aggregator import get_active_insights as fetch_insights, generate_insights_for_athlete
 from services.correlation_engine import (
-    aggregate_pre_pb_state,
     aggregate_efficiency_by_effort_zone,
     aggregate_efficiency_trend,
 )
@@ -930,7 +929,6 @@ def get_training_paces(db: Session, athlete_id: UUID) -> Dict[str, Any]:
             "generated_at": _iso(now),
             "narrative": narrative,
             "data": {
-                "rpi": rpi,  # Running Performance Index
                 "rpi": rpi,  # Keep for backward compatibility
                 "preferred_units": units,
                 "paces": {
@@ -1967,7 +1965,7 @@ def get_best_runs(
             if distance_m <= 0 or duration_s <= 0:
                 continue
 
-            pace_s_per_km = duration_s / (distance_m / 1000.0)
+            duration_s / (distance_m / 1000.0)
             pace_mi = _pace_str_mi(int(a.duration_s) if a.duration_s else None, int(a.distance_m) if a.distance_m else None)
             pace_km = _pace_str(int(a.duration_s) if a.duration_s else None, int(a.distance_m) if a.distance_m else None)
             speed_mps = (distance_m / duration_s) if duration_s > 0 else None
@@ -2600,7 +2598,6 @@ def get_athlete_profile(db: Session, athlete_id: UUID) -> Dict[str, Any]:
                     "threshold_hr": athlete.threshold_hr,
                     "threshold_pace": threshold_pace_display,
                     "threshold_pace_sec_per_km": float(athlete.threshold_pace_per_km) if athlete.threshold_pace_per_km else None,
-                    "rpi": float(athlete.rpi) if athlete.rpi else None,  # Running Performance Index
                     "rpi": float(athlete.rpi) if athlete.rpi else None,  # Keep for backward compatibility
                     "hr_zones": hr_zones,
                 },
@@ -3018,7 +3015,7 @@ def set_coach_intent_snapshot(
 
     NOTE: This is athlete-led state. It should be set from athlete responses.
     """
-    now = datetime.utcnow()
+    datetime.utcnow()
     try:
         from models import CoachIntentSnapshot
 

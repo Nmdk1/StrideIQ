@@ -20,11 +20,9 @@ import logging
 import statistics
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Tuple
 
 from services.plan_framework.constants import (
-    CUTBACK_RULES,
-    LONG_RUN_PEAKS,
     VOLUME_TIER_THRESHOLDS,
     Distance,
     VolumeTier,

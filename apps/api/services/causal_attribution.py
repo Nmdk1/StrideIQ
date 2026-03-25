@@ -28,20 +28,18 @@ OUTPUT:
 - Surfaced in "Why This Trend?" dashboard button
 """
 
-from dataclasses import dataclass, field
-from datetime import datetime, timedelta, date
+from dataclasses import dataclass
+from datetime import timedelta, date
 from typing import List, Dict, Any, Optional, Tuple
 from uuid import UUID
 from enum import Enum
-import statistics
 import math
 from scipy.stats import t as t_dist
-from decimal import Decimal
 
-from sqlalchemy import func, and_, text
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from models import Activity, DailyCheckin, BodyComposition, NutritionEntry
+from models import Activity, DailyCheckin
 
 
 # =============================================================================

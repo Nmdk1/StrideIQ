@@ -6,7 +6,6 @@ They exist here for type safety and documentation.
 """
 
 from enum import Enum
-from typing import Dict, List
 
 
 class PlanTier(str, Enum):

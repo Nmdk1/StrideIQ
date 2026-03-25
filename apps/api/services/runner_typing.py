@@ -9,14 +9,13 @@ Automatically classifies runners based on their race history:
 This allows us to tailor training recommendations.
 """
 
-from typing import Optional, Tuple, Dict, List
+from typing import Optional, Dict
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from uuid import UUID
 import logging
 
 from sqlalchemy.orm import Session
-from sqlalchemy import func
 
 from models import Athlete, Activity
 
@@ -62,7 +61,7 @@ def classify_runner_type(db: Session, athlete_id: UUID) -> Optional[RunnerTypeRe
     races = db.query(Activity).filter(
         Activity.athlete_id == athlete_id,
         Activity.start_time >= cutoff,
-        Activity.is_race_candidate == True,
+        Activity.is_race_candidate,
         Activity.distance_m >= 3000,  # At least 3K
         Activity.duration_s > 0
     ).all()

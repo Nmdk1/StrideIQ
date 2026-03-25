@@ -13,7 +13,7 @@ Design Principles:
 - Sparse: Non-prescriptive tone ("Data hints X. Test it.")
 """
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timedelta, date
 from typing import List, Dict, Optional, Tuple, Any
 from enum import Enum
@@ -23,10 +23,9 @@ import logging
 from scipy.stats import t as t_dist
 
 from sqlalchemy.orm import Session
-from sqlalchemy import func, and_
 
 from models import (
-    Activity, DailyCheckin, NutritionEntry, BodyComposition
+    Activity, DailyCheckin, BodyComposition
 )
 
 logger = logging.getLogger(__name__)
@@ -228,9 +227,9 @@ def generate_attribution_insight(
     elif "stress" in factor.lower():
         return f"{direction.capitalize()} stress levels{lag_text} precede {trend_word} performances."
     elif "tsb" in factor.lower():
-        return f"Training stress balance correlates with performance. Current form matters."
+        return "Training stress balance correlates with performance. Current form matters."
     elif "weight" in factor.lower() or "bmi" in factor.lower():
-        return f"Body composition changes correlate with efficiency changes."
+        return "Body composition changes correlate with efficiency changes."
     elif "protein" in factor.lower() or "carb" in factor.lower() or "calorie" in factor.lower():
         return f"Nutrition patterns{lag_text} correlate with {trend_word} performances."
     else:

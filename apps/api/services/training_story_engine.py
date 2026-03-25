@@ -14,10 +14,9 @@ testable, and decoupled from the investigation engine.
 """
 
 import logging
-from collections import defaultdict
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, asdict
 from datetime import date, timedelta
-from typing import List, Optional, Dict, Tuple
+from typing import List, Optional, Dict
 
 from models import PerformanceEvent
 from services.race_input_analysis import RaceInputFinding

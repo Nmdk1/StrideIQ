@@ -32,7 +32,6 @@ from .workout_narrative import (
 )
 from .constants import (
     VolumeTier,
-    Phase,
     WorkoutCategory,
     WORKOUT_LIMITS,
     LONG_RUN_PEAKS,

@@ -7,14 +7,13 @@ Tracks weekly training consistency and celebrates streaks.
 A week counts as "consistent" if the athlete meets their training targets.
 """
 
-from typing import Optional, Dict, List
+from typing import Optional, Dict
 from dataclasses import dataclass
 from datetime import datetime, timedelta, date
 from uuid import UUID
 import logging
 
 from sqlalchemy.orm import Session
-from sqlalchemy import func
 
 from models import Athlete, Activity
 

@@ -348,7 +348,7 @@ def poll_activities_page(
             # Handle token refresh (401 Unauthorized)
             if r.status_code == 401 and athlete.strava_refresh_token:
                 from services.token_encryption import decrypt_token, encrypt_token
-                print(f"DEBUG: Token expired, refreshing for poll_activities")
+                print("DEBUG: Token expired, refreshing for poll_activities")
                 refresh_token = decrypt_token(athlete.strava_refresh_token)
                 if refresh_token:
                     token = refresh_access_token(refresh_token)

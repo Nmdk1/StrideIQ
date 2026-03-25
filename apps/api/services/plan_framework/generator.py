@@ -30,10 +30,10 @@ from dataclasses import dataclass
 
 from sqlalchemy.orm import Session
 
-from .constants import Distance, VolumeTier, PlanTier
+from .constants import VolumeTier, PlanTier
 from .volume_tiers import VolumeTierClassifier
 from .phase_builder import PhaseBuilder, TrainingPhase
-from .workout_scaler import WorkoutScaler, ScaledWorkout
+from .workout_scaler import WorkoutScaler
 from .workout_variant_dispatch import resolve_workout_variant_id
 from .pace_engine import PaceEngine, TrainingPaces
 from .cache import PlanCacheService
@@ -639,7 +639,6 @@ class PlanGenerator:
             raise ValueError("Database session required for custom plan generation")
         
         from models import Activity, Athlete
-        from sqlalchemy import func
         from datetime import timedelta as td
         from services.athlete_plan_profile import AthletePlanProfileService
         
@@ -773,9 +772,9 @@ class PlanGenerator:
             race_activities = self.db.query(Activity).filter(
                 Activity.athlete_id == athlete_id,
                 or_(
-                    Activity.user_verified_race == True,
+                    Activity.user_verified_race,
                     Activity.workout_type == 'race',
-                    Activity.is_race_candidate == True,
+                    Activity.is_race_candidate,
                 ),
             ).order_by(Activity.start_time).all()
 
@@ -897,7 +896,7 @@ class PlanGenerator:
         workouts = []
 
         raw_plan_start = start_date
-        plan_ref_date = start_date if start_date is not None else date.today()
+        start_date if start_date is not None else date.today()
         d4_reference_date = history_anchor_date(
             raw_plan_start,
             self.db if athlete_id else None,

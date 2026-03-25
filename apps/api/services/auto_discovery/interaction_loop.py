@@ -68,7 +68,6 @@ def run_pairwise_interaction_scan(
         aggregate_activity_level_inputs,
         aggregate_feedback_inputs,
         aggregate_training_pattern_inputs,
-        aggregate_efficiency_outputs,
         MIN_SAMPLE_SIZE,
     )
 
@@ -556,7 +555,8 @@ def _make_coverage_key(
     output_metric: str,
     window_days: Optional[int],
 ) -> str:
-    import hashlib, json
+    import hashlib
+    import json
     parts = sorted([input_a, input_b or ""]) + [output_metric, str(window_days or "full")]
     return hashlib.sha256(json.dumps(parts, sort_keys=True).encode()).hexdigest()[:32]
 

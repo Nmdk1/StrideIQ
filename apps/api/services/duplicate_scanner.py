@@ -11,7 +11,7 @@ Uses the same matching logic as live ingestion (activity_deduplication.py):
 from __future__ import annotations
 
 import logging
-from typing import Dict, Optional
+from typing import Dict
 from uuid import UUID
 
 from sqlalchemy.orm import Session

@@ -173,7 +173,7 @@ def translate_to_neutral(term: str, methodology: Optional[str] = None) -> Dict[s
     # Default fallback
     return {
         "neutral": term.replace("_", " ").title(),
-        "description": f"Training pace based on your current fitness",
+        "description": "Training pace based on your current fitness",
         "effort": "Moderate effort"
     }
 

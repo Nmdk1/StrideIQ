@@ -11,10 +11,9 @@ ARCHITECTURE:
 - RPI-based workout prescriptions
 """
 
-from typing import Dict, List, Optional, Tuple
-from datetime import datetime, timedelta
+from typing import Dict, Optional
+from datetime import datetime
 import logging
-import math
 
 from services.plan_generation import (
     query_knowledge_base_internal,
@@ -23,7 +22,6 @@ from services.plan_generation import (
 )
 from services.blending_heuristics import determine_methodology_blend, get_blending_rationale
 from services.rpi_calculator import calculate_training_paces, calculate_rpi_from_race_time
-from services.neutral_terminology import format_workout_description
 
 logger = logging.getLogger(__name__)
 
@@ -294,7 +292,7 @@ def synthesize_workout_from_principles(
             
             return {
                 "workout_type": "long_run",
-                "description": f"Long run with marathon pace segments",
+                "description": "Long run with marathon pace segments",
                 "prescription": f"{distance:.1f} miles: {distance-3:.1f} miles easy ({easy_pace}), 3 miles at marathon pace ({mp_pace})",
                 "pace": easy_pace,
                 "distance_miles": distance,
@@ -317,7 +315,7 @@ def synthesize_workout_from_principles(
             
             return {
                 "workout_type": "long_run",
-                "description": f"Long aerobic run for endurance development",
+                "description": "Long aerobic run for endurance development",
                 "prescription": f"{distance:.1f} miles at easy to moderate pace ({pace})",
                 "pace": pace,
                 "distance_miles": distance,
@@ -399,7 +397,6 @@ def generate_principle_based_plan(
     
     # Step 5: Generate week-by-week structure
     weeks = []
-    current_phase = "base"
     week_num = 1
     alternation_week_counter = 0  # Track alternation cycle (0=threshold, 1=interval, 2=MP long)
     
@@ -451,7 +448,7 @@ def generate_principle_based_plan(
                         workout = {
                             "workout_type": "easy_run",
                             "description": "Easy aerobic run",
-                            "prescription": f"4-6 miles at easy pace",
+                            "prescription": "4-6 miles at easy pace",
                             "pace": paces.get("e_pace", "7:30/mi"),
                             "distance_miles": 5,
                             "effort": "Easy - conversational pace"
@@ -460,7 +457,7 @@ def generate_principle_based_plan(
                         workout = {
                             "workout_type": "threshold",
                             "description": "Threshold workout",
-                            "prescription": f"20 minutes at threshold pace",
+                            "prescription": "20 minutes at threshold pace",
                             "pace": paces.get("t_pace", "6:00/mi"),
                             "effort": "Comfortably hard"
                         }
@@ -468,7 +465,7 @@ def generate_principle_based_plan(
                         workout = {
                             "workout_type": "long_run",
                             "description": "Long aerobic run",
-                            "prescription": f"10-12 miles at easy pace",
+                            "prescription": "10-12 miles at easy pace",
                             "pace": paces.get("e_pace", "7:30/mi"),
                             "distance_miles": 11,
                             "effort": "Easy to moderate"

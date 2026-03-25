@@ -9,9 +9,7 @@ V2 Enhancement (ADR-008): Adds statistical significance testing for trends.
 
 from datetime import datetime, timedelta
 from typing import List, Dict, Optional, Tuple
-from decimal import Decimal
 from sqlalchemy.orm import Session
-from sqlalchemy import and_, func
 from collections import defaultdict
 from models import Activity, Athlete, ActivitySplit
 from services.efficiency_calculation import calculate_activity_efficiency_with_decoupling
@@ -488,7 +486,7 @@ def get_efficiency_trends(
         }
     
     # Get athlete for max HR if available
-    athlete = db.query(Athlete).filter(Athlete.id == athlete_id).first()
+    db.query(Athlete).filter(Athlete.id == athlete_id).first()
     max_hr = None  # Could extract from athlete profile if stored
     
     # Bulk load splits for all activities (eliminates N+1)

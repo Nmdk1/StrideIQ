@@ -14,7 +14,7 @@ Age-grading allows us to:
 - Build "people like you" baselines that are meaningful
 """
 
-from typing import Optional, Tuple, Dict
+from typing import Optional, Tuple
 from dataclasses import dataclass
 import math
 

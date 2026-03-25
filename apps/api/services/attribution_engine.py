@@ -15,21 +15,18 @@ Architecture:
 Key Principle: "Data suggests X correlates with Y" not "X caused Y"
 """
 
-from dataclasses import dataclass, field
-from datetime import datetime, timedelta, date
+from dataclasses import dataclass
+from datetime import timedelta, date
 from typing import List, Optional, Dict, Any, Tuple
 from uuid import UUID
 from enum import Enum
-from decimal import Decimal
 import statistics
-import math
 
-from sqlalchemy import func, and_, or_
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from models import (
     Activity, 
-    Athlete,
     DailyCheckin, 
     BodyComposition, 
     NutritionEntry,

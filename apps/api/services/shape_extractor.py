@@ -18,7 +18,6 @@ Design:
 from __future__ import annotations
 
 import logging
-import math
 import statistics
 from dataclasses import dataclass, field, asdict
 from typing import Dict, List, Optional, Tuple
@@ -1380,7 +1379,6 @@ def _derive_classification(
     if unzoned:
         return None
 
-    n_phases = summary.total_phases
     n_accels = summary.acceleration_count
 
     effort_phases = [p for p in phases if p.phase_type not in

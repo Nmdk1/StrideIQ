@@ -9,7 +9,7 @@ Architecture:
 - BestEffort table: Stores ALL efforts for history/trends
 - PersonalBest: Regenerated from BestEffort (MIN per distance)
 """
-from typing import Dict, List, Optional
+from typing import Dict, Optional
 from datetime import datetime, timezone
 from models import Athlete, Activity, BestEffort
 from services.strava_service import get_activity_details
@@ -46,7 +46,6 @@ def sync_strava_best_efforts(
     
     # Get activities from our database that haven't had best efforts extracted
     # We check if they have any BestEffort records already
-    from sqlalchemy import func, and_
     
     # Subquery: activity IDs that already have best efforts
     activities_with_efforts = db.query(BestEffort.activity_id).filter(

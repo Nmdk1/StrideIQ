@@ -19,7 +19,7 @@ Usage:
 
 import json
 import hashlib
-from typing import Optional, List
+from typing import Optional
 from dataclasses import dataclass
 from uuid import UUID
 from datetime import datetime

@@ -190,7 +190,6 @@ def ensure_fresh_garmin_token(athlete: Any, db: Session) -> Optional[str]:
     Returns:
         Plaintext access token, or None if unavailable/expired and unrefreshable.
     """
-    from models import Athlete  # local import to avoid circulars
 
     if not athlete.garmin_connected or not athlete.garmin_oauth_access_token:
         return None

@@ -8,16 +8,11 @@ Each test checks a specific aspect of training plan quality.
 """
 
 import pytest
-from datetime import date, timedelta
 
 from services.plan_framework import (
     PlanGenerator,
-    VolumeTierClassifier,
     PhaseBuilder,
     WorkoutScaler,
-    PlanTier,
-    VolumeTier,
-    Distance,
 )
 
 

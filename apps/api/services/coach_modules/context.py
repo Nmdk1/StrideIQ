@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import json
 from typing import Any, Dict, List, Optional
-from uuid import UUID
 
 from .routing import MessageRouter, COMPARISON_KEYWORDS, RETURN_CONTEXT_PHRASES
 
@@ -54,7 +53,7 @@ class ContextBuilder:
             Instruction string for the run.
         """
         instructions: List[str] = []
-        ml = (message or "").lower()
+        (message or "").lower()
         
         # 1. Include current training state if available
         if training_load and not training_load.get("error"):

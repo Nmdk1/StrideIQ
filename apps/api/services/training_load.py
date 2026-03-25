@@ -21,16 +21,15 @@ ADR-010: Training Stress Balance Enhancement
 """
 
 from datetime import datetime, timedelta, date
-from typing import List, Dict, Optional, Tuple
+from typing import List, Dict, Optional
 from uuid import UUID
 from dataclasses import dataclass
 from enum import Enum
 from sqlalchemy.orm import Session
-from sqlalchemy import func, and_
 import math
 import logging
 
-from models import Activity, Athlete, DailyCheckin
+from models import Activity, Athlete
 
 logger = logging.getLogger(__name__)
 
@@ -507,9 +506,6 @@ class TrainingLoadCalculator:
 
         Excludes duplicate activities (is_duplicate == True).
         """
-        from core.cache import get_cache, set_cache
-        from dataclasses import asdict
-        import json
 
         athlete = self.db.query(Athlete).filter(Athlete.id == athlete_id).first()
         if not athlete:

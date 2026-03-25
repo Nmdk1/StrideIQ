@@ -5,7 +5,6 @@ Tracks fastest times for athletes across standard distances with GPS tolerance h
 Implements distance category matching with tolerances for imperfect race measurements.
 """
 import logging
-from datetime import datetime
 from typing import Optional, Dict, List
 from sqlalchemy.orm import Session
 from models import Activity, PersonalBest, Athlete
@@ -130,11 +129,9 @@ def update_personal_best(
         PersonalBest.distance_category == category
     ).first()
     
-    is_new_pb = False
     if existing_pb:
         # New PB if time is faster (lower seconds)
         if time_seconds < existing_pb.time_seconds:
-            is_new_pb = True
             # Update existing PB
             existing_pb.distance_meters = int(distance_meters)
             existing_pb.time_seconds = time_seconds
@@ -156,7 +153,6 @@ def update_personal_best(
             return existing_pb
     else:
         # No existing PB, this is automatically a PB
-        is_new_pb = True
         pb = PersonalBest(
             athlete_id=athlete.id,
             distance_category=category,

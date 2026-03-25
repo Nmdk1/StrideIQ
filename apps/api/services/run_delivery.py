@@ -11,7 +11,7 @@ Key principles:
 - Supportive but no coddling - data speaks
 """
 from sqlalchemy.orm import Session
-from typing import Dict, List, Optional
+from typing import Dict
 from datetime import datetime
 from models import Activity, ActivityFeedback, Athlete
 from services.activity_analysis import ActivityAnalysis

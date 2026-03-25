@@ -15,15 +15,14 @@ Usage:
 import logging
 from dataclasses import asdict
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from models import CachedStreamAnalysis, ActivityStream, PlannedWorkout
+from models import CachedStreamAnalysis, ActivityStream
 from services.run_stream_analysis import (
     AthleteContext,
-    StreamAnalysisResult,
     analyze_stream,
 )
 

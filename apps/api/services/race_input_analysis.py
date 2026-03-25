@@ -20,13 +20,13 @@ Architecture:
 import logging
 import math
 from collections import Counter, OrderedDict, defaultdict
-from dataclasses import dataclass, field, asdict
-from datetime import date, timedelta, datetime
+from dataclasses import dataclass, field
+from datetime import date, timedelta
 from typing import List, Optional, Dict, Tuple, Callable
 from uuid import UUID
 
 from sqlalchemy.orm import Session
-from sqlalchemy import and_, func as sa_func
+from sqlalchemy import func as sa_func
 
 from models import Activity, ActivitySplit, ActivityStream, Athlete, DailyCheckin, PerformanceEvent
 from services.rpi_calculator import calculate_training_paces
@@ -878,7 +878,6 @@ def _compute_monthly_averages(
     points: List[PaceAtHRPoint],
 ) -> List[Tuple[str, float]]:
     """Group pace-at-HR points by month, return (label, avg_pace)."""
-    from collections import OrderedDict
     months: Dict[str, List[float]] = OrderedDict()
 
     for p in points:
@@ -1814,8 +1813,8 @@ def investigate_pace_at_hr_adaptation(
 
         first_pace = sum(e['pace_sec_mi'] for e in first_data) / len(first_data)
         last_pace = sum(e['pace_sec_mi'] for e in last_data) / len(last_data)
-        first_hr = sum(e['hr'] for e in first_data) / len(first_data)
-        last_hr = sum(e['hr'] for e in last_data) / len(last_data)
+        sum(e['hr'] for e in first_data) / len(first_data)
+        sum(e['hr'] for e in last_data) / len(last_data)
 
         pace_change = last_pace - first_pace
         if abs(pace_change) < 10:
@@ -2111,7 +2110,7 @@ def investigate_post_injury_resilience(
     post_pace = sum(post_paces) / len(post_paces)
 
     hr_diff = post_hr - pre_hr
-    pace_diff = post_pace - pre_pace
+    post_pace - pre_pace
 
     # Only report if fitness is close to or better than pre-injury
     if hr_diff > 5:
@@ -2562,9 +2561,8 @@ def investigate_long_run_durability(
     if abs(improvement) < 0.5:
         return None
 
-    direction = "less" if late_cad_decay > early_cad_decay else "less"
     if late_cad_decay > early_cad_decay:
-        direction = "more"
+        pass
 
     sentence = (
         f"Long run cadence decay (first quarter vs last quarter) "

@@ -21,7 +21,6 @@ from uuid import UUID
 import logging
 
 from sqlalchemy.orm import Session
-from sqlalchemy import and_
 
 from models import Activity, DailyCheckin, PersonalBest
 
@@ -177,7 +176,6 @@ def get_pace_decay_badge(
     Check for pace decay patterns in long runs or races.
     """
     try:
-        from services.pace_decay import get_athlete_decay_profile
         from models import ActivitySplit
         
         # Get activities for this day
@@ -235,7 +233,7 @@ def get_pace_decay_badge(
                     color="green",
                     icon="check",
                     confidence=SignalConfidence.HIGH.value,
-                    tooltip=f"Negative split — strong finish",
+                    tooltip="Negative split — strong finish",
                     priority=3
                 )
             elif decay_pct <= 3:
@@ -245,7 +243,7 @@ def get_pace_decay_badge(
                     color="green",
                     icon="check",
                     confidence=SignalConfidence.MODERATE.value,
-                    tooltip=f"Even pacing — controlled execution",
+                    tooltip="Even pacing — controlled execution",
                     priority=4
                 )
         

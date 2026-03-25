@@ -13,7 +13,7 @@ CRITICAL: This calculator uses PHYSICS-BASED FORMULAS, NOT lookup tables.
 This implementation uses mathematical formulas and methodology from Dr. Daniels' work.
 Not affiliated with RPI O2 or The Run SMART Project.
 """
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional
 import math
 
 # IMPORTANT: Do NOT use lookup tables - they are copyrighted (Daniels' tables)
@@ -176,7 +176,7 @@ def calculate_training_paces(rpi: float) -> Dict:
                     "interval_pace": paces.get("i_pace_seconds"),
                     "repetition_pace": paces.get("r_pace_seconds"),
                 }
-        except Exception as e:
+        except Exception:
             # Fall back to approximation if lookup fails
             pass
     
@@ -311,7 +311,7 @@ def calculate_training_paces(rpi: float) -> Dict:
     
     # Convert to minutes for formatting
     # Easy pace uses the FAST end as the boundary - "X:XX or slower"
-    easy_pace_mi = easy_pace_low_sec / 60
+    easy_pace_low_sec / 60
     marathon_pace_mi = marathon_pace_sec / 60
     threshold_pace_mi = threshold_pace_sec / 60
     interval_pace_mi = interval_pace_sec / 60

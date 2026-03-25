@@ -159,14 +159,13 @@ class BanisterModel:
         - Adjust: Constrain by τ1 (don't let fitness decay >10%)
         - For 10% fitness loss: t = -τ1 × ln(0.9) ≈ 0.105 × τ1
         """
-        import math
         
         # Fatigue-based minimum: ~2 × τ2 for 80% clearance
-        fatigue_based = 2.0 * self.tau2
+        2.0 * self.tau2
         
         # Fitness-based maximum: Don't lose more than 10% fitness
         # e^(-t/τ1) = 0.9 → t = -τ1 × ln(0.9) ≈ 0.105 × τ1
-        fitness_based_max = 0.105 * self.tau1
+        0.105 * self.tau1
         
         # For fast adapters (low τ1), this constrains the taper
         # τ1=25 → max ~2.6 days before 10% loss (too short, so use τ2)
@@ -377,10 +376,10 @@ class IndividualPerformanceModel:
             func.date(Activity.start_time) >= start_date,
             func.date(Activity.start_time) <= end_date,
             or_(
-                Activity.user_verified_race == True,
+                Activity.user_verified_race,
                 Activity.workout_type == 'race',
                 and_(
-                    Activity.is_race_candidate == True,
+                    Activity.is_race_candidate,
                     Activity.race_confidence >= 0.7
                 )
             )

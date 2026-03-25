@@ -26,10 +26,9 @@ This service looks at:
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import Optional, List, Tuple
+from typing import Optional, Tuple
 from uuid import UUID
 from sqlalchemy.orm import Session
-from datetime import datetime, timedelta
 import math
 
 from models import Activity, Athlete

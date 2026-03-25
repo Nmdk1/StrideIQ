@@ -12,18 +12,13 @@ ARCHITECTURE: Methodology Opacity
 - Blending: Tracks methodology blends internally but never exposes to clients
 """
 from typing import Dict, List, Optional
-from datetime import datetime, timedelta
+from datetime import datetime
 import logging
 import json
 
 from services.neutral_terminology import (
     translate_to_neutral,
-    strip_methodology_references,
-    format_workout_description
-)
-from services.blending_heuristics import (
-    determine_methodology_blend,
-    get_blending_rationale
+    strip_methodology_references
 )
 from services.plan_generation import generate_hybrid_plan
 
@@ -55,7 +50,6 @@ def query_knowledge_base(
     from core.database import get_db_sync
     from models import CoachingKnowledgeEntry
     from sqlalchemy import or_
-    import json
     
     # Get database session
     if db_session is None:

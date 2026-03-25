@@ -16,13 +16,12 @@ External research informs our QUESTIONS, not our ANSWERS:
 - But we don't assume direction → we let the data speak
 """
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from typing import List, Dict, Any, Optional, Tuple
+from typing import List, Dict, Any, Optional
 from uuid import UUID
 from enum import Enum
 from sqlalchemy.orm import Session
-from sqlalchemy import func, and_
 import statistics
 
 from models import Activity, DailyCheckin, BodyComposition
@@ -573,7 +572,7 @@ class PatternRecognitionEngine:
         
         high_count = sum(1 for v in comparison_values if v >= threshold_high)
         low_count = sum(1 for v in comparison_values if v <= threshold_low)
-        middle_count = len(comparison_values) - high_count - low_count
+        len(comparison_values) - high_count - low_count
         
         # Find the dominant pattern
         total = len(comparison_values)
@@ -726,7 +725,7 @@ class PatternRecognitionEngine:
     ) -> FatigueContext:
         """Build fatigue context comparing current ACWR to comparison runs."""
         comparison_acwrs = [c.acwr for c in comparisons]
-        avg_comparison_acwr = statistics.mean(comparison_acwrs) if comparison_acwrs else 1.0
+        statistics.mean(comparison_acwrs) if comparison_acwrs else 1.0
         
         # Interpret current phase
         phase = current.acwr_interpretation

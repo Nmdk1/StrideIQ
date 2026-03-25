@@ -17,7 +17,7 @@ per location covers all activities on that date).
 import logging
 import time
 from collections import Counter, defaultdict
-from datetime import date, timedelta
+from datetime import date
 from typing import Dict, List, Optional, Tuple
 from uuid import UUID
 
@@ -88,7 +88,7 @@ def fetch_weather_for_date(
 def extract_weather_at_hour(data: Dict, hour: int) -> Optional[Dict]:
     """Extract weather values for a specific hour from the API response."""
     hourly = data.get('hourly', {})
-    times = hourly.get('time', [])
+    hourly.get('time', [])
     temps = hourly.get('temperature_2m', [])
     humidity = hourly.get('relative_humidity_2m', [])
     dew_points = hourly.get('dew_point_2m', [])

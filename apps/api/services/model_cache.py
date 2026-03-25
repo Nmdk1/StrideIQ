@@ -27,9 +27,7 @@ from sqlalchemy import text
 from services.individual_performance_model import (
     IndividualPerformanceModel,
     BanisterModel,
-    ModelConfidence,
-    DEFAULT_TAU1,
-    DEFAULT_TAU2
+    ModelConfidence
 )
 
 logger = logging.getLogger(__name__)

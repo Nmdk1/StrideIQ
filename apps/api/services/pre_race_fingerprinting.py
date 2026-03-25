@@ -15,14 +15,13 @@ not population averages.
 
 from datetime import datetime, timedelta, date
 from typing import List, Dict, Optional, Tuple
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
 import statistics
 import math
 from scipy.stats import norm
-from decimal import Decimal
 from sqlalchemy.orm import Session
-from sqlalchemy import and_, func
+from sqlalchemy import func
 
 
 class RaceCategory(str, Enum):
@@ -457,7 +456,7 @@ def generate_readiness_profile(
     if len(races) < min_races:
         race_candidates = db.query(Activity).filter(
             Activity.athlete_id == athlete_id,
-            Activity.is_race_candidate == True,
+            Activity.is_race_candidate,
             Activity.id.notin_([r.id for r in races])
         ).all()
         races.extend(race_candidates)

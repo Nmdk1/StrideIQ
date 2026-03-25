@@ -14,7 +14,7 @@ they won't lose it if they want to try new features.
 import csv
 import json
 import io
-from typing import Optional, Dict, Any, List
+from typing import Optional
 from uuid import UUID
 from datetime import date, datetime
 from dataclasses import dataclass

@@ -26,7 +26,6 @@ from typing import List, Dict, Optional
 from uuid import UUID, uuid4
 from pathlib import Path
 import json
-import os
 
 from sqlalchemy.orm import Session
 from sqlalchemy import func
@@ -293,9 +292,9 @@ class ArchetypePlanGenerator:
         for week_def in weeks:
             week_num = week_def["week"]
             phase = week_def["phase"]
-            focus = week_def.get("focus", "")
+            week_def.get("focus", "")
             week_workouts = week_def.get("workouts", {})
-            total_miles = week_def.get("total_miles", 0)
+            week_def.get("total_miles", 0)
             
             # Calculate week start date
             week_start = start_date + timedelta(weeks=week_num - 1)

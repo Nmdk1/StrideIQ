@@ -14,7 +14,7 @@ Usage:
     easy_pace = paces.easy_pace_per_mile_seconds
 """
 
-from typing import Optional, Dict, Any
+from typing import Optional
 from dataclasses import dataclass
 
 

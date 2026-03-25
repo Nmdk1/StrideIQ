@@ -16,8 +16,7 @@ Design reference: docs/specs/EFFORT_CLASSIFICATION_SPEC.md
 
 import json
 import logging
-from datetime import datetime, timedelta
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional
 from uuid import UUID
 
 from sqlalchemy.orm import Session

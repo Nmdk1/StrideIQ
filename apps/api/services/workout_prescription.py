@@ -11,12 +11,11 @@ Tone: Sparse, precise, no motivational BS.
 
 from dataclasses import dataclass, field
 from datetime import date, timedelta
-from enum import Enum
 from typing import List, Dict, Optional, Tuple
 import logging
 import random
 
-from services.fitness_bank import ConstraintType, FitnessBank, ExperienceLevel
+from services.fitness_bank import FitnessBank, ExperienceLevel
 from services.plan_quality_gate import compute_athlete_long_run_floor
 from services.race_signal_contract import normalize_distance_alias
 from services.rpi_calculator import calculate_training_paces
@@ -667,7 +666,7 @@ class WorkoutPrescriptionGenerator:
         day_assignments = self._assign_days_by_theme(theme, target_miles, week_number, total_weeks)
         
         for day_idx in range(7):
-            current_date = start_date + timedelta(days=day_idx)
+            start_date + timedelta(days=day_idx)
             assignment = day_assignments.get(day_idx)
             
             if assignment is None:

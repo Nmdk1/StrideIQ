@@ -7,9 +7,6 @@ Uses AI to parse and structure knowledge into queryable format.
 from typing import List, Dict, Optional
 import logging
 from datetime import datetime
-import requests
-from bs4 import BeautifulSoup
-import time
 
 logger = logging.getLogger(__name__)
 

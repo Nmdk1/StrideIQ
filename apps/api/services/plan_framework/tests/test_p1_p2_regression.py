@@ -7,7 +7,6 @@ specific coaching invariants called out in code review.
 
 from __future__ import annotations
 
-from datetime import date
 
 import pytest
 

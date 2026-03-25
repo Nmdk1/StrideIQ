@@ -27,7 +27,7 @@ Sources:
 
 from dataclasses import dataclass, field
 from datetime import date, timedelta
-from typing import Optional, List, Dict, Any
+from typing import Optional, List
 from uuid import UUID
 
 from sqlalchemy.orm import Session

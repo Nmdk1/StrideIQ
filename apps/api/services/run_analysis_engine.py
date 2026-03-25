@@ -18,16 +18,15 @@ Design Principles:
 """
 
 from datetime import datetime, timedelta, date, timezone
-from typing import List, Dict, Optional, Tuple, Any
+from typing import List, Dict, Optional, Tuple
 from uuid import UUID
 from enum import Enum
 from dataclasses import dataclass, field
 from sqlalchemy.orm import Session
-from sqlalchemy import func, and_, or_
 import statistics
 import logging
 
-from models import Activity, Athlete, DailyCheckin, GarminDay, NutritionEntry, ActivitySplit
+from models import Activity, Athlete, DailyCheckin, GarminDay, ActivitySplit
 
 from services.efficiency_calculation import calculate_activity_efficiency_with_decoupling
 from services.efficiency_trending import analyze_efficiency_trend, TrendDirection as EfTrendDirection, TrendConfidence as EfTrendConfidence
@@ -315,14 +314,13 @@ class RunAnalysisEngine:
             return WorkoutType.UNKNOWN, 0.0
         
         # Get athlete's baseline paces and thresholds
-        athlete = self.db.query(Athlete).filter(Athlete.id == activity.athlete_id).first()
+        self.db.query(Athlete).filter(Athlete.id == activity.athlete_id).first()
         thresholds = self._get_athlete_run_thresholds(activity.athlete_id)
         
-        pace_per_km = activity.duration_s / (activity.distance_m / 1000) if activity.distance_m > 0 else None
+        activity.duration_s / (activity.distance_m / 1000) if activity.distance_m > 0 else None
         duration_minutes = activity.duration_s / 60
-        distance_km = activity.distance_m / 1000
+        activity.distance_m / 1000
         avg_hr = activity.avg_hr
-        max_hr = activity.max_hr
         
         # Race detection (explicit flag or keyword in name)
         if activity.workout_type and 'race' in activity.workout_type.lower():
@@ -966,13 +964,13 @@ class RunAnalysisEngine:
                 
                 # Generate explanation
                 if cause_name == "sleep" and correlation < 0:
-                    explanation = f"Decreased sleep correlates with declining efficiency"
+                    explanation = "Decreased sleep correlates with declining efficiency"
                 elif cause_name == "stress" and correlation > 0:
-                    explanation = f"Increased stress correlates with declining efficiency"
+                    explanation = "Increased stress correlates with declining efficiency"
                 elif cause_name == "soreness" and correlation > 0:
-                    explanation = f"Increased soreness correlates with declining efficiency"
+                    explanation = "Increased soreness correlates with declining efficiency"
                 elif cause_name == "volume" and correlation > 0:
-                    explanation = f"Volume increase may be exceeding adaptation capacity"
+                    explanation = "Volume increase may be exceeding adaptation capacity"
                 else:
                     explanation = f"{cause_name.title()} shows correlation with efficiency changes"
                 

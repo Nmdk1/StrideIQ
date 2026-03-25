@@ -188,10 +188,6 @@ FRIENDLY_NAMES: Dict[str, str] = {
     "overnight_avg_hr": "overnight heart rate",
     "hrv_sdnn": "heart-rate variability (SDNN)",
     "daily_session_stress": "training session stress",
-
-    # Output metrics — used in athlete-facing text as the outcome
-    "efficiency": "running efficiency",
-    "pace_easy": "easy pace",
     "pace_threshold": "threshold pace",
     "completion": "workout completion",
     "efficiency_threshold": "threshold running efficiency",

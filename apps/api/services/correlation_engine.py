@@ -16,11 +16,10 @@ Based on manifesto Section 3: Correlation Engines
 
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Tuple
-from decimal import Decimal
 import logging
 from uuid import UUID
 from sqlalchemy.orm import Session
-from sqlalchemy import func, and_, or_
+from sqlalchemy import func
 from statistics import mean, stdev
 import math
 from scipy.stats import t as t_dist
@@ -28,7 +27,7 @@ from scipy.stats import t as t_dist
 from models import (
     Activity, ActivitySplit, NutritionEntry, DailyCheckin, 
     WorkPattern, BodyComposition, ActivityFeedback,
-    PlannedWorkout, TrainingPlan, Athlete, PersonalBest,
+    PlannedWorkout, TrainingPlan, PersonalBest,
     GarminDay, ActivityReflection,
 )
 from datetime import date as date_type
@@ -1304,7 +1303,7 @@ def aggregate_workout_completion(
             PlannedWorkout.plan_id == plan.id,
             PlannedWorkout.scheduled_date >= window_start,
             PlannedWorkout.scheduled_date <= current_date,
-            PlannedWorkout.completed == True
+            PlannedWorkout.completed
         ).count()
         
         if scheduled > 0:

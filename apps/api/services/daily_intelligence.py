@@ -501,7 +501,7 @@ class DailyIntelligenceEngine:
         weekly_efs = []
         for week_idx in range(4):
             week_end = target_date - timedelta(days=week_idx * 7)
-            week_start = week_end - timedelta(days=6)
+            week_end - timedelta(days=6)
             efs = self._get_ef_series(athlete_id, week_end, db, days=7)
             if efs:
                 avg_ef = sum(ef for _, ef in efs) / len(efs)

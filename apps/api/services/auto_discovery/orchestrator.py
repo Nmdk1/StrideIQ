@@ -23,7 +23,6 @@ Safety contracts:
 from __future__ import annotations
 
 import logging
-import time
 import uuid as _uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
@@ -43,12 +42,10 @@ from services.auto_discovery.interaction_loop import (
     run_pairwise_interaction_scan,
     INTERACTION_KEEP_THRESHOLD,
     promote_interaction_findings,
-    upsert_scan_coverage,
 )
 from services.auto_discovery.tuning_loop import (
     run_pilot_tuning_loop,
     summarize_tuning_results,
-    TUNING_KEEP_THRESHOLD,
     apply_tuning_improvement,
     count_consecutive_kept_runs,
 )
@@ -578,7 +575,8 @@ def _write_change_log(
 
 
 def _finding_change_key(athlete_id_str: str, finding_dict: Dict[str, Any]) -> str:
-    import hashlib, json
+    import hashlib
+    import json
     parts = {
         "athlete": athlete_id_str,
         "input": finding_dict.get("input_name"),
@@ -591,7 +589,8 @@ def _finding_change_key(athlete_id_str: str, finding_dict: Dict[str, Any]) -> st
 
 
 def _tuning_change_key(athlete_id_str: str, inv_name: str, param_overrides: Dict[str, Any]) -> str:
-    import hashlib, json
+    import hashlib
+    import json
     parts = {
         "athlete": athlete_id_str,
         "investigation": inv_name,
@@ -955,7 +954,8 @@ def _make_candidate_key(candidate_type: str, payload: Dict[str, Any]) -> str:
         return f"{inv}:{param}:{delta_repr}"
 
     # Fallback for unknown types.
-    import hashlib, json
+    import hashlib
+    import json
     return hashlib.md5(json.dumps(payload, sort_keys=True, default=str).encode()).hexdigest()[:16]
 
 

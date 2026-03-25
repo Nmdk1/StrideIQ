@@ -25,9 +25,9 @@ USE CASES:
 4. Machine learning training data (no PII)
 """
 
-from dataclasses import dataclass, field
-from datetime import datetime, date, timedelta
-from typing import List, Dict, Any, Optional, Tuple
+from dataclasses import dataclass
+from datetime import datetime, date
+from typing import List, Dict, Any, Optional
 from uuid import UUID, uuid4
 import hashlib
 import json
@@ -35,16 +35,13 @@ import csv
 import io
 from enum import Enum
 
-from sqlalchemy import func, and_, or_
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from models import (
     Athlete,
     Activity,
     DailyCheckin,
-    BodyComposition,
-    NutritionEntry,
-    ActivityFeedback,
 )
 
 

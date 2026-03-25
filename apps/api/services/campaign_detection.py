@@ -7,9 +7,9 @@ classifies disruptions (injury vs taper vs life event).
 """
 
 import logging
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, field
 from datetime import date, timedelta
-from typing import List, Optional, Dict
+from typing import List, Dict
 from uuid import UUID
 
 from sqlalchemy.orm import Session

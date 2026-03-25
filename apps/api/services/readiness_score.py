@@ -25,7 +25,7 @@ Sources:
 
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any
 from uuid import UUID
 
 import logging

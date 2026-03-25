@@ -159,7 +159,7 @@ def extract_moment_windows(
     cadence = stream_data.get("cadence", [])
     grade = stream_data.get("grade_smooth", [])
 
-    n = len(time_arr)
+    len(time_arr)
     windows = []
 
     for m in moments:
@@ -270,7 +270,7 @@ def _build_prompt(
             lines.append(f"  Value: {m_value}")
         if m_context:
             lines.append(f"  Context: {m_context}")
-        lines.append(f"  Window (30s before → at moment):")
+        lines.append("  Window (30s before → at moment):")
         lines.append(f"    Pace: {_format_pace(w.get('pace_before_s_km'))} → {_format_pace(w.get('pace_at_s_km'))}")
         if w.get('hr_before') is not None or w.get('hr_at') is not None:
             lines.append(f"    HR: {w.get('hr_before', 'N/A')} → {w.get('hr_at', 'N/A')} bpm")

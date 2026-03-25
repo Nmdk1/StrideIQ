@@ -16,7 +16,7 @@ Usage:
     )
 """
 
-from typing import List, Dict, Any
+from typing import List
 from dataclasses import dataclass
 
 from .constants import Distance, VolumeTier, Phase, TAPER_WEEKS
@@ -131,7 +131,6 @@ class PhaseBuilder:
         """
         phases = []
         build_weeks = duration_weeks - taper_weeks
-        race_week = duration_weeks
         
         # Phase allocation
         if build_weeks >= 16:

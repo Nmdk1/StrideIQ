@@ -16,14 +16,13 @@ Use database fallback in production when Redis is unavailable.
 """
 
 from datetime import datetime, timedelta
-from typing import Dict, List, Optional, Set
+from typing import Dict, List
 from uuid import UUID
 import logging
 import json
 
 from sqlalchemy.orm import Session
-from sqlalchemy import Column, DateTime, Text, Integer, ForeignKey, text
-from sqlalchemy.dialects.postgresql import UUID as PGUUID
+from sqlalchemy import text
 
 logger = logging.getLogger(__name__)
 
