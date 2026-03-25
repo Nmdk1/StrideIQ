@@ -1565,7 +1565,14 @@ class PlanGenerator:
         is_cutback: bool,
         distance: str
     ) -> str:
-        """Determine long run type based on phase and goal distance."""
+        """Determine long run type based on phase and goal distance.
+
+        NOTE: For marathon plans in marathon_specific / race_specific phases,
+        the caller (_get_workout_for_day) short-circuits before reaching this
+        method and uses the MPProgressionPlanner-derived is_mp_long_week flag
+        directly (T2-3 source-of-truth fix). This method therefore handles
+        half-marathon HMP alternation and all other distances.
+        """
         phase_type = phase.phase_type.value
 
         # --- Marathon: MP long runs in specific phases ---
