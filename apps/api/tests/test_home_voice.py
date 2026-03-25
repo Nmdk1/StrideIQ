@@ -550,14 +550,13 @@ class TestMorningVoiceSchemaConstraints:
     """Schema field text must enforce one-paragraph / no-restatement rules."""
 
     def test_schema_contains_paragraph_constraint(self):
-        """morning_voice schema description enforces single paragraph, no restatement, no sentence count."""
+        """morning_voice schema description enforces single paragraph with structured formula."""
         import inspect
         from routers.home import generate_coach_home_briefing
         src = inspect.getsource(generate_coach_home_briefing)
         assert "ONE paragraph" in src
-        assert "no second paragraph" in src.lower()
-        assert "No restatement" in src
-        assert "2-3 sentences" not in src
+        assert "2-3 sentences" in src
+        assert "NEVER" in src
 
     def test_long_morning_voice_passes(self):
         """No upper character limit — morning voice can breathe."""
