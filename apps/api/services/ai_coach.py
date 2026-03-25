@@ -1449,12 +1449,15 @@ If you need more data to answer well, call the tools. That's why they're there."
         total_input_tokens = 0
         total_output_tokens = 0
         response = None
-        for _ in range(5):
+        kimi_tools = self._kimi_tools()
+        for iteration in range(5):
+            tool_choice = "required" if iteration == 0 else "auto"
             response = await client.chat.completions.create(
                 model=model_name,
                 messages=[{"role": "system", "content": system_prompt}] + messages,
                 max_tokens=COACH_MAX_OUTPUT_TOKENS,
-                tools=self._kimi_tools(),
+                tools=kimi_tools,
+                tool_choice=tool_choice,
             )
             usage = getattr(response, "usage", None)
             total_input_tokens += int(getattr(usage, "prompt_tokens", 0) or 0)
