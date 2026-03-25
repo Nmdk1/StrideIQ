@@ -276,11 +276,15 @@ class ConstraintAwarePlanner:
 
         # Easy-long floor: prefer L30 max seed from load_ctx, fall back to bank's
         # current long run miles (more recent than the average), then average.
-        l30_floor = (
-            (load_ctx.l30_max_easy_long_mi if load_ctx is not None else None)
-            or getattr(bank, "current_long_run_miles", None)
+        # Take the MAX of both sources: test/sparse DB data should not REDUCE the
+        # floor below the athlete's bank-established long run capability.
+        l30_from_ctx = (load_ctx.l30_max_easy_long_mi if load_ctx is not None else None) or 0.0
+        bank_known = (
+            getattr(bank, "current_long_run_miles", None)
             or getattr(bank, "average_long_run_miles", None)
+            or 0.0
         )
+        l30_floor: Optional[float] = max(l30_from_ctx, float(bank_known)) or None
 
         # Marathon MP block — compute per-week long/medium-long types
         mp_sequence: Dict[int, MPWeek] = {}
@@ -405,14 +409,32 @@ class ConstraintAwarePlanner:
                 week_plan = _workouts_to_week_plan(workouts, week_num, phase, week_start_date)
                 weeks.append(week_plan)
         
-        # 5. Insert tune-up race specifics
+        # 5. Inject race day: the last day of the last week is the goal race.
+        if weeks:
+            last_week = weeks[-1]
+            race_day_of_week = race_date.weekday()  # 0=Mon … 6=Sun
+            race_day = DayPlan(
+                day_of_week=race_day_of_week,
+                workout_type="race",
+                name=f"Race Day — {race_distance.replace('_', ' ').title()}",
+                description="Goal race. Warm up well, execute your plan.",
+                target_miles=0.0,
+                intensity="race",
+                paces={},
+                notes=[],
+            )
+            # Replace any existing day on that day-of-week, or append.
+            existing = [d for d in last_week.days if d.day_of_week != race_day_of_week]
+            last_week.days = sorted(existing + [race_day], key=lambda d: d.day_of_week)
+
+        # 7. Insert tune-up race specifics
         if tune_up_races:
             weeks = self._insert_tune_up_details(weeks, tune_up_races, bank)
         
-        # 6. Generate counter-conventional notes
+        # 8. Generate counter-conventional notes
         notes = self._generate_insights(bank, weeks, tune_up_races)
         
-        # 7. Calculate predictions
+        # 9. Calculate predictions
         predicted, ci, scenarios, prediction_rationale_tags, uncertainty_reason = self._predict_race(
             bank,
             race_distance,
