@@ -65,7 +65,7 @@ def test_fitness_bank_excludes_duplicate_runs_from_peak_and_current():
 
     source = inspect.getsource(FitnessBankCalculator.calculate)
     assert "get_canonical_run_activities(" in source
-    assert "require_trusted_duplicate_flags=False" in source
+    assert "require_trusted_duplicate_flags=True" in source
 
 
 def test_volume_tier_actual_volume_excludes_duplicate_runs():

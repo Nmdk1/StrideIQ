@@ -960,12 +960,26 @@ class ConstraintAwarePlanner:
         elif current_ratio < 0.75:
             base_rpi -= 0.4
 
-        if quality_sessions_28d == 0:
-            base_rpi -= 1.5
-        elif quality_sessions_28d <= 2:
-            base_rpi -= 0.9
-        elif quality_sessions_28d <= 4:
-            base_rpi -= 0.4
+        # Quality gap penalty: skip if athlete is in normal post-marathon recovery
+        # (within 35 days of a race >= half marathon distance).  Skipping intervals
+        # for 4 weeks after a marathon is correct training, not a fitness red flag.
+        from datetime import date as _date
+        recent_long_race_days_ago: Optional[int] = None
+        for r in (bank.race_performances or []):
+            if r.distance in ("marathon", "half", "half_marathon") and r.distance_m and r.distance_m >= 21000:
+                days_ago = (_date.today() - r.date).days
+                if recent_long_race_days_ago is None or days_ago < recent_long_race_days_ago:
+                    recent_long_race_days_ago = days_ago
+
+        in_post_long_race_recovery = recent_long_race_days_ago is not None and recent_long_race_days_ago <= 35
+
+        if not in_post_long_race_recovery:
+            if quality_sessions_28d == 0:
+                base_rpi -= 1.5
+            elif quality_sessions_28d <= 2:
+                base_rpi -= 0.9
+            elif quality_sessions_28d <= 4:
+                base_rpi -= 0.4
 
         conservative_rpi = base_rpi - (1.0 if is_injury_return else 0.5)
         aggressive_rpi = max(base_rpi + (0.5 if quality_sessions_28d >= 3 else 0.15), (bank.best_rpi or base_rpi) - 0.2)

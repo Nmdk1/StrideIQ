@@ -396,12 +396,13 @@ class FitnessBankCalculator:
         from services.individual_performance_model import get_or_calibrate_model
         from services.training_load import TrainingLoadCalculator
 
-        # Full-history fitness bank slices include legacy ingestion windows where
-        # duplicate flags may be stale/untrusted. Use canonical fallback mode here.
+        # Use trusted DB duplicate flags.  The retroactive scanner (duplicate_scanner.py)
+        # and the live ingestion path (strava_tasks.py / garmin tasks) both maintain
+        # is_duplicate correctly with an 8-hour cross-provider window.
         activities, dedupe_meta = get_canonical_run_activities(
             athlete_id,
             self.db,
-            require_trusted_duplicate_flags=False,
+            require_trusted_duplicate_flags=True,
         )
         if dedupe_meta.get("dedupe_pairs_collapsed", 0) > 0:
             logger.warning(
@@ -681,29 +682,38 @@ class FitnessBankCalculator:
             return "marathon"
     
     def _find_best_race(self, races: List[RacePerformance]) -> Tuple[float, Optional[RacePerformance]]:
-        """Find best RPI from races, weighted by confidence and recency."""
+        """
+        Return the athlete's peak proven RPI and the race that established it.
+
+        Uses the highest confidence-adjusted RPI from races in the last 24 months.
+        Recency is NOT used to select or downgrade peak RPI — we want to know what
+        the athlete has proven they can do, not what they did most recently.
+
+        Races with confidence < 0.5 (e.g., race-day anomalies flagged by the system)
+        or RPI < 35 (clearly not a race effort) are excluded from consideration.
+        """
         if not races:
             return 45.0, None
-        
-        # Weight by recency and confidence
+
         today = date.today()
-        weighted_races = []
-        
-        for r in races:
-            days_ago = (today - r.date).days
-            recency_weight = max(0.5, 1.0 - (days_ago / 365))  # Decay over year
-            
-            # Adjust RPI by confidence (limping = actual fitness higher)
-            adjusted_rpi = r.rpi * r.confidence
-            
-            weighted_races.append((adjusted_rpi * recency_weight, r))
-        
-        # Sort by weighted RPI
-        weighted_races.sort(key=lambda x: x[0], reverse=True)
-        
-        best_race = weighted_races[0][1]
-        
-        # Return the actual best-race RPI (confidence only influences selection).
+        cutoff = today - timedelta(days=730)  # 24-month window
+
+        valid = [
+            r for r in races
+            if r.rpi >= 35.0
+            and r.confidence >= 0.5
+            and r.date >= cutoff
+        ]
+
+        if not valid:
+            # No valid races in window — fall back to any race above threshold
+            valid = [r for r in races if r.rpi >= 35.0 and r.confidence >= 0.5]
+
+        if not valid:
+            return 45.0, None
+
+        # Best race = highest confidence-adjusted RPI
+        best_race = max(valid, key=lambda r: r.rpi * r.confidence)
         return best_race.rpi, best_race
 
     def _sync_anchor_from_authoritative_race_signals(self, athlete_id: UUID, activities: List) -> None:
