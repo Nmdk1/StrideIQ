@@ -2306,7 +2306,7 @@ def _save_constraint_aware_plan(
                 week_number=week.week_number,
                 day_of_week=day.day_of_week,
                 workout_type=day.workout_type,
-                title=day.name,
+                title=day.name or f"{day.workout_type.replace('_', ' ').title()}",
                 description=day.description,
                 phase=phase,
                 target_duration_minutes=int(day.tss_estimate / 0.8) if day.tss_estimate else None,

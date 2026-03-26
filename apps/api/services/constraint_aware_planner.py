@@ -743,7 +743,7 @@ class ConstraintAwarePlanner:
                         # Replace with tune-up race
                         purpose = tune_up.get("purpose", "sharpening")
                         distance = normalize_distance_alias(tune_up.get("distance", "10_mile"))
-                        name = tune_up.get("name", f"{distance} tune-up")
+                        name = tune_up.get("name") or f"{distance} tune-up"
                         
                         if purpose == "threshold":
                             intensity = "very_hard"
