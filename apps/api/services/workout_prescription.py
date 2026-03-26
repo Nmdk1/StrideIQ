@@ -277,6 +277,10 @@ class WeekPlan:
     days: List[DayPlan]
     total_miles: float
     notes: List[str] = field(default_factory=list)
+    # Explicit structural flag from the planner. Allows the quality gate to
+    # distinguish a deliberately planned cutback from a prescription error
+    # without having to infer intent from the mileage drop percentage.
+    is_cutback: bool = False
     
     def to_dict(self) -> Dict:
         theme_str = self.theme.value if hasattr(self.theme, "value") else str(self.theme)

@@ -79,6 +79,7 @@ def _workouts_to_week_plan(
     week_num: int,
     phase: Any,
     week_start: date,
+    is_cutback: bool = False,
 ) -> WeekPlan:
     """Convert List[GeneratedWorkout] → WeekPlan.
 
@@ -104,6 +105,7 @@ def _workouts_to_week_plan(
         start_date=week_start,
         days=days,
         total_miles=round(total, 1),
+        is_cutback=is_cutback,
     )
 
 
@@ -469,21 +471,17 @@ class ConstraintAwarePlanner:
                         if wo.workout_type in long_types and (wo.distance_miles or 0) > w1_long_cap:
                             wo.distance_miles = round(w1_long_cap, 1)
 
-                # For 10K/5K plans: enforce the long-run dominance ceiling against
-                # the ACTUAL prescription total (not the volume target).  The
-                # quality gate fires at 40%; stay at 37% with a floor of 8mi.
-                # Applied after all other caps so the actual prescribed miles are used.
-                if race_distance in ("10k", "5k"):
-                    actual_total = sum((wo.distance_miles or 0) for wo in workouts)
-                    if actual_total > 0:
-                        safe_long = max(8.0, actual_total * 0.37)
-                        for wo in workouts:
-                            if wo.workout_type in {"long", "long_run", "easy_long"} and (wo.distance_miles or 0) > safe_long:
-                                wo.distance_miles = round(safe_long, 1)
+                    # After applying W1 cap, update easy_long_state to the reduced
+                    # value so subsequent weeks compute their progressions from the
+                    # actual prescription, not the pre-cap baseline.
+                    for wo in workouts:
+                        if wo.workout_type in {"long", "long_run", "long_mp", "long_hmp"} and (wo.distance_miles or 0) > 0:
+                            easy_long_state["previous_mi"] = wo.distance_miles
+                            break
 
                 # Convert List[GeneratedWorkout] → WeekPlan (T3-3: theme = phase name)
                 week_start_date = plan_start + timedelta(weeks=week_idx)
-                week_plan = _workouts_to_week_plan(workouts, week_num, phase, week_start_date)
+                week_plan = _workouts_to_week_plan(workouts, week_num, phase, week_start_date, is_cutback=is_cutback)
                 weeks.append(week_plan)
         
         # 5. Inject race day: the last day of the last week is the goal race.

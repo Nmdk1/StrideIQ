@@ -237,7 +237,9 @@ def _enforce_personal_floor_in_early_weeks(
         # cutback_weeks every N weeks regardless of plan position). Enforcing the
         # personal floor on cutback W2 would incorrectly flag a planned recovery
         # dip as a breach. Skip the floor check for this week only.
-        is_cutback_week = (
+        # Prefer the explicit `is_cutback` flag on WeekPlan when available; fall
+        # back to the inferred percentage drop for legacy/external plans.
+        is_cutback_week = getattr(week, "is_cutback", False) or (
             prev_long_miles is not None
             and prev_long_miles > 0
             and long_miles > 0
