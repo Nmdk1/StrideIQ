@@ -845,16 +845,22 @@ class FitnessBankCalculator:
         all_long_runs = []
         
         for a in activities:
+            # Exclude race activities — a goal race is not a training long run.
+            # Parity with load_context.py:is_activity_excluded_as_race_for_p4.
+            wt = str(getattr(a, "workout_type", None) or "").lower()
+            if wt == "race" or getattr(a, "is_race_candidate", False):
+                continue
+
             miles = (a.distance_m or 0) / 1609.344
             duration_min = (a.duration_s or 0) / 60
-            
+
             # Long run threshold: 10+ miles OR 90+ minutes
             # This catches long runs at any pace
             is_long_run = miles >= 10 or duration_min >= 90
-            
+
             if is_long_run:
                 all_long_runs.append(miles)
-                
+
                 # Recent long runs (last 4 weeks)
                 if a.start_time.date() >= four_weeks_ago:
                     recent_long_runs.append(miles)
@@ -888,6 +894,12 @@ class FitnessBankCalculator:
         run_count_16w = 0
 
         for activity in activities:
+            # Exclude race activities — goal races should not anchor the training floor.
+            # Parity with load_context.py:is_activity_excluded_as_race_for_p4.
+            wt = str(getattr(activity, "workout_type", None) or "").lower()
+            if wt == "race" or getattr(activity, "is_race_candidate", False):
+                continue
+
             activity_date = activity.start_time.date()
             miles = (activity.distance_m or 0) / 1609.344
             duration_min = (activity.duration_s or 0) / 60.0

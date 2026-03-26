@@ -122,10 +122,11 @@ LONG_RUN_PEAKS = {
         VolumeTier.BUILDER: 18,
         VolumeTier.LOW: 20,
         VolumeTier.MID: 22,
-        # High-volume marathoners often benefit from longer durability work;
-        # this is a DEFAULT peak cap (N=1 history can justify higher/other strategies).
-        VolumeTier.HIGH: 24,
-        VolumeTier.ELITE: 26,
+        # 03_WORKOUT_TYPES.md §2b: standard high-mileage cap is 22mi.
+        # Advanced/elite cap is 24mi. Above 24 adds risk without proportional
+        # benefit and violates the founder's explicit ceiling.
+        VolumeTier.HIGH: 22,
+        VolumeTier.ELITE: 24,
     },
     Distance.HALF_MARATHON: {
         VolumeTier.BUILDER: 13,

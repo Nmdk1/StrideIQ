@@ -389,12 +389,18 @@ class ConstraintAwarePlanner:
                         easy_long_state["floor_mi"] = None
                         easy_long_state["floor_applied"] = True
 
-                # T3-4: W1 long run cap — spec: min(volume/days*2, median*0.40).
-                # No absolute ceiling: high-mileage athletes must not be capped below
-                # their historical long-run floor. The per-component formulas already
-                # provide appropriate protection for low-volume athletes.
+                # W1 long run cap.
+                # Primary rule (Substack: "Forget the 10% Rule", Takeaway 1):
+                #   First long run = L30_non_race_max + 1 mile.  This respects
+                #   the athlete's actual recent training baseline without spiking.
+                # Fallback (no L30 data): current_weekly_miles / days * 2.
+                # Hard ceiling: median * 0.40 (never exceed 40% of a typical week).
                 if week_num == 1 and bank.current_weekly_miles:
-                    w1_long_cap = bank.current_weekly_miles / max(1, days_per_week) * 2.0
+                    if l30_floor and l30_floor > 0:
+                        # L30 floor is already the non-race max; +1 is the safe first step.
+                        w1_long_cap = float(l30_floor) + 1.0
+                    else:
+                        w1_long_cap = bank.current_weekly_miles / max(1, days_per_week) * 2.0
                     if bank.recent_8w_median_weekly_miles:
                         w1_long_cap = min(w1_long_cap, bank.recent_8w_median_weekly_miles * 0.40)
                     long_types = {"long", "long_run", "long_mp", "long_hmp", "easy_long"}

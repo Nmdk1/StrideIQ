@@ -155,10 +155,12 @@ class VolumeTierClassifier:
     ) -> list:
         """
         Calculate week-by-week volume targets.
-        
-        Returns list of target weekly volumes.
-        Uses safe progression: max 10% increase week-over-week.
-        
+
+        Returns list of target weekly volumes.  Volume progresses toward the
+        tier peak over the build phase at a rate determined by the available
+        weeks — not by a percentage cap.  Session-level spike limits are
+        enforced separately by WorkoutScaler.
+
         cutback_frequency_override: If provided (from athlete_plan_profile),
             overrides the tier default cutback frequency.
         """
@@ -167,13 +169,11 @@ class VolumeTierClassifier:
         cutback_freq = cutback_frequency_override or params["cutback_frequency"]
         cutback_reduction = params["cutback_reduction"]
         
-        # Build weeks (excluding taper)
-        build_weeks = plan_weeks - taper_weeks
-        
-        # Calculate weekly increase (max 10% of current volume, or less to reach peak)
         volumes = []
         current = starting_volume
-        
+
+        build_weeks = plan_weeks - taper_weeks
+
         for week in range(1, plan_weeks + 1):
             # Taper phase — taper from ACTUAL achieved peak (max of build
             # weeks so far), not the config ceiling.  Builder tier may
@@ -213,15 +213,15 @@ class VolumeTierClassifier:
                 # Important: treat the cutback as the new baseline so that the
                 # following build week doesn't appear as a pathological jump.
                 current = cutback_volume
-            # Build week
+            # Build week: progress toward peak at up to 12% per week.
+            # Replaces the 10% rule (not supported by sports science —
+            # see Substack "Forget the 10% Rule").  Session-level spike
+            # limits are enforced separately by WorkoutScaler.
             else:
-                # Increase by up to 10%, but don't exceed peak
-                max_increase = current * 0.10
-                target = min(current + max_increase, peak_volume)
-                # Round DOWN to avoid floating-point edge cases tripping 10% tests.
+                target = min(current * 1.12, peak_volume)
                 target = math.floor(target * 10) / 10.0
                 volumes.append(target)
-                current = target  # Update current for next week
+                current = target
         
         return volumes
     

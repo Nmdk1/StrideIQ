@@ -5,6 +5,11 @@
 **Purpose:** Systematic extraction of knowledge base → plan generation rules  
 **Status:** GOVERNING DOCUMENT for archetype creation
 
+**Primary sources:**
+- `03_WORKOUT_TYPES.md` — workout sizing, long run caps, progression rules
+- `04_RECOVERY.md` — spacing contracts, recovery hierarchy
+- Michael Shaffer, ["Forget the 10% Rule"](https://mbshaf.substack.com/p/forget-the-10-rule) (2026) — the 10% weekly volume rule is not valid. The single-session spike is the real injury predictor. First long run = L30_non_race_max + 1 mile; build at +2 miles/week thereafter.
+
 ---
 
 ## Overview

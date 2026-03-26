@@ -97,10 +97,17 @@ the input — not a global time ceiling.
 
 ### 2c. Long Run Progression
 
-- Week 1 of any plan: floor ≤ 32% of athlete's recent weekly mileage (8-week median)
-- Maximum increase: 2 miles per week (3 miles for experienced athletes with strong history)
-- Every 3rd or 4th week: cutback to 60–70% of prior week's long run
-- For injury return: floor subject to 32% of current weekly volume volume-awareness cap
+**Primary source: Michael Shaffer, ["Forget the 10% Rule"](https://mbshaf.substack.com/p/forget-the-10-rule)**
+The 10% _weekly volume_ rule has no scientific basis. What matters is the **single-session spike**:
+> "If you perform a single run that is more than a 10% increase over the distance of your longest session from the previous 30 days, your risk for lower-extremity injury skyrockets." — Nguyen et al. 2025 (5,200-runner cohort study)
+
+**Rule: First long run of any plan = L30_non_race_max + 1 mile.**
+This satisfies the ≤10% single-session spike constraint (e.g., 10 miles → 11 miles = 10% increase).
+
+- Week 1 entry: `L30_non_race_max_miles + 1` (races excluded from L30 — a goal race is not a training long run)
+- Build weeks: +2 miles per week (or +3 miles for experienced athletes with strong history)
+- Cutback: every 3rd or 4th week, reduce by ~4 miles (targeting 60–70% of prior week's long run)
+- Volume-awareness cap: long run ≤ 32% of that week's total mileage (may be overridden by L30 history floor)
 
 ---
 
