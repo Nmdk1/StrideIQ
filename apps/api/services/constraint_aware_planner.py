@@ -245,7 +245,22 @@ class ConstraintAwarePlanner:
         horizon_weeks = max(4, (race_date - date.today()).days // 7)
 
         tier_classifier = VolumeTierClassifier()
-        tier = tier_classifier.classify(bank.current_weekly_miles, race_distance)
+
+        # Tier classification: use the athlete's DOCUMENTED HISTORY, not their
+        # current (potentially depressed post-race/injury) mileage.
+        # A 35mpw post-marathon athlete who has averaged 65mpw for months is HIGH
+        # tier — their current mileage is a recovery artifact, not their capability.
+        # Use bank.peak_weekly_miles (what they've DEMONSTRATED) for tier structure;
+        # applied_peak drives volume targets only.
+        # Exception: injured athletes need conservative structure regardless of history.
+        applied_peak = volume_contract.get("applied_peak") or bank.current_weekly_miles
+        history_peak = bank.peak_weekly_miles or bank.current_weekly_miles or 0.0
+        if bank.constraint_type == ConstraintType.INJURY:
+            # Injured: structure must match current safe capacity, not prior history.
+            effective_tier_volume = bank.current_weekly_miles
+        else:
+            effective_tier_volume = max(bank.current_weekly_miles, history_peak)
+        tier = tier_classifier.classify(effective_tier_volume, race_distance)
 
         phase_builder = PhaseBuilder()
         phases = phase_builder.build_phases(
@@ -263,6 +278,7 @@ class ConstraintAwarePlanner:
             distance=race_distance,
             starting_volume=bank.current_weekly_miles,
             plan_weeks=horizon_weeks,
+            peak_volume_override=applied_peak,
         )
         cutback_weeks_set = phase_builder.get_cutback_weeks(phases)
 
@@ -310,6 +326,14 @@ class ConstraintAwarePlanner:
             "floor_applied": False,
         }
         mp_long_run_count = 0
+
+        # Simultaneous-ramp guard state.
+        # Rule: build volume first, then add intensity.  If volume is climbing
+        # this week, freeze quality work at the prior week's level — don't reduce
+        # it, just don't escalate it.  Once volume stabilises, intensity resumes.
+        prev_week_volume: float = 0.0
+        prev_threshold_continuous_min: Optional[int] = None
+        prev_threshold_intervals: Optional[tuple] = None
 
         for phase in phases:
             for week_num in phase.weeks:
@@ -361,6 +385,16 @@ class ConstraintAwarePlanner:
                 week_start = plan_start + timedelta(weeks=week_idx)
                 week_easy_long_state = dict(easy_long_state)
 
+                # Simultaneous-ramp guard: if this week's volume is climbing
+                # above last week's, freeze quality at the established level.
+                # Already-established intensity is kept; only escalation is blocked.
+                volume_building = (
+                    prev_week_volume > 0
+                    and week_volume > prev_week_volume * 1.05
+                )
+                freeze_threshold_continuous = prev_threshold_continuous_min if volume_building else None
+                freeze_threshold_intervals = prev_threshold_intervals if volume_building else None
+
                 workouts = generate_plan_week(
                     week=week_num,
                     phase=phase,
@@ -377,7 +411,27 @@ class ConstraintAwarePlanner:
                     mp_week=mp_long_run_count,
                     easy_long_state=week_easy_long_state,
                     start_date=week_start,
+                    prev_threshold_continuous_min=freeze_threshold_continuous,
+                    prev_threshold_intervals=freeze_threshold_intervals,
                 )
+
+                # Update simultaneous-ramp guard state for next week.
+                prev_week_volume = week_volume
+                for wo in workouts:
+                    if wo.workout_type == "threshold" and wo.segments:
+                        for seg in wo.segments:
+                            if isinstance(seg, dict) and seg.get("type") == "threshold":
+                                dm = seg.get("duration_min")
+                                if dm is not None:
+                                    prev_threshold_continuous_min = int(dm)
+                                    break
+                    if wo.workout_type == "threshold_intervals" and wo.segments:
+                        for seg in wo.segments:
+                            if isinstance(seg, dict) and seg.get("type") == "intervals":
+                                r, d = seg.get("reps"), seg.get("duration_min")
+                                if r is not None and d is not None:
+                                    prev_threshold_intervals = (int(r), int(d))
+                                    break
 
                 # Track long run for next week's easy_long_state
                 for wo in workouts:
