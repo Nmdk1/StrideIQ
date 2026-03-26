@@ -462,14 +462,24 @@ class ConstraintAwarePlanner:
                         w1_long_cap = bank.current_weekly_miles / max(1, days_per_week) * 2.0
                     if bank.recent_8w_median_weekly_miles:
                         w1_long_cap = min(w1_long_cap, bank.recent_8w_median_weekly_miles * 0.40)
-                    # For short-race plans the long run must not dominate the week.
-                    # Cap to 37% of W1 volume, staying below the 40% quality gate ceiling.
-                    if race_distance in ("10k", "5k") and week_volume > 0:
-                        w1_long_cap = min(w1_long_cap, week_volume * 0.37)
                     long_types = {"long", "long_run", "long_mp", "long_hmp", "easy_long"}
                     for wo in workouts:
                         if wo.workout_type in long_types and (wo.distance_miles or 0) > w1_long_cap:
                             wo.distance_miles = round(w1_long_cap, 1)
+
+                    # For short-race plans the long run must not dominate the week.
+                    # The quality gate checks ratio = long / actual_total_miles (not
+                    # long / target volume), so we must cap against the actual total
+                    # after prescription, not the planned week_volume.
+                    if race_distance in ("10k", "5k"):
+                        actual_total_w1 = sum(
+                            (wo.distance_miles or 0) for wo in workouts
+                        )
+                        if actual_total_w1 > 0:
+                            dominance_cap = actual_total_w1 * 0.37
+                            for wo in workouts:
+                                if wo.workout_type in long_types and (wo.distance_miles or 0) > dominance_cap:
+                                    wo.distance_miles = round(dominance_cap, 1)
 
                     # After applying W1 cap, update easy_long_state to the reduced
                     # value so subsequent weeks compute their progressions from the
