@@ -326,7 +326,8 @@ class ConstraintAwarePlanner:
         # After normalization plan_start may be up to 6 days earlier than raw_start,
         # so the race might now be in week N+1.  Recompute horizon_weeks using
         # ceiling division so the last generated week always contains the race.
-        horizon_weeks = max(4, -(-( (race_date - plan_start).days) // 7))  # ceil div
+        # ceil_div trick: -(-a // b) == math.ceil(a / b) without float conversion.
+        horizon_weeks = max(4, -(-((race_date - plan_start).days) // 7))  # P0-GATE: GREEN
 
         # 3. Generate each week via the public framework interface (T3-2)
         weeks: List[WeekPlan] = []
