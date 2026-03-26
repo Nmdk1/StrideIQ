@@ -469,6 +469,18 @@ class ConstraintAwarePlanner:
                         if wo.workout_type in long_types and (wo.distance_miles or 0) > w1_long_cap:
                             wo.distance_miles = round(w1_long_cap, 1)
 
+                # For 10K/5K plans: enforce the long-run dominance ceiling against
+                # the ACTUAL prescription total (not the volume target).  The
+                # quality gate fires at 40%; stay at 37% with a floor of 8mi.
+                # Applied after all other caps so the actual prescribed miles are used.
+                if race_distance in ("10k", "5k"):
+                    actual_total = sum((wo.distance_miles or 0) for wo in workouts)
+                    if actual_total > 0:
+                        safe_long = max(8.0, actual_total * 0.37)
+                        for wo in workouts:
+                            if wo.workout_type in {"long", "long_run", "easy_long"} and (wo.distance_miles or 0) > safe_long:
+                                wo.distance_miles = round(safe_long, 1)
+
                 # Convert List[GeneratedWorkout] → WeekPlan (T3-3: theme = phase name)
                 week_start_date = plan_start + timedelta(weeks=week_idx)
                 week_plan = _workouts_to_week_plan(workouts, week_num, phase, week_start_date)
