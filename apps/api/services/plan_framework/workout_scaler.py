@@ -446,6 +446,10 @@ class WorkoutScaler:
         """
         Scale threshold intervals with 6-step proportional progression.
 
+        total_distance_miles uses the capped t_miles (quality portion after
+        10-12% weekly-volume cap) so session size accurately reflects the
+        actual quality load, not the raw rep-formula output.
+
         6 canonical steps are mapped proportionally to the threshold block length.
         The LAST week of the phase is always threshold_continuous (handled by
         _scale_threshold_continuous). This function covers steps 1..N-1.
