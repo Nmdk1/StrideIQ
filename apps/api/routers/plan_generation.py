@@ -2264,6 +2264,7 @@ def _save_constraint_aware_plan(
     db.flush()  # Get the plan ID
     
     # Create planned workouts from weeks
+    seen_workout_dates: set = set()  # guard against duplicate-date workouts
     for week in plan.weeks:
         for day in week.days:
             if day.workout_type == "rest":
@@ -2276,6 +2277,9 @@ def _save_constraint_aware_plan(
             # week so that the arithmetic works correctly for any start day.
             week_monday = week.start_date - timedelta(days=week.start_date.weekday())
             workout_date = week_monday + timedelta(days=day.day_of_week)
+            if workout_date in seen_workout_dates:
+                continue  # Skip duplicate dates (can arise from race/tune-up injection)
+            seen_workout_dates.add(workout_date)
             
             # Build coach notes from paces and notes
             coach_notes_parts = []

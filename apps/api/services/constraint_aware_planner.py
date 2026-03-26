@@ -323,6 +323,10 @@ class ConstraintAwarePlanner:
         # function is consistent.
         raw_start = race_date - timedelta(weeks=horizon_weeks)
         plan_start = raw_start - timedelta(days=raw_start.weekday())
+        # After normalization plan_start may be up to 6 days earlier than raw_start,
+        # so the race might now be in week N+1.  Recompute horizon_weeks using
+        # ceiling division so the last generated week always contains the race.
+        horizon_weeks = max(4, -(-( (race_date - plan_start).days) // 7))  # ceil div
 
         # 3. Generate each week via the public framework interface (T3-2)
         weeks: List[WeekPlan] = []
