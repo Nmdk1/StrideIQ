@@ -449,6 +449,9 @@ class ConstraintAwarePlanner:
                 #   the athlete's actual recent training baseline without spiking.
                 # Fallback (no L30 data): current_weekly_miles / days * 2.
                 # Hard ceiling: median * 0.40 (never exceed 40% of a typical week).
+                # Distance ceiling: 10K/5K plans cap long run at 37% of W1 volume
+                #   so the "tenk_long_run_dominance" quality gate (40% ratio) is not
+                #   breached when L30+1 gives a large value after a marathon race.
                 if week_num == 1 and bank.current_weekly_miles:
                     if l30_floor and l30_floor > 0:
                         # L30 floor is already the non-race max; +1 is the safe first step.
@@ -457,6 +460,10 @@ class ConstraintAwarePlanner:
                         w1_long_cap = bank.current_weekly_miles / max(1, days_per_week) * 2.0
                     if bank.recent_8w_median_weekly_miles:
                         w1_long_cap = min(w1_long_cap, bank.recent_8w_median_weekly_miles * 0.40)
+                    # For short-race plans the long run must not dominate the week.
+                    # Cap to 37% of W1 volume, staying below the 40% quality gate ceiling.
+                    if race_distance in ("10k", "5k") and week_volume > 0:
+                        w1_long_cap = min(w1_long_cap, week_volume * 0.37)
                     long_types = {"long", "long_run", "long_mp", "long_hmp", "easy_long"}
                     for wo in workouts:
                         if wo.workout_type in long_types and (wo.distance_miles or 0) > w1_long_cap:
