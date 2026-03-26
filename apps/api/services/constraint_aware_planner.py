@@ -317,8 +317,12 @@ class ConstraintAwarePlanner:
                 sequence = MPProgressionPlanner().build_sequence(mp_tier, len(mp_phase_weeks))
                 mp_sequence = {s.week_in_phase: s for s in sequence}
 
-        # Plan start = Monday of week 1
-        plan_start = race_date - timedelta(weeks=horizon_weeks)
+        # Plan start = Monday of week 1.
+        # race_date - N weeks may land on any day; normalise to Monday so all
+        # week.start_date values are Mondays and date arithmetic in the save
+        # function is consistent.
+        raw_start = race_date - timedelta(weeks=horizon_weeks)
+        plan_start = raw_start - timedelta(days=raw_start.weekday())
 
         # 3. Generate each week via the public framework interface (T3-2)
         weeks: List[WeekPlan] = []

@@ -2269,8 +2269,13 @@ def _save_constraint_aware_plan(
             if day.workout_type == "rest":
                 continue  # Don't store rest days
             
-            # Calculate date for this day
-            workout_date = week.start_date + timedelta(days=day.day_of_week)
+            # Calculate date for this day.
+            # day_of_week is an absolute weekday (0=Monday … 6=Sunday).
+            # week.start_date may not be a Monday (plan_start = race_date minus N
+            # weeks, which can land on any day).  Normalise to the Monday of the
+            # week so that the arithmetic works correctly for any start day.
+            week_monday = week.start_date - timedelta(days=week.start_date.weekday())
+            workout_date = week_monday + timedelta(days=day.day_of_week)
             
             # Build coach notes from paces and notes
             coach_notes_parts = []
