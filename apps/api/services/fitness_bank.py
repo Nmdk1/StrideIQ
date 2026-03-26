@@ -835,7 +835,7 @@ class FitnessBankCalculator:
         
         Returns:
             Tuple of (current_long_run, average_long_run):
-            - current_long_run: Max long run in last 4 weeks
+            - current_long_run: Max long run in last 4 weeks (non-race, ≤24mi)
             - average_long_run: Average of all long runs >= 10mi (or 90+ min)
         """
         today = date.today()
