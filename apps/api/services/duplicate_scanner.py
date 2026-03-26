@@ -17,7 +17,7 @@ from uuid import UUID
 from sqlalchemy.orm import Session
 
 from models import Activity
-from services.activity_deduplication import match_activities
+from services.activity_deduplication import TIME_WINDOW_S, match_activities
 
 logger = logging.getLogger(__name__)
 
@@ -126,6 +126,11 @@ def scan_and_mark_duplicates(
             if b.id in already_dup:
                 continue
 
+            # Activities are sorted ascending.  Once b is more than
+            # TIME_WINDOW_S ahead of a, no later activity can match either.
+            if (b.start_time - a.start_time).total_seconds() > TIME_WINDOW_S:
+                break
+
             # Same provider can't be a cross-provider dup
             if a.provider and b.provider and a.provider == b.provider:
                 continue
@@ -157,6 +162,10 @@ def scan_and_mark_duplicates(
                 "Duplicate pair: %s (%s) kept, %s (%s) marked duplicate",
                 primary.id, primary.provider, secondary.id, secondary.provider,
             )
+            # One primary gets one secondary.  Stop searching for this `a`
+            # so we don't falsely pair the same primary with a later record
+            # that happens to have the same distance (e.g. doubles training).
+            break
 
     db.flush()
     return {"pairs_found": pairs_found, "marked_duplicate": len(already_dup)}

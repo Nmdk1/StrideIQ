@@ -101,6 +101,64 @@ class TestMergeFields:
 
 
 class TestScanAndMarkDuplicates:
+    def test_identifies_cross_provider_duplicate_with_five_hour_sync_delay(self):
+        """Garmin records at run time; Strava arrives 5h later — must still dedup."""
+        athlete_id = uuid.uuid4()
+        t = datetime(2025, 6, 15, 8, 0, 0)
+
+        garmin = _make_activity(
+            athlete_id=athlete_id, provider="garmin",
+            start_time=t, distance_m=16093, avg_hr=148,
+        )
+        strava = _make_activity(
+            athlete_id=athlete_id, provider="strava",
+            start_time=t + timedelta(hours=5), distance_m=16093 * 1.01, avg_hr=150,
+        )
+
+        db = MagicMock()
+        db.query.return_value.filter.return_value.order_by.return_value.all.return_value = [
+            garmin, strava,
+        ]
+
+        result = scan_and_mark_duplicates(athlete_id, db)
+        assert result["pairs_found"] == 1
+        assert strava.is_duplicate is True
+
+    def test_doubles_same_distance_not_cross_paired(self):
+        """
+        AM and PM runs of the same distance must each match only their own
+        cross-provider counterpart, not the other session's record.
+        """
+        athlete_id = uuid.uuid4()
+        garmin_am = _make_activity(
+            athlete_id=athlete_id, provider="garmin",
+            start_time=datetime(2025, 6, 15, 6, 0, 0), distance_m=9656,
+        )
+        strava_am = _make_activity(
+            athlete_id=athlete_id, provider="strava",
+            start_time=datetime(2025, 6, 15, 11, 0, 0), distance_m=9656,
+        )
+        garmin_pm = _make_activity(
+            athlete_id=athlete_id, provider="garmin",
+            start_time=datetime(2025, 6, 15, 18, 0, 0), distance_m=9656,
+        )
+        strava_pm = _make_activity(
+            athlete_id=athlete_id, provider="strava",
+            start_time=datetime(2025, 6, 15, 23, 0, 0), distance_m=9656,
+        )
+
+        db = MagicMock()
+        db.query.return_value.filter.return_value.order_by.return_value.all.return_value = [
+            garmin_am, strava_am, garmin_pm, strava_pm,
+        ]
+
+        result = scan_and_mark_duplicates(athlete_id, db)
+        assert result["pairs_found"] == 2
+        assert strava_am.is_duplicate is True
+        assert strava_pm.is_duplicate is True
+        assert garmin_am.is_duplicate is False
+        assert garmin_pm.is_duplicate is False
+
     def test_identifies_cross_provider_duplicate(self):
         athlete_id = uuid.uuid4()
         t = datetime(2025, 6, 15, 8, 0, 0)

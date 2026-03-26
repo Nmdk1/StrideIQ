@@ -24,7 +24,13 @@ logger = logging.getLogger(__name__)
 # Deduplication thresholds for live sync (webhook / API push).
 # The takeout/file-import path (garmin_di_connect.py) uses tighter
 # thresholds (120s / 1.5%) — that is intentional. See AC §D5.2.
-TIME_WINDOW_S = 3600   # 1 hour
+#
+# 8-hour window: Garmin records at activity completion; Strava typically
+# receives the sync 3–6 hours later.  A 1-hour window misses these pairs.
+# 8 hours is safe: two same-distance same-day runs from different providers
+# within 8 hours are caught by the distance / HR check, and the scanner
+# uses a break-after-first-match strategy to prevent false cross-pairing.
+TIME_WINDOW_S = 28800  # 8 hours
 DISTANCE_TOLERANCE = 0.05   # 5%
 HR_TOLERANCE_BPM = 5
 
