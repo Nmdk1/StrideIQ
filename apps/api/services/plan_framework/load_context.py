@@ -96,6 +96,11 @@ def is_activity_excluded_as_race_for_p4(activity) -> bool:
         return True
     if getattr(activity, "is_race_candidate", False):
         return True
+    # Exclude untagged marathon/ultra races: any activity >24mi is not a training long run.
+    # Our KB cap is 22mi (marathon HIGH tier); 24mi for elite. 26+ is definitionally a race.
+    miles = (getattr(activity, "distance_m", None) or 0) / 1609.344
+    if miles > 24.0:
+        return True
     return False
 
 

@@ -850,6 +850,14 @@ class FitnessBankCalculator:
             wt = str(getattr(a, "workout_type", None) or "").lower()
             if wt == "race" or getattr(a, "is_race_candidate", False):
                 continue
+            miles = (a.distance_m or 0) / 1609.344
+            # Any activity over 24 miles is not a training long run (our KB cap is
+            # 22mi for marathon HIGH tier; 24mi for elite).  26+ mile activities are
+            # almost always races (marathon / ultra) that were not tagged correctly.
+            # Including them would inflate l30_floor and set an unreachable floor
+            # for the athlete's next training block.
+            if miles > 24.0:
+                continue
 
             miles = (a.distance_m or 0) / 1609.344
             duration_min = (a.duration_s or 0) / 60
@@ -903,6 +911,9 @@ class FitnessBankCalculator:
             activity_date = activity.start_time.date()
             miles = (activity.distance_m or 0) / 1609.344
             duration_min = (activity.duration_s or 0) / 60.0
+            # Exclude >24-mile activities regardless of label (untagged marathon/ultra races).
+            if miles > 24.0:
+                continue
             if activity_date < cutoff_16w:
                 continue
             run_count_16w += 1
