@@ -214,7 +214,7 @@ class ConstraintAwarePlanner:
         intake = None
         try:
             if self.db is not None:
-                from services.intake_context import get_intake_context, PainFlag, PolicyStance
+                from services.intake_context import get_intake_context, PainFlag
                 intake = get_intake_context(athlete_id, self.db)
                 if intake.age is not None:
                     logger.info(f"Intake context: age={intake.age}, experience={intake.running_experience}, "

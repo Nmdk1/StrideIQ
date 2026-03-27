@@ -30,6 +30,10 @@ interface OnboardingData {
   birthdate?: string;
   sex?: string;
   height_cm?: number;
+  running_experience?: string;
+  current_runs_per_week?: string;
+  current_longest_run_miles?: string;
+  sport_background?: string;
   goals?: string[];
   nutrition_setup?: boolean;
   work_setup?: boolean;

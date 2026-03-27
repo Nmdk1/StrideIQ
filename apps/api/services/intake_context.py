@@ -14,10 +14,10 @@ Every plan generation path must read IntakeContext. For beginners, it IS
 the athlete profile. Generating a plan without it is irresponsible.
 """
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import date
 from enum import Enum
-from typing import Dict, List, Optional
+from typing import Optional
 from uuid import UUID
 import logging
 
