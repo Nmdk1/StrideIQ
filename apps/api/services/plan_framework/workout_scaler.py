@@ -390,6 +390,15 @@ class WorkoutScaler:
                 curve = max(curve, prev)
             step, sp_pct = spike_step_miles_and_pct(tier, history_override)
             spike_cap = min(prev + step, prev * (1.0 + sp_pct))
+            # N=1: when the athlete has proven they can do this distance,
+            # the spike guard shouldn't prevent them from returning to it.
+            # They're on familiar ground, not building new territory.
+            if (
+                athlete_proven_long_run_miles
+                and curve <= float(athlete_proven_long_run_miles)
+                and not is_cutback
+            ):
+                spike_cap = max(spike_cap, min(curve, float(athlete_proven_long_run_miles)))
             target = min(curve, spike_cap)
         elif is_cold_start:
             # COLD-START PATH: no athlete long-run history exists.
