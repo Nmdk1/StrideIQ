@@ -255,35 +255,41 @@ function BasicProfileStage({
     birthdate: data.birthdate || (user?.birthdate ? user.birthdate.split('T')[0] : ''),
     sex: data.sex || user?.sex || '',
     height_cm: data.height_cm || user?.height_cm || '',
+    running_experience: data.running_experience || '',
+    current_runs_per_week: data.current_runs_per_week || '',
+    current_longest_run_miles: data.current_longest_run_miles || '',
+    sport_background: data.sport_background || '',
   });
 
   return (
     <div className="bg-slate-800 rounded-lg border border-slate-700/50 p-6">
-      <h2 className="text-xl font-semibold mb-4">Basic Profile</h2>
-      <p className="text-slate-400 mb-6">Help us calculate age-graded performance. (Optional)</p>
+      <h2 className="text-xl font-semibold mb-4">About You</h2>
+      <p className="text-slate-400 mb-6">This helps us build a plan that fits your body and your life.</p>
       
       <div className="space-y-4">
-        <div>
-          <label className="block text-sm font-medium mb-2">Birthdate</label>
-          <input
-            type="date"
-            value={formData.birthdate}
-            onChange={(e) => setFormData({ ...formData, birthdate: e.target.value })}
-            className="w-full px-3 py-2 bg-slate-900 border border-slate-700/50 rounded text-white"
-          />
-        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label className="block text-sm font-medium mb-2">Birthdate</label>
+            <input
+              type="date"
+              value={formData.birthdate}
+              onChange={(e) => setFormData({ ...formData, birthdate: e.target.value })}
+              className="w-full px-3 py-2 bg-slate-900 border border-slate-700/50 rounded text-white"
+            />
+          </div>
 
-        <div>
-          <label className="block text-sm font-medium mb-2">Sex</label>
-          <select
-            value={formData.sex}
-            onChange={(e) => setFormData({ ...formData, sex: e.target.value })}
-            className="w-full px-3 py-2 bg-slate-900 border border-slate-700/50 rounded text-white"
-          >
-            <option value="">Select...</option>
-            <option value="M">Male</option>
-            <option value="F">Female</option>
-          </select>
+          <div>
+            <label className="block text-sm font-medium mb-2">Sex</label>
+            <select
+              value={formData.sex}
+              onChange={(e) => setFormData({ ...formData, sex: e.target.value })}
+              className="w-full px-3 py-2 bg-slate-900 border border-slate-700/50 rounded text-white"
+            >
+              <option value="">Select...</option>
+              <option value="M">Male</option>
+              <option value="F">Female</option>
+            </select>
+          </div>
         </div>
 
         <div>
@@ -296,7 +302,66 @@ function BasicProfileStage({
             className="w-full px-3 py-2 bg-slate-900 border border-slate-700/50 rounded text-white"
             placeholder="e.g., 175.0"
           />
-          <p className="text-xs text-slate-500 mt-1">Required for BMI calculation</p>
+          <p className="text-xs text-slate-500 mt-1">Used for BMI tracking when you log weight</p>
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium mb-2">Running experience</label>
+          <select
+            value={formData.running_experience}
+            onChange={(e) => setFormData({ ...formData, running_experience: e.target.value })}
+            className="w-full px-3 py-2 bg-slate-900 border border-slate-700/50 rounded text-white"
+          >
+            <option value="">Select...</option>
+            <option value="just_starting">Just starting out</option>
+            <option value="less_than_1_year">Less than 1 year</option>
+            <option value="1_to_3_years">1–3 years</option>
+            <option value="3_plus_years">3+ years</option>
+          </select>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label className="block text-sm font-medium mb-2">How many times per week do you currently run?</label>
+            <input
+              type="number"
+              min={0}
+              max={14}
+              value={formData.current_runs_per_week}
+              onChange={(e) => setFormData({ ...formData, current_runs_per_week: e.target.value })}
+              className="w-full px-3 py-2 bg-slate-900 border border-slate-700/50 rounded text-white"
+              placeholder="e.g., 3"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium mb-2">Longest run in the last month (miles)</label>
+            <input
+              type="number"
+              min={0}
+              step={0.5}
+              value={formData.current_longest_run_miles}
+              onChange={(e) => setFormData({ ...formData, current_longest_run_miles: e.target.value })}
+              className="w-full px-3 py-2 bg-slate-900 border border-slate-700/50 rounded text-white"
+              placeholder="e.g., 5"
+            />
+          </div>
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium mb-2">Athletic background before running</label>
+          <select
+            value={formData.sport_background}
+            onChange={(e) => setFormData({ ...formData, sport_background: e.target.value })}
+            className="w-full px-3 py-2 bg-slate-900 border border-slate-700/50 rounded text-white"
+          >
+            <option value="">Select...</option>
+            <option value="sedentary">Mostly sedentary</option>
+            <option value="gym_fitness">Gym / general fitness</option>
+            <option value="team_sport">Team sport (soccer, basketball, etc.)</option>
+            <option value="endurance_sport">Endurance sport (cycling, swimming, triathlon)</option>
+            <option value="multi_sport">Multiple sports / very active</option>
+          </select>
         </div>
 
         <div className="flex gap-2">

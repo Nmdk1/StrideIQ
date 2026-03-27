@@ -208,8 +208,43 @@ class ConstraintAwarePlanner:
         logger.info(f"Generating constraint-aware plan for athlete {athlete_id}")
         race_distance = normalize_distance_alias(race_distance)
         
+        # 0. Read intake context — the athlete's self-reported profile.
+        # For beginners this IS the primary data source.
+        # For experienced athletes it supplements the fingerprint.
+        intake = None
+        try:
+            if self.db is not None:
+                from services.intake_context import get_intake_context, PainFlag, PolicyStance
+                intake = get_intake_context(athlete_id, self.db)
+                if intake.age is not None:
+                    logger.info(f"Intake context: age={intake.age}, experience={intake.running_experience}, "
+                               f"policy={intake.policy_stance.value}, pain={intake.pain_flag.value}")
+        except Exception as ex:
+            logger.warning("intake_context unavailable, continuing without: %s", ex)
+
         # 1. Get Fitness Bank
         bank = get_fitness_bank(athlete_id, self.db)
+
+        # Overlay intake self-reports onto bank for cold-start athletes.
+        # If bank has zeros (no synced history) but intake has self-reported data,
+        # use intake as the seed — it's the only data we have.
+        if intake is not None:
+            if bank.current_long_run_miles == 0 and intake.current_longest_run_miles:
+                bank.current_long_run_miles = intake.current_longest_run_miles
+                bank.average_long_run_miles = intake.current_longest_run_miles
+            if bank.current_weekly_miles == 0 and intake.current_runs_per_week and intake.current_longest_run_miles:
+                bank.current_weekly_miles = intake.current_runs_per_week * intake.current_longest_run_miles * 0.7
+
+            # Pain flag from intake overrides automatic constraint detection.
+            # The athlete told us they're in pain — that takes precedence over
+            # volume-drop heuristics.
+            if intake.pain_flag == PainFlag.PAIN and bank.constraint_type == ConstraintType.NONE:
+                bank.constraint_type = ConstraintType.INJURY
+                bank.constraint_details = f"self-reported pain: {intake.injury_context or 'unspecified'}"
+                bank.is_returning_from_break = True
+            elif intake.pain_flag == PainFlag.NIGGLE and bank.constraint_type == ConstraintType.NONE:
+                bank.constraint_details = f"self-reported niggle: {intake.injury_context or 'unspecified'}"
+
         logger.info(f"Fitness Bank: peak={bank.peak_weekly_miles:.0f}mpw, "
                    f"current={bank.current_weekly_miles:.0f}mpw, "
                    f"constraint={bank.constraint_type.value}")
@@ -284,11 +319,15 @@ class ConstraintAwarePlanner:
         )
         cutback_weeks_set = phase_builder.get_cutback_weeks(phases)
 
-        # Days per week: infer from bank rest pattern.
-        # Cap at 6 for constraint-aware plans — the 7-day structure puts a
-        # second quality session on Saturday (day 5), the day before the long
-        # run. The 6-day structure keeps Saturday as easy_strides.
-        days_per_week = max(3, min(6, 7 - len(bank.typical_rest_days or [])))
+        # Days per week: intake questionnaire is the authority when available
+        # (the athlete told us how many days they can run). Fall back to
+        # inferring from bank rest pattern if intake is absent.
+        # Cap at 6 — the 7-day structure puts a second quality session on
+        # Saturday (day 5), the day before the long run.
+        if intake and intake.days_per_week:
+            days_per_week = max(3, min(6, intake.days_per_week))
+        else:
+            days_per_week = max(3, min(6, 7 - len(bank.typical_rest_days or [])))
 
         # Easy-long floor: prefer L30 max seed from load_ctx, fall back to bank's
         # current long run miles (more recent than the average), then average.
@@ -503,7 +542,8 @@ class ConstraintAwarePlanner:
                 week_plan = _workouts_to_week_plan(workouts, week_num, phase, week_start_date, is_cutback=is_cutback)
                 weeks.append(week_plan)
         
-        # 5. Inject race day: the last day of the last week is the goal race.
+        # 5. Inject race day with pre-race and post-race handling.
+        # Override order: race > pre-race > post-race-rest > any regular workout.
         if weeks:
             last_week = weeks[-1]
             race_day_of_week = race_date.weekday()  # 0=Mon … 6=Sun
@@ -517,9 +557,37 @@ class ConstraintAwarePlanner:
                 paces={},
                 notes=[],
             )
-            # Replace any existing day on that day-of-week, or append.
-            existing = [d for d in last_week.days if d.day_of_week != race_day_of_week]
-            last_week.days = sorted(existing + [race_day], key=lambda d: d.day_of_week)
+
+            pre_race_dow = (race_day_of_week - 1) % 7
+            pre_race_day = DayPlan(
+                day_of_week=pre_race_dow,
+                workout_type="pre_race",
+                name="Pre-race shakeout",
+                description="3-4mi easy + 4x100m strides. Stay loose, save your legs.",
+                target_miles=4.0,
+                intensity="easy",
+                paces={},
+                notes=["Keep it short and relaxed"],
+            )
+
+            post_race_dow = (race_day_of_week + 1) % 7
+            post_race_day = DayPlan(
+                day_of_week=post_race_dow,
+                workout_type="rest",
+                name="Post-race recovery",
+                description="Complete rest. You earned it.",
+                target_miles=0.0,
+                intensity="rest",
+                paces={},
+                notes=[],
+            )
+
+            override_dows = {race_day_of_week, pre_race_dow, post_race_dow}
+            existing = [d for d in last_week.days if d.day_of_week not in override_dows]
+            last_week.days = sorted(
+                existing + [pre_race_day, race_day, post_race_day],
+                key=lambda d: d.day_of_week,
+            )
 
         # 7. Insert tune-up race specifics
         if tune_up_races:
@@ -802,7 +870,24 @@ class ConstraintAwarePlanner:
                             tss_estimate=40
                         )
                         break
-        
+
+                # Day after tune-up race = easy recovery
+                post_race_day = (day_idx + 1) % 7
+                for i, day in enumerate(week.days):
+                    if day.day_of_week == post_race_day:
+                        week.days[i] = DayPlan(
+                            day_of_week=post_race_day,
+                            workout_type="recovery",
+                            name="Post-race recovery",
+                            description="Easy recovery or rest. Let the legs bounce back.",
+                            target_miles=3.0,
+                            intensity="easy",
+                            paces={},
+                            notes=["Listen to your body — rest if needed"],
+                            tss_estimate=25,
+                        )
+                        break
+
         return weeks
     
     def _estimate_race_pace(self, bank: FitnessBank, distance: str) -> str:

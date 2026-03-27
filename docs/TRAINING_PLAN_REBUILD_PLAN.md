@@ -716,3 +716,84 @@ All custom p-value approximations replaced with exact `scipy.stats.t.sf`:
 `activity_analysis` still have local efficiency comments (non-athlete-facing).
 These are low-priority — they produce coach-internal or debug data, not
 athlete-facing directional claims.
+
+---
+
+### Intake Context Wiring — SHIPPED March 26, 2026
+
+**Problem:** The onboarding questionnaire collected birthdate, sex, pain flags,
+policy stance, days per week, time available, and more — but NONE of it flowed
+into plan generation. The `FitnessBank`, `AthleteProfile`, and
+`ConstraintAwarePlanner` never queried the `intake_questionnaire` table.
+For beginners with no synced history, this meant the system was generating
+plans with zero knowledge of the athlete.
+
+**What shipped:**
+1. `services/intake_context.py` — `IntakeContext` dataclass and `get_intake_context()`
+   DB reader. Structured representation of all intake data.
+2. Onboarding questionnaire expanded (basic_profile stage): running experience,
+   current runs per week, longest recent run, sport/athletic background.
+3. `ConstraintAwarePlanner.generate_plan()` now reads `IntakeContext` and:
+   - Seeds cold-start FitnessBank fields from self-reported data (current long
+     run, estimated weekly volume from runs × distance).
+   - Overrides constraint detection when athlete self-reports pain.
+   - Uses intake `days_per_week` as authority over inferred rest patterns.
+4. Safety gate in `/v2/plans/constraint-aware`: athletes with <10 synced runs
+   AND incomplete intake (basic_profile + goals) are blocked with a clear
+   `intake_required` error and list of missing stages.
+
+**What remains:** `policy_stance` and `time_available_min` are read but not yet
+consumed by the volume progression or workout scaler. Next step.
+
+---
+
+### N=1 Gap: Cross-Training & Injury-Return Context
+
+**Status:** Tracked — near-future project, not current sprint
+**Date noted:** March 26, 2026
+
+**The problem:** The Fitness Bank cannot produce N=1 prescriptions for
+injury-return athletes. The `constraint_type = INJURY` flag triggers
+conservative population-norm ramps, but a real coaching decision requires
+individual data the system does not yet capture:
+
+1. **Pre-injury training profile (12 weeks before the break):**
+   Were they stable, building, or overreaching? The answer changes whether
+   the plan targets their prior peak or a sustainable subset of it.
+
+2. **Duration of complete running absence:**
+   `weeks_since_peak` is a blunt proxy. It does not distinguish "14 weeks
+   of zero running" from "14 weeks since peak with 6 weeks of gradual
+   return already completed."
+
+3. **Cross-training activity during absence:**
+   An athlete who cycled 5 hours/week for 12 weeks has preserved their
+   aerobic engine — musculoskeletal loading capacity is the bottleneck,
+   not cardiovascular fitness. An athlete who was sedentary for 12 weeks
+   has lost both. The ramp rate is fundamentally different.
+
+4. **Type of cross-training:**
+   Swimming (zero impact), cycling (leg strength, different pattern),
+   elliptical (closest to running mechanics) — each implies a different
+   safe ramp rate for return to running.
+
+5. **Return-to-run trajectory:**
+   Has the athlete been building back for 4 weeks at 30 mpw with no
+   setbacks? Or did they just start this week?
+
+**What this means today:** The Comeback archetype in the coaching
+expectation tests uses a general/conservative expectation contract that
+does NOT meet the N=1 standard. This is an acknowledged deviation from
+product ethos, not an oversight.
+
+**Remediation plan:**
+- Expand Garmin activity streams to ingest cross-training activities
+  (cycling, swimming, elliptical, strength) into the fingerprint.
+- Backfill cross-training history for existing athletes.
+- Add fields to FitnessBank: `pre_injury_12w_avg_miles`,
+  `weeks_fully_off`, `cross_training_hours_during_break`,
+  `cross_training_modalities`, `weeks_since_return_to_running`.
+- Replace population-norm injury ramp with individual ramp derived from
+  cross-training preservation and return trajectory.
+- Update Comeback fake athlete(s) to include cross-training variants
+  and write true N=1 coaching expectations for each.

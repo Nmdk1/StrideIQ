@@ -2439,6 +2439,37 @@ async def create_constraint_aware_plan(
                 "purpose": tr.purpose
             })
     
+    # Safety gate: beginners without completed intake cannot generate plans.
+    # For athletes with no synced history, the intake questionnaire IS the
+    # athlete profile. Generating without it is irresponsible.
+    try:
+        from services.intake_context import get_intake_context
+        intake = get_intake_context(athlete.id, db)
+        from services.fitness_bank import get_fitness_bank as _peek_bank
+        _bank = _peek_bank(athlete.id, db)
+        has_synced_history = (_bank.recent_16w_run_count or 0) >= 10
+        if not has_synced_history and not intake.has_minimum_for_plan:
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "error_code": "intake_required",
+                    "reason": (
+                        "We need more information about you before we can build a safe plan. "
+                        "Please complete your profile in Settings."
+                    ),
+                    "missing_stages": [
+                        s for s, done in [
+                            ("basic_profile", intake.basic_profile_completed),
+                            ("goals", intake.goals_completed),
+                        ] if not done
+                    ],
+                },
+            )
+    except HTTPException:
+        raise
+    except Exception as ex:
+        logger.warning("intake safety gate check failed, proceeding: %s", ex)
+
     # Generate plan using Constraint-Aware Planner
     try:
         from services.constraint_aware_planner import generate_constraint_aware_plan
