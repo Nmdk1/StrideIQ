@@ -30,11 +30,12 @@ from dataclasses import dataclass
 
 from sqlalchemy.orm import Session
 
-from .constants import VolumeTier, PlanTier
+from .constants import VolumeTier, PlanTier, Distance, TAPER_WEEKS
 from .volume_tiers import VolumeTierClassifier
 from .phase_builder import PhaseBuilder, TrainingPhase
 from .workout_scaler import WorkoutScaler
 from .workout_variant_dispatch import resolve_workout_variant_id
+from .variant_selector import select_variant as select_variant_from_registry
 from .pace_engine import PaceEngine, TrainingPaces
 from .cache import PlanCacheService
 from .load_context import (
@@ -396,16 +397,15 @@ class PlanGenerator:
             tier=tier
         )
         
-        # Calculate volume progression
+        taper_wks = TAPER_WEEKS.get(Distance(distance), 2)
         weekly_volumes = self.tier_classifier.calculate_volume_progression(
             tier=VolumeTier(tier),
             distance=distance,
             starting_volume=starting_volume,
             plan_weeks=duration_weeks,
-            taper_weeks=2
+            taper_weeks=taper_wks,
         )
         
-        # Generate workouts
         workouts = self._generate_workouts(
             distance=distance,
             duration_weeks=duration_weeks,
@@ -574,13 +574,13 @@ class PlanGenerator:
             tier=tier.value
         )
 
-        # Calculate volume progression from effective start (P4 merge when present)
+        sc_taper_wks = TAPER_WEEKS.get(Distance(distance), 2)
         weekly_volumes = self.tier_classifier.calculate_volume_progression(
             tier=tier,
             distance=distance,
             starting_volume=effective_mpw,
             plan_weeks=duration_weeks,
-            taper_weeks=2
+            taper_weeks=sc_taper_wks,
         )
 
         # Generate workouts
@@ -1367,7 +1367,20 @@ class PlanGenerator:
             if paces and actual_workout_type not in ["rest", "recovery"]:
                 pace_desc = paces.get_pace_description(actual_workout_type)
             
-            # Create workout
+            build_ctx_tag = getattr(phase, "build_context_tag", "full_featured_healthy")
+            variant_id = select_variant_from_registry(
+                workout_type=actual_workout_type,
+                build_context_tag=build_ctx_tag,
+                week_in_phase=week_in_phase,
+                total_phase_weeks=len(phase.weeks),
+                distance=distance,
+                athlete_ctx=athlete_ctx,
+                title=scaled.title,
+                segments=scaled.segments,
+            ) or resolve_workout_variant_id(
+                actual_workout_type, scaled.title, scaled.segments
+            )
+
             workout = GeneratedWorkout(
                 week=week,
                 day=day,
@@ -1383,17 +1396,29 @@ class PlanGenerator:
                 pace_description=pace_desc,
                 segments=scaled.segments,
                 option="A",
-                workout_variant_id=resolve_workout_variant_id(
-                    actual_workout_type, scaled.title, scaled.segments
-                ),
+                workout_variant_id=variant_id,
             )
             
-            # Add Option B if available
             if scaled.option_b:
                 option_b_pace = scaled.option_b.pace_description
                 if paces:
                     option_b_pace = paces.get_pace_description(scaled.option_b.workout_type)
                 
+                ob_variant_id = select_variant_from_registry(
+                    workout_type=scaled.option_b.workout_type,
+                    build_context_tag=build_ctx_tag,
+                    week_in_phase=week_in_phase,
+                    total_phase_weeks=len(phase.weeks),
+                    distance=distance,
+                    athlete_ctx=athlete_ctx,
+                    title=scaled.option_b.title,
+                    segments=scaled.option_b.segments,
+                ) or resolve_workout_variant_id(
+                    scaled.option_b.workout_type,
+                    scaled.option_b.title,
+                    scaled.option_b.segments,
+                )
+
                 workout.option_b = GeneratedWorkout(
                     week=week,
                     day=day,
@@ -1409,11 +1434,7 @@ class PlanGenerator:
                     pace_description=option_b_pace,
                     segments=scaled.option_b.segments,
                     option="B",
-                    workout_variant_id=resolve_workout_variant_id(
-                        scaled.option_b.workout_type,
-                        scaled.option_b.title,
-                        scaled.option_b.segments,
-                    ),
+                    workout_variant_id=ob_variant_id,
                 )
             
             week_workouts.append(workout)
@@ -1760,9 +1781,10 @@ class PlanGenerator:
             return quality_keys[(week_in_phase - 1) % len(quality_keys)]
 
         if phase_type == "threshold":
-            if len(quality_keys) >= 2:
-                transition = max(2, int(total_phase_weeks * 0.67))
-                return quality_keys[0] if week_in_phase <= transition else quality_keys[1]
+            if "threshold_intervals" in quality_keys and "threshold" in quality_keys:
+                if week_in_phase >= total_phase_weeks:
+                    return "threshold"
+                return "threshold_intervals"
             return quality_keys[0]
 
         if phase_type in ("marathon_specific", "race_specific"):

@@ -177,7 +177,7 @@ CUTBACK_RULES = {
 # Minimum 2 weeks for all distances: 1 taper week + 1 race week.
 # This gives even 10K/5K a proper taper phase in the structure.
 TAPER_WEEKS = {
-    Distance.MARATHON: 2,      # 10-14 days
+    Distance.MARATHON: 3,      # 3 weeks per framework Rule A5
     Distance.HALF_MARATHON: 2,
     Distance.TEN_K: 2,         # 7-10 days (1 taper + race week)
     Distance.FIVE_K: 2,        # 5-7 days (1 taper + race week)
@@ -187,7 +187,7 @@ TAPER_WEEKS = {
 # These are POPULATION DEFAULTS (Priority 4 in ADR-062).  The TaperCalculator
 # will override with N=1 signals when available.
 TAPER_DAYS_DEFAULT = {
-    Distance.MARATHON: 14,
+    Distance.MARATHON: 21,     # 3 weeks per framework Rule A5
     Distance.HALF_MARATHON: 10,
     Distance.TEN_K: 7,
     Distance.FIVE_K: 5,

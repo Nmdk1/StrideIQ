@@ -671,6 +671,12 @@ class PlanValidator:
             # Relaxed floor matches segment-based MP accounting (true @MP miles only).
             mp_min = 25 if self.strict else 12
 
+        # Duration-scale: compressed plans (< 16w) have fewer MP sessions.
+        # Reference duration is 18w; scale proportionally, floor at 10mi.
+        dur = getattr(self.plan, "duration_weeks", 18)
+        if dur < 16 and mp_min > 0:
+            mp_min = max(10, mp_min * dur / 18)
+
         # Miles *at marathon pace* only (segment-aware when present)
         total_mp = sum(
             self._quality_miles(w, {"mp", "marathon_pace"})

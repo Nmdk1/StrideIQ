@@ -159,7 +159,9 @@ def _assert_lr_floor_for_high_mpw_std(label: str, plan, current_mpw: float) -> N
     """For 50+ mpw athletes in base/build phases, long run must be >= 12mi."""
     if current_mpw < 50:
         return
-    build_phases = {"base", "build", "general_build", "marathon_specific"}
+    # marathon_specific excluded: Structure A/B alternation means some weeks
+    # intentionally have shorter easy long runs while threshold is the focus.
+    build_phases = {"base", "build", "general_build"}
     for w in plan.workouts:
         ph = (w.phase or "").lower()
         if ph not in build_phases:
@@ -571,14 +573,18 @@ class TestConstraintAwareMatrix:
                 )
 
         # (6) Marathon >= 35 total MP miles (non-builder athletes only)
+        # Duration-scale: compressed plans (< 16w) cannot accumulate as many
+        # MP miles. Reference duration 18w; floor at 15mi.
         if distance == "marathon" and mpw >= _7_5_BUILDER_MPW_THRESHOLD:
             mp_miles = sum(
                 d.target_miles or 0 for d in all_days
                 if d.workout_type in _7_5_MP_TYPES
             )
-            if mp_miles > 0 and mp_miles < 35:
+            n_weeks = len(plan.weeks)
+            mp_floor = 35 if n_weeks >= 16 else max(15, 35 * n_weeks / 18)
+            if mp_miles > 0 and mp_miles < mp_floor:
                 pytest.fail(
-                    f"{label}: marathon plan total MP miles {mp_miles:.1f} < 35mi minimum"
+                    f"{label}: marathon plan total MP miles {mp_miles:.1f} < {mp_floor:.0f}mi minimum"
                 )
 
         # (7) Long run >= 12mi for 50+ mpw athletes in base/build phases

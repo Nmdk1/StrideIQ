@@ -33,18 +33,21 @@ class TestT2MPProgressionPlanner:
     """
 
     def test_planner_alternates_structure_a_and_b(self):
-        """Odd weeks are Structure B (long_mp); even weeks are Structure A (easy long)."""
+        """Odd weeks are Structure A (easy long); even weeks are Structure B (long_mp).
+        Per PLAN_GENERATION_FRAMEWORK.md: first MP week introduces threshold quality
+        with an easy long (Structure A), second week puts MP in the long run (Structure B).
+        """
         planner = MPProgressionPlanner()
         seq = planner.build_sequence("mid", 8)
         for mw in seq:
             if mw.week_in_phase % 2 == 1:
-                assert mw.long_type == "long_mp", (
-                    f"Week_in_phase {mw.week_in_phase} (odd) should be Structure B (long_mp). "
+                assert mw.long_type == "long", (
+                    f"Week_in_phase {mw.week_in_phase} (odd) should be Structure A (easy long). "
                     f"Got {mw.long_type}"
                 )
             else:
-                assert mw.long_type == "long", (
-                    f"Week_in_phase {mw.week_in_phase} (even) should be Structure A (easy long). "
+                assert mw.long_type == "long_mp", (
+                    f"Week_in_phase {mw.week_in_phase} (even) should be Structure B (long_mp). "
                     f"Got {mw.long_type}"
                 )
 

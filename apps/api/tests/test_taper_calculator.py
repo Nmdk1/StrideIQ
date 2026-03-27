@@ -124,7 +124,7 @@ class TestSignalPriority:
             observed_taper=None,
         )
         assert rec.source == "default"
-        assert rec.taper_days == 14  # Marathon default
+        assert rec.taper_days == 21  # Marathon default (3 weeks per Rule A5)
 
     def test_priority_2_skipped_when_low_confidence(self):
         """Recovery rebound skipped when confidence < 0.4."""
@@ -253,7 +253,7 @@ class TestDefaults:
     """Population defaults when no personalized signal is available."""
 
     @pytest.mark.parametrize("distance,expected", [
-        ("marathon", 14),
+        ("marathon", 21),
         ("half_marathon", 10),
         ("10k", 7),
         ("5k", 5),
@@ -453,7 +453,7 @@ class TestEdgeCases:
         calc = TaperCalculator()
         rec = calc.calculate(distance="ultra_marathon")
         assert rec.source == "default"
-        assert rec.taper_days == 14  # Marathon default
+        assert rec.taper_days == 21  # Marathon default (3 weeks per Rule A5)
 
     def test_taper_days_clamped_to_range(self):
         """Observed taper with extreme values should be clamped."""

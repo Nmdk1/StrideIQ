@@ -234,14 +234,14 @@ class TestT2PhaseBoundaryCutbacks:
 
     def test_18w_marathon_cutbacks_at_phase_ends(self):
         """
-        18-week marathon plan: cutbacks at {4, 8, 12, 16} (last week of each build phase).
-        4-4-4-4 build + 2 taper = 16 build weeks → phase ends at 4, 8, 12, 16.
+        18-week marathon plan: cutbacks at {4, 8, 12, 15} (last week of each build phase).
+        4-4-4-3 build + 3 taper (Rule A5) = 15 build weeks → phase ends at 4, 8, 12, 15.
         """
         builder = PhaseBuilder()
         phases = builder.build_phases(distance="marathon", duration_weeks=18, tier="mid")
         cutback_weeks = builder.get_cutback_weeks(phases)
-        assert cutback_weeks == {4, 8, 12, 16}, (
-            f"18w marathon cutback weeks should be {{4, 8, 12, 16}}. Got {sorted(cutback_weeks)}"
+        assert cutback_weeks == {4, 8, 12, 15}, (
+            f"18w marathon cutback weeks should be {{4, 8, 12, 15}}. Got {sorted(cutback_weeks)}"
         )
 
     def test_12w_10k_cutback_not_in_threshold_middle(self):

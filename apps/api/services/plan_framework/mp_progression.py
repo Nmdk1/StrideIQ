@@ -55,7 +55,7 @@ class MPProgressionPlanner:
         ml_mp_start = max(2, total_mp_weeks // 2)
 
         for wip in range(1, total_mp_weeks + 1):
-            structure_b = (wip % 2 == 1)  # Odd → Structure B (MP long)
+            structure_b = (wip % 2 == 0)  # Even → Structure B (MP long)
 
             if structure_b:
                 long_type = "long_mp"
