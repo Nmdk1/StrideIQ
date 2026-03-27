@@ -14,7 +14,6 @@ This replaces hardcoded variant ID assignment with registry-driven selection.
 from __future__ import annotations
 
 import json
-from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from .workout_variant_dispatch import _resolve_registry_path
