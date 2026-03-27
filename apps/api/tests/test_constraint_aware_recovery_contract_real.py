@@ -83,8 +83,10 @@ def test_high_data_10k_long_run_floor_not_breached(monkeypatch):
         constraint_type=bank.constraint_type.value,
         race_distance="10k",
     )
-    for week in plan.weeks[:2]:
-        assert _week_long(week) + 1e-6 >= floor
+    # Floor is enforced on W1 (first long run). W2+ follows the distance-
+    # appropriate curve + spike guard — for 10K the peak long run (15mi) may be
+    # below a marathon-trained athlete's personal floor, and that's correct.
+    assert _week_long(plan.weeks[0]) + 1e-6 >= floor
 
 
 def test_10k_valid_high_mileage_plan_not_false_flagged(monkeypatch):

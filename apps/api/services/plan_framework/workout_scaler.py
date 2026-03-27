@@ -328,16 +328,21 @@ class WorkoutScaler:
         """Scale easy long run (`workout_type` long / long_run) — aerobic only."""
         goal = _parse_goal_distance(distance)
         peak = peak_long_miles(goal, tier)
+        dist_key = (distance or "marathon").strip().lower()
 
-        # N=1: athlete's demonstrated peak long run raises the population cap.
-        # If they've safely completed 22-mi long runs before, the algorithm
-        # must not cap them at 19 because of a percentage formula.
-        if athlete_proven_long_run_miles and athlete_proven_long_run_miles > peak:
+        # N=1: athlete's demonstrated peak long run raises the population cap,
+        # but only for marathon/half plans where long runs are the primary
+        # endurance stimulus. For 10K/5K plans the population peak is correct —
+        # a 20-mi long run from marathon training isn't relevant for a 10K build.
+        if (
+            athlete_proven_long_run_miles
+            and athlete_proven_long_run_miles > peak
+            and dist_key in ("marathon", "half_marathon")
+        ):
             peak = float(athlete_proven_long_run_miles)
 
         start_long = min(standard_start_long_miles(goal, tier), peak)
         tw = max(float(weekly_volume), 1.0)
-        dist_key = (distance or "marathon").strip().lower()
         pct_cap = self._PCT_CAP_BY_DISTANCE.get(dist_key, 0.30)
         weekly_soft_cap = tw * 0.35
 
@@ -393,8 +398,10 @@ class WorkoutScaler:
             # N=1: when the athlete has proven they can do this distance,
             # the spike guard shouldn't prevent them from returning to it.
             # They're on familiar ground, not building new territory.
+            # Only for marathon/half where long runs are the primary stimulus.
             if (
                 athlete_proven_long_run_miles
+                and dist_key in ("marathon", "half_marathon")
                 and curve <= float(athlete_proven_long_run_miles)
                 and not is_cutback
             ):
@@ -431,8 +438,8 @@ class WorkoutScaler:
             mi = max(mi, floor_min_int)
         hard_cap = math.floor(tw * pct_cap)
         # N=1: if the athlete has proven they can do longer, don't let the
-        # percentage cap prevent a proven-safe distance.
-        if athlete_proven_long_run_miles:
+        # percentage cap prevent a proven-safe distance (marathon/half only).
+        if athlete_proven_long_run_miles and dist_key in ("marathon", "half_marathon"):
             hard_cap = max(hard_cap, int(athlete_proven_long_run_miles))
         if floor_min_int is not None and mi >= floor_min_int:
             mi = max(mi, min(mi, hard_cap) if hard_cap >= floor_min_int else floor_min_int)
