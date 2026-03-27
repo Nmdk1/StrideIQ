@@ -35,15 +35,9 @@ from services.workout_prescription import (
     DayPlan
 )
 from services.plan_framework.load_context import build_load_context, history_anchor_date
-from services.plan_framework.phase_builder import PhaseBuilder
-from services.plan_framework.volume_tiers import VolumeTierClassifier
-from services.plan_framework.mp_progression import MPProgressionPlanner, MPWeek
-from services.plan_framework.week_generator import generate_plan_week
 from services.plan_framework.kb_driven_generator import (
     generate_plan as kb_generate_plan,
     GeneratedTrainingPlan as KBPlan,
-    WeekPlan as KBWeekPlan,
-    DayPlan as KBDayPlan,
 )
 from services.race_signal_contract import normalize_distance_alias
 
