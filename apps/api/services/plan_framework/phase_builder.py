@@ -194,8 +194,8 @@ class PhaseBuilder:
             quality_sessions=2,  # T + MP in long run
             volume_modifier=0.95,
             long_run_modifier=0.9,
-            allowed_workouts=["easy", "long", "long_mp", "threshold", "threshold_intervals", "medium_long_mp", "easy_strides"],
-            key_sessions=["marathon_pace_long", "threshold"]
+            allowed_workouts=["easy", "long", "long_mp", "threshold", "threshold_intervals", "medium_long_mp", "mp_touch", "easy_strides"],
+            key_sessions=["threshold", "threshold_intervals"]
         ))
         current_week += mp_intro_weeks
         
@@ -210,8 +210,8 @@ class PhaseBuilder:
                 quality_sessions=2,
                 volume_modifier=1.0,  # Peak
                 long_run_modifier=1.0,  # Peak
-                allowed_workouts=["easy", "long", "long_mp", "threshold", "threshold_intervals", "race", "medium_long_mp", "easy_strides"],
-                key_sessions=["dress_rehearsal", "continuous_mp"]
+                allowed_workouts=["easy", "long", "long_mp", "threshold", "threshold_intervals", "race", "medium_long_mp", "mp_touch", "easy_strides"],
+                key_sessions=["threshold", "threshold_intervals"]
             ))
             current_week += race_specific_weeks
         
@@ -247,7 +247,7 @@ class PhaseBuilder:
                     volume_modifier=0.50,
                     long_run_modifier=0.5,
                     allowed_workouts=["easy", "threshold_short", "strides", "recovery"],
-                    key_sessions=["sharpening", "strides"]
+                    key_sessions=["strides"]
                 ))
                 current_week += remaining_taper
         elif taper_phase_weeks == 1:
@@ -360,7 +360,7 @@ class PhaseBuilder:
                 long_run_modifier=1.0,
                 allowed_workouts=["easy", "long", "long_hmp", "threshold",
                                   "threshold_intervals", "intervals", "easy_strides"],
-                key_sessions=["long_hmp", "threshold"]
+                key_sessions=["threshold"]
             ))
             current_week += race_specific_weeks
         
@@ -456,7 +456,7 @@ class PhaseBuilder:
             long_run_modifier=0.9,
             allowed_workouts=["easy", "long", "threshold", "threshold_intervals",
                               "easy_strides"],
-            key_sessions=["threshold", "threshold_intervals"]
+            key_sessions=["threshold_intervals", "threshold"]
         ))
         current_week += threshold_weeks
         
@@ -473,7 +473,7 @@ class PhaseBuilder:
                 long_run_modifier=1.0,
                 allowed_workouts=["easy", "long", "intervals", "threshold",
                                   "threshold_intervals", "easy_strides"],
-                key_sessions=["intervals", "threshold"]
+                key_sessions=["intervals"]
             ))
             current_week += race_specific_weeks
         
@@ -569,7 +569,7 @@ class PhaseBuilder:
             long_run_modifier=0.9,
             allowed_workouts=["easy", "long", "threshold", "threshold_intervals",
                               "repetitions", "easy_strides"],
-            key_sessions=["threshold", "threshold_intervals"]
+            key_sessions=["threshold_intervals", "threshold"]
         ))
         current_week += threshold_weeks
         
@@ -586,7 +586,7 @@ class PhaseBuilder:
                 long_run_modifier=1.0,
                 allowed_workouts=["easy", "long", "intervals", "repetitions",
                                   "threshold", "easy_strides"],
-                key_sessions=["intervals", "repetitions"]
+                key_sessions=["intervals"]
             ))
             current_week += race_specific_weeks
         

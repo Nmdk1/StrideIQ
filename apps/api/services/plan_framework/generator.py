@@ -54,6 +54,12 @@ _EASY_FILL_QUALITY_TYPES = frozenset({
 })
 _EASY_FILL_LONG_TYPES = frozenset({"long", "long_mp", "long_hmp"})
 
+_QUALITY_SLOT_TYPES = frozenset({
+    "threshold", "threshold_intervals", "threshold_short",
+    "intervals", "strides", "hills", "hill_sprints",
+    "repetitions", "fartlek", "easy_strides", "tempo",
+})
+
 
 def _easy_fill_adjacency_weight(day: int, by_day: Dict[int, Any]) -> float:
     """
@@ -177,6 +183,7 @@ class GeneratedPlan:
     # Summary
     total_miles: float
     total_quality_sessions: int
+    mp_cumulative_miles: Optional[float] = None
     
     def get_week(self, week_num: int) -> List[GeneratedWorkout]:
         """Get all workouts for a specific week."""
@@ -420,7 +427,18 @@ class PlanGenerator:
             "threshold", "threshold_intervals", "intervals", "long_mp", "long_hmp",
             "mp_touch", "repetitions"
         ]])
-        
+
+        # MP cumulative tracking (marathon plans only)
+        mp_cum = None
+        if distance == "marathon":
+            from .mp_progression import MPProgressionPlanner
+            _mp = MPProgressionPlanner()
+            _mp_phases = {"marathon_specific", "race_specific"}
+            _mp_wks = [w for p in phases if p.phase_type.value in _mp_phases for w in p.weeks]
+            if _mp_wks:
+                seq = _mp.build_sequence(tier, len(_mp_wks))
+                mp_cum = round(_mp.cumulative_mp_miles(seq), 1)
+
         return GeneratedPlan(
             plan_tier=PlanTier.STANDARD,
             distance=distance,
@@ -438,6 +456,7 @@ class PlanGenerator:
             peak_volume=max(weekly_volumes),
             total_miles=round(total_miles, 1),
             total_quality_sessions=quality_count,
+            mp_cumulative_miles=mp_cum,
         )
     
     def generate_semi_custom(
@@ -1340,6 +1359,7 @@ class PlanGenerator:
                 prev_mp_miles=prev_mp_miles,
                 prev_threshold_continuous_min=prev_threshold_continuous_min,
                 prev_threshold_intervals=prev_threshold_intervals,
+                long_run_modifier=phase.long_run_modifier,
             )
             
             # Add pace description if paces available
@@ -1712,71 +1732,62 @@ class PlanGenerator:
         weekly_volume: float,
         athlete_ctx: Dict[str, Any],
     ) -> str:
-        """Determine quality workout based on phase and distance."""
-        phase_type = phase.phase_type.value
-        
+        """Select quality workout from phase.key_sessions with progression logic.
+
+        Phase authority: the quality session is determined by phase.key_sessions,
+        not distance-specific if/else chains. The phase builder already encodes
+        distance-aware coaching intent per phase.
+        """
         if is_cutback:
-            # Lighter quality on cutback
-            if phase_type == "base_speed":
-                return "strides"
-            # 5K cutback: reps maintain neuromuscular pattern without aerobic load.
-            if distance == "5k":
-                return "repetitions"
-            # 10K cutback: strides for neuromuscular touch without adding quality load.
-            if distance == "10k":
-                return "strides"
-            # Marathon / half: consolidation — easy + strides, no threshold on cutback.
-            if distance in ("marathon", "half_marathon"):
-                return "easy_strides"
-            return "threshold"
-        
+            return self._cutback_quality(phase, distance)
+
+        quality_keys = [ks for ks in phase.key_sessions if ks in _QUALITY_SLOT_TYPES]
+        if not quality_keys:
+            return "easy_strides"
+
+        phase_type = phase.phase_type.value
+        total_phase_weeks = max(1, len(phase.weeks))
+
         if phase_type == "base_speed":
-            # --- 5K / 10K base: strides, hills, AND reps (inverted model) ---
-            # Speed/neuromuscular work on fresh legs, low injury risk.
-            # Reps here are neuromuscular tool-building, not race simulation.
-            if distance in ("5k", "10k"):
-                cycle = week_in_phase % 3
-                if cycle == 0:
-                    return "repetitions"  # neuromuscular reps on fresh legs
-                elif cycle == 2:
-                    return "hills"
-                return "easy_strides"
-            # Marathon / Half marathon base: strides/hills.
-            # For high-mileage, experienced athletes, include periodic VO2 touches early.
             qv = float(athlete_ctx.get("quality_volume_signal") or weekly_volume)
-            if athlete_ctx.get("experienced_high_volume") and qv >= 60 and week_in_phase % 2 == 0:
+            if (
+                distance in ("marathon", "half_marathon")
+                and athlete_ctx.get("experienced_high_volume")
+                and qv >= 60
+                and week_in_phase % 2 == 0
+            ):
                 return "intervals"
-            return "hills" if week_in_phase % 2 == 0 else "easy_strides"
-        
+            return quality_keys[(week_in_phase - 1) % len(quality_keys)]
+
         if phase_type == "threshold":
-            # --- Inverted model: threshold dominant in build for ALL distances ---
-            # LT is the limiting factor for most runners (Source A).
-            # Building the threshold floor first means the athlete clears lactate
-            # faster between race-specific intervals, making VO2max phase more productive.
-            # T-block progression: intervals format → continuous
-            if week_in_phase <= 2:
-                return "threshold_intervals"
-            return "threshold"
-        
-        if phase_type in ["marathon_specific", "race_specific"]:
-            # --- 5K race-specific: VO2max intervals arrive HERE ---
-            # The threshold base is built. Now sharpen with 5K-pace work.
-            if distance == "5k":
-                return "intervals"
-            # --- 10K race-specific: VO2max sharpening on threshold base ---
-            # Structure closer to half marathon than 5K (Source A: LT #1 for >30 min).
-            if distance == "10k":
-                return "intervals"
-            # --- Marathon / Half marathon: maintain threshold ---
-            return "threshold_intervals" if week_in_phase % 2 == 0 else "threshold"
-        
+            if len(quality_keys) >= 2:
+                transition = max(2, int(total_phase_weeks * 0.67))
+                return quality_keys[0] if week_in_phase <= transition else quality_keys[1]
+            return quality_keys[0]
+
+        if phase_type in ("marathon_specific", "race_specific"):
+            return quality_keys[(week_in_phase - 1) % len(quality_keys)]
+
         if phase_type == "taper":
-            return "strides"
-        
+            return quality_keys[0]
+
         if phase_type == "race":
             return "strides"
-        
-        return "threshold_intervals"
+
+        return quality_keys[0]
+
+    def _cutback_quality(self, phase: TrainingPhase, distance: str) -> str:
+        """Lighter quality session for cutback weeks — safety over phase spec."""
+        phase_type = phase.phase_type.value
+        if phase_type == "base_speed":
+            return "strides"
+        if distance == "5k":
+            return "repetitions"
+        if distance == "10k":
+            return "strides"
+        if distance in ("marathon", "half_marathon"):
+            return "easy_strides"
+        return "strides"
     
     def _get_secondary_quality(
         self,

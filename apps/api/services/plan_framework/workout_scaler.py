@@ -156,6 +156,7 @@ class WorkoutScaler:
         prev_mp_miles: Optional[int] = None,
         prev_threshold_continuous_min: Optional[int] = None,
         prev_threshold_intervals: Optional[Tuple[int, int]] = None,
+        long_run_modifier: float = 1.0,
     ) -> ScaledWorkout:
         """
         Scale any workout type to athlete capacity.
@@ -191,6 +192,7 @@ class WorkoutScaler:
                 previous_easy_long_mi=previous_easy_long_mi,
                 history_override=history_override,
                 easy_long_floor_mi=easy_long_floor_mi,
+                long_run_modifier=long_run_modifier,
             )
         
         elif workout_type in ["threshold_intervals", "t_intervals"]:
@@ -296,6 +298,15 @@ class WorkoutScaler:
             option="A"
         )
     
+    # Distance-aware long-run percentage cap. Shorter-distance plans tolerate
+    # a higher long-run-to-volume ratio because the absolute miles are lower.
+    _PCT_CAP_BY_DISTANCE: Dict[str, float] = {
+        "marathon": 0.30,
+        "half_marathon": 0.32,
+        "10k": 0.35,
+        "5k": 0.40,
+    }
+
     def _scale_long_run(
         self,
         weekly_volume: float,
@@ -309,26 +320,27 @@ class WorkoutScaler:
         previous_easy_long_mi: Optional[float] = None,
         history_override: bool = False,
         easy_long_floor_mi: Optional[float] = None,
+        long_run_modifier: float = 1.0,
     ) -> ScaledWorkout:
         """Scale easy long run (`workout_type` long / long_run) — aerobic only."""
         goal = _parse_goal_distance(distance)
         peak = peak_long_miles(goal, tier)
         start_long = min(standard_start_long_miles(goal, tier), peak)
         tw = max(float(weekly_volume), 1.0)
-        # Secondary soft guard vs weekly volume (aligns with relaxed validator long_run_pct 0.35).
+        dist_key = (distance or "marathon").strip().lower()
+        pct_cap = self._PCT_CAP_BY_DISTANCE.get(dist_key, 0.30)
         weekly_soft_cap = tw * 0.35
 
         # Legacy path when plan context omitted (unit tests, ad-hoc scaler calls).
         if plan_week is None or duration_weeks is None:
             pct = 0.28
-            if (distance or "").strip().lower() in ("marathon",) and tw >= 60:
-                pct = 0.29  # Buffer so floor() stays under the 30% validator hard cap
+            if dist_key == "marathon" and tw >= 60:
+                pct = 0.29
             target = min(tw * pct, peak, weekly_soft_cap)
             target = max(float(MIN_STANDARD_EASY_LONG_MILES), target)
             target = min(target, peak)
             mi = math.floor(target)
-            # Hard cap: long run must not exceed 30% of weekly volume (Source B)
-            mi = min(mi, math.floor(tw * 0.30))
+            mi = min(mi, math.floor(tw * pct_cap))
             mi = max(mi, int(MIN_STANDARD_EASY_LONG_MILES))
             return ScaledWorkout(
                 workout_type="long_run",
@@ -359,40 +371,34 @@ class WorkoutScaler:
         if is_cutback:
             curve *= 0.70
 
+        # --- History-rich path vs cold-start path ---
+        is_cold_start = (previous_easy_long_mi is None and easy_long_floor_mi is None)
+
         if previous_easy_long_mi is not None:
             prev = float(previous_easy_long_mi)
-            # When the athlete's established long run exceeds the population peak for
-            # this plan/tier (e.g. a 62mpw 10K athlete with 16mi longs on a plan with
-            # a 15mi peak), preserve their aerobic base — don't regress to the
-            # population average. Cutback weeks are exempt (regression is intentional).
             if prev > float(peak) and not is_cutback:
                 curve = max(curve, prev)
             step, sp_pct = spike_step_miles_and_pct(tier, history_override)
             spike_cap = min(prev + step, prev * (1.0 + sp_pct))
             target = min(curve, spike_cap)
+        elif is_cold_start:
+            # COLD-START PATH: no athlete long-run history exists.
+            # Population curve is the sole driver — no history floor, no spike guard.
+            target = curve
         else:
             target = curve
 
         target = min(target, weekly_soft_cap, peak)
         target = max(float(MIN_STANDARD_EASY_LONG_MILES), target)
-        # P4 week-1 seed max(L30, tier_start): apply after soft cap, same contract as
-        # MIN_STANDARD_EASY_LONG_MILES vs 35% (PLAN_COACHED — floor may exceed soft cap).
+
         floor_min_int: Optional[int] = None
         if easy_long_floor_mi is not None and previous_easy_long_mi is None:
             fl = float(easy_long_floor_mi)
             target = max(target, fl)
-            # Preserve "minimum" semantics after integer-mile quantization.
-            # Example: 14mi activity stored as meters can surface as 13.99.. miles.
-            # floor(13.99..) would undercut the intended floor by 1 mile.
             floor_min_int = int(math.ceil(fl - 1e-9))
-            # T2-10: Athlete history takes precedence over population-average caps.
-            # Add 5% buffer above the historical floor so the plan can progress beyond it.
             peak_cap = max(float(peak), fl * 1.05)
         else:
             peak_cap = float(peak)
-        # Previous-above-peak preservation: also elevate peak_cap when athlete's
-        # established long run exceeds the population peak (e.g. 10K HIGH athlete
-        # who runs 16mi longs on a plan with a 15mi population peak).
         if (
             previous_easy_long_mi is not None
             and float(previous_easy_long_mi) > float(peak)
@@ -404,12 +410,8 @@ class WorkoutScaler:
         mi = math.floor(target)
         if floor_min_int is not None:
             mi = max(mi, floor_min_int)
-        # Hard cap: long run must not exceed 30% of weekly volume (Source B).
-        # P4 floor exception: when athlete history (L30) mandates a higher floor,
-        # the floor wins over the percentage cap — trust actual training history.
-        hard_cap = math.floor(tw * 0.30)
+        hard_cap = math.floor(tw * pct_cap)
         if floor_min_int is not None and mi >= floor_min_int:
-            # Floor is active — only apply hard cap if it doesn't undercut the floor.
             mi = max(mi, min(mi, hard_cap) if hard_cap >= floor_min_int else floor_min_int)
         else:
             mi = min(mi, hard_cap)
