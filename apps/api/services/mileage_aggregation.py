@@ -153,21 +153,24 @@ def compute_weekly_mileage(activities: List) -> Dict[date, float]:
 def compute_peak_and_current_weekly_miles(
     activities: List,
     now: Optional[date] = None,
-) -> Tuple[float, float]:
+) -> Tuple[float, float, float]:
     """
-    Return (peak_weekly_miles, current_weekly_miles).
+    Return (peak_weekly_miles, current_weekly_miles, last_complete_week_miles).
 
     peak_weekly_miles  = best 4-consecutive-week rolling average.
                          A single outlier week (race trip, vacation burst) does
                          NOT inflate the athlete's tier classification.
     current_weekly_miles = average of observed weeks in the trailing 4-week window.
+    last_complete_week_miles = mileage from the most recent fully completed week
+                              (not the in-progress current week). This is the
+                              real-time signal of what the athlete is actually doing.
     """
     if now is None:
         now = date.today()
 
     weekly_miles = compute_weekly_mileage(activities)
     if not weekly_miles:
-        return 0.0, 0.0
+        return 0.0, 0.0, 0.0
 
     # Sort weeks ascending for rolling window
     sorted_weeks = sorted(weekly_miles.keys())
@@ -186,7 +189,19 @@ def compute_peak_and_current_weekly_miles(
     four_weeks_ago = now - timedelta(days=28)
     trailing = [m for ws, m in weekly_miles.items() if ws >= four_weeks_ago]
     current_weekly = (sum(trailing) / len(trailing)) if trailing else 0.0
-    return peak_weekly, current_weekly
+
+    # Also compute the most recent COMPLETE week (not the in-progress one).
+    # The current week (week_start == most recent Monday) is likely partial,
+    # so the "last complete week" is the one before it.
+    current_week_start = now - timedelta(days=now.weekday())
+    completed_weeks = sorted(
+        [(ws, m) for ws, m in weekly_miles.items() if ws < current_week_start],
+        key=lambda x: x[0],
+        reverse=True,
+    )
+    last_complete_week = completed_weeks[0][1] if completed_weeks else 0.0
+
+    return peak_weekly, current_weekly, last_complete_week
 
 
 def compute_recent_weekly_band(

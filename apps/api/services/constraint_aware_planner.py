@@ -310,10 +310,29 @@ class ConstraintAwarePlanner:
             logger.warning("No phases generated - race date too soon?")
             return self._generate_minimal_plan(bank, race_date, race_distance)
 
+        # Starting volume: use the HIGHEST of trailing average, 8w median, and
+        # last complete week. The trailing average gets dragged down by post-race
+        # recovery dips or travel weeks.  The last complete week reflects what the
+        # athlete is actually doing RIGHT NOW.  We never prescribe W1 below what
+        # they already ran last week — that's a step backwards.
+        starting_vol = max(
+            bank.current_weekly_miles,
+            bank.recent_8w_median_weekly_miles or 0.0,
+            bank.last_complete_week_miles or 0.0,
+        )
+        if starting_vol != bank.current_weekly_miles:
+            logger.info(
+                "Starting volume adjusted: bank.current=%.1f → %.1f "
+                "(8w_median=%.1f, last_complete_week=%.1f)",
+                bank.current_weekly_miles, starting_vol,
+                bank.recent_8w_median_weekly_miles,
+                bank.last_complete_week_miles,
+            )
+
         volumes = tier_classifier.calculate_volume_progression(
             tier=tier,
             distance=race_distance,
-            starting_volume=bank.current_weekly_miles,
+            starting_volume=starting_vol,
             plan_weeks=horizon_weeks,
             peak_volume_override=applied_peak,
         )

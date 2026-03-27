@@ -120,7 +120,7 @@ class TestT1SmoothedPeak:
             weeks[monday] = 80.0 if i == 10 else 45.0
 
         activities = self._make_activities(weeks)
-        peak, _ = compute_peak_and_current_weekly_miles(activities, now=today)
+        peak, _, _ = compute_peak_and_current_weekly_miles(activities, now=today)
 
         assert 44.0 <= peak <= 56.0, (
             f"Smoothed peak should be 44-56mpw for 45mpw athlete with 1 outlier week. "
@@ -136,22 +136,23 @@ class TestT1SmoothedPeak:
             weeks[base + timedelta(weeks=i)] = 70.0
 
         activities = self._make_activities(weeks)
-        peak, _ = compute_peak_and_current_weekly_miles(activities, now=today)
+        peak, _, _ = compute_peak_and_current_weekly_miles(activities, now=today)
 
         assert peak >= 68.0, (
             f"Consistent 70mpw athlete should get >=68mpw peak. Got {peak:.1f}"
         )
 
     def test_empty_history_returns_zero(self):
-        peak, current = compute_peak_and_current_weekly_miles([])
+        peak, current, last_wk = compute_peak_and_current_weekly_miles([])
         assert peak == 0.0
         assert current == 0.0
+        assert last_wk == 0.0
 
     def test_single_week_history_returns_that_week(self):
         today = date(2026, 3, 24)
         monday = today - timedelta(days=today.weekday())
         activities = self._make_activities({monday - timedelta(weeks=1): 50.0})
-        peak, _ = compute_peak_and_current_weekly_miles(activities, now=today)
+        peak, _, _ = compute_peak_and_current_weekly_miles(activities, now=today)
         assert abs(peak - 50.0) < 2.0, (
             f"Single-week history peak should be ~50mpw. Got {peak:.1f}"
         )

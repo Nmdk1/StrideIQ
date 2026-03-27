@@ -536,6 +536,36 @@ def _ingest_activity_item(
         backfill_hr_from_garmin(db, athlete.id, new_activity)
     except Exception:
         logger.warning("HR backfill failed for garmin activity %s — non-fatal", external_id, exc_info=True)
+
+    # Race detection + workout classification — same logic as the Strava path.
+    # Without this, Garmin activities are born with is_race_candidate=False and
+    # workout_type=None, which means marathons, 5Ks, etc. are invisible to the
+    # fitness bank's race performance tracking.
+    try:
+        from services.performance_engine import detect_race_candidate
+        dist_m = new_activity.distance_m or 0
+        avg_hr = new_activity.avg_hr
+        max_hr = new_activity.max_hr
+        is_candidate, confidence = detect_race_candidate(
+            distance_meters=dist_m,
+            avg_hr=avg_hr,
+            max_hr=max_hr,
+            splits=[],
+            activity_name=new_activity.name,
+        )
+        if is_candidate:
+            new_activity.is_race_candidate = True
+            new_activity.race_confidence = confidence
+            logger.info("Garmin activity %s flagged as race candidate (conf=%.2f)", external_id, confidence)
+    except Exception:
+        logger.warning("Race detection failed for garmin activity %s — non-fatal", external_id, exc_info=True)
+
+    try:
+        from services.workout_classifier import WorkoutClassifierService
+        WorkoutClassifierService.classify_activity(new_activity)
+    except Exception:
+        logger.warning("Workout classification failed for garmin activity %s — non-fatal", external_id, exc_info=True)
+
     return "created"
 
 

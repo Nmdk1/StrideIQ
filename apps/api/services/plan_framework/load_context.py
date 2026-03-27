@@ -221,7 +221,7 @@ def build_load_context(
 
     observed: Optional[float] = None
     if acts_4w:
-        _peak, cur = compute_peak_and_current_weekly_miles(acts_4w, now=reference_date)
+        _peak, cur, _ = compute_peak_and_current_weekly_miles(acts_4w, now=reference_date)
         if cur and cur > 0:
             observed = float(cur)
             disclosures.append("observed_4w_mpw")

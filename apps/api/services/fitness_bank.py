@@ -131,6 +131,7 @@ class FitnessBank:
     recent_8w_p75_long_run_miles: float = 0.0
     recent_16w_p50_long_run_miles: float = 0.0
     recent_16w_run_count: int = 0
+    last_complete_week_miles: float = 0.0
     peak_confidence: str = "medium"
     
     def to_dict(self) -> Dict:
@@ -172,6 +173,7 @@ class FitnessBank:
                 "recent_8w_p75_long_run_miles": round(self.recent_8w_p75_long_run_miles, 1),
                 "recent_16w_p50_long_run_miles": round(self.recent_16w_p50_long_run_miles, 1),
                 "recent_16w_run_count": int(self.recent_16w_run_count),
+                "last_complete_week_miles": round(self.last_complete_week_miles, 1),
                 "peak_confidence": self.peak_confidence,
             }
         }
@@ -291,6 +293,7 @@ def _fitness_bank_to_dict(bank: "FitnessBank") -> dict:
         "recent_8w_p75_long_run_miles": bank.recent_8w_p75_long_run_miles,
         "recent_16w_p50_long_run_miles": bank.recent_16w_p50_long_run_miles,
         "recent_16w_run_count": bank.recent_16w_run_count,
+        "last_complete_week_miles": bank.last_complete_week_miles,
         "peak_confidence": bank.peak_confidence,
     }
 
@@ -347,6 +350,7 @@ def _fitness_bank_from_dict(d: dict) -> "FitnessBank":
         recent_8w_p75_long_run_miles=float(d.get("recent_8w_p75_long_run_miles", 0.0)),
         recent_16w_p50_long_run_miles=float(d.get("recent_16w_p50_long_run_miles", 0.0)),
         recent_16w_run_count=int(d.get("recent_16w_run_count", 0)),
+        last_complete_week_miles=float(d.get("last_complete_week_miles", 0.0)),
         peak_confidence=str(d.get("peak_confidence", "medium")),
     )
 
@@ -448,7 +452,7 @@ class FitnessBankCalculator:
         
         # Calculate peak capabilities
         peaks = self._calculate_peak_capabilities(activities)
-        canonical_peak_weekly, canonical_current_weekly = compute_peak_and_current_weekly_miles(activities)
+        canonical_peak_weekly, canonical_current_weekly, last_complete_week = compute_peak_and_current_weekly_miles(activities)
         recent_8w_median, recent_16w_p90 = compute_recent_weekly_band(activities)
         if canonical_peak_weekly > 0:
             peaks["peak_weekly"] = canonical_peak_weekly
@@ -532,6 +536,7 @@ class FitnessBankCalculator:
             recent_8w_p75_long_run_miles=p75_long_8w,
             recent_16w_p50_long_run_miles=p50_long_16w,
             recent_16w_run_count=run_count_16w,
+            last_complete_week_miles=last_complete_week,
             peak_confidence=peak_confidence,
         )
         try:
@@ -1160,6 +1165,7 @@ class FitnessBankCalculator:
             recent_8w_p75_long_run_miles=0.0,
             recent_16w_p50_long_run_miles=0.0,
             recent_16w_run_count=0,
+            last_complete_week_miles=0.0,
             peak_confidence="low",
         )
 
