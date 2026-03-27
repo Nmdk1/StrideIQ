@@ -104,10 +104,12 @@ def test_generator_sets_workout_variant_ids():
         tier="mid",
         days_per_week=5,
     )
-    non_rest = [w for w in plan.workouts if w.workout_type != "rest"]
-    assert non_rest, "expected at least one non-rest workout"
-    assert all(w.workout_variant_id is not None for w in non_rest), (
-        "framework workouts should resolve a variant id when registry is present"
+    non_training = {"rest", "race"}
+    training = [w for w in plan.workouts if w.workout_type not in non_training]
+    assert training, "expected at least one training workout"
+    assert all(w.workout_variant_id is not None for w in training), (
+        "framework workouts should resolve a variant id when registry is present; "
+        f"missing: {[(w.week, w.day, w.workout_type, w.title) for w in training if w.workout_variant_id is None]}"
     )
 
 

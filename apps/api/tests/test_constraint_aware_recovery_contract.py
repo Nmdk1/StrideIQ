@@ -123,8 +123,18 @@ def subscriber_athlete(db_session):
     return athlete
 
 
+def _patch_intake_gate(monkeypatch):
+    """Bypass the intake safety gate — these tests validate plan logic, not onboarding."""
+    from services.intake_context import IntakeContext
+    monkeypatch.setattr(
+        "services.intake_context.get_intake_context",
+        lambda _aid, _db: IntakeContext(basic_profile_completed=True, goals_completed=True),
+    )
+
+
 def test_constraint_aware_preserves_override_on_fallback(monkeypatch, db_session, subscriber_athlete):
     _override_deps(db_session, subscriber_athlete)
+    _patch_intake_gate(monkeypatch)
     client = TestClient(app)
     race = RacePerformance(
         date=date.today() - timedelta(days=40),
@@ -195,6 +205,7 @@ def test_constraint_aware_preserves_override_on_fallback(monkeypatch, db_session
 
 def test_quality_gate_failed_payload_contract_shape(monkeypatch, db_session, subscriber_athlete):
     _override_deps(db_session, subscriber_athlete)
+    _patch_intake_gate(monkeypatch)
     client = TestClient(app)
 
     monkeypatch.setattr("services.constraint_aware_planner.generate_constraint_aware_plan", lambda **_kwargs: _fake_plan())
