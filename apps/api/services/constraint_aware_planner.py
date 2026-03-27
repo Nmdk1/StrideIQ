@@ -39,6 +39,12 @@ from services.plan_framework.phase_builder import PhaseBuilder
 from services.plan_framework.volume_tiers import VolumeTierClassifier
 from services.plan_framework.mp_progression import MPProgressionPlanner, MPWeek
 from services.plan_framework.week_generator import generate_plan_week
+from services.plan_framework.kb_driven_generator import (
+    generate_plan as kb_generate_plan,
+    GeneratedTrainingPlan as KBPlan,
+    WeekPlan as KBWeekPlan,
+    DayPlan as KBDayPlan,
+)
 from services.race_signal_contract import normalize_distance_alias
 
 logger = logging.getLogger(__name__)
@@ -107,6 +113,39 @@ def _workouts_to_week_plan(
         total_miles=round(total, 1),
         is_cutback=is_cutback,
     )
+
+
+def _kb_plan_to_week_plans(
+    kb_plan: KBPlan,
+    plan_start: date,
+) -> List[WeekPlan]:
+    """Convert KB-driven generator output to the WeekPlan/DayPlan format."""
+    weeks = []
+    for kb_week in kb_plan.weeks:
+        days = []
+        for kb_day in kb_week.days:
+            wt = kb_day.workout_type
+            days.append(DayPlan(
+                day_of_week=kb_day.day,
+                workout_type=wt,
+                name=kb_day.variant_id.replace("_", " ").title() if kb_day.variant_id else wt,
+                description=kb_day.description or "",
+                target_miles=kb_day.target_miles,
+                intensity=_workout_intensity(wt),
+                paces={},
+                notes=[],
+            ))
+        week_start = plan_start + timedelta(weeks=kb_week.week - 1)
+        total = sum(d.target_miles for d in days)
+        weeks.append(WeekPlan(
+            week_number=kb_week.week,
+            theme=kb_week.emphasis,
+            start_date=week_start,
+            days=days,
+            total_miles=round(total, 1),
+            is_cutback=kb_week.is_cutback,
+        ))
+    return weeks
 
 
 @dataclass
@@ -278,43 +317,12 @@ class ConstraintAwarePlanner:
         except Exception as ex:
             logger.warning("constraint-aware load_context unavailable, continuing with fitness-bank only: %s", ex)
         
-        # 2. Build phase structure and volume progression via framework engine (T3-1)
+        # 2. Determine plan parameters from fitness bank
         horizon_weeks = max(4, (race_date - date.today()).days // 7)
-
-        tier_classifier = VolumeTierClassifier()
-
-        # Tier classification: use the athlete's DOCUMENTED HISTORY, not their
-        # current (potentially depressed post-race/injury) mileage.
-        # A 35mpw post-marathon athlete who has averaged 65mpw for months is HIGH
-        # tier — their current mileage is a recovery artifact, not their capability.
-        # Use bank.peak_weekly_miles (what they've DEMONSTRATED) for tier structure;
-        # applied_peak drives volume targets only.
-        # Exception: injured athletes need conservative structure regardless of history.
         applied_peak = volume_contract.get("applied_peak") or bank.current_weekly_miles
-        history_peak = bank.peak_weekly_miles or bank.current_weekly_miles or 0.0
-        if bank.constraint_type == ConstraintType.INJURY:
-            # Injured: structure must match current safe capacity, not prior history.
-            effective_tier_volume = bank.current_weekly_miles
-        else:
-            effective_tier_volume = max(bank.current_weekly_miles, history_peak)
-        tier = tier_classifier.classify(effective_tier_volume, race_distance)
-
-        phase_builder = PhaseBuilder()
-        phases = phase_builder.build_phases(
-            distance=race_distance,
-            duration_weeks=horizon_weeks,
-            tier=tier.value,
-        )
-
-        if not phases:
-            logger.warning("No phases generated - race date too soon?")
-            return self._generate_minimal_plan(bank, race_date, race_distance)
 
         # Starting volume: use the HIGHEST of trailing average, 8w median, and
-        # last complete week. The trailing average gets dragged down by post-race
-        # recovery dips or travel weeks.  The last complete week reflects what the
-        # athlete is actually doing RIGHT NOW.  We never prescribe W1 below what
-        # they already ran last week — that's a step backwards.
+        # last complete week so W1 never prescribes below what they already ran.
         starting_vol = max(
             bank.current_weekly_miles,
             bank.recent_8w_median_weekly_miles or 0.0,
@@ -322,248 +330,61 @@ class ConstraintAwarePlanner:
         )
         if starting_vol != bank.current_weekly_miles:
             logger.info(
-                "Starting volume adjusted: bank.current=%.1f → %.1f "
+                "Starting volume adjusted: bank.current=%.1f -> %.1f "
                 "(8w_median=%.1f, last_complete_week=%.1f)",
                 bank.current_weekly_miles, starting_vol,
-                bank.recent_8w_median_weekly_miles,
-                bank.last_complete_week_miles,
+                bank.recent_8w_median_weekly_miles or 0.0,
+                bank.last_complete_week_miles or 0.0,
             )
 
-        volumes = tier_classifier.calculate_volume_progression(
-            tier=tier,
-            distance=race_distance,
-            starting_volume=starting_vol,
-            plan_weeks=horizon_weeks,
-            peak_volume_override=applied_peak,
-        )
-        cutback_weeks_set = phase_builder.get_cutback_weeks(phases)
-
-        # Days per week: intake questionnaire is the authority when available
-        # (the athlete told us how many days they can run). Fall back to
-        # inferring from bank rest pattern if intake is absent.
-        # Cap at 6 — the 7-day structure puts a second quality session on
-        # Saturday (day 5), the day before the long run.
+        # Days per week: intake questionnaire is the authority when available.
         if intake and intake.days_per_week:
             days_per_week = max(3, min(6, intake.days_per_week))
         else:
             days_per_week = max(3, min(6, 7 - len(bank.typical_rest_days or [])))
 
-        # Easy-long floor: prefer L30 max seed from load_ctx, fall back to bank's
-        # current long run miles (more recent than the average), then average.
-        # Take the MAX of both sources: test/sparse DB data should not REDUCE the
-        # floor below the athlete's bank-established long run capability.
+        # Current long run: use the best available from L30, bank, or load context
         l30_from_ctx = (load_ctx.l30_max_easy_long_mi if load_ctx is not None else None) or 0.0
-        bank_known = (
+        bank_known_lr = float(
             getattr(bank, "current_long_run_miles", None)
             or getattr(bank, "average_long_run_miles", None)
             or 0.0
         )
-        l30_floor: Optional[float] = max(l30_from_ctx, float(bank_known)) or None
+        current_lr = max(l30_from_ctx, bank_known_lr) or (starting_vol / max(1, days_per_week) * 1.5)
 
-        # Marathon MP block — compute per-week long/medium-long types
-        mp_sequence: Dict[int, MPWeek] = {}
-        mp_block_start_week = 0
-        if race_distance == "marathon":
-            mp_phase_weeks = [
-                w for p in phases
-                if p.phase_type.value in ("marathon_specific", "race_specific")
-                for w in p.weeks
-            ]
-            if mp_phase_weeks:
-                mp_block_start_week = min(mp_phase_weeks)
-                mp_tier = tier.value if tier.value in ("low", "mid", "high", "elite") else "mid"
-                sequence = MPProgressionPlanner().build_sequence(mp_tier, len(mp_phase_weeks))
-                mp_sequence = {s.week_in_phase: s for s in sequence}
+        # Experience level
+        exp_map = {
+            ExperienceLevel.BEGINNER: "beginner",
+            ExperienceLevel.INTERMEDIATE: "intermediate",
+            ExperienceLevel.EXPERIENCED: "experienced",
+            ExperienceLevel.ELITE: "experienced",
+        }
+        experience = exp_map.get(bank.experience_level, "intermediate")
 
-        # Plan start = Monday of week 1.
-        # race_date - N weeks may land on any day; normalise to Monday so all
-        # week.start_date values are Mondays and date arithmetic in the save
-        # function is consistent.
+        # Plan start: normalise to Monday
         raw_start = race_date - timedelta(weeks=horizon_weeks)
         plan_start = raw_start - timedelta(days=raw_start.weekday())
-        # After normalization plan_start may be up to 6 days earlier than raw_start,
-        # so the race might now be in week N+1.  Recompute horizon_weeks using
-        # ceiling division so the last generated week always contains the race.
-        # ceil_div trick: -(-a // b) == math.ceil(a / b) without float conversion.
-        horizon_weeks = max(4, -(-((race_date - plan_start).days) // 7))  # P0-GATE: GREEN
+        horizon_weeks = max(4, -(-((race_date - plan_start).days) // 7))
 
-        # 3. Generate each week via the public framework interface (T3-2)
-        athlete_ctx: Dict[str, Any] = {
-            "proven_peak_long_run_miles": bank.peak_long_run_miles or None,
-        }
-        weeks: List[WeekPlan] = []
-        easy_long_state: Dict[str, Any] = {
-            "previous_mi": None,
-            "floor_mi": l30_floor,
-            "floor_applied": False,
-        }
-        mp_long_run_count = 0
+        # 3. Generate plan via KB-driven generator
+        logger.info(
+            "KB generator: distance=%s, weeks=%d, days=%d, start_vol=%.1f, "
+            "current_lr=%.1f, peak_vol=%s, peak_lr=%s, experience=%s",
+            race_distance, horizon_weeks, days_per_week, starting_vol,
+            current_lr, applied_peak, bank.peak_long_run_miles, experience,
+        )
+        kb_plan = kb_generate_plan(
+            distance=race_distance,
+            duration_weeks=horizon_weeks,
+            days_per_week=days_per_week,
+            current_weekly_miles=starting_vol,
+            current_long_run_miles=current_lr,
+            peak_weekly_miles=applied_peak if applied_peak > starting_vol else None,
+            peak_long_run_miles=bank.peak_long_run_miles or None,
+            experience_level=experience,
+        )
 
-        # Simultaneous-ramp guard state.
-        # Rule: build volume first, then add intensity.  If volume is climbing
-        # this week, freeze quality work at the prior week's level — don't reduce
-        # it, just don't escalate it.  Once volume stabilises, intensity resumes.
-        prev_week_volume: float = 0.0
-        prev_threshold_continuous_min: Optional[int] = None
-        prev_threshold_intervals: Optional[tuple] = None
-
-        for phase in phases:
-            for week_num in phase.weeks:
-                if week_num > horizon_weeks:
-                    continue
-
-                week_idx = week_num - 1
-                week_volume = float(
-                    volumes[week_idx] if week_idx < len(volumes) else volumes[-1]
-                )
-                week_volume = self._apply_volume_contract_bounds(week_volume, volume_contract)
-
-                # Injury return: conservatively cap early weeks
-                if bank.constraint_type == ConstraintType.INJURY and week_num <= 4:
-                    safe_max = self._calculate_safe_weekly(
-                        bank.current_weekly_miles, week_num, bank.tau1, bank.peak_weekly_miles
-                    )
-                    week_volume = min(week_volume, safe_max)
-
-                week_in_phase = week_num - phase.weeks[0] + 1
-                is_cutback = week_num in cutback_weeks_set
-
-                # MP / HMP flags
-                will_have_mp_long = False
-                will_have_mp_medium_long = False
-                will_have_hmp_long = False
-                if (
-                    race_distance == "marathon"
-                    and phase.phase_type.value in ("marathon_specific", "race_specific")
-                    and tier.value != "builder"
-                ):
-                    mp_block_week = week_num - mp_block_start_week + 1
-                    mp_info = mp_sequence.get(mp_block_week)
-                    if mp_info:
-                        will_have_mp_long = mp_info.long_type == "long_mp"
-                        will_have_mp_medium_long = mp_info.medium_long_type == "medium_long_mp"
-                elif race_distance == "half_marathon" and tier.value != "builder":
-                    from services.plan_framework.generator import PlanGenerator as _PG
-                    will_have_hmp_long = _PG().will_week_have_hmp_long(
-                        phase=phase,
-                        week_in_phase=week_in_phase,
-                        is_cutback=is_cutback,
-                        distance=race_distance,
-                    )
-
-                if will_have_mp_long:
-                    mp_long_run_count += 1
-
-                week_start = plan_start + timedelta(weeks=week_idx)
-                week_easy_long_state = dict(easy_long_state)
-
-                # Simultaneous-ramp guard: if this week's volume is climbing
-                # above last week's, freeze quality at the established level.
-                # Already-established intensity is kept; only escalation is blocked.
-                volume_building = (
-                    prev_week_volume > 0
-                    and week_volume > prev_week_volume * 1.05
-                )
-                freeze_threshold_continuous = prev_threshold_continuous_min if volume_building else None
-                freeze_threshold_intervals = prev_threshold_intervals if volume_building else None
-
-                workouts = generate_plan_week(
-                    week=week_num,
-                    phase=phase,
-                    week_in_phase=week_in_phase,
-                    weekly_volume=week_volume,
-                    days_per_week=days_per_week,
-                    distance=race_distance,
-                    tier=tier.value,
-                    duration_weeks=horizon_weeks,
-                    is_cutback=is_cutback,
-                    is_mp_long_week=will_have_mp_long,
-                    is_hmp_long_week=will_have_hmp_long,
-                    is_mp_medium_long_week=will_have_mp_medium_long,
-                    mp_week=mp_long_run_count,
-                    athlete_ctx=athlete_ctx,
-                    easy_long_state=week_easy_long_state,
-                    start_date=week_start,
-                    prev_threshold_continuous_min=freeze_threshold_continuous,
-                    prev_threshold_intervals=freeze_threshold_intervals,
-                )
-
-                # Update simultaneous-ramp guard state for next week.
-                prev_week_volume = week_volume
-                for wo in workouts:
-                    if wo.workout_type == "threshold" and wo.segments:
-                        for seg in wo.segments:
-                            if isinstance(seg, dict) and seg.get("type") == "threshold":
-                                dm = seg.get("duration_min")
-                                if dm is not None:
-                                    prev_threshold_continuous_min = int(dm)
-                                    break
-                    if wo.workout_type == "threshold_intervals" and wo.segments:
-                        for seg in wo.segments:
-                            if isinstance(seg, dict) and seg.get("type") == "intervals":
-                                r, d = seg.get("reps"), seg.get("duration_min")
-                                if r is not None and d is not None:
-                                    prev_threshold_intervals = (int(r), int(d))
-                                    break
-
-                # Track long run for next week's easy_long_state
-                for wo in workouts:
-                    if (
-                        wo.workout_type in {"long", "long_run", "long_mp", "long_hmp"}
-                        and (wo.distance_miles or 0) > 0
-                    ):
-                        easy_long_state["previous_mi"] = wo.distance_miles
-                        easy_long_state["floor_mi"] = None
-                        easy_long_state["floor_applied"] = True
-
-                # W1 long run cap.
-                # Primary rule (Substack: "Forget the 10% Rule", Takeaway 1):
-                #   First long run = L30_non_race_max + 1 mile.  This respects
-                #   the athlete's actual recent training baseline without spiking.
-                # Fallback (no L30 data): current_weekly_miles / days * 2.
-                # Hard ceiling: median * 0.40 (never exceed 40% of a typical week).
-                # Distance ceiling: 10K/5K plans cap long run at 37% of W1 volume
-                #   so the "tenk_long_run_dominance" quality gate (40% ratio) is not
-                #   breached when L30+1 gives a large value after a marathon race.
-                if week_num == 1 and bank.current_weekly_miles:
-                    if l30_floor and l30_floor > 0:
-                        # L30 floor is already the non-race max; +1 is the safe first step.
-                        w1_long_cap = float(l30_floor) + 1.0
-                    else:
-                        w1_long_cap = bank.current_weekly_miles / max(1, days_per_week) * 2.0
-                    if bank.recent_8w_median_weekly_miles:
-                        w1_long_cap = min(w1_long_cap, bank.recent_8w_median_weekly_miles * 0.40)
-                    long_types = {"long", "long_run", "long_mp", "long_hmp", "easy_long"}
-                    for wo in workouts:
-                        if wo.workout_type in long_types and (wo.distance_miles or 0) > w1_long_cap:
-                            wo.distance_miles = round(w1_long_cap, 1)
-
-                    # For short-race plans the long run must not dominate the week.
-                    # The quality gate checks ratio = long / actual_total_miles (not
-                    # long / target volume), so we must cap against the actual total
-                    # after prescription, not the planned week_volume.
-                    if race_distance in ("10k", "5k"):
-                        actual_total_w1 = sum(
-                            (wo.distance_miles or 0) for wo in workouts
-                        )
-                        if actual_total_w1 > 0:
-                            dominance_cap = actual_total_w1 * 0.37
-                            for wo in workouts:
-                                if wo.workout_type in long_types and (wo.distance_miles or 0) > dominance_cap:
-                                    wo.distance_miles = round(dominance_cap, 1)
-
-                    # After applying W1 cap, update easy_long_state to the reduced
-                    # value so subsequent weeks compute their progressions from the
-                    # actual prescription, not the pre-cap baseline.
-                    for wo in workouts:
-                        if wo.workout_type in {"long", "long_run", "long_mp", "long_hmp"} and (wo.distance_miles or 0) > 0:
-                            easy_long_state["previous_mi"] = wo.distance_miles
-                            break
-
-                # Convert List[GeneratedWorkout] → WeekPlan (T3-3: theme = phase name)
-                week_start_date = plan_start + timedelta(weeks=week_idx)
-                week_plan = _workouts_to_week_plan(workouts, week_num, phase, week_start_date, is_cutback=is_cutback)
-                weeks.append(week_plan)
+        weeks = _kb_plan_to_week_plans(kb_plan, plan_start)
         
         # 5. Inject race day with pre-race and post-race handling.
         # Override order: race > pre-race > post-race-rest > any regular workout.
