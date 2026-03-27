@@ -2056,6 +2056,33 @@ class AthleteWorkoutResponse(Base):
     )
 
 
+class AthleteOverride(Base):
+    """
+    Athlete-specified overrides for fitness bank values.
+
+    The algorithm computes peaks and RPI from activity history, but the athlete
+    knows context the data can't capture: compromised races, illness, returning
+    from injury with zero quality work, etc.  These overrides let the athlete
+    (or coach) tell the system "I know better on this metric."
+
+    When set, the fitness bank substitutes the override for the computed value.
+    """
+    __tablename__ = "athlete_override"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    athlete_id = Column(UUID(as_uuid=True), ForeignKey("athlete.id"), nullable=False, unique=True)
+    peak_weekly_miles = Column(Float, nullable=True)
+    peak_long_run_miles = Column(Float, nullable=True)
+    rpi = Column(Float, nullable=True)
+    reason = Column(Text, nullable=True)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    __table_args__ = (
+        Index("ix_athlete_override_athlete_id", "athlete_id"),
+    )
+
+
 class AthleteLearning(Base):
     """
     Banked learnings about what works/doesn't work for an athlete.

@@ -994,3 +994,70 @@ def create_checkin(
         pass
 
     return db_checkin
+
+
+# ---------------------------------------------------------------------------
+# Athlete overrides — athlete-specified corrections to fitness bank values
+# ---------------------------------------------------------------------------
+
+class AthleteOverridePayload(BaseModel):
+    peak_weekly_miles: Optional[float] = None
+    peak_long_run_miles: Optional[float] = None
+    rpi: Optional[float] = None
+    reason: Optional[str] = None
+
+
+@router.get("/athlete/overrides")
+def get_athlete_overrides(
+    current_user: Athlete = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    from models import AthleteOverride
+    row = db.query(AthleteOverride).filter(AthleteOverride.athlete_id == current_user.id).first()
+    if not row:
+        return {"peak_weekly_miles": None, "peak_long_run_miles": None, "rpi": None, "reason": None}
+    return {
+        "peak_weekly_miles": row.peak_weekly_miles,
+        "peak_long_run_miles": row.peak_long_run_miles,
+        "rpi": row.rpi,
+        "reason": row.reason,
+        "updated_at": row.updated_at.isoformat() if row.updated_at else None,
+    }
+
+
+@router.put("/athlete/overrides")
+def set_athlete_overrides(
+    payload: AthleteOverridePayload,
+    current_user: Athlete = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    from models import AthleteOverride
+    row = db.query(AthleteOverride).filter(AthleteOverride.athlete_id == current_user.id).first()
+    if not row:
+        row = AthleteOverride(athlete_id=current_user.id)
+        db.add(row)
+    if payload.peak_weekly_miles is not None:
+        row.peak_weekly_miles = payload.peak_weekly_miles
+    if payload.peak_long_run_miles is not None:
+        row.peak_long_run_miles = payload.peak_long_run_miles
+    if payload.rpi is not None:
+        row.rpi = payload.rpi
+    if payload.reason is not None:
+        row.reason = payload.reason
+    db.commit()
+    db.refresh(row)
+
+    # Invalidate fitness bank cache so next plan generation uses overrides.
+    try:
+        from core.cache import delete_cache
+        delete_cache(f"fitness_bank:{current_user.id}")
+    except Exception:
+        pass
+
+    return {
+        "status": "updated",
+        "peak_weekly_miles": row.peak_weekly_miles,
+        "peak_long_run_miles": row.peak_long_run_miles,
+        "rpi": row.rpi,
+        "reason": row.reason,
+    }

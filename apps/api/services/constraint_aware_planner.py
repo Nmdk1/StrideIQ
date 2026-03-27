@@ -388,6 +388,9 @@ class ConstraintAwarePlanner:
         horizon_weeks = max(4, -(-((race_date - plan_start).days) // 7))  # P0-GATE: GREEN
 
         # 3. Generate each week via the public framework interface (T3-2)
+        athlete_ctx: Dict[str, Any] = {
+            "proven_peak_long_run_miles": bank.peak_long_run_miles or None,
+        }
         weeks: List[WeekPlan] = []
         easy_long_state: Dict[str, Any] = {
             "previous_mi": None,
@@ -478,6 +481,7 @@ class ConstraintAwarePlanner:
                     is_hmp_long_week=will_have_hmp_long,
                     is_mp_medium_long_week=will_have_mp_medium_long,
                     mp_week=mp_long_run_count,
+                    athlete_ctx=athlete_ctx,
                     easy_long_state=week_easy_long_state,
                     start_date=week_start,
                     prev_threshold_continuous_min=freeze_threshold_continuous,

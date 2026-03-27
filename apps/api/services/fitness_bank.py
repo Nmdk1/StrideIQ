@@ -539,11 +539,38 @@ class FitnessBankCalculator:
             last_complete_week_miles=last_complete_week,
             peak_confidence=peak_confidence,
         )
+
+        # Apply athlete overrides.  These take absolute precedence —
+        # the athlete knows context the algorithm can't see.
+        result = self._apply_overrides(athlete_id, result)
+
         try:
             set_cache(_cache_key, _fitness_bank_to_dict(result), ttl=900)
         except Exception:
             pass  # Non-critical — cache write failure must not break the response
         return result
+
+    def _apply_overrides(self, athlete_id: UUID, bank: FitnessBank) -> FitnessBank:
+        """Apply athlete-specified overrides to the computed fitness bank."""
+        try:
+            from models import AthleteOverride
+            row = self.db.query(AthleteOverride).filter(
+                AthleteOverride.athlete_id == athlete_id
+            ).first()
+            if row is None:
+                return bank
+            if row.peak_weekly_miles is not None:
+                logger.info("Override: peak_weekly_miles %.1f → %.1f", bank.peak_weekly_miles, row.peak_weekly_miles)
+                bank.peak_weekly_miles = row.peak_weekly_miles
+            if row.peak_long_run_miles is not None:
+                logger.info("Override: peak_long_run_miles %.1f → %.1f", bank.peak_long_run_miles, row.peak_long_run_miles)
+                bank.peak_long_run_miles = row.peak_long_run_miles
+            if row.rpi is not None:
+                logger.info("Override: best_rpi %.2f → %.2f", bank.best_rpi, row.rpi)
+                bank.best_rpi = row.rpi
+        except Exception as ex:
+            logger.warning("Could not apply athlete overrides: %s", ex)
+        return bank
 
     def _calculate_peak_capabilities(self, activities: List) -> Dict:
         """Calculate peak capabilities from all activities."""

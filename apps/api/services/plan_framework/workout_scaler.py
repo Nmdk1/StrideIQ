@@ -181,6 +181,7 @@ class WorkoutScaler:
             return self._scale_easy_with_strides(weekly_volume)
         
         elif workout_type in ["long", "long_run"]:
+            proven_peak_lr = (athlete_ctx or {}).get("proven_peak_long_run_miles")
             return self._scale_long_run(
                 weekly_volume,
                 tier,
@@ -193,6 +194,7 @@ class WorkoutScaler:
                 history_override=history_override,
                 easy_long_floor_mi=easy_long_floor_mi,
                 long_run_modifier=long_run_modifier,
+                athlete_proven_long_run_miles=proven_peak_lr,
             )
         
         elif workout_type in ["threshold_intervals", "t_intervals"]:
@@ -321,10 +323,18 @@ class WorkoutScaler:
         history_override: bool = False,
         easy_long_floor_mi: Optional[float] = None,
         long_run_modifier: float = 1.0,
+        athlete_proven_long_run_miles: Optional[float] = None,
     ) -> ScaledWorkout:
         """Scale easy long run (`workout_type` long / long_run) — aerobic only."""
         goal = _parse_goal_distance(distance)
         peak = peak_long_miles(goal, tier)
+
+        # N=1: athlete's demonstrated peak long run raises the population cap.
+        # If they've safely completed 22-mi long runs before, the algorithm
+        # must not cap them at 19 because of a percentage formula.
+        if athlete_proven_long_run_miles and athlete_proven_long_run_miles > peak:
+            peak = float(athlete_proven_long_run_miles)
+
         start_long = min(standard_start_long_miles(goal, tier), peak)
         tw = max(float(weekly_volume), 1.0)
         dist_key = (distance or "marathon").strip().lower()
@@ -411,6 +421,10 @@ class WorkoutScaler:
         if floor_min_int is not None:
             mi = max(mi, floor_min_int)
         hard_cap = math.floor(tw * pct_cap)
+        # N=1: if the athlete has proven they can do longer, don't let the
+        # percentage cap prevent a proven-safe distance.
+        if athlete_proven_long_run_miles:
+            hard_cap = max(hard_cap, int(athlete_proven_long_run_miles))
         if floor_min_int is not None and mi >= floor_min_int:
             mi = max(mi, min(mi, hard_cap) if hard_cap >= floor_min_int else floor_min_int)
         else:
