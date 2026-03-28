@@ -35,6 +35,7 @@ from services.workout_prescription import (
     DayPlan
 )
 from services.plan_framework.load_context import build_load_context, history_anchor_date
+from services.plan_framework.n1_engine import generate_n1_plan, ReadinessGateError
 from services.race_signal_contract import normalize_distance_alias
 
 logger = logging.getLogger(__name__)
@@ -317,24 +318,110 @@ class ConstraintAwarePlanner:
         )
         _current_lr = max(l30_from_ctx, bank_known_lr) or (starting_vol / max(1, days_per_week) * 1.5)
 
-        # Experience level
-        exp_map = {
-            ExperienceLevel.BEGINNER: "beginner",
-            ExperienceLevel.INTERMEDIATE: "intermediate",
-            ExperienceLevel.EXPERIENCED: "experienced",
-            ExperienceLevel.ELITE: "experienced",
-        }
-        _experience = exp_map.get(bank.experience_level, "intermediate")
-
         # Plan start: normalise to Monday
         raw_start = race_date - timedelta(weeks=horizon_weeks)
         plan_start = raw_start - timedelta(days=raw_start.weekday())
         horizon_weeks = max(4, -(-((race_date - plan_start).days) // 7))
 
-        # 3. Generate plan via N=1 engine (pending implementation)
-        raise NotImplementedError(
-            "N=1 plan engine not yet wired. Old KB-driven generator removed. "
-            "See docs/specs/N1_PLAN_ENGINE_SPEC.md for the replacement design."
+        # 3. Generate plan via N=1 engine
+        weeks = generate_n1_plan(
+            race_distance=race_distance,
+            race_date=race_date,
+            plan_start=plan_start,
+            horizon_weeks=horizon_weeks,
+            days_per_week=days_per_week,
+            starting_vol=starting_vol,
+            current_lr=_current_lr,
+            applied_peak=_applied_peak,
+            experience=bank.experience_level,
+            best_rpi=bank.best_rpi,
+            weeks_since_peak=bank.weeks_since_peak,
+            goal_time=goal_time,
+        )
+
+        # 5. Inject race day with pre-race and post-race handling.
+        if weeks:
+            last_week = weeks[-1]
+            race_day_of_week = race_date.weekday()
+            race_day = DayPlan(
+                day_of_week=race_day_of_week,
+                workout_type="race",
+                name=f"Race Day — {race_distance.replace('_', ' ').title()}",
+                description="Goal race. Warm up well, execute your plan.",
+                target_miles=0.0,
+                intensity="race",
+                paces={},
+                notes=[],
+            )
+
+            pre_race_dow = (race_day_of_week - 1) % 7
+            pre_race_day = DayPlan(
+                day_of_week=pre_race_dow,
+                workout_type="pre_race",
+                name="Pre-race shakeout",
+                description="3-4mi easy + 4x100m strides. Stay loose, save your legs.",
+                target_miles=4.0,
+                intensity="easy",
+                paces={},
+                notes=["Keep it short and relaxed"],
+            )
+
+            post_race_dow = (race_day_of_week + 1) % 7
+            post_race_day = DayPlan(
+                day_of_week=post_race_dow,
+                workout_type="rest",
+                name="Post-race recovery",
+                description="Complete rest. You earned it.",
+                target_miles=0.0,
+                intensity="rest",
+                paces={},
+                notes=[],
+            )
+
+            override_dows = {race_day_of_week, pre_race_dow, post_race_dow}
+            existing = [d for d in last_week.days if d.day_of_week not in override_dows]
+            last_week.days = sorted(
+                existing + [pre_race_day, race_day, post_race_day],
+                key=lambda d: d.day_of_week,
+            )
+
+        # 7. Insert tune-up race specifics
+        if tune_up_races:
+            weeks = self._insert_tune_up_details(weeks, tune_up_races, bank)
+
+        # 8. Generate counter-conventional notes
+        notes = self._generate_insights(bank, weeks, tune_up_races)
+
+        # 9. Calculate predictions
+        predicted, ci, scenarios, prediction_rationale_tags, uncertainty_reason = self._predict_race(
+            bank,
+            race_distance,
+            goal_time,
+        )
+        prediction_rationale_tags = list(dict.fromkeys(prediction_rationale_tags + rationale_tags))
+
+        total_miles = sum(w.total_miles for w in weeks)
+
+        return ConstraintAwarePlan(
+            weeks=weeks,
+            total_weeks=len(weeks),
+            total_miles=total_miles,
+            race_date=race_date,
+            race_distance=race_distance,
+            tune_up_races=tune_up_races or [],
+            fitness_bank=bank.to_dict(),
+            tau1=bank.tau1,
+            tau2=bank.tau2,
+            model_confidence=self._assess_confidence(bank),
+            counter_conventional_notes=notes,
+            predicted_time=predicted,
+            prediction_ci=ci,
+            prediction_scenarios=scenarios,
+            prediction_rationale_tags=prediction_rationale_tags,
+            prediction_uncertainty_reason=uncertainty_reason,
+            volume_contract=volume_contract,
+            quality_gate_fallback=quality_gate_fallback,
+            quality_gate_reasons=quality_gate_reasons or [],
         )
 
     def _is_peak_plausible(self, peak: float, band_min: float, band_max: float, peak_confidence: str) -> bool:
