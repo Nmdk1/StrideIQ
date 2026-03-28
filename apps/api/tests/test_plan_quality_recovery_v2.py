@@ -5,8 +5,6 @@ from services.constraint_aware_planner import ConstraintAwarePlanner
 from services.fitness_bank import ConstraintType, ExperienceLevel, FitnessBank
 from services.plan_quality_gate import evaluate_constraint_aware_plan
 from services.plan_framework.constants import PlanTier
-from services.plan_framework.generator import GeneratedPlan, GeneratedWorkout
-from services.starter_plan import _apply_cold_start_guardrails
 from services.week_theme_generator import WeekTheme
 from services.workout_prescription import WorkoutPrescriptionGenerator
 
@@ -120,72 +118,6 @@ def test_no_marathon_style_session_sizes_in_10k_block():
     thresholds = [d.target_miles for d in week.days if d.workout_type == "threshold"]
     assert long_run <= 18.0
     assert all(t <= 8.0 for t in thresholds)
-
-
-def test_starter_plan_cold_start_week1_guardrail():
-    workouts = []
-    start = date.today()
-    for i in range(1, 5):
-        for d in range(5):
-            workouts.append(
-                GeneratedWorkout(
-                    week=i,
-                    day=d,
-                    day_name="Mon",
-                    date=start + timedelta(days=(i - 1) * 7 + d),
-                    workout_type="easy",
-                    title="Easy",
-                    description="Easy",
-                    phase="base",
-                    phase_name="Base",
-                    distance_miles=12.0,
-                    duration_minutes=90,
-                    pace_description="easy",
-                    segments=None,
-                    option="A",
-                )
-            )
-        workouts.append(
-            GeneratedWorkout(
-                week=i,
-                day=6,
-                day_name="Sun",
-                date=start + timedelta(days=(i - 1) * 7 + 6),
-                workout_type="long",
-                title="Long",
-                description="Long",
-                phase="base",
-                phase_name="Base",
-                distance_miles=20.0,
-                duration_minutes=180,
-                pace_description="long",
-                segments=None,
-                option="A",
-            )
-        )
-    plan = GeneratedPlan(
-        plan_tier=PlanTier.STANDARD,
-        distance="marathon",
-        duration_weeks=4,
-        volume_tier="high",
-        days_per_week=6,
-        athlete_id=None,
-        rpi=None,
-        start_date=start,
-        end_date=start + timedelta(days=27),
-        race_date=None,
-        phases=[],
-        workouts=workouts,
-        weekly_volumes=[80.0, 85.0, 90.0, 95.0],
-        peak_volume=95.0,
-        total_miles=350.0,
-        total_quality_sessions=0,
-    )
-    guarded = _apply_cold_start_guardrails(plan)
-    week1_total = sum(w.distance_miles or 0 for w in guarded.workouts if w.week == 1)
-    week1_long = max((w.distance_miles or 0 for w in guarded.workouts if w.week == 1 and w.workout_type == "long"), default=0)
-    assert week1_total <= 25.1
-    assert week1_long <= 8.0
 
 
 def test_athlete_peak_override_applied_or_clamped_with_reason():

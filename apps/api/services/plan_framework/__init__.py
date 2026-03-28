@@ -21,7 +21,6 @@ from .volume_tiers import VolumeTierClassifier
 from .phase_builder import PhaseBuilder, TrainingPhase
 from .workout_scaler import WorkoutScaler, ScaledWorkout
 from .pace_engine import PaceEngine, TrainingPaces
-from .generator import PlanGenerator, GeneratedPlan, GeneratedWorkout
 from .constants import PlanTier, VolumeTier, Distance, Phase
 
 __all__ = [
@@ -40,11 +39,6 @@ __all__ = [
     'ScaledWorkout',
     'PaceEngine',
     'TrainingPaces',
-    
-    # Main generator
-    'PlanGenerator',
-    'GeneratedPlan',
-    'GeneratedWorkout',
     
     # Constants
     'PlanTier',

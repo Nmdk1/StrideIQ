@@ -1518,41 +1518,20 @@ def regenerate_starter_plan(
 
     db.commit()
 
-    # Create new starter plan from intake (best-effort deterministic).
-    from services.starter_plan import ensure_starter_plan
+    # Starter plan generation removed — N=1 engine pending.
     from services.admin_audit import record_admin_audit_event
-
-    created = ensure_starter_plan(db, athlete=target)
-    if not created:
-        record_admin_audit_event(
-            db,
-            request=http_request,
-            actor=current_user,
-            action="plan.starter.regenerate.failed",
-            target_athlete_id=str(target.id),
-            reason=request.reason,
-            payload={"before": before, "after": {"archived_plan_ids": archived_ids}, "error": "ensure_starter_plan returned None"},
-        )
-        db.commit()
-        raise HTTPException(status_code=500, detail="Failed to regenerate starter plan")
-
-    after = {
-        "archived_plan_ids": archived_ids,
-        "new_plan_id": str(created.id),
-        "new_generation_method": getattr(created, "generation_method", None),
-    }
 
     record_admin_audit_event(
         db,
         request=http_request,
         actor=current_user,
-        action="plan.starter.regenerate",
+        action="plan.starter.regenerate.skipped",
         target_athlete_id=str(target.id),
         reason=request.reason,
-        payload={"before": before, "after": after},
+        payload={"before": before, "after": {"archived_plan_ids": archived_ids}, "note": "starter_plan removed, N=1 engine pending"},
     )
     db.commit()
-    return {"success": True, **after}
+    raise HTTPException(status_code=501, detail="Starter plan generation removed. N=1 engine pending.")
 
 
 @router.post("/users/{user_id}/block")

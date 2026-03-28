@@ -387,9 +387,10 @@ def test_easy_long_floor_outlier_cap_preserves_tier_minimum():
     assert f is not None and f >= 1.0, f"Floor collapsed to {f}"
 
 
+@pytest.mark.xfail(reason="Old PlanGenerator removed — N=1 engine pending", raises=ModuleNotFoundError)
 def test_semi_custom_low_questionnaire_high_history_raises_first_long(db_session):
     from models import Activity, Athlete
-    from services.plan_framework.generator import PlanGenerator
+    from services.plan_framework.generator import PlanGenerator  # noqa: F811
 
     athlete = Athlete(
         email=f"semi_{uuid4()}@example.com",
@@ -464,9 +465,10 @@ def test_semi_custom_low_questionnaire_high_history_raises_first_long(db_session
     assert (longs[0].distance_miles or 0) >= 13.5
 
 
+@pytest.mark.xfail(reason="Old PlanGenerator removed — N=1 engine pending", raises=ModuleNotFoundError)
 def test_generate_standard_use_history_false_vs_true_volume_shift(db_session):
     from models import Activity, Athlete
-    from services.plan_framework.generator import PlanGenerator
+    from services.plan_framework.generator import PlanGenerator  # noqa: F811
 
     athlete = Athlete(
         email=f"std_{uuid4()}@example.com",

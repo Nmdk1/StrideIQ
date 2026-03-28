@@ -35,10 +35,6 @@ from services.workout_prescription import (
     DayPlan
 )
 from services.plan_framework.load_context import build_load_context, history_anchor_date
-from services.plan_framework.kb_driven_generator import (
-    generate_plan as kb_generate_plan,
-    GeneratedTrainingPlan as KBPlan,
-)
 from services.race_signal_contract import normalize_distance_alias
 
 logger = logging.getLogger(__name__)
@@ -110,36 +106,11 @@ def _workouts_to_week_plan(
 
 
 def _kb_plan_to_week_plans(
-    kb_plan: KBPlan,
+    kb_plan: Any,
     plan_start: date,
 ) -> List[WeekPlan]:
-    """Convert KB-driven generator output to the WeekPlan/DayPlan format."""
-    weeks = []
-    for kb_week in kb_plan.weeks:
-        days = []
-        for kb_day in kb_week.days:
-            wt = kb_day.workout_type
-            days.append(DayPlan(
-                day_of_week=kb_day.day,
-                workout_type=wt,
-                name=kb_day.variant_id.replace("_", " ").title() if kb_day.variant_id else wt,
-                description=kb_day.description or "",
-                target_miles=kb_day.target_miles,
-                intensity=_workout_intensity(wt),
-                paces={},
-                notes=[],
-            ))
-        week_start = plan_start + timedelta(weeks=kb_week.week - 1)
-        total = sum(d.target_miles for d in days)
-        weeks.append(WeekPlan(
-            week_number=kb_week.week,
-            theme=kb_week.emphasis,
-            start_date=week_start,
-            days=days,
-            total_miles=round(total, 1),
-            is_cutback=kb_week.is_cutback,
-        ))
-    return weeks
+    """Dead code — was KB-driven generator converter. Retained for N=1 engine reference."""
+    raise NotImplementedError("KB converter removed with old generator.")
 
 
 @dataclass
@@ -360,25 +331,11 @@ class ConstraintAwarePlanner:
         plan_start = raw_start - timedelta(days=raw_start.weekday())
         horizon_weeks = max(4, -(-((race_date - plan_start).days) // 7))
 
-        # 3. Generate plan via KB-driven generator
-        logger.info(
-            "KB generator: distance=%s, weeks=%d, days=%d, start_vol=%.1f, "
-            "current_lr=%.1f, peak_vol=%s, peak_lr=%s, experience=%s",
-            race_distance, horizon_weeks, days_per_week, starting_vol,
-            current_lr, applied_peak, bank.peak_long_run_miles, experience,
+        # 3. Generate plan via N=1 engine (pending implementation)
+        raise NotImplementedError(
+            "N=1 plan engine not yet wired. Old KB-driven generator removed. "
+            "See docs/specs/N1_PLAN_ENGINE_SPEC.md for the replacement design."
         )
-        kb_plan = kb_generate_plan(
-            distance=race_distance,
-            duration_weeks=horizon_weeks,
-            days_per_week=days_per_week,
-            current_weekly_miles=starting_vol,
-            current_long_run_miles=current_lr,
-            peak_weekly_miles=applied_peak if applied_peak > starting_vol else None,
-            peak_long_run_miles=bank.peak_long_run_miles or None,
-            experience_level=experience,
-        )
-
-        weeks = _kb_plan_to_week_plans(kb_plan, plan_start)
         
         # 5. Inject race day with pre-race and post-race handling.
         # Override order: race > pre-race > post-race-rest > any regular workout.

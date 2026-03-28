@@ -24,8 +24,6 @@ from core.auth import get_current_athlete, get_current_athlete_optional
 from models import Athlete, TrainingPlan, PlannedWorkout
 
 from services.plan_framework import (
-    PlanGenerator,
-    GeneratedPlan,
     VolumeTierClassifier,
     VolumeTier,
     Distance,
@@ -335,43 +333,8 @@ async def preview_standard_plan(
     athlete: Optional[Athlete] = Depends(get_current_athlete_optional),
     db: Session = Depends(get_db),
 ):
-    """
-    Generate a preview of a standard plan.
-
-    Public endpoint — no auth required. Pace targets are hidden for
-    unauthenticated and free-tier athletes.
-    """
-    # Validate inputs
-    try:
-        Distance(request.distance)
-    except ValueError:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Invalid distance: {request.distance}. Must be one of: 5k, 10k, half_marathon, marathon"
-        )
-    
-    try:
-        VolumeTier(request.volume_tier)
-    except ValueError:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Invalid volume_tier: {request.volume_tier}. Must be one of: builder, low, mid, high"
-        )
-    
-    # Generate plan
-    generator = PlanGenerator(db)
-    plan = generator.generate_standard(
-        distance=request.distance,
-        duration_weeks=request.duration_weeks,
-        tier=request.volume_tier,
-        days_per_week=request.days_per_week,
-        start_date=request.start_date,
-        athlete_id=athlete.id if athlete else None,
-        use_history=athlete is not None,
-    )
-
-    show_paces = _has_paid_subscription_access(athlete)
-    return _plan_to_preview(plan, show_paces=show_paces)
+    """Deprecated — use /constraint-aware/preview instead."""
+    raise HTTPException(status_code=501, detail="Standard plan generation removed. Use /v2/plans/constraint-aware instead.")
 
 
 @router.post("/standard", response_model=Dict[str, Any])
@@ -380,31 +343,8 @@ async def create_standard_plan(
     athlete: Athlete = Depends(get_current_athlete),
     db: Session = Depends(get_db),
 ):
-    """
-    Create and save a standard plan for the authenticated athlete.
-    """
-    # Generate plan
-    generator = PlanGenerator(db)
-    plan = generator.generate_standard(
-        distance=request.distance,
-        duration_weeks=request.duration_weeks,
-        tier=request.volume_tier,
-        days_per_week=request.days_per_week,
-        start_date=request.start_date or date.today(),
-        athlete_id=athlete.id,
-        use_history=True,
-    )
-    if _generated_plan_has_pace_order_violation(plan):
-        raise HTTPException(status_code=422, detail="Generated plan violates pace-order contract")
-    
-    # Save to database
-    saved_plan = _save_plan(db, athlete.id, plan, race_name=request.race_name)
-    
-    return {
-        "success": True,
-        "plan_id": str(saved_plan.id),
-        "message": f"Created {request.duration_weeks}-week {request.distance} plan",
-    }
+    """Deprecated — use /constraint-aware instead."""
+    raise HTTPException(status_code=501, detail="Standard plan generation removed. Use /v2/plans/constraint-aware instead.")
 
 
 @router.post("/semi-custom/preview", response_model=PlanPreview)
@@ -413,35 +353,8 @@ async def preview_semi_custom_plan(
     athlete: Athlete = Depends(get_current_athlete_optional),
     db: Session = Depends(get_db),
 ):
-    """
-    Generate a preview of a semi-custom plan.
-
-    Includes personalized paces if race time provided.
-    Authentication optional. Pace targets are shown only for eligible tiers.
-    """
-    # Calculate duration from race date
-    today = date.today()
-    if request.race_date <= today:
-        raise HTTPException(status_code=400, detail="Race date must be in the future")
-    
-    days_to_race = (request.race_date - today).days
-    duration_weeks = min(24, max(4, days_to_race // 7))
-    
-    # Generate plan
-    generator = PlanGenerator(db)
-    plan = generator.generate_semi_custom(
-        distance=request.distance,
-        duration_weeks=duration_weeks,
-        current_weekly_miles=request.current_weekly_miles,
-        days_per_week=request.days_per_week,
-        race_date=request.race_date,
-        recent_race_distance=request.recent_race_distance,
-        recent_race_time_seconds=request.recent_race_time_seconds,
-        athlete_id=athlete.id if athlete else None,
-    )
-
-    show_paces = _has_paid_subscription_access(athlete)
-    return _plan_to_preview(plan, show_paces=show_paces)
+    """Deprecated — use /constraint-aware/preview instead."""
+    raise HTTPException(status_code=501, detail="Semi-custom plan generation removed. Use /v2/plans/constraint-aware instead.")
 
 
 @router.post("/semi-custom", response_model=Dict[str, Any])
@@ -450,55 +363,8 @@ async def create_semi_custom_plan(
     athlete: Athlete = Depends(get_current_athlete),
     db: Session = Depends(get_db),
 ):
-    """
-    Create and save a semi-custom plan.
-
-    Requires an eligible paid tier.
-    """
-    # Check entitlements
-    flags = FeatureFlagService(db)
-    entitlements = EntitlementsService(db, flags)
-    access = entitlements.check_plan_access(athlete, "semi_custom", request.distance, 18)
-    
-    if not access.allowed:
-        raise HTTPException(
-            status_code=403,
-            detail={
-                "reason": access.reason,
-                "price": access.price,
-                "upgrade_path": access.upgrade_path,
-            }
-        )
-    
-    # Calculate duration
-    today = date.today()
-    days_to_race = (request.race_date - today).days
-    duration_weeks = min(24, max(4, days_to_race // 7))
-    
-    # Generate plan
-    generator = PlanGenerator(db)
-    plan = generator.generate_semi_custom(
-        distance=request.distance,
-        duration_weeks=duration_weeks,
-        current_weekly_miles=request.current_weekly_miles,
-        days_per_week=request.days_per_week,
-        race_date=request.race_date,
-        recent_race_distance=request.recent_race_distance,
-        recent_race_time_seconds=request.recent_race_time_seconds,
-        athlete_id=athlete.id,
-    )
-    if _generated_plan_has_pace_order_violation(plan):
-        raise HTTPException(status_code=422, detail="Generated plan violates pace-order contract")
-    
-    # Save to database
-    saved_plan = _save_plan(db, athlete.id, plan, race_name=request.race_name)
-    
-    return {
-        "success": True,
-        "plan_id": str(saved_plan.id),
-        "message": f"Created personalized {duration_weeks}-week {request.distance} plan",
-        "rpi": plan.rpi,
-    }
+    """Deprecated — use /constraint-aware instead."""
+    raise HTTPException(status_code=501, detail="Semi-custom plan generation removed. Use /v2/plans/constraint-aware instead.")
 
 
 @router.post("/custom", response_model=Dict[str, Any])
@@ -507,62 +373,8 @@ async def create_custom_plan(
     athlete: Athlete = Depends(get_current_athlete),
     db: Session = Depends(get_db),
 ):
-    """
-    Create a fully custom plan using all athlete data.
-    
-    Requires subscription.
-    Uses:
-    - Auto-detected volume from Strava history
-    - Calculated paces from best recent efforts
-    - Training history patterns
-    """
-    # Check entitlements
-    flags = FeatureFlagService(db)
-    entitlements = EntitlementsService(db, flags)
-    access = entitlements.check_plan_access(athlete, "custom", request.distance, 18)
-    
-    if not access.allowed:
-        raise HTTPException(
-            status_code=403,
-            detail={
-                "reason": access.reason,
-                "upgrade_path": access.upgrade_path,
-            }
-        )
-    
-    # Collect athlete preferences
-    preferences = {
-        "preferred_quality_day": request.preferred_quality_day,
-        "preferred_long_run_day": request.preferred_long_run_day,
-        "injury_history": request.injury_history,
-        "goal_time_seconds": request.goal_time_seconds,
-    }
-    
-    # Generate plan
-    generator = PlanGenerator(db)
-    plan = generator.generate_custom(
-        distance=request.distance,
-        race_date=request.race_date,
-        days_per_week=request.days_per_week,
-        athlete_id=athlete.id,
-        athlete_preferences=preferences,
-        recent_race_distance=request.recent_race_distance,
-        recent_race_time_seconds=request.recent_race_time_seconds,
-    )
-    if _generated_plan_has_pace_order_violation(plan):
-        raise HTTPException(status_code=422, detail="Generated plan violates pace-order contract")
-    
-    # Save to database
-    saved_plan = _save_plan(db, athlete.id, plan, race_name=request.race_name)
-    
-    return {
-        "success": True,
-        "plan_id": str(saved_plan.id),
-        "message": f"Created fully custom {plan.duration_weeks}-week {request.distance} plan",
-        "rpi": plan.rpi,
-        "detected_weekly_miles": plan.weekly_volumes[0] if plan.weekly_volumes else None,
-        "peak_miles": plan.peak_volume,
-    }
+    """Deprecated — use /constraint-aware instead."""
+    raise HTTPException(status_code=501, detail="Custom plan generation removed. Use /v2/plans/constraint-aware instead.")
 
 
 @router.get("/options")
@@ -600,8 +412,8 @@ async def get_plan_options():
 
 # ============ Helper Functions ============
 
-def _plan_to_preview(plan: GeneratedPlan, show_paces: bool = False) -> PlanPreview:
-    """Convert GeneratedPlan to preview response.
+def _plan_to_preview(plan, show_paces: bool = False) -> PlanPreview:
+    """Convert a generated plan to preview response (legacy, pending N=1 engine).
 
     ``show_paces`` controls whether pace_description is included in workout
     dicts. Defaults to False — callers must explicitly opt in by
@@ -657,7 +469,7 @@ def _plan_to_preview(plan: GeneratedPlan, show_paces: bool = False) -> PlanPrevi
 def _save_plan(
     db: Session,
     athlete_id: UUID,
-    plan: GeneratedPlan,
+    plan,
     race_name: Optional[str] = None,
 ) -> TrainingPlan:
     """Save generated plan to database."""

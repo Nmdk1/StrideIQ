@@ -93,9 +93,10 @@ def test_mp_long_option_b_variant_ids():
     )
 
 
+@pytest.mark.xfail(reason="Old PlanGenerator removed — N=1 engine pending", raises=ModuleNotFoundError)
 @pytest.mark.skipif(not REGISTRY_PATH.is_file(), reason="workout_registry.json not in workspace")
 def test_generator_sets_workout_variant_ids():
-    from services.plan_framework.generator import PlanGenerator
+    from services.plan_framework.generator import PlanGenerator  # noqa: F811 — removed module
 
     gen = PlanGenerator(None)
     plan = gen.generate_standard(
@@ -113,12 +114,13 @@ def test_generator_sets_workout_variant_ids():
     )
 
 
+@pytest.mark.xfail(reason="Old PlanGenerator removed — N=1 engine pending", raises=ModuleNotFoundError)
 @pytest.mark.skipif(not REGISTRY_PATH.is_file(), reason="workout_registry.json not in workspace")
 def test_save_plan_persists_workout_variant_ids(db_session, test_athlete):
     """framework_v2 _save_plan writes workout_variant_id to planned_workout rows."""
     from models import PlannedWorkout
     from routers.plan_generation import _save_plan
-    from services.plan_framework.generator import PlanGenerator
+    from services.plan_framework.generator import PlanGenerator  # noqa: F811 — removed module
 
     gen = PlanGenerator(None)
     plan = gen.generate_standard(
