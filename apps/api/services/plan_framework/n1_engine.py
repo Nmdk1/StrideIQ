@@ -212,7 +212,7 @@ def resolve_athlete_state(
     is_day_one = starting_vol <= 0 and current_lr <= 0
     recency = _determine_recency(starting_vol, applied_peak, weeks_since_peak)
 
-    if race_distance == "marathon" and not is_day_one and not is_abbreviated:
+    if race_distance == "marathon" and not is_day_one:
         if current_lr < 12:
             raise ReadinessGateError(
                 f"Marathon readiness gate: current long run is {current_lr:.0f}mi. "
@@ -947,35 +947,54 @@ def assemble_weeks(
 # Couch-to-10K (Day-One Athletes)
 # ═══════════════════════════════════════════════════════════════════════
 
-def _generate_couch_to_10k(plan_start: date) -> List[WeekPlan]:
-    """Founder-specified walk/run progression for never-ran-before athletes."""
+def _generate_couch_to_10k(
+    plan_start: date,
+    horizon_weeks: int,
+    race_date: date,
+) -> List[WeekPlan]:
+    """Founder-specified walk/run progression for never-ran-before athletes.
+
+    Shapes the canonical stages to fit within horizon_weeks and aligns
+    the final week to race_date.
+    """
     STAGES = [
-        (2, "Walk 1mi, Run 1mi, Walk 1mi", 3.0, "Run 3mi", 3.0),
-        (1, "Walk 1mi, Run 2mi", 3.0, "Run 4mi", 4.0),
-        (3, "Run 3mi", 3.0, "Run 6mi", 6.0),
-        (3, "Run 4mi", 4.0, "Run 8mi", 8.0),
+        ("Walk 1mi, Run 1mi, Walk 1mi", 3.0, "Run 3mi", 3.0),
+        ("Walk 1mi, Run 1mi, Walk 1mi", 3.0, "Run 3mi", 3.0),
+        ("Walk 1mi, Run 2mi", 3.0, "Run 4mi", 4.0),
+        ("Run 3mi", 3.0, "Run 6mi", 6.0),
+        ("Run 3mi", 3.0, "Run 6mi", 6.0),
+        ("Run 3mi", 3.0, "Run 6mi", 6.0),
+        ("Run 4mi", 4.0, "Run 8mi", 8.0),
+        ("Run 4mi", 4.0, "Run 8mi", 8.0),
+        ("Run 4mi", 4.0, "Run 8mi", 8.0),
     ]
 
-    weeks: List[WeekPlan] = []
-    week_num = 1
+    training_budget = max(1, horizon_weeks - 1)
+    selected = STAGES[:training_budget]
 
-    for num_weeks, daily_desc, daily_mi, long_desc, long_mi in STAGES:
+    # Back-compute so the final (taper/race) week contains race_date
+    total_plan_weeks = len(selected) + 1
+    race_week_monday = race_date - timedelta(days=race_date.weekday())
+    aligned_start = race_week_monday - timedelta(weeks=total_plan_weeks - 1)
+
+    weeks: List[WeekPlan] = []
+    for idx, (daily_desc, daily_mi, long_desc, long_mi) in enumerate(selected):
+        week_num = idx + 1
+        ws = aligned_start + timedelta(weeks=idx)
         wtype = "walk_run" if "Walk" in daily_desc else "easy"
-        for _ in range(num_weeks):
-            ws = plan_start + timedelta(weeks=week_num - 1)
-            days = [
-                DayPlan(dow, wtype, daily_desc, daily_desc,
-                        daily_mi, "easy", {}, [])
-                for dow in range(6)
-            ]
-            days.append(DayPlan(6, "long", long_desc, long_desc,
-                                long_mi, "easy", {}, []))
-            total = round(daily_mi * 6 + long_mi, 1)
-            weeks.append(WeekPlan(week_num, "progression", ws, days, total))
-            week_num += 1
+        days = [
+            DayPlan(dow, wtype, daily_desc, daily_desc,
+                    daily_mi, "easy", {}, [])
+            for dow in range(6)
+        ]
+        days.append(DayPlan(6, "long", long_desc, long_desc,
+                            long_mi, "easy", {}, []))
+        total = round(daily_mi * 6 + long_mi, 1)
+        weeks.append(WeekPlan(week_num, "progression", ws, days, total))
 
     # Taper + race week
-    ws = plan_start + timedelta(weeks=week_num - 1)
+    taper_num = len(selected) + 1
+    ws = aligned_start + timedelta(weeks=len(selected))
     taper_days = [
         DayPlan(dow, "easy", "Easy 3mi", "3mi easy", 3.0, "easy", {}, [])
         for dow in range(5)
@@ -985,7 +1004,7 @@ def _generate_couch_to_10k(plan_start: date) -> List[WeekPlan]:
         6, "race", "Race Day", "Warm up, execute, celebrate.",
         0.0, "race", {}, [],
     ))
-    weeks.append(WeekPlan(week_num, "taper", ws, taper_days, 15.0))
+    weeks.append(WeekPlan(taper_num, "taper", ws, taper_days, 15.0))
 
     return weeks
 
@@ -1031,7 +1050,7 @@ def generate_n1_plan(
 
     if state.is_day_one:
         logger.info("Day-one athlete — generating Couch-to-10K progression")
-        return _generate_couch_to_10k(plan_start)
+        return _generate_couch_to_10k(plan_start, horizon_weeks, race_date)
 
     phases = compute_phase_schedule(state)
     targets = compute_curves(state, phases)

@@ -106,14 +106,6 @@ def _workouts_to_week_plan(
     )
 
 
-def _kb_plan_to_week_plans(
-    kb_plan: Any,
-    plan_start: date,
-) -> List[WeekPlan]:
-    """Dead code — was KB-driven generator converter. Retained for N=1 engine reference."""
-    raise NotImplementedError("KB converter removed with old generator.")
-
-
 @dataclass
 class ConstraintAwarePlan:
     """A complete plan with all metadata."""
@@ -595,8 +587,8 @@ class ConstraintAwarePlanner:
                                bank: FitnessBank) -> List[WeekPlan]:
         """Insert specific tune-up race details into week plans."""
         
-        today = date.today()
-        week_start = today - timedelta(days=today.weekday())
+        plan_week_start = weeks[0].start_date if weeks else date.today()
+        week_start = plan_week_start - timedelta(days=plan_week_start.weekday())
         
         for tune_up in tune_up_races:
             tune_date = tune_up["date"]
