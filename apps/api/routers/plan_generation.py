@@ -25,7 +25,6 @@ from models import Athlete, TrainingPlan, PlannedWorkout
 
 from services.plan_framework import (
     VolumeTierClassifier,
-    VolumeTier,
     Distance,
 )
 from services.plan_framework.feature_flags import FeatureFlagService

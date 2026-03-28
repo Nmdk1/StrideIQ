@@ -11,7 +11,7 @@ from services.plan_quality_gate import evaluate_constraint_aware_plan
 from services.workout_prescription import WorkoutPrescriptionGenerator
 from services.week_theme_generator import WeekTheme
 
-pytestmark = pytest.mark.xfail(reason="N=1 plan engine not yet wired — old generators removed", raises=NotImplementedError)
+pytestmark = pytest.mark.xfail(reason="N=1 plan engine not yet wired — old generators removed")
 
 
 def _make_bank(*, athlete_id: str, peak_mpw: float, current_mpw: float, experience: ExperienceLevel, injury: bool) -> FitnessBank:

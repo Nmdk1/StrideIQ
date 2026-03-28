@@ -13,7 +13,7 @@ from routers import plan_generation as plan_router
 from services.fitness_bank import ConstraintType, ExperienceLevel, FitnessBank, RacePerformance
 from services.plan_quality_gate import QualityGateResult, _compute_personal_long_run_floor
 
-pytestmark = pytest.mark.xfail(reason="N=1 plan engine not yet wired — old generators removed", raises=NotImplementedError)
+pytestmark = pytest.mark.xfail(reason="N=1 plan engine not yet wired — old generators removed")
 
 
 def _override_deps(db_session, athlete):

@@ -13,11 +13,8 @@ ARCHITECTURE:
 """
 
 from typing import Dict, List, Optional, Tuple
-from datetime import datetime
 import json
 import logging
-
-from services.blending_heuristics import determine_methodology_blend, get_blending_rationale
 
 # Import query_knowledge_base directly to avoid circular import
 from core.database import get_db_sync

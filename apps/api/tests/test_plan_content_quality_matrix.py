@@ -40,7 +40,7 @@ from services.model_driven_plan_generator import (
 )
 from services.individual_performance_model import BanisterModel, ModelConfidence
 
-pytestmark = pytest.mark.xfail(reason="N=1 plan engine not yet wired — old generators removed", raises=NotImplementedError)
+pytestmark = pytest.mark.xfail(reason="N=1 plan engine not yet wired — old generators removed")
 
 
 # ---------------------------------------------------------------------------

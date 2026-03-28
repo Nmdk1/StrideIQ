@@ -353,6 +353,7 @@ class TestGetWeekPaceGating:
 class TestPreviewPaceGating:
     """Plan preview endpoints gate paces for unauthenticated/free users."""
 
+    @pytest.mark.xfail(reason="Standard plan endpoints return 501 — old generators removed, N=1 pending")
     def test_standard_preview_public_paces_null(self):
         """Standard preview is public — no auth → paces always null."""
         resp = client.post("/v2/plans/standard/preview", json={

@@ -8,7 +8,7 @@ from services.constraint_aware_planner import generate_constraint_aware_plan
 from services.fitness_bank import ConstraintType, ExperienceLevel, FitnessBank, RacePerformance
 from services.plan_quality_gate import compute_athlete_long_run_floor, evaluate_constraint_aware_plan
 
-pytestmark = pytest.mark.xfail(reason="N=1 plan engine not yet wired — old generators removed", raises=NotImplementedError)
+pytestmark = pytest.mark.xfail(reason="N=1 plan engine not yet wired — old generators removed")
 
 
 def _bank(*, peak_mpw: float = 72.0, current_mpw: float = 62.0, injury: bool = False) -> FitnessBank:

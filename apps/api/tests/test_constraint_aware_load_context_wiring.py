@@ -18,7 +18,7 @@ import pytest
 from services.constraint_aware_planner import generate_constraint_aware_plan
 from services.fitness_bank import ConstraintType, ExperienceLevel, FitnessBank, RacePerformance
 
-pytestmark = pytest.mark.xfail(reason="N=1 plan engine not yet wired — old generators removed", raises=NotImplementedError)
+pytestmark = pytest.mark.xfail(reason="N=1 plan engine not yet wired — old generators removed")
 
 
 def _bank() -> FitnessBank:

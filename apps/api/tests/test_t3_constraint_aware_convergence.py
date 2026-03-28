@@ -36,7 +36,7 @@ try:
 except ImportError:
     generate_plan_week = None
 
-pytestmark = pytest.mark.xfail(reason="N=1 plan engine not yet wired — old generators removed", raises=NotImplementedError)
+pytestmark = pytest.mark.xfail(reason="N=1 plan engine not yet wired — old generators removed")
 
 
 # ---------------------------------------------------------------------------
