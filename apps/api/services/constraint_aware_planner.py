@@ -315,6 +315,13 @@ class ConstraintAwarePlanner:
         plan_start = raw_start - timedelta(days=raw_start.weekday())
         horizon_weeks = max(4, -(-((race_date - plan_start).days) // 7))
 
+        # Compute personal long-run floor from the athlete's proven history
+        # so the engine doesn't start below their established capability.
+        from services.plan_quality_gate import _compute_personal_long_run_floor
+        personal_lr_floor = _compute_personal_long_run_floor(
+            bank.to_dict(), race_distance=race_distance,
+        )
+
         # 3. Generate plan via N=1 engine
         weeks = generate_n1_plan(
             race_distance=race_distance,
@@ -329,6 +336,7 @@ class ConstraintAwarePlanner:
             best_rpi=bank.best_rpi,
             weeks_since_peak=bank.weeks_since_peak,
             goal_time=goal_time,
+            personal_lr_floor=personal_lr_floor,
         )
 
         # 5. Inject race day with pre-race and post-race handling.

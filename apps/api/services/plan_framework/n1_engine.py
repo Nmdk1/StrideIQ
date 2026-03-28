@@ -355,6 +355,8 @@ def _first_index_of_phase(phases: List[PhaseWeek], phase_name: str) -> Optional[
 def compute_curves(
     state: AthleteState,
     phases: List[PhaseWeek],
+    *,
+    personal_lr_floor: float = 0.0,
 ) -> List[WeekTargets]:
     n = len(phases)
     vol_start = state.current_weekly_miles
@@ -403,6 +405,9 @@ def compute_curves(
 
     daily_avg = vol_start / max(1, state.days_per_week)
     lr_start = max(lr_start, round(daily_avg * 1.5, 1))
+
+    if personal_lr_floor > 0:
+        lr_start = max(lr_start, personal_lr_floor)
     lr_start = min(lr_start, lr_ceiling)
 
     long_runs: List[float] = []
@@ -1027,6 +1032,7 @@ def generate_n1_plan(
     best_rpi: Optional[float] = None,
     weeks_since_peak: int = 0,
     goal_time: Optional[str] = None,
+    personal_lr_floor: float = 0.0,
 ) -> List[WeekPlan]:
     """Generate an N=1 training plan.
 
@@ -1053,7 +1059,7 @@ def generate_n1_plan(
         return _generate_couch_to_10k(plan_start, horizon_weeks, race_date)
 
     phases = compute_phase_schedule(state)
-    targets = compute_curves(state, phases)
+    targets = compute_curves(state, phases, personal_lr_floor=personal_lr_floor)
     quality = schedule_quality(state, targets)
     weeks = assemble_weeks(state, targets, quality)
 

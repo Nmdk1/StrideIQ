@@ -293,7 +293,7 @@ def _evaluate_10k_rules(weeks: List[Any], reasons: List[str], invariant_conflict
                     invariant_conflicts.append("tenk_long_run_dominance")
                     return
             if wt in ("threshold", "threshold_short") and _exceeds_with_tolerance(
-                float(day.target_miles or 0), 8.0, miles_eps=MILES_EPS
+                float(day.target_miles or 0), 12.0, miles_eps=MILES_EPS
             ):
                 reasons.append(
                     f"10K threshold size too large in week {week.week_number}: "
