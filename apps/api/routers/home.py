@@ -25,7 +25,7 @@ import redis  # noqa: F401 — imported for test patching via 'routers.home.redi
 from core.database import get_db
 from core.auth import get_current_user
 from core.feature_flags import is_feature_enabled
-from models import Athlete, Activity, ActivityStream, PlannedWorkout, TrainingPlan, CalendarInsight, DailyCheckin
+from models import Athlete, Activity, ActivitySplit, ActivityStream, PlannedWorkout, TrainingPlan, CalendarInsight, DailyCheckin
 from services.n1_insight_generator import friendly_signal_name
 from services.plan_lifecycle import get_active_plan_for_athlete
 
@@ -1550,6 +1550,144 @@ def _fetch_llm_briefing_sync(
     return result
 
 
+def _summarize_workout_structure(activity_id, db: Session) -> Optional[str]:
+    """
+    Detect structured workouts (intervals, tempo w/ warmup) from split data
+    and return a coaching-useful summary instead of flat averages.
+
+    Returns None if no splits, < 4 splits, or no interval pattern detected.
+    """
+    METERS_PER_MILE = 1609.344
+
+    splits = (
+        db.query(ActivitySplit)
+        .filter(ActivitySplit.activity_id == activity_id)
+        .order_by(ActivitySplit.split_number)
+        .all()
+    )
+    if not splits or len(splits) < 4:
+        return None
+
+    parsed = []
+    for s in splits:
+        dist_m = float(s.distance) if s.distance else 0
+        elapsed = int(s.elapsed_time) if s.elapsed_time else 0
+        dist_mi = dist_m / METERS_PER_MILE
+        pace_per_mi = (elapsed / dist_mi) if dist_mi > 0.01 else 99999
+        parsed.append({
+            "num": s.split_number,
+            "dist_mi": round(dist_mi, 2),
+            "elapsed_s": elapsed,
+            "pace_s_per_mi": pace_per_mi,
+            "hr": int(s.average_heartrate) if s.average_heartrate else None,
+        })
+
+    # Classify each split: warmup (>=0.4mi, at start), work (0.1-0.5mi, fast),
+    # rest (<0.15mi or very slow), cooldown (>=0.4mi, at end), or other
+    work_candidates = []
+    rest_candidates = []
+    warmup_splits = []
+    cooldown_splits = []
+
+    median_pace = sorted(p["pace_s_per_mi"] for p in parsed)[len(parsed) // 2]
+
+    # Find warmup: consecutive splits >= 0.4mi at the start
+    i = 0
+    while i < len(parsed) and parsed[i]["dist_mi"] >= 0.4:
+        warmup_splits.append(parsed[i])
+        i += 1
+
+    # Find cooldown: consecutive splits >= 0.4mi at the end
+    j = len(parsed) - 1
+    while j > i and parsed[j]["dist_mi"] >= 0.4:
+        cooldown_splits.append(parsed[j])
+        j -= 1
+    cooldown_splits.reverse()
+
+    # Middle splits: detect work/rest alternation
+    middle = parsed[i:j + 1]
+    if len(middle) < 2:
+        return None
+
+    for sp in middle:
+        if sp["dist_mi"] < 0.12:
+            rest_candidates.append(sp)
+        elif 0.12 <= sp["dist_mi"] <= 0.65 and sp["pace_s_per_mi"] < median_pace:
+            work_candidates.append(sp)
+        elif sp["dist_mi"] > 0.65:
+            work_candidates.append(sp)
+        else:
+            rest_candidates.append(sp)
+
+    if len(work_candidates) < 3:
+        return None
+
+    # Compute work interval stats
+    work_paces = [w["pace_s_per_mi"] for w in work_candidates]
+    work_hrs = [w["hr"] for w in work_candidates if w["hr"]]
+    work_dists = [w["dist_mi"] for w in work_candidates]
+
+    avg_work_pace_s = sum(work_paces) / len(work_paces)
+    min_work_pace_s = min(work_paces)
+    max_work_pace_s = max(work_paces)
+    avg_work_dist = sum(work_dists) / len(work_dists)
+    avg_work_hr = round(sum(work_hrs) / len(work_hrs)) if work_hrs else None
+
+    def _fmt_pace(s_per_mi):
+        m = int(s_per_mi // 60)
+        sec = int(s_per_mi % 60)
+        return f"{m}:{sec:02d}/mi"
+
+    parts = []
+
+    if warmup_splits:
+        wu_dist = sum(w["dist_mi"] for w in warmup_splits)
+        wu_time = sum(w["elapsed_s"] for w in warmup_splits)
+        wu_pace = wu_time / wu_dist if wu_dist > 0 else 0
+        parts.append(f"Warmup: {wu_dist:.1f}mi at {_fmt_pace(wu_pace)}")
+
+    # Determine rep distance label
+    avg_work_m = avg_work_dist * METERS_PER_MILE
+    if 350 < avg_work_m < 450:
+        rep_label = "400m"
+    elif 750 < avg_work_m < 900:
+        rep_label = "800m"
+    elif 900 < avg_work_m < 1100:
+        rep_label = "1000m"
+    elif 1500 < avg_work_m < 1700:
+        rep_label = "1mi"
+    elif 1100 < avg_work_m < 1400:
+        rep_label = "1200m"
+    elif 180 < avg_work_m < 250:
+        rep_label = "200m"
+    elif 250 < avg_work_m < 350:
+        rep_label = "300m"
+    else:
+        rep_label = f"{avg_work_dist:.2f}mi"
+
+    pace_range = f"{_fmt_pace(min_work_pace_s)}-{_fmt_pace(max_work_pace_s)}"
+    if abs(min_work_pace_s - max_work_pace_s) < 10:
+        pace_range = _fmt_pace(avg_work_pace_s)
+
+    hr_str = f", avg HR {avg_work_hr}" if avg_work_hr else ""
+    parts.append(
+        f"Work: {len(work_candidates)} x {rep_label} at {_fmt_pace(avg_work_pace_s)} avg "
+        f"(range {pace_range}){hr_str}"
+    )
+
+    if rest_candidates:
+        avg_rest_s = sum(r["elapsed_s"] for r in rest_candidates) / len(rest_candidates)
+        parts.append(f"Recovery: ~{int(avg_rest_s)}s between reps")
+
+    if cooldown_splits:
+        cd_dist = sum(c["dist_mi"] for c in cooldown_splits)
+        cd_time = sum(c["elapsed_s"] for c in cooldown_splits)
+        cd_pace = cd_time / cd_dist if cd_dist > 0 else 0
+        parts.append(f"Cooldown: {cd_dist:.1f}mi at {_fmt_pace(cd_pace)}")
+
+    return "\n  ".join(parts)
+
+
 def generate_coach_home_briefing(
     athlete_id: str,
     db: Session,
@@ -1783,6 +1921,13 @@ def generate_coach_home_briefing(
     if today_completed:
         c = today_completed
         parts.append(f"COMPLETED today: {c.get('name')}, {c.get('distance_mi')}mi, pace {c.get('pace')}, HR {c.get('avg_hr', 'N/A')}, {c.get('duration_min')}min")
+        workout_structure = c.get("workout_structure")
+        if workout_structure:
+            parts.append(
+                f"WORKOUT STRUCTURE (from split data — use this instead of the average pace above):\n  {workout_structure}\n"
+                "NOTE: The average pace above is meaningless for structured workouts. "
+                "It blends warmup, work intervals, and rest jogs. Coach from the split breakdown, not the average."
+            )
         if planned_workout and planned_workout.get("has_workout"):
             plan_mi = planned_workout.get("distance_mi")
             plan_type = planned_workout.get("title") or planned_workout.get("workout_type")
@@ -1912,10 +2057,16 @@ def generate_coach_home_briefing(
     today_summary = ""
     if today_completed:
         c = today_completed
-        today_summary = (
-            f"Completed: {c.get('name')}, {c.get('distance_mi')}mi, "
-            f"pace {c.get('pace')}, HR {c.get('avg_hr', 'N/A')}"
-        )
+        if c.get("workout_structure"):
+            today_summary = (
+                f"Completed: {c.get('name')}, {c.get('distance_mi')}mi total\n"
+                f"  {c.get('workout_structure')}"
+            )
+        else:
+            today_summary = (
+                f"Completed: {c.get('name')}, {c.get('distance_mi')}mi, "
+                f"pace {c.get('pace')}, HR {c.get('avg_hr', 'N/A')}"
+            )
     elif planned_workout and planned_workout.get("has_workout"):
         w = planned_workout
         today_summary = (
@@ -3132,6 +3283,12 @@ async def get_home_data(
                         "avg_hr": int(today_actual.avg_hr) if today_actual.avg_hr else None,
                         "duration_min": round(today_actual.duration_s / 60, 0) if today_actual.duration_s else None,
                     }
+                    try:
+                        ws = _summarize_workout_structure(today_actual.id, db)
+                        if ws:
+                            today_completed["workout_structure"] = ws
+                    except Exception as _ws_err:
+                        logger.debug("Workout structure detection skipped: %s", _ws_err)
 
                 planned_workout_dict = None
                 if today_workout and today_workout.has_workout:

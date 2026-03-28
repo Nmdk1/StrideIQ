@@ -166,6 +166,13 @@ def _build_briefing_prompt(athlete_id: str, db: Session) -> Optional[tuple]:
                     else None
                 ),
             }
+            try:
+                from routers.home import _summarize_workout_structure
+                ws = _summarize_workout_structure(today_actual.id, db)
+                if ws:
+                    today_completed["workout_structure"] = ws
+            except Exception as _ws_err:
+                logger.debug("Workout structure detection skipped: %s", _ws_err)
 
         planned_workout_dict = None
         if active_plan:
