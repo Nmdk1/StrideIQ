@@ -1,18 +1,21 @@
 """
-N=1 Plan Engine
+N=1 Plan Engine v3 — Coach-thinks-first rebuild.
 
-Single engine producing individualized training plans for athletes
-from beginner through elite, 5K through marathon.
+The algorithm:
+  1. What is the goal? (distance, time, athlete state)
+  2. What systems need to adapt? (ceiling, threshold, durability, specificity)
+  3. What tools hit those systems? (from KB variant library)
+  4. What's the target weekly volume? Anchor sessions placed first.
+  5. Easy fills the gaps — easy IS a tool (recovery).
+  6. Progression: each tool gets harder week to week.
 
-Architecture (5 steps):
-1. Athlete State Resolution
-2. Phase Schedule
-3. Volume + Long Run Curves
-4. Quality Session Scheduling
-5. Day-by-Day Assembly
+No phases driving workout selection. Adaptation needs drive tool selection.
+Phases are labels applied AFTER the plan is built, for communication only.
 
-See: docs/specs/N1_PLAN_ENGINE_SPEC.md
-See: docs/specs/N1_ENGINE_BUILD_PLAN.md
+See: docs/specs/N1_ENGINE_ADR_V2.md
+KB:  _AI_CONTEXT_/KNOWLEDGE_BASE/03_WORKOUT_TYPES.md
+     _AI_CONTEXT_/KNOWLEDGE_BASE/04_RECOVERY.md
+     _AI_CONTEXT_/KNOWLEDGE_BASE/workouts/variants/*.md
 """
 
 from __future__ import annotations
@@ -35,101 +38,21 @@ from services.workout_prescription import (
 logger = logging.getLogger(__name__)
 
 
-# ═══════════════════════════════════════════════════════════════════════
-# Constants
-# ═══════════════════════════════════════════════════════════════════════
-
-LONG_RUN_CEILING: Dict[str, float] = {
-    "marathon": 22.0,
-    "half_marathon": 17.0,
-    "10k": 18.0,
-    "5k": 15.0,
-}
-
-LONG_RUN_CEILING_SLOW_MARATHON = 20.0
-MARATHON_LR_FLOOR = 14.0
-
-MLR_RATIO = 0.75
-MLR_CAP = 15.0
-MLR_MIN_WEEKLY_VOLUME = 40.0
-
-VOLUME_STEP_CEILING: Dict[ExperienceLevel, float] = {
-    ExperienceLevel.BEGINNER: 3.0,
-    ExperienceLevel.INTERMEDIATE: 5.0,
-    ExperienceLevel.EXPERIENCED: 6.0,
-    ExperienceLevel.ELITE: 8.0,
-}
-
-LR_STEP: Dict[ExperienceLevel, float] = {
-    ExperienceLevel.BEGINNER: 1.5,
-    ExperienceLevel.INTERMEDIATE: 2.0,
-    ExperienceLevel.EXPERIENCED: 2.5,
-    ExperienceLevel.ELITE: 3.0,
-}
-
-CUTBACK_VOLUME_FACTOR = 0.75
-LR_CUTBACK_FACTOR = 0.65
-TAPER_VOLUME_FACTORS = [0.70, 0.50, 0.35]
-
-TAPER_WEEKS: Dict[str, int] = {
-    "marathon": 3,
-    "half_marathon": 2,
-    "10k": 2,
-    "5k": 1,
-}
-
-WARMUP_COOLDOWN: Dict[ExperienceLevel, float] = {
-    ExperienceLevel.BEGINNER: 2.0,
-    ExperienceLevel.INTERMEDIATE: 3.0,
-    ExperienceLevel.EXPERIENCED: 4.0,
-    ExperienceLevel.ELITE: 4.0,
-}
-
-# T-block: 6-step threshold progression
-# (reps, duration_min, rest_min)
-T_BLOCK_STANDARD = [
-    (6, 5, 2),
-    (5, 6, 2),
-    (4, 8, 2),
-    (3, 10, 3),
-    (2, 15, 3),
-    (1, 35, 0),
-]
-
-T_BLOCK_OVERRIDES: Dict[Tuple[int, ExperienceLevel], Tuple[int, int]] = {
-    (0, ExperienceLevel.BEGINNER): (4, 4),
-    (0, ExperienceLevel.INTERMEDIATE): (5, 5),
-    (5, ExperienceLevel.BEGINNER): (1, 20),
-    (5, ExperienceLevel.INTERMEDIATE): (1, 30),
-    (5, ExperienceLevel.EXPERIENCED): (1, 35),
-    (5, ExperienceLevel.ELITE): (1, 40),
-}
-
-PHASE_PROPORTIONS: Dict[str, List[Tuple[str, float]]] = {
-    "marathon": [("base", 0.17), ("build_1", 0.23), ("build_2", 0.30), ("peak", 0.30)],
-    "half_marathon": [("base", 0.17), ("build_1", 0.25), ("build_2", 0.28), ("peak", 0.30)],
-    "10k": [("base", 0.20), ("build", 0.45), ("peak", 0.35)],
-    "5k": [("base", 0.20), ("build", 0.45), ("peak", 0.35)],
-}
-
-
-# ═══════════════════════════════════════════════════════════════════════
-# Exceptions
-# ═══════════════════════════════════════════════════════════════════════
-
 class ReadinessGateError(ValueError):
-    """Raised when athlete doesn't meet minimum requirements for distance."""
+    pass
 
 
 # ═══════════════════════════════════════════════════════════════════════
-# Step 1 — Athlete State Resolution
+# Step 1 — Athlete State & Diagnosis
 # ═══════════════════════════════════════════════════════════════════════
 
-class TrainingRecency(Enum):
-    NEW = "new"
-    REBUILDING = "rebuilding"
-    BUILDING = "building"
-    MAINTAINING = "maintaining"
+class AdaptationNeed(Enum):
+    CEILING = "ceiling"
+    THRESHOLD = "threshold"
+    DURABILITY = "durability"
+    RACE_SPECIFIC = "race_specific"
+    NEUROMUSCULAR = "neuromuscular"
+    AEROBIC_BASE = "aerobic_base"
 
 
 @dataclass
@@ -140,7 +63,6 @@ class AthleteState:
     best_rpi: Optional[float]
     experience: ExperienceLevel
     days_per_week: int
-    training_recency: TrainingRecency
     paces: Optional[Dict[str, float]]
     race_distance: str
     race_date: date
@@ -150,12 +72,13 @@ class AthleteState:
     is_slow_marathoner: bool
     is_abbreviated: bool
     is_day_one: bool
+    adaptation_needs: List[AdaptationNeed] = field(default_factory=list)
 
 
-def _parse_goal_time(goal_time: Optional[str]) -> Optional[int]:
-    if not goal_time:
+def _parse_goal_time(gt: Optional[str]) -> Optional[int]:
+    if not gt:
         return None
-    parts = goal_time.strip().split(":")
+    parts = gt.strip().split(":")
     try:
         if len(parts) == 3:
             return int(parts[0]) * 3600 + int(parts[1]) * 60 + int(parts[2])
@@ -166,17 +89,36 @@ def _parse_goal_time(goal_time: Optional[str]) -> Optional[int]:
     return None
 
 
-def _determine_recency(
-    current: float, peak: float, weeks_since_peak: int,
-) -> TrainingRecency:
-    if current <= 0:
-        return TrainingRecency.NEW
-    ratio = current / max(peak, 1.0)
-    if ratio < 0.5 and weeks_since_peak > 8:
-        return TrainingRecency.REBUILDING
-    if ratio < 0.85:
-        return TrainingRecency.BUILDING
-    return TrainingRecency.MAINTAINING
+def _diagnose_adaptation_needs(
+    dist: str, exp: ExperienceLevel, horizon: int, is_abbreviated: bool,
+) -> List[AdaptationNeed]:
+    """What systems need work for this race? This is the coaching decision."""
+    needs = []
+
+    if dist in ("5k", "10k"):
+        needs.append(AdaptationNeed.CEILING)
+        needs.append(AdaptationNeed.THRESHOLD)
+        if dist == "10k":
+            needs.append(AdaptationNeed.DURABILITY)
+        if exp in (ExperienceLevel.EXPERIENCED, ExperienceLevel.ELITE):
+            needs.append(AdaptationNeed.NEUROMUSCULAR)
+
+    elif dist == "half_marathon":
+        needs.append(AdaptationNeed.THRESHOLD)
+        needs.append(AdaptationNeed.DURABILITY)
+        needs.append(AdaptationNeed.CEILING)
+
+    elif dist == "marathon":
+        needs.append(AdaptationNeed.RACE_SPECIFIC)
+        needs.append(AdaptationNeed.THRESHOLD)
+        needs.append(AdaptationNeed.DURABILITY)
+        if exp in (ExperienceLevel.EXPERIENCED, ExperienceLevel.ELITE):
+            needs.append(AdaptationNeed.CEILING)
+
+    if not is_abbreviated and horizon >= 8:
+        needs.append(AdaptationNeed.AEROBIC_BASE)
+
+    return needs
 
 
 def resolve_athlete_state(
@@ -199,34 +141,39 @@ def resolve_athlete_state(
         paces = calculate_paces_from_rpi(best_rpi)
 
     goal_secs = _parse_goal_time(goal_time)
-
-    # Sub-3:45 marathon check — cap LR at 20mi for slower marathoners
-    is_slow_marathoner = False
+    is_slow = False
     if race_distance == "marathon":
         if goal_secs and goal_secs > 13500:
-            is_slow_marathoner = True
+            is_slow = True
         elif paces and paces.get("marathon", 0) > 8.58:
-            is_slow_marathoner = True
+            is_slow = True
 
     is_abbreviated = horizon_weeks <= 5
     is_day_one = starting_vol <= 0 and current_lr <= 0
-    recency = _determine_recency(starting_vol, applied_peak, weeks_since_peak)
 
-    if race_distance == "marathon" and not is_day_one:
-        if current_lr < 12:
-            raise ReadinessGateError(
-                f"Marathon readiness gate: current long run is {current_lr:.0f}mi. "
-                "Must complete 12mi before starting a marathon program. "
-                "Consider a base-building plan first."
-            )
+    if race_distance == "marathon" and not is_day_one and current_lr < 12:
+        raise ReadinessGateError(
+            f"Marathon readiness gate: current long run is {current_lr:.0f}mi. "
+            "Must complete 12mi before starting a marathon program."
+        )
 
-    if race_distance == "half_marathon" and not is_day_one:
-        weeks_to_12 = max(0, math.ceil((12 - current_lr) / 2))
-        if weeks_to_12 > horizon_weeks:
-            raise ReadinessGateError(
-                f"Half marathon readiness gate: current long run is {current_lr:.0f}mi. "
-                f"Need {weeks_to_12} weeks to reach 12mi but only {horizon_weeks} available."
-            )
+    is_comeback = weeks_since_peak > 0 and experience in (
+        ExperienceLevel.EXPERIENCED, ExperienceLevel.ELITE,
+    )
+    if (
+        race_distance == "half_marathon"
+        and not is_day_one
+        and not is_comeback
+        and current_lr < 8
+    ):
+        raise ReadinessGateError(
+            f"Half-marathon readiness gate: current long run is {current_lr:.0f}mi. "
+            "Must complete 8mi before starting a half-marathon program."
+        )
+
+    needs = _diagnose_adaptation_needs(
+        race_distance, experience, horizon_weeks, is_abbreviated,
+    )
 
     return AthleteState(
         current_weekly_miles=starting_vol,
@@ -235,733 +182,814 @@ def resolve_athlete_state(
         best_rpi=best_rpi,
         experience=experience,
         days_per_week=days_per_week,
-        training_recency=recency,
         paces=paces,
         race_distance=race_distance,
         race_date=race_date,
         plan_start=plan_start,
         horizon_weeks=horizon_weeks,
         goal_time_seconds=goal_secs,
-        is_slow_marathoner=is_slow_marathoner,
+        is_slow_marathoner=is_slow,
         is_abbreviated=is_abbreviated,
         is_day_one=is_day_one,
+        adaptation_needs=needs,
     )
 
 
 # ═══════════════════════════════════════════════════════════════════════
-# Step 2 — Phase Schedule
+# Step 2 — Tool Selection (what workouts serve the adaptation needs)
 # ═══════════════════════════════════════════════════════════════════════
 
 @dataclass
-class PhaseWeek:
+class WeekRx:
+    """What a coach prescribes for one week, before day assignment."""
     week_number: int
-    phase: str
+    phase_label: str
+    target_volume: float
     is_cutback: bool
-
-
-def _allocate_phases(
-    proportions: List[Tuple[str, float]],
-    total_weeks: int,
-    taper_weeks: int,
-) -> List[PhaseWeek]:
-    available = total_weeks - taper_weeks
-    if available <= 0:
-        return [PhaseWeek(w + 1, "taper", False) for w in range(total_weeks)]
-
-    total_prop = sum(p for _, p in proportions)
-    raw: List[Tuple[str, int]] = []
-    for name, prop in proportions:
-        weeks = max(1, round(available * prop / total_prop))
-        raw.append((name, weeks))
-
-    used = sum(w for _, w in raw)
-    while used > available:
-        for i in range(len(raw) - 1, -1, -1):
-            name, w = raw[i]
-            if w > 1:
-                raw[i] = (name, w - 1)
-                used -= 1
-                break
-        else:
-            break
-        if used <= available:
-            break
-
-    while used < available:
-        name, w = raw[0]
-        raw[0] = (name, w + 1)
-        used += 1
-
-    result: List[PhaseWeek] = []
-    week_num = 1
-    for idx, (phase_name, count) in enumerate(raw):
-        for w in range(count):
-            is_last = w == count - 1
-            is_cutback = is_last and idx < len(raw) - 1 and count >= 3
-            result.append(PhaseWeek(week_num, phase_name, is_cutback))
-            week_num += 1
-
-    for _ in range(taper_weeks):
-        result.append(PhaseWeek(week_num, "taper", False))
-        week_num += 1
-
-    return result
-
-
-def compute_phase_schedule(state: AthleteState) -> List[PhaseWeek]:
-    if state.is_day_one:
-        return [PhaseWeek(w + 1, "progression", False)
-                for w in range(state.horizon_weeks)]
-
-    if state.is_abbreviated:
-        taper = 1
-        peak = max(1, state.horizon_weeks - taper)
-        result = [PhaseWeek(w + 1, "peak", False) for w in range(peak)]
-        result.append(PhaseWeek(peak + 1, "taper", False))
-        return result
-
-    taper = TAPER_WEEKS.get(state.race_distance, 2)
-    taper = min(taper, max(1, state.horizon_weeks - 3))
-
-    proportions = PHASE_PROPORTIONS.get(
-        state.race_distance,
-        PHASE_PROPORTIONS["10k"],
-    )
-
-    return _allocate_phases(proportions, state.horizon_weeks, taper)
-
-
-# ═══════════════════════════════════════════════════════════════════════
-# Step 3 — Volume + Long Run Curves
-# ═══════════════════════════════════════════════════════════════════════
-
-@dataclass
-class WeekTargets:
-    week_number: int
-    phase: str
-    is_cutback: bool
-    weekly_miles: float
     long_run_miles: float
-    medium_long_miles: float
+    long_run_type: str
+    mlr_miles: float
+    quality_sessions: List[Dict[str, Any]]
 
 
-def _first_index_of_phase(phases: List[PhaseWeek], phase_name: str) -> Optional[int]:
-    for i, pw in enumerate(phases):
-        if pw.phase == phase_name:
-            return i
-    return None
+LR_CEILING = {
+    "marathon": 22.0, "half_marathon": 17.0, "10k": 18.0, "5k": 15.0,
+}
+LR_CEILING_SLOW = 20.0
+MARATHON_LR_FLOOR = 14.0
+MLR_CAP = 15.0
+MLR_FLOOR_VOL = 50.0
+TAPER_WEEKS = {"marathon": 3, "half_marathon": 2, "10k": 2, "5k": 1}
 
 
-def compute_curves(
-    state: AthleteState,
-    phases: List[PhaseWeek],
-    *,
-    personal_lr_floor: float = 0.0,
-) -> List[WeekTargets]:
-    n = len(phases)
-    vol_start = state.current_weekly_miles
-    vol_peak = state.peak_weekly_miles
-    step_max = VOLUME_STEP_CEILING.get(state.experience, 5.0)
-    needs_ramp = vol_start < vol_peak * 0.95
-
-    peak_idx = _first_index_of_phase(phases, "peak")
-    if peak_idx is None:
-        peak_idx = _first_index_of_phase(phases, "taper") or n
-    taper_idx = _first_index_of_phase(phases, "taper")
-
-    # ── Volume ────────────────────────────────────────────────────
-    volumes: List[float] = []
-    current_vol = vol_start
-    vol_high_water = vol_start
-
-    for i, pw in enumerate(phases):
-        if pw.phase == "taper":
-            offset = i - (taper_idx or i)
-            factor = TAPER_VOLUME_FACTORS[min(offset, len(TAPER_VOLUME_FACTORS) - 1)]
-            volumes.append(round(vol_high_water * factor, 1))
-        elif pw.is_cutback:
-            volumes.append(round(current_vol * CUTBACK_VOLUME_FACTOR, 1))
-        elif needs_ramp and i < peak_idx:
-            ramp_remaining = peak_idx - i
-            step = min(step_max, (vol_peak - current_vol) / max(1, ramp_remaining))
-            current_vol = min(vol_peak, current_vol + step)
-            vol_high_water = max(vol_high_water, current_vol)
-            volumes.append(round(current_vol, 1))
-        else:
-            current_vol = vol_peak
-            vol_high_water = max(vol_high_water, current_vol)
-            volumes.append(round(vol_peak, 1))
-
-    # ── Long Run ──────────────────────────────────────────────────
-    lr_ceiling = LONG_RUN_CEILING.get(state.race_distance, 18.0)
-    if state.is_slow_marathoner:
-        lr_ceiling = LONG_RUN_CEILING_SLOW_MARATHON
-
-    lr_step = LR_STEP.get(state.experience, 2.0)
-
-    lr_start = state.current_long_run_miles + 1
-    if state.race_distance == "marathon":
-        lr_start = max(MARATHON_LR_FLOOR, lr_start)
-
-    daily_avg = vol_start / max(1, state.days_per_week)
-    lr_start = max(lr_start, round(daily_avg * 1.5, 1))
-
-    if personal_lr_floor > 0:
-        lr_start = max(lr_start, personal_lr_floor)
-    lr_start = min(lr_start, lr_ceiling)
-
-    long_runs: List[float] = []
-    current_lr = lr_start
-    lr_high_water = lr_start
-    lr_first_assigned = False
-
-    for i, pw in enumerate(phases):
-        if pw.phase == "taper":
-            offset = i - (taper_idx or i)
-            if offset == 0:
-                long_runs.append(round(lr_high_water * 0.65, 1))
-            else:
-                long_runs.append(round(min(lr_high_water * 0.45, 8.0), 1))
-        elif pw.is_cutback:
-            long_runs.append(round(current_lr * LR_CUTBACK_FACTOR, 1))
-        else:
-            if lr_first_assigned:
-                current_lr = min(lr_ceiling, current_lr + lr_step)
-            lr_first_assigned = True
-            lr_high_water = max(lr_high_water, current_lr)
-            long_runs.append(round(current_lr, 1))
-
-    # ── Medium-Long ───────────────────────────────────────────────
-    medium_longs: List[float] = []
-    for i, pw in enumerate(phases):
-        wk_vol = volumes[i]
-        lr = long_runs[i]
-        if wk_vol >= MLR_MIN_WEEKLY_VOLUME and pw.phase != "taper":
-            mlr = min(MLR_CAP, round(lr * MLR_RATIO, 1))
-            medium_longs.append(mlr)
-        else:
-            medium_longs.append(0.0)
-
-    return [
-        WeekTargets(
-            week_number=phases[i].week_number,
-            phase=phases[i].phase,
-            is_cutback=phases[i].is_cutback,
-            weekly_miles=volumes[i],
-            long_run_miles=long_runs[i],
-            medium_long_miles=medium_longs[i],
-        )
-        for i in range(n)
-    ]
-
-
-# ═══════════════════════════════════════════════════════════════════════
-# Step 4 — Quality Session Scheduling
-# ═══════════════════════════════════════════════════════════════════════
-
-@dataclass
-class QualityRx:
-    workout_type: str
-    name: str
-    description: str
-    miles: float
-    intensity: str
-
-
-def _pace_label(paces: Optional[Dict[str, float]], zone: str) -> str:
+def _pace_label(paces, zone):
     if paces and zone in paces:
         return format_pace(paces[zone]) + "/mi"
     return {
-        "easy": "easy effort",
-        "marathon": "marathon effort",
-        "threshold": "comfortably hard",
-        "interval": "hard controlled effort",
+        "easy": "easy effort", "marathon": "marathon effort",
+        "threshold": "comfortably hard", "interval": "hard controlled effort",
         "recovery": "very easy",
     }.get(zone, "moderate effort")
 
 
-def _t_block_session(
-    step: int,
-    experience: ExperienceLevel,
-    paces: Optional[Dict[str, float]],
-) -> QualityRx:
-    step = min(step, 5)
-    base_reps, base_dur, rest = T_BLOCK_STANDARD[step]
-    override = T_BLOCK_OVERRIDES.get((step, experience))
-    reps, dur = override if override else (base_reps, base_dur)
-
-    pace = _pace_label(paces, "threshold")
-    wu_cd = WARMUP_COOLDOWN.get(experience, 4.0)
-    half_wc = round(wu_cd / 2, 1)
-
-    if reps == 1:
-        name = f"{dur}min continuous @ T"
-        core = f"{dur}min continuous @ {pace}"
-    else:
-        name = f"{reps}x{dur}min @ T"
-        core = f"{reps}x{dur}min @ {pace}, {rest}min jog"
-
-    t_pace_val = paces.get("threshold", 7.0) if paces else 7.0
-    quality_time = reps * dur
-    quality_miles = quality_time / t_pace_val
-    jog_miles = max(0, (reps - 1)) * rest / 9.0
-    total = round(wu_cd + quality_miles + jog_miles, 1)
-
-    desc = f"{half_wc:.0f}mi easy + {core} + {half_wc:.0f}mi easy"
-    return QualityRx("threshold", name, desc, total, "hard")
-
-
-def _interval_session(
-    experience: ExperienceLevel,
-    paces: Optional[Dict[str, float]],
-) -> QualityRx:
-    pace = _pace_label(paces, "interval")
-    wu_cd = WARMUP_COOLDOWN.get(experience, 4.0)
-    half_wc = round(wu_cd / 2, 1)
-
-    configs = {
-        ExperienceLevel.BEGINNER: ("4x400m", 5.0),
-        ExperienceLevel.INTERMEDIATE: ("5x800m", 7.0),
-        ExperienceLevel.EXPERIENCED: ("5x1000m", 9.0),
-        ExperienceLevel.ELITE: ("6x1000m", 10.0),
-    }
-    name, miles = configs.get(experience, ("5x800m", 7.0))
-    core = f"{name} @ {pace} w/ 400m jog"
-    desc = f"{half_wc:.0f}mi easy + {core} + {half_wc:.0f}mi easy"
-    return QualityRx("intervals", name, desc, miles, "hard")
-
-
-def _reps_session(
-    experience: ExperienceLevel,
-    paces: Optional[Dict[str, float]],
-) -> QualityRx:
-    pace = _pace_label(paces, "interval")
-    if experience == ExperienceLevel.ELITE:
-        name = "8x300m reps"
-        core = f"8x300m @ {pace} (1500m pace), full 90s rest"
-        miles = 8.0
-    else:
-        name = "6x200m reps"
-        core = f"6x200m @ {pace} (1500m pace), full 90s rest"
-        miles = 7.0
-    desc = f"2mi easy + {core} + 2mi easy"
-    return QualityRx("repetitions", name, desc, miles, "hard")
-
-
-def _mp_long_run(
-    long_run_miles: float,
-    mp_fraction: float,
-    paces: Optional[Dict[str, float]],
-) -> QualityRx:
-    mp_miles = round(long_run_miles * mp_fraction, 1)
-    easy_miles = round(long_run_miles - mp_miles, 1)
-    mp_pace = _pace_label(paces, "marathon")
-    easy_pace = _pace_label(paces, "easy")
-    return QualityRx(
-        "long_mp",
-        f"{long_run_miles:.0f}mi w/ {mp_miles:.0f}mi @ MP",
-        f"{easy_miles:.0f}mi @ {easy_pace} + {mp_miles:.0f}mi @ {mp_pace}",
-        long_run_miles,
-        "hard",
-    )
-
-
-def _hmp_long_run(
-    long_run_miles: float,
-    hmp_fraction: float,
-    paces: Optional[Dict[str, float]],
-) -> QualityRx:
-    hmp_miles = round(long_run_miles * hmp_fraction, 1)
-    easy_miles = round(long_run_miles - hmp_miles, 1)
-    if paces:
-        mp = paces.get("marathon", 7.5)
-        tp = paces.get("threshold", 6.5)
-        hmp_str = format_pace((mp + tp) / 2) + "/mi"
-    else:
-        hmp_str = "half marathon effort"
-    easy_pace = _pace_label(paces, "easy")
-    return QualityRx(
-        "long_hmp",
-        f"{long_run_miles:.0f}mi w/ {hmp_miles:.0f}mi @ HMP",
-        f"{easy_miles:.0f}mi @ {easy_pace} + {hmp_miles:.0f}mi @ {hmp_str}",
-        long_run_miles,
-        "hard",
-    )
-
-
-def _weeks_of_phase(
-    targets: List[WeekTargets], phase: str, *, exclude_cutback: bool = True,
-) -> List[WeekTargets]:
-    return [w for w in targets if w.phase == phase
-            and (not exclude_cutback or not w.is_cutback)]
-
-
-def _phase_index(wt: WeekTargets, phase_weeks: List[WeekTargets]) -> int:
-    return next((i for i, w in enumerate(phase_weeks)
-                 if w.week_number == wt.week_number), 0)
-
-
-def schedule_quality(
-    state: AthleteState,
-    targets: List[WeekTargets],
-) -> Dict[int, List[QualityRx]]:
-    quality_map: Dict[int, List[QualityRx]] = {}
-    t_step = 0
+def plan_weeks(state: AthleteState) -> List[WeekRx]:
+    """Coach thinks backward: target volume → anchor sessions → fill."""
+    n = state.horizon_weeks
     dist = state.race_distance
 
-    if state.is_abbreviated:
-        return _schedule_abbreviated(state, targets)
+    if state.is_day_one:
+        return []
 
-    for wt in targets:
-        wq: List[QualityRx] = []
+    taper_n = min(TAPER_WEEKS.get(dist, 2), max(1, n - 3))
+    build_n = n - taper_n
 
-        if wt.is_cutback or wt.phase == "taper":
-            quality_map[wt.week_number] = []
-            continue
+    vol_start = state.current_weekly_miles
+    vol_peak = state.peak_weekly_miles
+    lr_ceiling = LR_CEILING.get(dist, 18.0)
+    if state.is_slow_marathoner:
+        lr_ceiling = LR_CEILING_SLOW
 
-        if wt.phase == "base":
-            if dist in ("5k", "10k") and state.experience in (
-                ExperienceLevel.EXPERIENCED, ExperienceLevel.ELITE,
-            ):
-                wq.append(_interval_session(state.experience, state.paces))
-            quality_map[wt.week_number] = wq
-            continue
+    lr_step = 2.0
+    if state.experience == ExperienceLevel.ELITE:
+        lr_step = 2.5
+    elif state.experience == ExperienceLevel.BEGINNER:
+        lr_step = 1.5
 
-        # ── Marathon ──────────────────────────────────────────────
-        if dist == "marathon":
-            if wt.phase == "build_1":
-                wq.append(_t_block_session(t_step, state.experience, state.paces))
-                t_step = min(t_step + 1, 5)
+    lr_start = state.current_long_run_miles + 1
+    if dist == "marathon":
+        lr_start = max(MARATHON_LR_FLOOR, lr_start)
 
-            elif wt.phase == "build_2":
-                pw = _weeks_of_phase(targets, "build_2")
-                idx = _phase_index(wt, pw)
-                mp_frac = min(0.55, 0.25 + idx * 0.08)
-                wq.append(_mp_long_run(wt.long_run_miles, mp_frac, state.paces))
-                if state.current_weekly_miles >= 70:
-                    wq.append(_t_block_session(min(t_step, 4), state.experience, state.paces))
+    # Identify cutback positions first (every 3rd week, not last build week)
+    cutback_set = set()
+    counter = 0
+    for i in range(build_n):
+        counter += 1
+        if counter >= 3 and i < build_n - 1 and i > 0:
+            cutback_set.add(i)
+            counter = 0
 
-            elif wt.phase == "peak":
-                pw = _weeks_of_phase(targets, "peak")
-                idx = _phase_index(wt, pw)
-                if idx < len(pw) - 1:
-                    mp_frac = min(0.60, 0.45 + idx * 0.05)
-                    wq.append(_mp_long_run(wt.long_run_miles, mp_frac, state.paces))
-                else:
-                    wq.append(_t_block_session(min(t_step, 4), state.experience, state.paces))
+    # Volume curve (only non-cutback weeks grow)
+    volumes = _build_volume_curve(vol_start, vol_peak, build_n, taper_n, state)
 
-        # ── Half Marathon ─────────────────────────────────────────
-        elif dist == "half_marathon":
-            if wt.phase == "build_1":
-                wq.append(_t_block_session(t_step, state.experience, state.paces))
-                t_step = min(t_step + 1, 5)
-
-            elif wt.phase == "build_2":
-                pw = _weeks_of_phase(targets, "build_2")
-                idx = _phase_index(wt, pw)
-                if idx % 2 == 0:
-                    hmp_frac = min(0.50, 0.20 + idx * 0.08)
-                    wq.append(_hmp_long_run(wt.long_run_miles, hmp_frac, state.paces))
-                else:
-                    wq.append(_t_block_session(min(t_step, 4), state.experience, state.paces))
-
-            elif wt.phase == "peak":
-                pw = _weeks_of_phase(targets, "peak")
-                idx = _phase_index(wt, pw)
-                if idx == 0:
-                    wq.append(_hmp_long_run(wt.long_run_miles, 0.45, state.paces))
-                else:
-                    wq.append(_t_block_session(min(t_step, 4), state.experience, state.paces))
-
-        # ── 10K ───────────────────────────────────────────────────
-        elif dist == "10k":
-            if wt.phase == "build":
-                wq.append(_t_block_session(t_step, state.experience, state.paces))
-                t_step = min(t_step + 1, 5)
-                pw = _weeks_of_phase(targets, "build")
-                idx = _phase_index(wt, pw)
-                if idx % 2 == 1 and state.days_per_week >= 5:
-                    wq.append(_interval_session(state.experience, state.paces))
-
-            elif wt.phase == "peak":
-                wq.append(_t_block_session(min(t_step, 4), state.experience, state.paces))
-                if state.days_per_week >= 5:
-                    wq.append(_interval_session(state.experience, state.paces))
-
-        # ── 5K ────────────────────────────────────────────────────
-        else:
-            if wt.phase == "build":
-                wq.append(_interval_session(state.experience, state.paces))
-                pw = _weeks_of_phase(targets, "build")
-                idx = _phase_index(wt, pw)
-                if idx % 2 == 0 and state.days_per_week >= 5:
-                    wq.append(_t_block_session(t_step, state.experience, state.paces))
-                    t_step = min(t_step + 1, 5)
-                if (state.experience in (ExperienceLevel.EXPERIENCED, ExperienceLevel.ELITE)
-                        and idx % 3 == 2):
-                    reps = _reps_session(state.experience, state.paces)
-                    if len(wq) > 1:
-                        wq[1] = reps
-                    else:
-                        wq.append(reps)
-
-            elif wt.phase == "peak":
-                wq.append(_interval_session(state.experience, state.paces))
-                if state.experience in (ExperienceLevel.EXPERIENCED, ExperienceLevel.ELITE):
-                    wq.append(_reps_session(state.experience, state.paces))
-
-        quality_map[wt.week_number] = wq[:2]
-
-    return quality_map
-
-
-def _schedule_abbreviated(
-    state: AthleteState,
-    targets: List[WeekTargets],
-) -> Dict[int, List[QualityRx]]:
-    qmap: Dict[int, List[QualityRx]] = {}
-    t_step = 2
-    dist = state.race_distance
-
-    for wt in targets:
-        if wt.phase == "taper":
-            qmap[wt.week_number] = []
-            continue
-
-        wq: List[QualityRx] = []
-        if dist == "marathon":
-            mp_frac = 0.30
-            wq.append(_mp_long_run(wt.long_run_miles, mp_frac, state.paces))
-        elif dist == "half_marathon":
-            wq.append(_hmp_long_run(wt.long_run_miles, 0.30, state.paces))
-        elif dist in ("10k", "5k"):
-            wq.append(_t_block_session(t_step, state.experience, state.paces))
-            t_step = min(t_step + 1, 5)
-            if state.days_per_week >= 5:
-                wq.append(_interval_session(state.experience, state.paces))
-
-        qmap[wt.week_number] = wq[:2]
-
-    return qmap
-
-
-# ═══════════════════════════════════════════════════════════════════════
-# Step 5 — Day-by-Day Assembly
-# ═══════════════════════════════════════════════════════════════════════
-
-def _rest_day(dow: int) -> DayPlan:
-    return DayPlan(
-        day_of_week=dow, workout_type="rest", name="Rest",
-        description="Complete rest.", target_miles=0.0, intensity="rest",
-        paces={}, notes=[],
-    )
-
-
-def _easy_day(
-    dow: int, miles: float, paces: Optional[Dict[str, float]],
-    strides: bool = False,
-) -> DayPlan:
-    pace = _pace_label(paces, "easy")
-    p_dict: Dict[str, str] = {}
-    if paces and "easy" in paces:
-        p_dict["easy"] = format_pace(paces["easy"])
-    if strides:
-        return DayPlan(
-            day_of_week=dow, workout_type="easy_strides",
-            name="Easy + strides",
-            description=f"{miles:.0f}mi @ {pace} + 6x20s strides",
-            target_miles=round(miles, 1), intensity="easy",
-            paces=p_dict, notes=[],
-        )
-    return DayPlan(
-        day_of_week=dow, workout_type="easy", name="Easy run",
-        description=f"{miles:.0f}mi @ {pace}",
-        target_miles=round(miles, 1), intensity="easy",
-        paces=p_dict, notes=[],
-    )
-
-
-def _long_run_day(
-    dow: int, miles: float, paces: Optional[Dict[str, float]],
-) -> DayPlan:
-    pace = _pace_label(paces, "easy")
-    p_dict: Dict[str, str] = {}
-    if paces and "easy" in paces:
-        p_dict["easy"] = format_pace(paces["easy"])
-    return DayPlan(
-        day_of_week=dow, workout_type="long",
-        name=f"Long run — {miles:.0f}mi",
-        description=f"{miles:.0f}mi @ {pace}",
-        target_miles=round(miles, 1), intensity="easy",
-        paces=p_dict, notes=[],
-    )
-
-
-def _mlr_day(
-    dow: int, miles: float, paces: Optional[Dict[str, float]],
-) -> DayPlan:
-    pace = _pace_label(paces, "easy")
-    p_dict: Dict[str, str] = {}
-    if paces and "easy" in paces:
-        p_dict["easy"] = format_pace(paces["easy"])
-    return DayPlan(
-        day_of_week=dow, workout_type="medium_long",
-        name=f"Medium-long — {miles:.0f}mi",
-        description=f"{miles:.0f}mi @ {pace}",
-        target_miles=round(miles, 1), intensity="easy",
-        paces=p_dict, notes=[],
-    )
-
-
-def _quality_day(
-    rx: QualityRx, dow: int, paces: Optional[Dict[str, float]],
-) -> DayPlan:
-    p_dict: Dict[str, str] = {}
-    if paces:
-        if "threshold" in rx.workout_type and "threshold" in paces:
-            p_dict["threshold"] = format_pace(paces["threshold"])
-        elif "interval" in rx.workout_type and "interval" in paces:
-            p_dict["interval"] = format_pace(paces["interval"])
-        elif "rep" in rx.workout_type and "interval" in paces:
-            p_dict["repetition"] = format_pace(paces["interval"])
-    return DayPlan(
-        day_of_week=dow, workout_type=rx.workout_type,
-        name=rx.name, description=rx.description,
-        target_miles=rx.miles, intensity=rx.intensity,
-        paces=p_dict, notes=[],
-    )
-
-
-def _quality_long_day(
-    rx: QualityRx, dow: int, lr_miles: float,
-    paces: Optional[Dict[str, float]],
-) -> DayPlan:
-    p_dict: Dict[str, str] = {}
-    if paces:
-        if "easy" in paces:
-            p_dict["easy"] = format_pace(paces["easy"])
-        if "marathon" in paces and "mp" in rx.workout_type:
-            p_dict["marathon"] = format_pace(paces["marathon"])
-    return DayPlan(
-        day_of_week=dow, workout_type=rx.workout_type,
-        name=rx.name, description=rx.description,
-        target_miles=round(lr_miles, 1), intensity=rx.intensity,
-        paces=p_dict, notes=[],
-    )
-
-
-def assemble_weeks(
-    state: AthleteState,
-    targets: List[WeekTargets],
-    quality: Dict[int, List[QualityRx]],
-) -> List[WeekPlan]:
-    weeks: List[WeekPlan] = []
-    long_dow = 6   # Sunday
-    rest_dow = 0   # Monday
-
-    for wt in targets:
-        days: List[DayPlan] = []
-        week_start = state.plan_start + timedelta(weeks=wt.week_number - 1)
-
-        wk_quality = quality.get(wt.week_number, [])
-        quality_long: Optional[QualityRx] = None
-        midweek_quality: List[QualityRx] = []
-        for qrx in wk_quality:
-            if qrx.workout_type in ("long_mp", "long_hmp"):
-                quality_long = qrx
+    # Apply cutback and sawtooth: post-cutback > pre-cutback
+    for i in sorted(cutback_set):
+        prev_vol = volumes[max(0, i - 1)]
+        volumes[i] = round(prev_vol * 0.50, 1)
+        if i + 1 < build_n and i + 1 not in cutback_set:
+            at_peak = prev_vol >= vol_peak * 0.95
+            if at_peak:
+                bump = prev_vol + 2.0
             else:
-                midweek_quality.append(qrx)
+                bump = max(prev_vol * 1.10, prev_vol + 5.0)
+            volumes[i + 1] = max(volumes[i + 1], round(bump, 1))
 
-        # 1. Long run (Sunday)
-        if quality_long:
-            days.append(_quality_long_day(quality_long, long_dow, wt.long_run_miles, state.paces))
+    # Long run raw growth
+    lr_raw = _build_lr_growth(lr_start, lr_ceiling, lr_step, build_n)
+
+    # Quality sessions per week — driven by adaptation needs
+    quality_plan = _plan_quality_sessions(state, build_n, taper_n, lr_raw)
+
+    # Assemble WeekRx with ceiling alternation on actual non-cutback weeks
+    weeks = []
+    ceiling_idx = 0
+
+    for i in range(n):
+        is_taper = i >= build_n
+        is_cutback = i in cutback_set
+
+        vol = volumes[i]
+        lr_type, lr_quality = quality_plan["long_types"][i]
+
+        if is_cutback:
+            prev_lr = lr_raw[max(0, i - 1)]
+            lr = round(prev_lr * 0.55, 1)
+            lr_type = "long"
+            lr_quality = None
+        elif is_taper:
+            offset = i - build_n
+            hw = max(lr_raw[:build_n]) if build_n > 0 else lr_start
+            if offset == 0:
+                lr = round(hw * 0.60, 1)
+            elif offset == 1:
+                lr = round(hw * 0.40, 1)
+            else:
+                lr = round(min(hw * 0.30, 8.0), 1)
         else:
-            days.append(_long_run_day(long_dow, wt.long_run_miles, state.paces))
+            base_lr = lr_raw[i]
+            if base_lr >= lr_ceiling:
+                cycle = [lr_ceiling, lr_ceiling - 2]
+                lr = cycle[ceiling_idx % 2]
+                ceiling_idx += 1
+            else:
+                lr = base_lr
 
-        # 2. Rest (Monday)
-        days.append(_rest_day(rest_dow))
+        # Taper volume
+        if is_taper:
+            offset = i - build_n
+            hw = max(volumes[:build_n]) if build_n > 0 else vol_start
+            factors = [0.55, 0.40, 0.28]
+            f = factors[min(offset, len(factors) - 1)]
+            vol = round(hw * f, 1)
 
-        # 3. Determine available weekday slots: Tue(1) Wed(2) Thu(3) Fri(4) Sat(5)
-        available = [1, 2, 3, 4, 5]
-        running_slots_needed = state.days_per_week - 1
-        extra_rest_needed = len(available) - running_slots_needed
+        mlr = 0.0
+        if vol >= MLR_FLOOR_VOL and not is_taper and not is_cutback:
+            mlr = min(MLR_CAP, round(lr * 0.75, 1))
 
-        extra_rest_dows: List[int] = []
-        for candidate in [3, 4, 1]:
-            if extra_rest_needed <= 0:
-                break
-            if candidate in available:
-                extra_rest_dows.append(candidate)
-                extra_rest_needed -= 1
+        phase = _label_phase(i, build_n, taper_n, is_cutback, dist)
+        q_sessions = quality_plan["midweek"][i] if not is_cutback else []
 
-        # Quality day-of-week placement with spacing
-        q_dows: List[int] = []
-        if len(midweek_quality) >= 2:
-            q_dows = [2, 4]
-        elif len(midweek_quality) == 1:
-            q_dows = [2]
+        if lr_quality and not is_cutback:
+            # Sync LR quality miles with the alternated LR value
+            lr_q = dict(lr_quality)
+            if abs(lr_q["miles"] - lr) > 0.5:
+                lr_q = _rescale_lr_quality(lr_q, lr)
+            q_sessions = [lr_q] + q_sessions
 
-        assigned = set(q_dows + extra_rest_dows)
-        easy_dows = [d for d in available if d not in assigned]
-
-        for rd in extra_rest_dows:
-            days.append(_rest_day(rd))
-
-        for i, qd in enumerate(q_dows):
-            if i < len(midweek_quality):
-                days.append(_quality_day(midweek_quality[i], qd, state.paces))
-
-        # 4. Saturday = always easy (before Sunday long)
-        sat_miles = max(3.0, round(wt.weekly_miles / state.days_per_week * 0.7, 1))
-        if 5 in easy_dows:
-            days.append(_easy_day(5, sat_miles, state.paces))
-            easy_dows.remove(5)
-
-        # 5. MLR (Tuesday preferred)
-        if wt.medium_long_miles > 0 and 1 in easy_dows:
-            days.append(_mlr_day(1, wt.medium_long_miles, state.paces))
-            easy_dows.remove(1)
-
-        # 6. Fill remaining easy days
-        placed_miles = sum(d.target_miles for d in days)
-        remaining_miles = max(0, wt.weekly_miles - placed_miles)
-        easy_count = len(easy_dows)
-        per_easy = max(3.0, round(remaining_miles / max(1, easy_count), 1))
-
-        needs_strides = wt.phase == "base" and not wk_quality
-        for idx_e, ed in enumerate(easy_dows):
-            strides = needs_strides and idx_e == 0
-            days.append(_easy_day(ed, per_easy, state.paces, strides=strides))
-
-        days.sort(key=lambda d: d.day_of_week)
-        total = round(sum(d.target_miles for d in days), 1)
-
-        weeks.append(WeekPlan(
-            week_number=wt.week_number,
-            theme=wt.phase,
-            start_date=week_start,
-            days=days,
-            total_miles=total,
-            is_cutback=wt.is_cutback,
+        weeks.append(WeekRx(
+            week_number=i + 1,
+            phase_label=phase,
+            target_volume=vol,
+            is_cutback=is_cutback,
+            long_run_miles=round(lr, 1),
+            long_run_type=lr_type,
+            mlr_miles=mlr,
+            quality_sessions=q_sessions,
         ))
 
     return weeks
 
 
+def _build_volume_curve(vol_start, vol_peak, build_n, taper_n, state):
+    n = build_n + taper_n
+    volumes = []
+    cur = vol_start
+    step_max = {
+        ExperienceLevel.BEGINNER: 3.0, ExperienceLevel.INTERMEDIATE: 5.0,
+        ExperienceLevel.EXPERIENCED: 6.0, ExperienceLevel.ELITE: 8.0,
+    }.get(state.experience, 5.0)
+
+    for i in range(n):
+        if i >= build_n:
+            volumes.append(0.0)  # placeholder, taper computed in plan_weeks
+        elif cur < vol_peak * 0.95:
+            remaining = build_n - i
+            step = min(step_max, (vol_peak - cur) / max(1, remaining))
+            cur = min(vol_peak, cur + step)
+            volumes.append(round(cur, 1))
+        else:
+            cur = vol_peak
+            volumes.append(round(vol_peak, 1))
+    return volumes
+
+
+def _build_lr_growth(lr_start, lr_ceiling, lr_step, build_n):
+    """Raw LR growth curve — ceiling alternation handled in plan_weeks."""
+    lrs = []
+    cur = lr_start
+    if lr_ceiling - cur < lr_step:
+        cur = lr_ceiling
+    for i in range(build_n):
+        if i > 0 and cur < lr_ceiling:
+            nxt = cur + lr_step
+            if nxt >= lr_ceiling or (lr_ceiling - nxt) < lr_step:
+                nxt = lr_ceiling
+            cur = nxt
+        lrs.append(round(cur, 1))
+    return lrs
+
+
+def _rescale_lr_quality(q: Dict, new_lr: float) -> Dict:
+    """Adjust a LR quality dict's miles and description for the alternated LR."""
+    old = q["miles"]
+    if old <= 0:
+        return q
+    ratio = new_lr / old
+    q["miles"] = round(new_lr, 1)
+    q["name"] = q["name"].replace(f"{old:.0f}mi", f"{new_lr:.0f}mi")
+    if "desc" in q:
+        for val in [old, round(old)]:
+            q["desc"] = q["desc"].replace(f"{val:.0f}mi", f"{new_lr:.0f}mi", 1)
+    return q
+
+
+def _label_phase(i, build_n, taper_n, is_cutback, dist):
+    if i >= build_n:
+        return "taper"
+    ratio = i / max(1, build_n)
+    if ratio < 0.20:
+        return "base"
+    if dist == "marathon":
+        if ratio < 0.45:
+            return "build_1"
+        if ratio < 0.70:
+            return "build_2"
+        return "peak"
+    if ratio < 0.55:
+        return "build"
+    return "peak"
+
+
 # ═══════════════════════════════════════════════════════════════════════
-# Couch-to-10K (Day-One Athletes)
+# Step 3 — Quality Planning (adaptation-driven tool selection)
 # ═══════════════════════════════════════════════════════════════════════
 
-def _generate_couch_to_10k(
-    plan_start: date,
-    horizon_weeks: int,
-    race_date: date,
-) -> List[WeekPlan]:
-    """Founder-specified walk/run progression for never-ran-before athletes.
+def _plan_quality_sessions(state, build_n, taper_n, lr_raw):
+    """Select tools based on what the athlete needs to improve."""
+    n = build_n + taper_n
+    dist = state.race_distance
+    exp = state.experience
+    paces = state.paces
+    needs = state.adaptation_needs
 
-    Shapes the canonical stages to fit within horizon_weeks and aligns
-    the final week to race_date.
-    """
+    long_types = []
+    midweek = []
+
+    t_step = 0
+    i_step = 0
+
+    for i in range(n):
+        is_taper = i >= build_n
+        ratio = i / max(1, build_n) if not is_taper else 1.0
+        lr_mi = lr_raw[i] if i < len(lr_raw) else 10.0
+
+        lr_type, lr_quality = _select_long_run_tool(
+            dist, exp, paces, ratio, i, lr_mi, is_taper, state, needs,
+        )
+        long_types.append((lr_type, lr_quality))
+
+        if is_taper:
+            midweek.append(_taper_tools(state, i - build_n))
+        elif ratio < 0.20:
+            mq = _base_tools(state, needs, i_step)
+            midweek.append(mq)
+            if mq:
+                i_step += 1
+        else:
+            mq = _build_peak_tools(
+                state, needs, ratio, t_step, i_step, lr_type,
+            )
+            midweek.append(mq)
+            t_step += 1
+            if any(s["type"] == "intervals" for s in mq):
+                i_step += 1
+
+    return {"long_types": long_types, "midweek": midweek}
+
+
+# ── Tool menus (each returns a KB-grounded prescription) ──────────────
+
+THRESHOLD_PROGRESSION = [
+    ("cruise_intervals", "6x5min @ T", 6, 5, 1.5),
+    ("threshold_continuous", "20min continuous @ T", 1, 20, 0),
+    ("cruise_intervals", "5x6min @ T", 5, 6, 2),
+    ("threshold_continuous", "25min continuous @ T", 1, 25, 0),
+    ("cruise_intervals", "4x8min @ T", 4, 8, 2),
+    ("threshold_continuous", "30min continuous @ T", 1, 30, 0),
+    ("broken_threshold", "3x10min @ T", 3, 10, 3),
+    ("threshold_continuous", "35min continuous @ T", 1, 35, 0),
+    ("cruise_intervals", "3x12min @ T", 3, 12, 2),
+    ("threshold_continuous", "40min continuous @ T", 1, 40, 0),
+]
+
+INTERVAL_PROGRESSION = [
+    ("intervals", "8x400m", "8x400m", 5.5),
+    ("intervals", "6x400m", "6x400m", 5.0),
+    ("intervals", "5x800m", "5x800m", 7.0),
+    ("intervals", "5x1000m", "5x1000m", 8.5),
+    ("intervals", "4x1200m", "4x1200m", 8.0),
+    ("intervals", "6x800m", "6x800m", 8.5),
+    ("intervals", "3x1mi", "3x1mi", 9.0),
+]
+
+
+def _make_threshold(step, exp, paces):
+    step = min(step, len(THRESHOLD_PROGRESSION) - 1)
+    wtype, name, reps, dur, rest = THRESHOLD_PROGRESSION[step]
+    pace = _pace_label(paces, "threshold")
+    wu_cd = {ExperienceLevel.BEGINNER: 2.0, ExperienceLevel.INTERMEDIATE: 3.0}.get(exp, 4.0)
+    half = round(wu_cd / 2, 1)
+    t_pace_val = paces.get("threshold", 7.0) if paces else 7.0
+    q_miles = reps * dur / t_pace_val
+    jog = max(0, (reps - 1)) * rest / 9.0 if reps > 1 else 0
+    total = round(wu_cd + q_miles + jog, 1)
+    if reps == 1:
+        desc = f"{half:.0f}mi easy + {dur}min @ {pace} + {half:.0f}mi easy"
+    else:
+        desc = f"{half:.0f}mi easy + {reps}x{dur}min @ {pace}, {rest:.0f}min jog + {half:.0f}mi easy"
+    return {"type": wtype, "name": name, "desc": desc, "miles": total, "intensity": "hard"}
+
+
+def _make_intervals(step, exp, paces):
+    step = min(step, len(INTERVAL_PROGRESSION) - 1)
+    wtype, name, core, miles = INTERVAL_PROGRESSION[step]
+    pace = _pace_label(paces, "interval")
+    wu_cd = {ExperienceLevel.BEGINNER: 2.0, ExperienceLevel.INTERMEDIATE: 3.0}.get(exp, 4.0)
+    half = round(wu_cd / 2, 1)
+    desc = f"{half:.0f}mi easy + {core} @ {pace} w/ 400m jog + {half:.0f}mi easy"
+    return {"type": wtype, "name": name, "desc": desc, "miles": miles, "intensity": "hard"}
+
+
+def _make_reps(exp, paces):
+    pace = _pace_label(paces, "interval")
+    if exp == ExperienceLevel.ELITE:
+        return {"type": "repetitions", "name": "8x300m reps",
+                "desc": f"2mi easy + 8x300m @ 1500m pace, 90s rest + 2mi easy",
+                "miles": 8.0, "intensity": "hard"}
+    return {"type": "repetitions", "name": "6x200m reps",
+            "desc": f"2mi easy + 6x200m @ 1500m pace, 90s rest + 2mi easy",
+            "miles": 7.0, "intensity": "hard"}
+
+
+# ── Long run tool selection ───────────────────────────────────────────
+
+def _select_long_run_tool(dist, exp, paces, ratio, week_idx, lr_miles, is_taper, state, needs):
+    if is_taper:
+        return "long", None
+    if ratio < 0.20:
+        return "long", None
+
+    if dist == "marathon":
+        return _marathon_lr_tool(ratio, week_idx, lr_miles, paces, state)
+    if dist == "half_marathon":
+        return _half_lr_tool(ratio, week_idx, lr_miles, paces)
+    return _short_distance_lr_tool(ratio, week_idx, lr_miles, paces, exp, dist)
+
+
+def _marathon_lr_tool(ratio, week_idx, lr_miles, paces, state):
+    mp_pace = _pace_label(paces, "marathon")
+    easy_pace = _pace_label(paces, "easy")
+
+    if ratio < 0.45:
+        if week_idx % 2 == 1:
+            cut = round(lr_miles * 0.15, 1)
+            easy_mi = round(lr_miles - cut, 1)
+            return "long_progressive", {
+                "type": "long_progressive", "name": f"{lr_miles:.0f}mi progressive",
+                "desc": f"{easy_mi:.0f}mi @ {easy_pace}, last {cut:.0f}mi descending to {mp_pace}",
+                "miles": lr_miles, "intensity": "moderate",
+            }
+        return "long", None
+
+    # Build_2 / Peak: MP long 2 out of 3 weeks, progressive on the 3rd
+    mp_frac = 0.30 + (ratio - 0.45) * 1.0
+    mp_mi = round(lr_miles * min(mp_frac, 0.70), 1)
+
+    if week_idx % 3 != 2:
+        easy_mi = round(lr_miles - mp_mi, 1)
+        return "long_mp", {
+            "type": "long_mp",
+            "name": f"{lr_miles:.0f}mi w/ {mp_mi:.0f}mi @ MP",
+            "desc": f"{easy_mi:.0f}mi @ {easy_pace} + {mp_mi:.0f}mi @ {mp_pace}",
+            "miles": lr_miles, "intensity": "hard",
+        }
+    ff = round(min(3.0, lr_miles * 0.12), 1)
+    easy_mi = round(lr_miles - ff, 1)
+    t_pace = _pace_label(paces, "threshold")
+    return "long_fast_finish", {
+        "type": "long_fast_finish",
+        "name": f"{lr_miles:.0f}mi w/ fast finish",
+        "desc": f"{easy_mi:.0f}mi @ {easy_pace}, last {ff:.0f}mi @ {t_pace}",
+        "miles": lr_miles, "intensity": "moderate",
+    }
+
+
+def _half_lr_tool(ratio, week_idx, lr_miles, paces):
+    easy_pace = _pace_label(paces, "easy")
+    if ratio < 0.45:
+        return "long", None
+
+    if week_idx % 2 == 0:
+        if paces:
+            mp = paces.get("marathon", 7.5)
+            tp = paces.get("threshold", 6.5)
+            hmp_str = format_pace((mp + tp) / 2) + "/mi"
+        else:
+            hmp_str = "half marathon effort"
+        hmp_mi = round(lr_miles * 0.35, 1)
+        easy_mi = round(lr_miles - hmp_mi, 1)
+        return "long_hmp", {
+            "type": "long_hmp",
+            "name": f"{lr_miles:.0f}mi w/ {hmp_mi:.0f}mi @ HMP",
+            "desc": f"{easy_mi:.0f}mi @ {easy_pace} + {hmp_mi:.0f}mi @ {hmp_str}",
+            "miles": lr_miles, "intensity": "hard",
+        }
+    cut = round(lr_miles * 0.25, 1)
+    easy_mi = round(lr_miles - cut, 1)
+    return "long_progressive", {
+        "type": "long_progressive",
+        "name": f"{lr_miles:.0f}mi progressive",
+        "desc": f"{easy_mi:.0f}mi @ {easy_pace}, last {cut:.0f}mi picking up",
+        "miles": lr_miles, "intensity": "moderate",
+    }
+
+
+def _short_distance_lr_tool(ratio, week_idx, lr_miles, paces, exp, dist):
+    if exp == ExperienceLevel.BEGINNER:
+        return "long", None
+    easy_pace = _pace_label(paces, "easy")
+    if ratio > 0.55 and week_idx % 3 == 0:
+        ff = round(min(2.0, lr_miles * 0.12), 1)
+        easy_mi = round(lr_miles - ff, 1)
+        t_pace = _pace_label(paces, "threshold")
+        return "long_fast_finish", {
+            "type": "long_fast_finish",
+            "name": f"{lr_miles:.0f}mi w/ fast finish",
+            "desc": f"{easy_mi:.0f}mi @ {easy_pace}, last {ff:.0f}mi @ {t_pace}",
+            "miles": lr_miles, "intensity": "moderate",
+        }
+    if ratio > 0.35 and week_idx % 3 == 1:
+        cut = round(lr_miles * 0.20, 1)
+        easy_mi = round(lr_miles - cut, 1)
+        return "long_progressive", {
+            "type": "long_progressive",
+            "name": f"{lr_miles:.0f}mi progressive",
+            "desc": f"{easy_mi:.0f}mi @ {easy_pace}, last {cut:.0f}mi descending",
+            "miles": lr_miles, "intensity": "moderate",
+        }
+    return "long", None
+
+
+# ── Midweek tool selection ────────────────────────────────────────────
+
+def _base_tools(state, needs, i_step):
+    """Base: aerobic base + neuromuscular touch only.
+    For 5K/10K experienced: ceiling work (intervals) even in base — KB says
+    intervals are safe and productive in base when legs are fresh.
+    For 10K all levels, threshold in base prepares the system early."""
+    if state.race_distance == "10k" and AdaptationNeed.THRESHOLD in needs:
+        return [_make_threshold(0, state.experience, state.paces)]
+    if (
+        state.race_distance == "5k"
+        and state.experience in (ExperienceLevel.EXPERIENCED, ExperienceLevel.ELITE)
+        and AdaptationNeed.CEILING in needs
+    ):
+        return [_make_intervals(min(i_step, 1), state.experience, state.paces)]
+    return []
+
+
+def _build_peak_tools(state, needs, ratio, t_step, i_step, lr_type):
+    """Build/Peak: select tools based on adaptation needs, not phase templates."""
+    dist = state.race_distance
+    exp = state.experience
+    paces = state.paces
+    mq = []
+
+    if dist == "marathon":
+        mq.append(_make_threshold(t_step, exp, paces))
+
+    elif dist == "half_marathon":
+        mq.append(_make_threshold(t_step, exp, paces))
+
+    elif dist == "10k":
+        if ratio < 0.55:
+            mq.append(_make_threshold(t_step, exp, paces))
+        else:
+            mq.append(_make_intervals(i_step, exp, paces))
+            mq.append(_make_threshold(min(t_step, 6), exp, paces))
+
+    elif dist == "5k":
+        if exp == ExperienceLevel.BEGINNER:
+            mq.append(_make_intervals(min(i_step, 2), exp, paces))
+        else:
+            mq.append(_make_intervals(i_step, exp, paces))
+            if ratio < 0.70:
+                mq.append(_make_threshold(min(t_step, 4), exp, paces))
+            if (
+                ratio > 0.70
+                and AdaptationNeed.NEUROMUSCULAR in needs
+                and exp in (ExperienceLevel.EXPERIENCED, ExperienceLevel.ELITE)
+            ):
+                mq.append(_make_reps(exp, paces))
+
+    return mq
+
+
+def _taper_tools(state, offset):
+    """Taper: sharp and short. Maintain neuromuscular edge."""
+    paces = state.paces
+    exp = state.experience
+    wu_cd = {ExperienceLevel.BEGINNER: 2.0, ExperienceLevel.INTERMEDIATE: 3.0}.get(exp, 4.0)
+    half = round(wu_cd / 2, 1)
+
+    if offset == 0:
+        if state.race_distance in ("marathon", "half_marathon"):
+            pace = _pace_label(paces, "threshold")
+            return [{"type": "threshold_continuous", "name": "Taper threshold",
+                     "desc": f"{half:.0f}mi easy + 15min @ {pace} + {half:.0f}mi easy",
+                     "miles": round(wu_cd + 2.5, 1), "intensity": "hard"}]
+        pace = _pace_label(paces, "interval")
+        return [{"type": "intervals", "name": "Taper sharpener",
+                 "desc": f"{half:.0f}mi easy + 4x400m @ {pace} w/ 400m jog + {half:.0f}mi easy",
+                 "miles": round(wu_cd + 2.5, 1), "intensity": "hard"}]
+
+    return [{"type": "easy_strides", "name": "Easy + strides",
+             "desc": f"{half + 2:.0f}mi @ easy effort + 6x20s strides",
+             "miles": round(half + 2.5, 1), "intensity": "easy"}]
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# Step 4 — Day-by-Day Assembly
+# ═══════════════════════════════════════════════════════════════════════
+
+MIDWEEK_QUALITY_TYPES = frozenset({
+    "threshold", "threshold_continuous", "cruise_intervals",
+    "broken_threshold", "intervals", "repetitions",
+})
+
+
+def assemble_plan(state: AthleteState, week_rxs: List[WeekRx]) -> List[WeekPlan]:
+    weeks = []
+    long_dow = 6
+
+    for rx in week_rxs:
+        days: List[DayPlan] = []
+        week_start = state.plan_start + timedelta(weeks=rx.week_number - 1)
+
+        # Separate LR quality from midweek quality
+        lr_quality_rx = None
+        midweek_rx = []
+        for q in rx.quality_sessions:
+            if q["type"] in ("long_mp", "long_hmp", "long_progressive", "long_fast_finish"):
+                lr_quality_rx = q
+            else:
+                midweek_rx.append(q)
+
+        # 1. Long run
+        if lr_quality_rx:
+            days.append(_make_day(long_dow, lr_quality_rx, state.paces))
+        else:
+            days.append(_long_run_day(long_dow, rx.long_run_miles, state.paces))
+
+        # 2. Rest — 7-day athletes run every day, no forced rest
+        has_forced_rest = state.days_per_week < 7
+        if has_forced_rest:
+            days.append(_rest_day(0))
+
+        # 3. Available weekday slots (include Mon for 7-day athletes)
+        available = [0, 1, 2, 3, 4, 5] if not has_forced_rest else [1, 2, 3, 4, 5]
+        running_needed = state.days_per_week - 1
+        extra_rest = max(0, len(available) - running_needed)
+
+        # Quality DOWs first
+        odd = rx.week_number % 2 == 1
+        q_dows = []
+        if len(midweek_rx) >= 3:
+            q_dows = [1, 3, 5] if odd else [2, 4, 5]
+        elif len(midweek_rx) >= 2:
+            q_dows = [2, 4] if odd else [1, 4]
+        elif len(midweek_rx) == 1:
+            q_dows = [2] if odd else [4]
+
+        remaining_for_rest = [d for d in available if d not in q_dows]
+        extra_rest_dows = []
+        for c in [3, 4, 1]:
+            if extra_rest <= 0:
+                break
+            if c in remaining_for_rest:
+                extra_rest_dows.append(c)
+                extra_rest -= 1
+        if extra_rest > 0:
+            for c in remaining_for_rest:
+                if extra_rest <= 0:
+                    break
+                if c not in extra_rest_dows:
+                    extra_rest_dows.append(c)
+                    extra_rest -= 1
+
+        for rd in extra_rest_dows:
+            days.append(_rest_day(rd))
+
+        for i, qd in enumerate(q_dows):
+            if i < len(midweek_rx):
+                days.append(_make_day(qd, midweek_rx[i], state.paces))
+
+        assigned = set(q_dows[:len(midweek_rx)] + extra_rest_dows)
+        easy_dows = [d for d in available if d not in assigned]
+
+        # Pre-long Saturday: lighter, parity-varied for week-to-week variety
+        sat_factor = 0.40 if rx.week_number % 2 == 0 else 0.55
+        sat_miles = max(2.0, round(rx.target_volume / state.days_per_week * sat_factor, 1))
+        if 5 in easy_dows:
+            days.append(_easy_day(5, sat_miles, state.paces))
+            easy_dows.remove(5)
+
+        # MLR placement
+        if rx.mlr_miles > 0 and 1 in easy_dows:
+            days.append(_mlr_day(1, rx.mlr_miles, state.paces))
+            easy_dows.remove(1)
+
+        # Fill easy — varied by adjacency
+        placed = sum(d.target_miles for d in days)
+        remaining = max(0, rx.target_volume - placed)
+        easy_count = len(easy_dows)
+
+        if easy_count > 0:
+            raw_weights = []
+            for ed in easy_dows:
+                is_post_quality = any(
+                    d.day_of_week == (ed - 1) % 7
+                    and d.workout_type in MIDWEEK_QUALITY_TYPES
+                    for d in days
+                )
+                is_pre_long = any(
+                    d.day_of_week == (ed + 1) % 7
+                    and d.workout_type.startswith("long")
+                    for d in days
+                )
+                is_pre_quality = any(
+                    d.day_of_week == (ed + 1) % 7
+                    and d.workout_type in MIDWEEK_QUALITY_TYPES
+                    for d in days
+                )
+                if is_post_quality:
+                    raw_weights.append(0.45)
+                elif is_pre_long:
+                    raw_weights.append(0.50)
+                elif is_pre_quality:
+                    raw_weights.append(0.70)
+                else:
+                    raw_weights.append(1.30)
+
+            wt_sum = sum(raw_weights) or 1.0
+            norm = [w / wt_sum for w in raw_weights]
+
+            easy_cap = min(14.0, rx.target_volume / max(state.days_per_week, 3) * 1.6)
+            for idx_e, ed in enumerate(easy_dows):
+                mi = round(remaining * norm[idx_e], 1)
+                mi = min(mi, easy_cap)
+                floor = 4.0 if raw_weights[idx_e] >= 1.0 else 2.0
+                mi = max(floor, mi)
+
+                stride_parity = rx.week_number % 2 == 0
+                low_days = state.days_per_week <= 3
+                is_post_q = raw_weights[idx_e] <= 0.45
+                needs_strides = (
+                    not any(d.workout_type == "easy_strides" for d in days)
+                    and not is_post_q
+                    and (
+                        (stride_parity and idx_e == 0)
+                        or (not stride_parity and idx_e == easy_count - 1)
+                        or low_days
+                    )
+                )
+                days.append(_easy_day(ed, mi, state.paces, strides=needs_strides))
+
+        days.sort(key=lambda d: d.day_of_week)
+
+        # Cap assembled volume at target to preserve sawtooth fidelity
+        raw_total = sum(d.target_miles for d in days)
+        if raw_total > rx.target_volume > 0:
+            overshoot = raw_total - rx.target_volume
+            easy_pool = [
+                d for d in days
+                if d.workout_type in ("easy", "easy_strides", "recovery")
+            ]
+            easy_sum = sum(d.target_miles for d in easy_pool)
+            if easy_sum > overshoot:
+                scale = (easy_sum - overshoot) / easy_sum
+                for d in easy_pool:
+                    d.target_miles = max(2.0, round(d.target_miles * scale, 1))
+
+        total = round(sum(d.target_miles for d in days), 1)
+
+        weeks.append(WeekPlan(
+            week_number=rx.week_number,
+            theme=rx.phase_label,
+            start_date=week_start,
+            days=days,
+            total_miles=total,
+            is_cutback=rx.is_cutback,
+        ))
+
+    return weeks
+
+
+# ── Day helpers ───────────────────────────────────────────────────────
+
+def _rest_day(dow):
+    return DayPlan(dow, "rest", "Rest", "Complete rest.", 0.0, "rest", {}, [])
+
+
+def _easy_day(dow, miles, paces, strides=False):
+    pace = _pace_label(paces, "easy")
+    p_dict = {}
+    if paces and "easy" in paces:
+        p_dict["easy"] = format_pace(paces["easy"])
+    if strides:
+        return DayPlan(
+            dow, "easy_strides", "Easy + strides",
+            f"{miles:.0f}mi @ {pace} + 6x20s strides",
+            round(miles, 1), "easy", p_dict, [],
+        )
+    return DayPlan(
+        dow, "easy", "Easy run",
+        f"{miles:.0f}mi @ {pace}",
+        round(miles, 1), "easy", p_dict, [],
+    )
+
+
+def _long_run_day(dow, miles, paces):
+    pace = _pace_label(paces, "easy")
+    p_dict = {}
+    if paces and "easy" in paces:
+        p_dict["easy"] = format_pace(paces["easy"])
+    return DayPlan(
+        dow, "long", f"Long run -- {miles:.0f}mi",
+        f"{miles:.0f}mi @ {pace}",
+        round(miles, 1), "easy", p_dict, [],
+    )
+
+
+def _mlr_day(dow, miles, paces):
+    pace = _pace_label(paces, "easy")
+    p_dict = {}
+    if paces and "easy" in paces:
+        p_dict["easy"] = format_pace(paces["easy"])
+    return DayPlan(
+        dow, "medium_long", f"Medium-long -- {miles:.0f}mi",
+        f"{miles:.0f}mi @ {pace}",
+        round(miles, 1), "easy", p_dict, [],
+    )
+
+
+def _make_day(dow, rx_dict, paces):
+    p_dict = {}
+    if paces:
+        if "threshold" in rx_dict["type"] or rx_dict["type"] in ("cruise_intervals", "broken_threshold"):
+            if "threshold" in paces:
+                p_dict["threshold"] = format_pace(paces["threshold"])
+        elif "interval" in rx_dict["type"]:
+            if "interval" in paces:
+                p_dict["interval"] = format_pace(paces["interval"])
+        elif "rep" in rx_dict["type"]:
+            if "interval" in paces:
+                p_dict["repetition"] = format_pace(paces["interval"])
+        elif "mp" in rx_dict["type"]:
+            if "marathon" in paces:
+                p_dict["marathon"] = format_pace(paces["marathon"])
+            if "easy" in paces:
+                p_dict["easy"] = format_pace(paces["easy"])
+        elif "hmp" in rx_dict["type"]:
+            if "threshold" in paces and "marathon" in paces:
+                mp = paces["marathon"]
+                tp = paces["threshold"]
+                p_dict["half_marathon"] = format_pace((mp + tp) / 2)
+            if "easy" in paces:
+                p_dict["easy"] = format_pace(paces["easy"])
+        if "easy" in paces and rx_dict["type"].startswith("long"):
+            p_dict["easy"] = format_pace(paces["easy"])
+
+    return DayPlan(
+        dow, rx_dict["type"], rx_dict["name"], rx_dict["desc"],
+        rx_dict["miles"], rx_dict["intensity"], p_dict, [],
+    )
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# Couch-to-10K (day-one path)
+# ═══════════════════════════════════════════════════════════════════════
+
+def _generate_couch_to_10k(plan_start, horizon_weeks, race_date):
     STAGES = [
         ("Walk 1mi, Run 1mi, Walk 1mi", 3.0, "Run 3mi", 3.0),
         ("Walk 1mi, Run 1mi, Walk 1mi", 3.0, "Run 3mi", 3.0),
@@ -973,50 +1001,133 @@ def _generate_couch_to_10k(
         ("Run 4mi", 4.0, "Run 8mi", 8.0),
         ("Run 4mi", 4.0, "Run 8mi", 8.0),
     ]
+    budget = max(1, horizon_weeks - 1)
+    selected = STAGES[:budget]
+    total_plan = len(selected) + 1
+    race_monday = race_date - timedelta(days=race_date.weekday())
+    start = race_monday - timedelta(weeks=total_plan - 1)
 
-    training_budget = max(1, horizon_weeks - 1)
-    selected = STAGES[:training_budget]
+    weeks = []
+    for idx, (dd, dm, ld, lm) in enumerate(selected):
+        ws = start + timedelta(weeks=idx)
+        wtype = "walk_run" if "Walk" in dd else "easy"
+        d = [DayPlan(dow, wtype, dd, dd, dm, "easy", {}, []) for dow in range(6)]
+        d.append(DayPlan(6, "long", ld, ld, lm, "easy", {}, []))
+        weeks.append(WeekPlan(idx + 1, "progression", ws, d, round(dm * 6 + lm, 1)))
 
-    # Back-compute so the final (taper/race) week contains race_date
-    total_plan_weeks = len(selected) + 1
-    race_week_monday = race_date - timedelta(days=race_date.weekday())
-    aligned_start = race_week_monday - timedelta(weeks=total_plan_weeks - 1)
-
-    weeks: List[WeekPlan] = []
-    for idx, (daily_desc, daily_mi, long_desc, long_mi) in enumerate(selected):
-        week_num = idx + 1
-        ws = aligned_start + timedelta(weeks=idx)
-        wtype = "walk_run" if "Walk" in daily_desc else "easy"
-        days = [
-            DayPlan(dow, wtype, daily_desc, daily_desc,
-                    daily_mi, "easy", {}, [])
-            for dow in range(6)
-        ]
-        days.append(DayPlan(6, "long", long_desc, long_desc,
-                            long_mi, "easy", {}, []))
-        total = round(daily_mi * 6 + long_mi, 1)
-        weeks.append(WeekPlan(week_num, "progression", ws, days, total))
-
-    # Taper + race week
-    taper_num = len(selected) + 1
-    ws = aligned_start + timedelta(weeks=len(selected))
-    taper_days = [
-        DayPlan(dow, "easy", "Easy 3mi", "3mi easy", 3.0, "easy", {}, [])
-        for dow in range(5)
-    ]
-    taper_days.append(_rest_day(5))
-    taper_days.append(DayPlan(
-        6, "race", "Race Day", "Warm up, execute, celebrate.",
-        0.0, "race", {}, [],
-    ))
-    weeks.append(WeekPlan(taper_num, "taper", ws, taper_days, 15.0))
-
+    tw = len(selected) + 1
+    ws = start + timedelta(weeks=len(selected))
+    td = [DayPlan(dow, "easy", "Easy 3mi", "3mi easy", 3.0, "easy", {}, [])
+          for dow in range(5)]
+    td.append(_rest_day(5))
+    td.append(DayPlan(6, "race", "Race Day", "Warm up, execute, celebrate.",
+                       0.0, "race", {}, []))
+    weeks.append(WeekPlan(tw, "taper", ws, td, 15.0))
     return weeks
 
 
 # ═══════════════════════════════════════════════════════════════════════
-# Orchestrator
+# Public API
 # ═══════════════════════════════════════════════════════════════════════
+
+def _apply_tune_up_races(
+    weeks: List[WeekPlan],
+    tune_up_races: List[Dict],
+    plan_start: date,
+) -> List[WeekPlan]:
+    """Modify plan weeks for tune-up races: insert race day, reduce
+    surrounding quality, add recovery modifier to following week."""
+    if not tune_up_races:
+        return weeks
+
+    for tune in tune_up_races:
+        tune_date = tune["date"]
+        if isinstance(tune_date, str):
+            tune_date = date.fromisoformat(tune_date)
+
+        days_offset = (tune_date - plan_start).days
+        if days_offset < 0:
+            continue
+        wk_idx = days_offset // 7
+        race_dow = days_offset % 7
+
+        if wk_idx >= len(weeks):
+            continue
+
+        race_dist = tune.get("distance", "10k")
+        dist_miles = {"5k": 3.1, "10k": 6.2, "10_mile": 10.0,
+                      "half_marathon": 13.1}.get(race_dist, 6.2)
+        race_name = tune.get("name") or f"{race_dist} tune-up"
+
+        week = weeks[wk_idx]
+        race_day = DayPlan(
+            day_of_week=race_dow,
+            workout_type="tune_up_race",
+            name=race_name,
+            description=f"RACE: {race_name}",
+            target_miles=dist_miles,
+            intensity="race",
+            paces={},
+            notes=[tune.get("purpose", "sharpening")],
+        )
+
+        new_days = [d for d in week.days if d.day_of_week != race_dow]
+        new_days.append(race_day)
+
+        prev_day_dow = (race_dow - 1) % 7
+        for j, d in enumerate(new_days):
+            if d.day_of_week == prev_day_dow and d.workout_type not in ("rest",):
+                new_days[j] = DayPlan(
+                    day_of_week=prev_day_dow,
+                    workout_type="easy",
+                    name="Pre-race shakeout",
+                    description="Short easy shakeout before tune-up race.",
+                    target_miles=min(d.target_miles, 3.0),
+                    intensity="easy",
+                    paces=d.paces,
+                )
+
+        new_days.sort(key=lambda d: d.day_of_week)
+        new_total = round(sum(d.target_miles for d in new_days), 1)
+        weeks[wk_idx] = WeekPlan(
+            week_number=week.week_number,
+            theme=week.theme,
+            start_date=week.start_date,
+            days=new_days,
+            total_miles=new_total,
+            is_cutback=week.is_cutback,
+        )
+
+        post_idx = wk_idx + 1
+        if post_idx < len(weeks):
+            pw = weeks[post_idx]
+            recovery_days = []
+            for d in pw.days:
+                if d.workout_type in MIDWEEK_QUALITY_TYPES:
+                    recovery_days.append(DayPlan(
+                        day_of_week=d.day_of_week,
+                        workout_type="easy",
+                        name="Post-race recovery",
+                        description="Easy recovery after tune-up race.",
+                        target_miles=max(3.0, round(d.target_miles * 0.5, 1)),
+                        intensity="easy",
+                        paces=d.paces,
+                    ))
+                else:
+                    recovery_days.append(d)
+            recovery_days.sort(key=lambda d: d.day_of_week)
+            rtotal = round(sum(d.target_miles for d in recovery_days), 1)
+            weeks[post_idx] = WeekPlan(
+                week_number=pw.week_number,
+                theme=pw.theme,
+                start_date=pw.start_date,
+                days=recovery_days,
+                total_miles=rtotal,
+                is_cutback=pw.is_cutback,
+            )
+
+    return weeks
+
 
 def generate_n1_plan(
     *,
@@ -1033,61 +1144,29 @@ def generate_n1_plan(
     weeks_since_peak: int = 0,
     goal_time: Optional[str] = None,
     personal_lr_floor: float = 0.0,
+    tune_up_races: Optional[List[Dict]] = None,
 ) -> List[WeekPlan]:
-    """Generate an N=1 training plan.
-
-    Returns List[WeekPlan].
-    Raises ReadinessGateError if athlete doesn't meet distance requirements.
-    """
     state = resolve_athlete_state(
-        race_distance=race_distance,
-        race_date=race_date,
-        plan_start=plan_start,
-        horizon_weeks=horizon_weeks,
-        days_per_week=days_per_week,
-        starting_vol=starting_vol,
-        current_lr=current_lr,
-        applied_peak=applied_peak,
-        experience=experience,
-        best_rpi=best_rpi,
-        weeks_since_peak=weeks_since_peak,
-        goal_time=goal_time,
+        race_distance=race_distance, race_date=race_date,
+        plan_start=plan_start, horizon_weeks=horizon_weeks,
+        days_per_week=days_per_week, starting_vol=starting_vol,
+        current_lr=current_lr, applied_peak=applied_peak,
+        experience=experience, best_rpi=best_rpi,
+        weeks_since_peak=weeks_since_peak, goal_time=goal_time,
     )
 
     if state.is_day_one:
-        logger.info("Day-one athlete — generating Couch-to-10K progression")
         return _generate_couch_to_10k(plan_start, horizon_weeks, race_date)
 
-    phases = compute_phase_schedule(state)
-    targets = compute_curves(state, phases, personal_lr_floor=personal_lr_floor)
-    quality = schedule_quality(state, targets)
-    weeks = assemble_weeks(state, targets, quality)
+    week_rxs = plan_weeks(state)
+    weeks = assemble_plan(state, week_rxs)
 
-    # Log MP accumulation for marathon plans
-    if race_distance == "marathon":
-        mp_total = sum(
-            d.target_miles
-            for w in weeks for d in w.days
-            if d.workout_type == "long_mp"
-        )
-        if mp_total > 0:
-            logger.info("Marathon MP accumulation: %.0f miles (target: 40-50+)", mp_total)
-            if mp_total < 35:
-                logger.warning(
-                    "MP accumulation %.0f mi is below 40mi target — "
-                    "short plan or insufficient build_2 weeks", mp_total,
-                )
+    if tune_up_races:
+        weeks = _apply_tune_up_races(weeks, tune_up_races, plan_start)
 
     logger.info(
-        "N=1 plan: %d weeks, %.0f total miles, %s, "
-        "vol %.0f→%.0f, LR %.0f→%.0f",
-        len(weeks),
-        sum(w.total_miles for w in weeks),
-        race_distance,
-        state.current_weekly_miles,
-        state.peak_weekly_miles,
-        state.current_long_run_miles,
-        max((t.long_run_miles for t in targets), default=0),
+        "N=1 plan: %d weeks, %.0f total miles, %s, needs=%s",
+        len(weeks), sum(w.total_miles for w in weeks),
+        race_distance, [n.value for n in state.adaptation_needs],
     )
-
     return weeks
