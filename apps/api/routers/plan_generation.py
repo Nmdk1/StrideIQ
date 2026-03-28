@@ -2143,6 +2143,7 @@ def _save_constraint_aware_plan(
 @router.post("/constraint-aware", response_model=Dict[str, Any])
 async def create_constraint_aware_plan(
     request: ConstraintAwarePlanRequest,
+    dry_run: bool = False,
     athlete: Athlete = Depends(get_current_athlete),
     db: Session = Depends(get_db),
 ):
@@ -2349,20 +2350,21 @@ async def create_constraint_aware_plan(
                     },
                 )
         
-        # Save plan to database
-        saved_plan = _save_constraint_aware_plan(db, athlete.id, plan, race_name=request.race_name)
-        
-        # Record rate limit
-        _record_rate_limit(str(athlete.id))
-        
-        # Log success
+        # Save plan to database (skip in dry_run mode for smoke testing)
+        plan_id = None
+        if not dry_run:
+            saved_plan = _save_constraint_aware_plan(db, athlete.id, plan, race_name=request.race_name)
+            _record_rate_limit(str(athlete.id))
+            plan_id = str(saved_plan.id)
+
         gen_time = (datetime.now() - start_time).total_seconds()
-        logger.info(f"Constraint-aware plan generated for {athlete.id} in {gen_time:.2f}s, saved as {saved_plan.id}")
+        logger.info(f"Constraint-aware plan generated for {athlete.id} in {gen_time:.2f}s{' (dry_run)' if dry_run else f', saved as {plan_id}'}")
         
         # Convert to response
         return {
             "success": True,
-            "plan_id": str(saved_plan.id),
+            "plan_id": plan_id,
+            "dry_run": dry_run,
             "race": {
                 "date": plan.race_date.isoformat(),
                 "distance": plan.race_distance,

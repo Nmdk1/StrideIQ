@@ -194,7 +194,7 @@ def run_smoke(
         if body.get("tune_up_races"):
             print(f"  Tune-up:   {body['tune_up_races'][0]['race_date']} ({body['tune_up_races'][0]['distance']})")
 
-        url = f"{host}/v2/plans/constraint-aware"
+        url = f"{host}/v2/plans/constraint-aware?dry_run=true"
         t0 = time.time()
         try:
             resp = requests.post(url, json=body, headers=headers, timeout=120)
