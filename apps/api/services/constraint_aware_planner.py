@@ -35,7 +35,7 @@ from services.workout_prescription import (
     DayPlan
 )
 from services.plan_framework.load_context import build_load_context, history_anchor_date
-from services.plan_framework.n1_engine import generate_n1_plan, ReadinessGateError
+from services.plan_framework.n1_engine import generate_n1_plan
 from services.race_signal_contract import normalize_distance_alias
 
 logger = logging.getLogger(__name__)
