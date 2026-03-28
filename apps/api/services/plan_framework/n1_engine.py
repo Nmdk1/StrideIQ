@@ -21,11 +21,10 @@ KB:  _AI_CONTEXT_/KNOWLEDGE_BASE/03_WORKOUT_TYPES.md
 from __future__ import annotations
 
 import logging
-import math
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 from enum import Enum
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 from services.fitness_bank import ExperienceLevel
 from services.workout_prescription import (
@@ -403,7 +402,6 @@ def _rescale_lr_quality(q: Dict, new_lr: float) -> Dict:
     old = q["miles"]
     if old <= 0:
         return q
-    ratio = new_lr / old
     q["miles"] = round(new_lr, 1)
     q["name"] = q["name"].replace(f"{old:.0f}mi", f"{new_lr:.0f}mi")
     if "desc" in q:
@@ -530,13 +528,12 @@ def _make_intervals(step, exp, paces):
 
 
 def _make_reps(exp, paces):
-    pace = _pace_label(paces, "interval")
     if exp == ExperienceLevel.ELITE:
         return {"type": "repetitions", "name": "8x300m reps",
-                "desc": f"2mi easy + 8x300m @ 1500m pace, 90s rest + 2mi easy",
+                "desc": "2mi easy + 8x300m @ 1500m pace, 90s rest + 2mi easy",
                 "miles": 8.0, "intensity": "hard"}
     return {"type": "repetitions", "name": "6x200m reps",
-            "desc": f"2mi easy + 6x200m @ 1500m pace, 90s rest + 2mi easy",
+            "desc": "2mi easy + 6x200m @ 1500m pace, 90s rest + 2mi easy",
             "miles": 7.0, "intensity": "hard"}
 
 
