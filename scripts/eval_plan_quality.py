@@ -409,43 +409,73 @@ def check_bc3(plan, arch) -> Tuple[bool, str]:
     return True, f"OK ({len(peak_zone)} peak, {len(unique_types)} types)"
 
 
-def check_bc4(plan, arch) -> Tuple[bool, str]:
-    """BC-4: Quality targets specific adaptations and progresses.
+def _extract_quality_miles(day) -> float:
+    """Quality-work miles in a session (total minus warmup/cooldown)."""
+    wcd = 4.0
+    return max(0.0, day.target_miles - wcd)
 
-    - Threshold sessions must show progression (not all identical).
-    - MP per-long-run must progress (trending up).
-    - MP long runs never 3+ consecutive weeks.
-    - 5K experienced+ needs reps.
-    - 5K needs intervals.
-    - Marathon needs BOTH threshold AND MP work.
-    - No build/peak week should have ONLY a quality long run
-      with no midweek quality (that's not quality progression,
-      it's a long run with decoration).
+
+def _parse_interval_rep_meters(name: str) -> Optional[int]:
+    """Extract rep distance in meters from names like '8x800m', '5x1mi'."""
+    m = re.search(r"(\d+)x(\d+)(m|mi)\b", name)
+    if not m:
+        return None
+    reps, dist, unit = int(m.group(1)), int(m.group(2)), m.group(3)
+    if unit == "mi":
+        return dist * 1609
+    return dist
+
+
+def check_bc4(plan, arch) -> Tuple[bool, str]:
+    """BC-4: Quality targets specific adaptations and TRULY progresses.
+
+    Checks:
+    1. Threshold sessions progress in volume (later > earlier).
+    2. Interval rep distance progresses (400m → 800m → 1000m...).
+    3. Both key systems appear on time (10K/5K: T+I in first third).
+    4. Quality volume scales to athlete capacity (KB B1 %).
+    5. Marathon needs T + MP; 5K experienced needs reps.
+    6. MP long runs never 3+ consecutive.
+    7. Build/peak weeks have midweek quality.
     """
+    T_TYPES = {"threshold", "threshold_continuous", "threshold_short",
+               "cruise_intervals", "broken_threshold"}
+    I_TYPES = {"intervals"}
+
     t_sessions = []
+    i_sessions = []
     mp_sessions = []
     mp_consecutive = 0
     mp_max_consecutive = 0
     has_reps = False
-    has_intervals = False
-    has_threshold = False
-    prev_was_mp = False
     empty_build_weeks = 0
     total_build_weeks = 0
+
+    first_t_week = None
+    first_i_week = None
 
     for week in plan:
         phase = _phase(week)
         is_build_or_peak = phase in (
             "build", "build_1", "build_2", "peak"
         ) and not week.is_cutback
+        is_taper = phase == "taper"
 
         week_mp = False
         for day in week.days:
-            if "threshold" in day.workout_type or day.workout_type in (
-                "cruise_intervals", "broken_threshold",
-            ):
-                t_sessions.append((week.week_number, day.name))
-                has_threshold = True
+            if day.workout_type in T_TYPES:
+                t_sessions.append((
+                    week.week_number, day.target_miles, day.name, is_taper
+                ))
+                if first_t_week is None:
+                    first_t_week = week.week_number
+            if day.workout_type in I_TYPES:
+                i_sessions.append((
+                    week.week_number, day.target_miles, day.name,
+                    _parse_interval_rep_meters(day.name), is_taper,
+                ))
+                if first_i_week is None:
+                    first_i_week = week.week_number
             if day.workout_type in ("long_mp", "long_hmp"):
                 mp_sessions.append(
                     (week.week_number, day.target_miles, day.name)
@@ -453,8 +483,6 @@ def check_bc4(plan, arch) -> Tuple[bool, str]:
                 week_mp = True
             if "rep" in day.workout_type:
                 has_reps = True
-            if "interval" in day.workout_type:
-                has_intervals = True
 
         if week_mp:
             mp_consecutive += 1
@@ -470,13 +498,86 @@ def check_bc4(plan, arch) -> Tuple[bool, str]:
 
     failures = []
 
-    if len(t_sessions) >= 2:
-        names = [n for _, n in t_sessions]
+    # -- 1. Threshold volume progression (build/peak only, exclude taper) --
+    build_t = [(w, m, n) for w, m, n, taper in t_sessions if not taper]
+    if len(build_t) >= 3:
+        names = [n for _, _, n in build_t]
         if len(set(names)) == 1:
             failures.append(
                 f"All {len(names)} threshold sessions identical: '{names[0]}'"
             )
+        miles = [m for _, m, _ in build_t]
+        if miles[-1] <= miles[0]:
+            failures.append(
+                f"Threshold not progressing: first={miles[0]:.1f}mi, "
+                f"last={miles[-1]:.1f}mi (should increase)"
+            )
 
+    # -- 2. Interval rep distance progression (build/peak only) --
+    build_i = [(w, m, n, rd) for w, m, n, rd, taper in i_sessions if not taper]
+    if len(build_i) >= 2:
+        rep_dists = [rd for _, _, _, rd in build_i if rd is not None]
+        if len(rep_dists) >= 2 and rep_dists[-1] <= rep_dists[0]:
+            failures.append(
+                f"Interval reps not progressing: first={rep_dists[0]}m, "
+                f"last={rep_dists[-1]}m (should increase)"
+            )
+
+    # -- 3. System introduction timing --
+    build_weeks = [
+        w for w in plan
+        if _phase(w) in ("build", "build_1", "build_2", "peak", "base")
+        and not w.is_cutback
+    ]
+    n_build = len(build_weeks)
+    if n_build >= 3:
+        third = max(2, n_build // 3)
+        early_cutoff = build_weeks[third - 1].week_number if third <= len(build_weeks) else 999
+
+        if arch.distance in ("10k", "5k"):
+            if arch.experience in (
+                ExperienceLevel.EXPERIENCED, ExperienceLevel.ELITE,
+            ):
+                if first_i_week is not None and first_i_week > early_cutoff:
+                    failures.append(
+                        f"Intervals arrive W{first_i_week}, too late "
+                        f"(should appear by W{early_cutoff} for {arch.distance})"
+                    )
+            if arch.distance == "10k" and arch.experience != ExperienceLevel.BEGINNER:
+                if first_t_week is not None and first_t_week > early_cutoff:
+                    failures.append(
+                        f"Threshold arrives W{first_t_week}, too late "
+                        f"(should appear by W{early_cutoff} for 10K)"
+                    )
+
+    # -- 4. Quality volume vs capacity (KB B1: T ≤10%, I ≤8%) --
+    if arch.mpw >= 30 and len(build_t) >= 2:
+        t_miles = [m for _, m, _ in build_t]
+        peak_t = max(t_miles)
+        t_quality = _extract_quality_miles(
+            type("D", (), {"target_miles": peak_t})()
+        )
+        t_cap = arch.peak_mpw * 0.10
+        if t_quality < t_cap * 0.40:
+            failures.append(
+                f"Peak threshold too light: ~{t_quality:.1f}mi quality "
+                f"vs {t_cap:.1f}mi capacity ({arch.peak_mpw}mpw×10%)"
+            )
+
+    if arch.mpw >= 30 and len(build_i) >= 2:
+        i_miles = [m for _, m, _ , _ in build_i]
+        peak_i = max(i_miles)
+        i_quality = _extract_quality_miles(
+            type("D", (), {"target_miles": peak_i})()
+        )
+        i_cap = min(arch.peak_mpw * 0.08, 6.2)
+        if i_quality < i_cap * 0.35:
+            failures.append(
+                f"Peak interval too light: ~{i_quality:.1f}mi quality "
+                f"vs {i_cap:.1f}mi capacity ({arch.peak_mpw}mpw×8%)"
+            )
+
+    # -- 5. Distance-specific system requirements --
     if mp_max_consecutive >= 3:
         failures.append(
             f"MP long runs {mp_max_consecutive} consecutive weeks "
@@ -484,7 +585,7 @@ def check_bc4(plan, arch) -> Tuple[bool, str]:
         )
 
     if arch.distance == "marathon" and arch.weeks >= 12:
-        if not has_threshold:
+        if not t_sessions:
             failures.append("Marathon: no threshold work at all")
         if len(mp_sessions) == 0:
             failures.append("Marathon: no MP long runs")
@@ -498,9 +599,16 @@ def check_bc4(plan, arch) -> Tuple[bool, str]:
     ):
         failures.append("5K experienced+: no rep sessions")
 
-    if arch.distance == "5k" and not has_intervals and arch.weeks > 5:
+    if arch.distance == "5k" and not build_i and arch.weeks > 5:
         failures.append("5K: no interval sessions")
 
+    if arch.distance == "10k" and not build_i and arch.weeks > 5:
+        if arch.experience in (
+            ExperienceLevel.EXPERIENCED, ExperienceLevel.ELITE,
+        ):
+            failures.append("10K experienced: no interval sessions at all")
+
+    # -- 7. Empty build weeks --
     if total_build_weeks > 0 and arch.days >= 4:
         empty_ratio = empty_build_weeks / total_build_weeks
         if empty_ratio > 0.30:
@@ -513,8 +621,8 @@ def check_bc4(plan, arch) -> Tuple[bool, str]:
     if failures:
         return False, "; ".join(failures[:5])
     return True, (
-        f"OK (T:{len(t_sessions)} MP:{len(mp_sessions)} "
-        f"I:{'Y' if has_intervals else 'N'} R:{'Y' if has_reps else 'N'} "
+        f"OK (T:{len(build_t)} MP:{len(mp_sessions)} "
+        f"I:{'Y' if build_i else 'N'} R:{'Y' if has_reps else 'N'} "
         f"maxConsecMP:{mp_max_consecutive})"
     )
 

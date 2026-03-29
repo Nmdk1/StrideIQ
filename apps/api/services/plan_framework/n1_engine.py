@@ -423,9 +423,7 @@ def _label_phase(i, build_n, taper_n, is_cutback, dist):
         return "taper"
     ratio = i / max(1, build_n)
     if dist in ("5k", "10k"):
-        if build_n < 8 or ratio >= 0.20:
-            return "build" if ratio < 0.55 else "peak"
-        return "base"
+        return "build" if ratio < 0.55 else "peak"
     if ratio < 0.20:
         return "base"
     if dist == "marathon":
@@ -458,7 +456,11 @@ def _plan_quality_sessions(state, build_n, taper_n, lr_raw, volumes):
     paces = state.paces
     needs = state.adaptation_needs
 
-    has_base = not state.is_abbreviated and build_n >= 8
+    has_base = (
+        not state.is_abbreviated
+        and build_n >= 8
+        and dist not in ("5k", "10k")
+    )
 
     long_types = []
     midweek = []
