@@ -1802,12 +1802,13 @@ async def create_model_driven_plan(
             }
         )
     
-    # Check rate limit
-    if not _check_rate_limit(str(athlete.id)):
-        raise HTTPException(
-            status_code=429,
-            detail="Rate limit exceeded. Maximum 5 model-driven plans per day."
-        )
+    # Check rate limit (admin/owner exempt)
+    if getattr(athlete, "role", None) not in ("admin", "owner"):
+        if not _check_rate_limit(str(athlete.id)):
+            raise HTTPException(
+                status_code=429,
+                detail="Rate limit exceeded. Maximum 5 model-driven plans per day."
+            )
     
     # Validate inputs
     valid_distances = ["5k", "10k", "half_marathon", "marathon"]
@@ -2002,6 +2003,7 @@ class ConstraintAwarePlanRequest(BaseModel):
     race_name: Optional[str] = Field(None, description="Goal race name")
     target_peak_weekly_miles: Optional[float] = Field(None, ge=10, le=200, description="Optional athlete-requested peak weekly mileage")
     target_peak_weekly_range: Optional[Dict[str, float]] = Field(None, description="Optional athlete-requested peak weekly mileage range")
+    taper_weeks: Optional[int] = Field(None, ge=1, le=3, description="Taper length: 1, 2, or 3 weeks. Auto-selected by distance if omitted.")
 
 
 def _save_constraint_aware_plan(
@@ -2193,12 +2195,13 @@ async def create_constraint_aware_plan(
             }
         )
     
-    # Check rate limit
-    if not _check_rate_limit(str(athlete.id)):
-        raise HTTPException(
-            status_code=429,
-            detail="Rate limit exceeded. Maximum 5 plans per day."
-        )
+    # Check rate limit (admin/owner exempt)
+    if getattr(athlete, "role", None) not in ("admin", "owner"):
+        if not _check_rate_limit(str(athlete.id)):
+            raise HTTPException(
+                status_code=429,
+                detail="Rate limit exceeded. Maximum 5 plans per day."
+            )
     
     # Validate inputs
     valid_distances = ["5k", "10k", "10_mile", "half_marathon", "half", "marathon"]
@@ -2296,6 +2299,7 @@ async def create_constraint_aware_plan(
             tune_up_races=tune_ups,
             target_peak_weekly_miles=request.target_peak_weekly_miles,
             target_peak_weekly_range=request.target_peak_weekly_range,
+            taper_weeks=request.taper_weeks,
         )
         if _constraint_aware_plan_has_pace_order_violation(plan):
             raise HTTPException(
@@ -2325,6 +2329,7 @@ async def create_constraint_aware_plan(
                 target_peak_weekly_range=fallback_requested_range,
                 quality_gate_fallback=True,
                 quality_gate_reasons=gate.reasons,
+                taper_weeks=request.taper_weeks,
             )
             if _constraint_aware_plan_has_pace_order_violation(plan):
                 raise HTTPException(

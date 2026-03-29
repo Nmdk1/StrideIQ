@@ -71,6 +71,7 @@ class AthleteState:
     is_slow_marathoner: bool
     is_abbreviated: bool
     is_day_one: bool
+    taper_weeks_override: Optional[int] = None
     adaptation_needs: List[AdaptationNeed] = field(default_factory=list)
 
 
@@ -134,6 +135,7 @@ def resolve_athlete_state(
     best_rpi: Optional[float] = None,
     weeks_since_peak: int = 0,
     goal_time: Optional[str] = None,
+    taper_weeks: Optional[int] = None,
 ) -> AthleteState:
     paces = None
     if best_rpi and best_rpi > 0:
@@ -190,6 +192,7 @@ def resolve_athlete_state(
         is_slow_marathoner=is_slow,
         is_abbreviated=is_abbreviated,
         is_day_one=is_day_one,
+        taper_weeks_override=taper_weeks,
         adaptation_needs=needs,
     )
 
@@ -239,7 +242,10 @@ def plan_weeks(state: AthleteState) -> List[WeekRx]:
     if state.is_day_one:
         return []
 
-    taper_n = min(TAPER_WEEKS.get(dist, 2), max(1, n - 3))
+    if state.taper_weeks_override is not None:
+        taper_n = min(state.taper_weeks_override, max(1, n - 3))
+    else:
+        taper_n = min(TAPER_WEEKS.get(dist, 2), max(1, n - 3))
     build_n = n - taper_n
 
     vol_start = state.current_weekly_miles
@@ -966,7 +972,9 @@ def _make_day(dow, rx_dict, paces):
             if "interval" in paces:
                 p_dict["interval"] = format_pace(paces["interval"])
         elif "rep" in rx_dict["type"]:
-            if "interval" in paces:
+            if "repetition" in paces:
+                p_dict["repetition"] = format_pace(paces["repetition"])
+            elif "interval" in paces:
                 p_dict["repetition"] = format_pace(paces["interval"])
         elif "mp" in rx_dict["type"]:
             if "marathon" in paces:
@@ -1159,6 +1167,9 @@ def _apply_tune_up_races(
         post_idx = wk_idx + 1
         if post_idx < len(weeks):
             pw = weeks[post_idx]
+            lr_quality_types = frozenset({
+                "long_mp", "long_hmp", "long_progressive", "long_fast_finish",
+            })
             recovery_days = []
             for d in pw.days:
                 if d.workout_type in MIDWEEK_QUALITY_TYPES:
@@ -1168,6 +1179,16 @@ def _apply_tune_up_races(
                         name="Post-race recovery",
                         description="Easy — hard taper, let the body absorb.",
                         target_miles=max(3.0, round(d.target_miles * 0.5, 1)),
+                        intensity="easy",
+                        paces=d.paces,
+                    ))
+                elif d.workout_type in lr_quality_types:
+                    recovery_days.append(DayPlan(
+                        day_of_week=d.day_of_week,
+                        workout_type="long",
+                        name=f"Long run -- {d.target_miles:.0f}mi",
+                        description=f"Easy long run — absorption week, no quality.",
+                        target_miles=round(d.target_miles * 0.75, 1),
                         intensity="easy",
                         paces=d.paces,
                     ))
@@ -1213,7 +1234,11 @@ def generate_n1_plan(
     goal_time: Optional[str] = None,
     personal_lr_floor: float = 0.0,
     tune_up_races: Optional[List[Dict]] = None,
+    taper_weeks: Optional[int] = None,
 ) -> List[WeekPlan]:
+    if taper_weeks is not None:
+        taper_weeks = max(1, min(taper_weeks, 3))
+
     state = resolve_athlete_state(
         race_distance=race_distance, race_date=race_date,
         plan_start=plan_start, horizon_weeks=horizon_weeks,
@@ -1221,6 +1246,7 @@ def generate_n1_plan(
         current_lr=current_lr, applied_peak=applied_peak,
         experience=experience, best_rpi=best_rpi,
         weeks_since_peak=weeks_since_peak, goal_time=goal_time,
+        taper_weeks=taper_weeks,
     )
 
     if state.is_day_one:

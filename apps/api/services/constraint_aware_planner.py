@@ -198,7 +198,8 @@ class ConstraintAwarePlanner:
                      target_peak_weekly_miles: Optional[float] = None,
                      target_peak_weekly_range: Optional[Dict[str, float]] = None,
                      quality_gate_fallback: bool = False,
-                     quality_gate_reasons: Optional[List[str]] = None) -> ConstraintAwarePlan:
+                     quality_gate_reasons: Optional[List[str]] = None,
+                     taper_weeks: Optional[int] = None) -> ConstraintAwarePlan:
         """
         Generate a complete constraint-aware plan.
         """
@@ -337,6 +338,7 @@ class ConstraintAwarePlanner:
             weeks_since_peak=bank.weeks_since_peak,
             goal_time=goal_time,
             personal_lr_floor=personal_lr_floor,
+            taper_weeks=taper_weeks,
         )
 
         # 5. Inject race day with pre-race and post-race handling.
@@ -989,9 +991,10 @@ def generate_constraint_aware_plan(
     target_peak_weekly_range: Optional[Dict[str, float]] = None,
     quality_gate_fallback: bool = False,
     quality_gate_reasons: Optional[List[str]] = None,
+    taper_weeks: Optional[int] = None,
 ) -> ConstraintAwarePlan:
     """Generate a constraint-aware plan for an athlete."""
-    
+
     planner = ConstraintAwarePlanner(db)
     return planner.generate_plan(
         athlete_id=athlete_id,
@@ -1003,4 +1006,5 @@ def generate_constraint_aware_plan(
         target_peak_weekly_range=target_peak_weekly_range,
         quality_gate_fallback=quality_gate_fallback,
         quality_gate_reasons=quality_gate_reasons,
+        taper_weeks=taper_weeks,
     )
