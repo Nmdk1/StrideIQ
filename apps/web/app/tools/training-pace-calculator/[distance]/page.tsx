@@ -26,7 +26,7 @@ const DISTANCE_CONFIG: Record<string, {
       'Free 5K training pace table. Find your Easy, Marathon, Threshold, Interval, and Repetition paces based on your current 5K time. Daniels/Gilbert oxygen cost equations.',
     h1: '5K Training Paces',
     bluf:
-      'Your 5K training paces depend on your current race fitness, not generic advice. A 20:00 5K runner (RPI 49.8) trains at 8:29/mi easy, 6:49/mi threshold, and 5:58/mi intervals. A 25:00 runner (RPI 38.3) trains at 10:15/mi easy, 8:02/mi threshold, and 7:00/mi intervals. The table below shows exact paces for common 5K times.',
+      'Your 5K training paces depend on your current race fitness, not generic advice. A 20:00 5K runner (RPI 49.8) trains at 8:29/mi easy, 6:49/mi threshold, and 6:16/mi intervals. A 25:00 runner (RPI 38.3) trains at 10:15/mi easy, 8:02/mi threshold, and 7:08/mi intervals. The table below shows exact paces for common 5K times.',
     zoneNotes:
       'For 5K training, the most impactful sessions are Interval pace (I) and Threshold pace (T). Interval pace targets VO2max — the engine that powers 5K racing. Threshold pace builds the aerobic foundation that lets you sustain hard effort. Easy pace makes up 80% of your weekly running and should feel genuinely easy — conversational, relaxed, no strain. Running easy days too fast is the most common training mistake and the easiest to fix.',
     commonMistakes:
@@ -42,7 +42,7 @@ const DISTANCE_CONFIG: Record<string, {
       },
       {
         q: 'How fast should my 5K interval sessions be?',
-        a: 'Interval pace for 5K training is close to your current 5K race pace — or slightly faster for short repeats (800m–1200m). A 20:00 5K runner does intervals at 5:58/mi. These sessions should feel hard but controlled — you should finish each repeat knowing you could do one more. Typical sessions: 5×1000m or 4×1200m with equal-time rest.',
+        a: 'Interval pace for 5K training is close to your current 5K race pace — or slightly faster for short repeats (800m–1200m). A 20:00 5K runner does intervals at 6:16/mi. These sessions should feel hard but controlled — you should finish each repeat knowing you could do one more. Typical sessions: 5×1000m or 4×1200m with equal-time rest.',
       },
     ],
   },
@@ -55,7 +55,7 @@ const DISTANCE_CONFIG: Record<string, {
       'Free 10K training pace table. Find your Easy, Marathon, Threshold, Interval, and Repetition paces based on your current 10K time. Daniels/Gilbert oxygen cost equations.',
     h1: '10K Training Paces',
     bluf:
-      'Your 10K training paces depend on your current race fitness. A 45:00 10K runner (RPI 45.3) trains at 9:02/mi easy, 7:13/mi threshold, and 6:19/mi intervals. A 50:00 runner (RPI 40.0) trains at 9:54/mi easy, 7:47/mi threshold, and 6:48/mi intervals. The table below shows exact paces for common 10K times.',
+      'Your 10K training paces depend on your current race fitness. A 45:00 10K runner (RPI 45.3) trains at 9:02/mi easy, 7:13/mi threshold, and 6:36/mi intervals. A 50:00 runner (RPI 40.0) trains at 9:54/mi easy, 7:47/mi threshold, and 7:01/mi intervals. The table below shows exact paces for common 10K times.',
     zoneNotes:
       'For 10K training, Threshold pace (T) is the most important session. The 10K demands sustained effort at 85–90% of VO2max for 30–60 minutes — exactly what threshold training develops. Tempo runs of 20–40 minutes at threshold pace are the backbone of 10K preparation. Interval pace develops top-end speed that makes threshold pace feel more comfortable. Easy running builds the aerobic base that supports everything else.',
     commonMistakes:
@@ -63,7 +63,7 @@ const DISTANCE_CONFIG: Record<string, {
     faq: [
       {
         q: 'What are good training paces for a 45-minute 10K?',
-        a: 'A 45:00 10K gives an RPI of 45.3. Training paces: Easy 9:02/mi, Marathon 7:39/mi, Threshold 7:13/mi, Interval 6:19/mi, Repetition 5:52/mi. Easy running should be at 9:02 or slower — genuinely relaxed. Threshold runs at 7:13 for 20–40 minutes. Intervals at 6:19 for 800m–1200m repeats.',
+        a: 'A 45:00 10K gives an RPI of 45.3. Training paces: Easy 9:02/mi, Marathon 7:39/mi, Threshold 7:13/mi, Interval 6:36/mi, Repetition 6:22/mi. Easy running should be at 9:02 or slower — genuinely relaxed. Threshold runs at 7:13 for 20–40 minutes. Intervals at 6:36 for 800m–1200m repeats.',
       },
       {
         q: 'How often should I do threshold runs for 10K training?',
@@ -84,7 +84,7 @@ const DISTANCE_CONFIG: Record<string, {
       'Free half marathon training pace table. Find your Easy, Marathon, Threshold, Interval, and Repetition paces based on your race time. Daniels/Gilbert oxygen cost equations.',
     h1: 'Half Marathon Training Paces',
     bluf:
-      'Your half marathon training paces depend on your current race fitness. A 1:45:00 half runner (RPI 42.6) trains at 9:27/mi easy, 7:29/mi threshold, and 6:33/mi intervals. A 2:00:00 runner (RPI 36.5) trains at 10:39/mi easy, 8:19/mi threshold, and 7:14/mi intervals. The table below shows exact paces for common half marathon times.',
+      'Your half marathon training paces depend on your current race fitness. A 1:45:00 half runner (RPI 42.6) trains at 9:27/mi easy, 7:29/mi threshold, and 6:48/mi intervals. A 2:00:00 runner (RPI 36.5) trains at 10:39/mi easy, 8:19/mi threshold, and 7:16/mi intervals. The table below shows exact paces for common half marathon times.',
     zoneNotes:
       'For half marathon training, Threshold pace and Marathon pace are the two most important zones. Threshold runs build the lactate clearance that lets you sustain half marathon effort for 75–120 minutes. Marathon-pace segments in long runs teach your body to hold a steady, controlled effort for extended duration. Easy running should make up at least 80% of your weekly volume — it builds the aerobic base that everything else relies on.',
     commonMistakes:
@@ -92,7 +92,7 @@ const DISTANCE_CONFIG: Record<string, {
     faq: [
       {
         q: 'What training paces should I use for a 1:45 half marathon goal?',
-        a: 'A 1:45:00 half marathon gives an RPI of about 42.6. Training paces: Easy 9:27/mi, Marathon 7:56/mi, Threshold 7:29/mi, Interval 6:33/mi. Your goal race pace is about 8:00/mi — between marathon and threshold pace. Train at these specific paces, not at race pace, to build the fitness that supports your goal.',
+        a: 'A 1:45:00 half marathon gives an RPI of about 42.6. Training paces: Easy 9:27/mi, Marathon 7:56/mi, Threshold 7:29/mi, Interval 6:48/mi. Your goal race pace is about 8:00/mi — between marathon and threshold pace. Train at these specific paces, not at race pace, to build the fitness that supports your goal.',
       },
       {
         q: 'How important is easy pace for half marathon training?',
@@ -113,15 +113,15 @@ const DISTANCE_CONFIG: Record<string, {
       'Free marathon training pace table. Find your Easy, Marathon, Threshold, Interval, and Repetition paces based on your race time. Daniels/Gilbert oxygen cost equations.',
     h1: 'Marathon Training Paces',
     bluf:
-      'Your marathon training paces depend on your current race fitness. A 3:30:00 marathon runner (RPI 44.6) trains at 9:08/mi easy, 7:17/mi threshold, and 6:23/mi intervals. Marathon-pace training runs at 7:43/mi. A 4:00:00 runner (RPI 37.9) trains at 10:20/mi easy, 8:05/mi threshold, and 7:03/mi intervals with marathon-pace runs at 8:35/mi. The table below shows exact paces for common marathon times.',
+      'Your marathon training paces depend on your current race fitness. A 3:30:00 marathon runner (RPI 44.6) trains at 9:08/mi easy, 7:17/mi threshold, and 6:40/mi intervals. Marathon-pace training runs at 7:43/mi. A 4:00:00 runner (RPI 37.9) trains at 10:20/mi easy, 8:05/mi threshold, and 7:10/mi intervals with marathon-pace runs at 8:35/mi. The table below shows exact paces for common marathon times.',
     zoneNotes:
       'For marathon training, Marathon pace (M) and Easy pace (E) are the most critical zones. Marathon-pace long runs — running the final 6–10 miles of a long run at goal marathon pace — are the most race-specific session. They teach your body to sustain effort when glycogen is depleted, which is exactly what the last 10K of a marathon demands. Easy pace makes up 80%+ of your weekly volume: this is where aerobic capillary density and fat oxidation develop. Threshold runs build the stamina buffer above marathon pace.',
     commonMistakes:
-      'The marathon has the highest mistake rate of any distance. The #1 error: going out too fast on race day. Your first 10K should feel almost too easy — if it feels "good," you are going too fast. The #2 error in training: insufficient weekly volume. Most runners who race well at the marathon run 40–60+ miles per week at peak. You cannot fake marathon fitness with speed work alone. The #3 error: running easy days at marathon pace. Easy pace for a 4:00 marathoner is 10:22/mi — not 9:09.',
+      'The marathon has the highest mistake rate of any distance. The #1 error: going out too fast on race day. Your first 10K should feel almost too easy — if it feels "good," you are going too fast. The #2 error in training: insufficient weekly volume. Most runners who race well at the marathon run 40–60+ miles per week at peak. You cannot fake marathon fitness with speed work alone. The #3 error: running easy days at marathon pace. Easy pace for a 4:00 marathoner is 10:20/mi — not 9:09.',
     faq: [
       {
         q: 'What training paces should I use for a 3:30 marathon goal?',
-        a: 'A 3:30:00 marathon gives an RPI of about 44.6. Training paces: Easy 9:08/mi, Marathon 7:43/mi, Threshold 7:17/mi, Interval 6:23/mi. Your marathon-pace long runs should target 7:43/mi for the final 8–10 miles. All other long runs should be at easy pace (9:08 or slower). Tempo runs at 7:17/mi for 20–30 minutes once per week.',
+        a: 'A 3:30:00 marathon gives an RPI of about 44.6. Training paces: Easy 9:08/mi, Marathon 7:43/mi, Threshold 7:17/mi, Interval 6:40/mi. Your marathon-pace long runs should target 7:43/mi for the final 8–10 miles. All other long runs should be at easy pace (9:08 or slower). Tempo runs at 7:17/mi for 20–30 minutes once per week.',
       },
       {
         q: 'How fast should easy runs be for marathon training?',
