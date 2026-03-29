@@ -257,11 +257,14 @@ def _enforce_personal_floor_in_early_weeks(
 
 
 def _early_week_floor_tolerance(race_distance: str) -> float:
-    # Week-level mileage allocation is quantized; avoid hard-failing near-miss floors.
+    # Early weeks are ramp-in: the engine builds from current capability toward
+    # recent history. A tight tolerance causes false-positives when the athlete's
+    # p75 long run exceeds their current (L30) long run by a few miles (common
+    # after taper, break, or cycle transition).
     d = str(race_distance).lower()
     if d in ("5k", "10k", "half", "half_marathon", "10_mile"):
-        return 0.75
-    return 0.5
+        return 1.5
+    return 1.0
 
 
 def _suggested_long_run_max(race_distance: str) -> float:
