@@ -292,7 +292,7 @@ def plan_weeks(state: AthleteState) -> List[WeekRx]:
     lr_raw = _build_lr_growth(lr_start, lr_ceiling, lr_step, build_n)
 
     # Quality sessions per week — driven by adaptation needs
-    quality_plan = _plan_quality_sessions(state, build_n, taper_n, lr_raw)
+    quality_plan = _plan_quality_sessions(state, build_n, taper_n, lr_raw, volumes)
 
     # Assemble WeekRx with ceiling alternation on actual non-cutback weeks
     weeks = []
@@ -422,6 +422,10 @@ def _label_phase(i, build_n, taper_n, is_cutback, dist):
     if i >= build_n:
         return "taper"
     ratio = i / max(1, build_n)
+    if dist in ("5k", "10k"):
+        if build_n < 8 or ratio >= 0.20:
+            return "build" if ratio < 0.55 else "peak"
+        return "base"
     if ratio < 0.20:
         return "base"
     if dist == "marathon":
@@ -439,24 +443,32 @@ def _label_phase(i, build_n, taper_n, is_cutback, dist):
 # Step 3 — Quality Planning (adaptation-driven tool selection)
 # ═══════════════════════════════════════════════════════════════════════
 
-def _plan_quality_sessions(state, build_n, taper_n, lr_raw):
-    """Select tools based on what the athlete needs to improve."""
+def _plan_quality_sessions(state, build_n, taper_n, lr_raw, volumes):
+    """Select and progress quality tools based on adaptation needs.
+
+    Key principles:
+      - Workout dose scales to athlete capacity (KB B1 percentages)
+      - Progression is week-over-week, not step-through-a-fixed-table
+      - For 10K/5K experienced: both threshold + intervals from week 1
+      - Short plans (≤6w): no base phase, both systems immediately
+    """
     n = build_n + taper_n
     dist = state.race_distance
     exp = state.experience
     paces = state.paces
     needs = state.adaptation_needs
 
+    has_base = not state.is_abbreviated and build_n >= 8
+
     long_types = []
     midweek = []
-
-    t_step = 0
-    i_step = 0
 
     for i in range(n):
         is_taper = i >= build_n
         ratio = i / max(1, build_n) if not is_taper else 1.0
+        week_ratio = i / max(1, build_n - 1) if build_n > 1 and not is_taper else (0.0 if i == 0 else 1.0)
         lr_mi = lr_raw[i] if i < len(lr_raw) else 10.0
+        weekly_vol = volumes[i] if i < len(volumes) else state.peak_weekly_miles
 
         lr_type, lr_quality = _select_long_run_tool(
             dist, exp, paces, ratio, i, lr_mi, is_taper, state, needs,
@@ -465,74 +477,116 @@ def _plan_quality_sessions(state, build_n, taper_n, lr_raw):
 
         if is_taper:
             midweek.append(_taper_tools(state, i - build_n))
-        elif ratio < 0.20:
-            mq = _base_tools(state, needs, i_step)
-            midweek.append(mq)
-            if mq:
-                i_step += 1
+        elif has_base and ratio < 0.20:
+            midweek.append(_base_quality(state, needs, week_ratio, weekly_vol))
         else:
-            mq = _build_peak_tools(
-                state, needs, ratio, t_step, i_step, lr_type,
-            )
-            midweek.append(mq)
-            t_step += 1
-            if any(s["type"] == "intervals" for s in mq):
-                i_step += 1
+            midweek.append(_build_quality(state, needs, week_ratio, weekly_vol, lr_type))
 
     return {"long_types": long_types, "midweek": midweek}
 
 
-# ── Tool menus (each returns a KB-grounded prescription) ──────────────
+# ── Capacity-scaled quality session builders ──────────────────────────
 
-THRESHOLD_PROGRESSION = [
-    ("cruise_intervals", "6x5min @ T", 6, 5, 1.5),
-    ("threshold_continuous", "20min continuous @ T", 1, 20, 0),
-    ("cruise_intervals", "5x6min @ T", 5, 6, 2),
-    ("threshold_continuous", "25min continuous @ T", 1, 25, 0),
-    ("cruise_intervals", "4x8min @ T", 4, 8, 2),
-    ("threshold_continuous", "30min continuous @ T", 1, 30, 0),
-    ("broken_threshold", "3x10min @ T", 3, 10, 3),
-    ("threshold_continuous", "35min continuous @ T", 1, 35, 0),
-    ("cruise_intervals", "3x12min @ T", 3, 12, 2),
-    ("threshold_continuous", "40min continuous @ T", 1, 40, 0),
-]
-
-INTERVAL_PROGRESSION = [
-    ("intervals", "8x400m", "8x400m", 5.5),
-    ("intervals", "6x400m", "6x400m", 5.0),
-    ("intervals", "5x800m", "5x800m", 7.0),
-    ("intervals", "5x1000m", "5x1000m", 8.5),
-    ("intervals", "4x1200m", "4x1200m", 8.0),
-    ("intervals", "6x800m", "6x800m", 8.5),
-    ("intervals", "3x1mi", "3x1mi", 9.0),
-]
+def _threshold_capacity(weekly_vol, exp):
+    """KB B1: threshold session max = 10% of weekly volume."""
+    cap = weekly_vol * 0.10
+    if exp == ExperienceLevel.BEGINNER:
+        return min(cap, 3.5)
+    if exp == ExperienceLevel.INTERMEDIATE:
+        return min(cap, 5.0)
+    return cap
 
 
-def _make_threshold(step, exp, paces):
-    step = min(step, len(THRESHOLD_PROGRESSION) - 1)
-    wtype, name, reps, dur, rest = THRESHOLD_PROGRESSION[step]
+def _interval_capacity(weekly_vol, exp):
+    """KB B1: interval session max = min(8% of weekly volume, 10K = 6.2mi)."""
+    cap = min(weekly_vol * 0.08, 6.2)
+    if exp == ExperienceLevel.BEGINNER:
+        return min(cap, 2.5)
+    if exp == ExperienceLevel.INTERMEDIATE:
+        return min(cap, 4.0)
+    return cap
+
+
+def _wu_cd(exp):
+    return {ExperienceLevel.BEGINNER: 2.0, ExperienceLevel.INTERMEDIATE: 3.0}.get(exp, 4.0)
+
+
+def _make_threshold_scaled(week_ratio, weekly_vol, exp, paces):
+    """Progressive threshold session scaled to athlete capacity.
+
+    KB T-block progression: cruise intervals → longer reps → continuous.
+    Volume progresses from 60% to 100% of capacity across build weeks.
+    """
+    t_cap = _threshold_capacity(weekly_vol, exp)
+    dose = 0.60 + 0.40 * week_ratio
+    target_mi = max(2.0, round(t_cap * dose, 1))
+
     pace = _pace_label(paces, "threshold")
-    wu_cd = {ExperienceLevel.BEGINNER: 2.0, ExperienceLevel.INTERMEDIATE: 3.0}.get(exp, 4.0)
-    half = round(wu_cd / 2, 1)
     t_pace_val = paces.get("threshold", 7.0) if paces else 7.0
-    q_miles = reps * dur / t_pace_val
-    jog = max(0, (reps - 1)) * rest / 9.0 if reps > 1 else 0
-    total = round(wu_cd + q_miles + jog, 1)
-    if reps == 1:
-        desc = f"{half:.0f}mi easy + {dur}min @ {pace} + {half:.0f}mi easy"
+    target_min = round(target_mi * t_pace_val)
+
+    wcd = _wu_cd(exp)
+    half = round(wcd / 2, 1)
+
+    if week_ratio < 0.40:
+        rep_dur = 5
+        reps = max(3, round(target_min / rep_dur))
+        rest = 1.5
+        jog_mi = (reps - 1) * rest / 9.0
+        total = round(wcd + target_mi + jog_mi, 1)
+        name = f"{reps}x{rep_dur}min @ T"
+        desc = f"{half:.0f}mi easy + {reps}x{rep_dur}min @ {pace}, {rest:.0f}min jog + {half:.0f}mi easy"
+        return {"type": "cruise_intervals", "name": name, "desc": desc, "miles": total, "intensity": "hard"}
+
+    if week_ratio < 0.70:
+        rep_dur = min(10, 5 + round(week_ratio * 8))
+        reps = max(2, round(target_min / rep_dur))
+        rest = 2.0
+        jog_mi = (reps - 1) * rest / 9.0
+        total = round(wcd + target_mi + jog_mi, 1)
+        name = f"{reps}x{rep_dur}min @ T"
+        desc = f"{half:.0f}mi easy + {reps}x{rep_dur}min @ {pace}, {rest:.0f}min jog + {half:.0f}mi easy"
+        return {"type": "cruise_intervals", "name": name, "desc": desc, "miles": total, "intensity": "hard"}
+
+    total = round(wcd + target_mi, 1)
+    name = f"{target_min}min continuous @ T"
+    desc = f"{half:.0f}mi easy + {target_min}min @ {pace} + {half:.0f}mi easy"
+    return {"type": "threshold_continuous", "name": name, "desc": desc, "miles": total, "intensity": "hard"}
+
+
+def _make_intervals_scaled(week_ratio, weekly_vol, exp, paces):
+    """Progressive interval session scaled to athlete capacity.
+
+    Progression: 400m → 800m → 1000m → 1200m → mile, rep count fills capacity.
+    Volume progresses from 65% to 100% of capacity across build weeks.
+    """
+    i_cap = _interval_capacity(weekly_vol, exp)
+    dose = 0.65 + 0.35 * week_ratio
+    target_mi = max(1.5, round(i_cap * dose, 1))
+
+    if week_ratio < 0.30:
+        rep_mi, rep_label = 0.25, "400m"
+    elif week_ratio < 0.55:
+        rep_mi, rep_label = 0.50, "800m"
+    elif week_ratio < 0.75:
+        rep_mi, rep_label = 0.625, "1000m"
+    elif week_ratio < 0.90:
+        rep_mi, rep_label = 0.75, "1200m"
     else:
-        desc = f"{half:.0f}mi easy + {reps}x{dur}min @ {pace}, {rest:.0f}min jog + {half:.0f}mi easy"
-    return {"type": wtype, "name": name, "desc": desc, "miles": total, "intensity": "hard"}
+        rep_mi, rep_label = 1.0, "1mi"
 
+    reps = max(3, round(target_mi / rep_mi))
+    quality_mi = reps * rep_mi
 
-def _make_intervals(step, exp, paces):
-    step = min(step, len(INTERVAL_PROGRESSION) - 1)
-    wtype, name, core, miles = INTERVAL_PROGRESSION[step]
     pace = _pace_label(paces, "interval")
-    wu_cd = {ExperienceLevel.BEGINNER: 2.0, ExperienceLevel.INTERMEDIATE: 3.0}.get(exp, 4.0)
-    half = round(wu_cd / 2, 1)
+    wcd = _wu_cd(exp)
+    half = round(wcd / 2, 1)
+    jog_mi = (reps - 1) * 0.25
+    total = round(wcd + quality_mi + jog_mi, 1)
+
+    core = f"{reps}x{rep_label}"
     desc = f"{half:.0f}mi easy + {core} @ {pace} w/ 400m jog + {half:.0f}mi easy"
-    return {"type": wtype, "name": name, "desc": desc, "miles": miles, "intensity": "hard"}
+    return {"type": "intervals", "name": core, "desc": desc, "miles": total, "intensity": "hard"}
 
 
 def _make_reps(exp, paces):
@@ -544,6 +598,58 @@ def _make_reps(exp, paces):
     return {"type": "repetitions", "name": "6x200m reps",
             "desc": f"2mi easy + 6x200m @ {pace}, 90s full rest + 2mi easy",
             "miles": 7.0, "intensity": "hard"}
+
+
+# ── Quality selection by phase ────────────────────────────────────────
+
+def _base_quality(state, needs, week_ratio, weekly_vol):
+    """Base phase: light quality touches only (long plans with room for base).
+
+    5K: intervals are the primary system; safe in base (KB M2/M3).
+    10K: threshold is the primary system; introduces it early.
+    Marathon/half: strides only (KB A1: no threshold in base).
+    """
+    exp = state.experience
+    paces = state.paces
+    dist = state.race_distance
+
+    if dist == "5k" and exp in (ExperienceLevel.EXPERIENCED, ExperienceLevel.ELITE):
+        return [_make_intervals_scaled(0.0, weekly_vol, exp, paces)]
+    if dist == "10k" and AdaptationNeed.THRESHOLD in needs:
+        return [_make_threshold_scaled(0.0, weekly_vol, exp, paces)]
+    return []
+
+
+def _build_quality(state, needs, week_ratio, weekly_vol, lr_type):
+    """Build/Peak: select tools based on distance + athlete capacity."""
+    dist = state.race_distance
+    exp = state.experience
+    paces = state.paces
+    mq = []
+
+    if dist == "10k":
+        mq.append(_make_threshold_scaled(week_ratio, weekly_vol, exp, paces))
+        if exp in (ExperienceLevel.EXPERIENCED, ExperienceLevel.ELITE):
+            mq.append(_make_intervals_scaled(week_ratio, weekly_vol, exp, paces))
+        elif week_ratio > 0.50:
+            mq.append(_make_intervals_scaled(week_ratio, weekly_vol, exp, paces))
+
+    elif dist == "5k":
+        mq.append(_make_intervals_scaled(week_ratio, weekly_vol, exp, paces))
+        if exp == ExperienceLevel.BEGINNER:
+            pass
+        elif week_ratio > 0.70 and AdaptationNeed.NEUROMUSCULAR in needs:
+            mq.append(_make_reps(exp, paces))
+        else:
+            mq.append(_make_threshold_scaled(min(week_ratio, 0.6), weekly_vol, exp, paces))
+
+    elif dist == "half_marathon":
+        mq.append(_make_threshold_scaled(week_ratio, weekly_vol, exp, paces))
+
+    elif dist == "marathon":
+        mq.append(_make_threshold_scaled(week_ratio, weekly_vol, exp, paces))
+
+    return mq
 
 
 # ── Long run tool selection ───────────────────────────────────────────
