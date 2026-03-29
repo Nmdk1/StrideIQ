@@ -524,15 +524,16 @@ def check_bc4(plan, arch) -> Tuple[bool, str]:
             )
 
     # -- 3. System introduction timing --
-    build_weeks = [
+    # Quality starts in build phase, not base. Measure from first build week.
+    quality_eligible = [
         w for w in plan
-        if _phase(w) in ("build", "build_1", "build_2", "peak", "base")
+        if _phase(w) in ("build", "build_1", "build_2", "peak")
         and not w.is_cutback
     ]
-    n_build = len(build_weeks)
-    if n_build >= 3:
-        third = max(2, n_build // 3)
-        early_cutoff = build_weeks[third - 1].week_number if third <= len(build_weeks) else 999
+    n_qual = len(quality_eligible)
+    if n_qual >= 3:
+        third = max(2, n_qual // 3)
+        early_cutoff = quality_eligible[third - 1].week_number if third <= len(quality_eligible) else 999
 
         if arch.distance in ("10k", "5k"):
             if arch.experience in (
@@ -830,8 +831,13 @@ def check_bc10(plan, arch) -> Tuple[bool, str]:
                    "cruise_intervals", "broken_threshold"}
         t = sum(1 for w in plan for d in w.days if d.workout_type in t_types)
         i = sum(1 for w in plan for d in w.days if "interval" in d.workout_type)
-        t_min = max(2, arch.weeks // 2)
-        i_min = max(1, arch.weeks // 4)
+        quality_weeks = sum(
+            1 for w in plan
+            if _phase(w) in ("build", "build_1", "build_2", "peak")
+            and not w.is_cutback
+        )
+        t_min = max(2, quality_weeks // 2)
+        i_min = max(1, quality_weeks // 4)
         if t < t_min:
             failures.append(f"10K: {t} threshold-family (need >={t_min})")
         if i < i_min:

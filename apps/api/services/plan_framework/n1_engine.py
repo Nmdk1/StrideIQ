@@ -422,7 +422,7 @@ def _label_phase(i, build_n, taper_n, is_cutback, dist):
     if i >= build_n:
         return "taper"
     ratio = i / max(1, build_n)
-    if dist in ("5k", "10k"):
+    if dist in ("5k", "10k") and build_n < 8:
         return "build" if ratio < 0.55 else "peak"
     if ratio < 0.20:
         return "base"
@@ -456,11 +456,7 @@ def _plan_quality_sessions(state, build_n, taper_n, lr_raw, volumes):
     paces = state.paces
     needs = state.adaptation_needs
 
-    has_base = (
-        not state.is_abbreviated
-        and build_n >= 8
-        and dist not in ("5k", "10k")
-    )
+    has_base = not state.is_abbreviated and build_n >= 8
 
     long_types = []
     midweek = []
@@ -513,11 +509,14 @@ def _wu_cd(exp):
     return {ExperienceLevel.BEGINNER: 2.0, ExperienceLevel.INTERMEDIATE: 3.0}.get(exp, 4.0)
 
 
-def _make_threshold_scaled(week_ratio, weekly_vol, exp, paces):
+def _make_threshold_scaled(week_ratio, weekly_vol, exp, paces, dist="10k"):
     """Progressive threshold session scaled to athlete capacity.
 
-    KB T-block progression: cruise intervals → longer reps → continuous.
-    Volume progresses from 60% to 100% of capacity across build weeks.
+    Structure by distance:
+      5K/10K: cruise intervals only (never continuous — same adaptation, less
+              recovery cost). Rep duration progresses 5min → 8-10min.
+      Half:   cruise intervals → continuous at peak, capped 25min.
+      Marathon: cruise intervals → continuous at peak, capped 40min.
     """
     t_cap = _threshold_capacity(weekly_vol, exp)
     dose = 0.60 + 0.40 * week_ratio
@@ -530,30 +529,27 @@ def _make_threshold_scaled(week_ratio, weekly_vol, exp, paces):
     wcd = _wu_cd(exp)
     half = round(wcd / 2, 1)
 
+    continuous_ok = dist in ("marathon", "half_marathon") and week_ratio >= 0.70
+    if continuous_ok:
+        max_cont = 40 if dist == "marathon" else 25
+        cont_min = min(target_min, max_cont)
+        cont_mi = round(cont_min / t_pace_val, 1)
+        total = round(wcd + cont_mi, 1)
+        name = f"{cont_min}min continuous @ T"
+        desc = f"{half:.0f}mi easy + {cont_min}min @ {pace} + {half:.0f}mi easy"
+        return {"type": "threshold_continuous", "name": name, "desc": desc, "miles": total, "intensity": "hard"}
+
     if week_ratio < 0.40:
         rep_dur = 5
-        reps = max(3, round(target_min / rep_dur))
-        rest = 1.5
-        jog_mi = (reps - 1) * rest / 9.0
-        total = round(wcd + target_mi + jog_mi, 1)
-        name = f"{reps}x{rep_dur}min @ T"
-        desc = f"{half:.0f}mi easy + {reps}x{rep_dur}min @ {pace}, {rest:.0f}min jog + {half:.0f}mi easy"
-        return {"type": "cruise_intervals", "name": name, "desc": desc, "miles": total, "intensity": "hard"}
-
-    if week_ratio < 0.70:
+    else:
         rep_dur = min(10, 5 + round(week_ratio * 8))
-        reps = max(2, round(target_min / rep_dur))
-        rest = 2.0
-        jog_mi = (reps - 1) * rest / 9.0
-        total = round(wcd + target_mi + jog_mi, 1)
-        name = f"{reps}x{rep_dur}min @ T"
-        desc = f"{half:.0f}mi easy + {reps}x{rep_dur}min @ {pace}, {rest:.0f}min jog + {half:.0f}mi easy"
-        return {"type": "cruise_intervals", "name": name, "desc": desc, "miles": total, "intensity": "hard"}
-
-    total = round(wcd + target_mi, 1)
-    name = f"{target_min}min continuous @ T"
-    desc = f"{half:.0f}mi easy + {target_min}min @ {pace} + {half:.0f}mi easy"
-    return {"type": "threshold_continuous", "name": name, "desc": desc, "miles": total, "intensity": "hard"}
+    reps = max(2, round(target_min / rep_dur))
+    rest = 1.5 if week_ratio < 0.40 else 2.0
+    jog_mi = (reps - 1) * rest / 9.0
+    total = round(wcd + target_mi + jog_mi, 1)
+    name = f"{reps}x{rep_dur}min @ T"
+    desc = f"{half:.0f}mi easy + {reps}x{rep_dur}min @ {pace}, {rest:.0f}min jog + {half:.0f}mi easy"
+    return {"type": "cruise_intervals", "name": name, "desc": desc, "miles": total, "intensity": "hard"}
 
 
 def _make_intervals_scaled(week_ratio, weekly_vol, exp, paces):
@@ -605,20 +601,12 @@ def _make_reps(exp, paces):
 # ── Quality selection by phase ────────────────────────────────────────
 
 def _base_quality(state, needs, week_ratio, weekly_vol):
-    """Base phase: light quality touches only (long plans with room for base).
+    """Base phase: volume building only — no midweek quality sessions.
 
-    5K: intervals are the primary system; safe in base (KB M2/M3).
-    10K: threshold is the primary system; introduces it early.
-    Marathon/half: strides only (KB A1: no threshold in base).
+    Base is for building the aerobic engine. Strides (placed automatically
+    on easy days) and hill sprints provide neuromuscular prep without
+    metabolic cost or recovery burden. Quality sessions start in build.
     """
-    exp = state.experience
-    paces = state.paces
-    dist = state.race_distance
-
-    if dist == "5k" and exp in (ExperienceLevel.EXPERIENCED, ExperienceLevel.ELITE):
-        return [_make_intervals_scaled(0.0, weekly_vol, exp, paces)]
-    if dist == "10k" and AdaptationNeed.THRESHOLD in needs:
-        return [_make_threshold_scaled(0.0, weekly_vol, exp, paces)]
     return []
 
 
@@ -630,7 +618,7 @@ def _build_quality(state, needs, week_ratio, weekly_vol, lr_type):
     mq = []
 
     if dist == "10k":
-        mq.append(_make_threshold_scaled(week_ratio, weekly_vol, exp, paces))
+        mq.append(_make_threshold_scaled(week_ratio, weekly_vol, exp, paces, dist))
         if exp in (ExperienceLevel.EXPERIENCED, ExperienceLevel.ELITE):
             mq.append(_make_intervals_scaled(week_ratio, weekly_vol, exp, paces))
         elif week_ratio > 0.50:
@@ -643,13 +631,13 @@ def _build_quality(state, needs, week_ratio, weekly_vol, lr_type):
         elif week_ratio > 0.70 and AdaptationNeed.NEUROMUSCULAR in needs:
             mq.append(_make_reps(exp, paces))
         else:
-            mq.append(_make_threshold_scaled(min(week_ratio, 0.6), weekly_vol, exp, paces))
+            mq.append(_make_threshold_scaled(min(week_ratio, 0.6), weekly_vol, exp, paces, dist))
 
     elif dist == "half_marathon":
-        mq.append(_make_threshold_scaled(week_ratio, weekly_vol, exp, paces))
+        mq.append(_make_threshold_scaled(week_ratio, weekly_vol, exp, paces, dist))
 
     elif dist == "marathon":
-        mq.append(_make_threshold_scaled(week_ratio, weekly_vol, exp, paces))
+        mq.append(_make_threshold_scaled(week_ratio, weekly_vol, exp, paces, dist))
 
     return mq
 
