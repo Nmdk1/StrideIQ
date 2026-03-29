@@ -94,8 +94,8 @@ class TestTrainingPaces:
     PACE_TESTS = [
         # (rpi, easy, marathon, threshold, interval, rep) - seconds per mile
         # I/R recalibrated 2026-03-29 against reference calculator
-        (30, 776, 631, 595, 466, 469),
-        (35, 660, 545, 514, 444, 441),
+        (30, 776, 631, 595, 466, 451),
+        (35, 660, 545, 514, 444, 430),
         (40, 594, 495, 467, 421, 412),
         (45, 544, 461, 435, 398, 384),
         (50, 508, 435, 408, 375, 355),

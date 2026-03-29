@@ -1,6 +1,6 @@
 {
   "_meta": {
-    "generated": "2026-03-29T10:29:38.591Z",
+    "generated": "2026-03-29T11:10:36.701Z",
     "schemaVersion": "1.0",
     "formula": "Daniels/Gilbert 1979 (rpi-formula.mjs)",
     "note": "Goal times use target - 1s convention. Fully deterministic — no API dependency."
@@ -540,9 +540,9 @@
         "secPerMile": 428
       },
       "repetition": {
-        "mi": "7:01",
-        "km": "4:22",
-        "secPerMile": 421
+        "mi": "6:57",
+        "km": "4:19",
+        "secPerMile": 417
       }
     },
     "equivalents": {
@@ -603,9 +603,9 @@
         "secPerMile": 444
       },
       "repetition": {
-        "mi": "7:21",
-        "km": "4:34",
-        "secPerMile": 441
+        "mi": "7:10",
+        "km": "4:27",
+        "secPerMile": 430
       }
     },
     "equivalents": {
@@ -666,9 +666,9 @@
         "secPerMile": 462
       },
       "repetition": {
-        "mi": "7:44",
-        "km": "4:48",
-        "secPerMile": 464
+        "mi": "7:27",
+        "km": "4:38",
+        "secPerMile": 447
       }
     },
     "equivalents": {
@@ -1359,9 +1359,9 @@
         "secPerMile": 440
       },
       "repetition": {
-        "mi": "7:16",
-        "km": "4:31",
-        "secPerMile": 436
+        "mi": "7:07",
+        "km": "4:25",
+        "secPerMile": 427
       }
     },
     "equivalents": {
@@ -1422,9 +1422,9 @@
         "secPerMile": 454
       },
       "repetition": {
-        "mi": "7:35",
-        "km": "4:43",
-        "secPerMile": 455
+        "mi": "7:20",
+        "km": "4:33",
+        "secPerMile": 440
       }
     },
     "equivalents": {
@@ -1989,9 +1989,9 @@
         "secPerMile": 436
       },
       "repetition": {
-        "mi": "7:11",
-        "km": "4:28",
-        "secPerMile": 431
+        "mi": "7:04",
+        "km": "4:23",
+        "secPerMile": 424
       }
     },
     "equivalents": {
@@ -2619,9 +2619,9 @@
         "secPerMile": 430
       },
       "repetition": {
-        "mi": "7:03",
-        "km": "4:23",
-        "secPerMile": 423
+        "mi": "6:59",
+        "km": "4:20",
+        "secPerMile": 419
       }
     },
     "equivalents": {
@@ -2682,9 +2682,9 @@
         "secPerMile": 452
       },
       "repetition": {
-        "mi": "7:32",
-        "km": "4:41",
-        "secPerMile": 452
+        "mi": "7:18",
+        "km": "4:32",
+        "secPerMile": 438
       }
     },
     "equivalents": {
@@ -2745,9 +2745,9 @@
         "secPerMile": 483
       },
       "repetition": {
-        "mi": "8:06",
-        "km": "5:02",
-        "secPerMile": 486
+        "mi": "7:48",
+        "km": "4:51",
+        "secPerMile": 468
       }
     },
     "equivalents": {

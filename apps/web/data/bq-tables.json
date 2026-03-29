@@ -1,6 +1,6 @@
 {
   "_meta": {
-    "generated": "2026-03-29T10:29:38.586Z",
+    "generated": "2026-03-29T11:10:36.696Z",
     "schemaVersion": "1.0",
     "source": "BAA Boston Marathon Qualifying Standards 2026 (verified 2026-02-26)",
     "note": "BQ times are fixed BAA standards. RPI, paces, and equivalents are computed via rpi-formula.mjs."
@@ -485,9 +485,9 @@
         "secPerMile": 434
       },
       "repetition": {
-        "mi": "7:08",
-        "km": "4:26",
-        "secPerMile": 428
+        "mi": "7:02",
+        "km": "4:22",
+        "secPerMile": 422
       }
     },
     "equivalents": {
@@ -549,9 +549,9 @@
         "secPerMile": 446
       },
       "repetition": {
-        "mi": "7:24",
-        "km": "4:36",
-        "secPerMile": 444
+        "mi": "7:12",
+        "km": "4:28",
+        "secPerMile": 432
       }
     },
     "equivalents": {
@@ -613,9 +613,9 @@
         "secPerMile": 456
       },
       "repetition": {
-        "mi": "7:36",
-        "km": "4:43",
-        "secPerMile": 456
+        "mi": "7:21",
+        "km": "4:34",
+        "secPerMile": 441
       }
     },
     "equivalents": {
@@ -677,9 +677,9 @@
         "secPerMile": 466
       },
       "repetition": {
-        "mi": "7:49",
-        "km": "4:51",
-        "secPerMile": 469
+        "mi": "7:31",
+        "km": "4:40",
+        "secPerMile": 451
       }
     },
     "equivalents": {
@@ -1061,9 +1061,9 @@
         "secPerMile": 430
       },
       "repetition": {
-        "mi": "7:03",
-        "km": "4:23",
-        "secPerMile": 423
+        "mi": "6:59",
+        "km": "4:20",
+        "secPerMile": 419
       }
     },
     "equivalents": {
@@ -1125,9 +1125,9 @@
         "secPerMile": 446
       },
       "repetition": {
-        "mi": "7:24",
-        "km": "4:36",
-        "secPerMile": 444
+        "mi": "7:12",
+        "km": "4:28",
+        "secPerMile": 432
       }
     },
     "equivalents": {
@@ -1189,9 +1189,9 @@
         "secPerMile": 456
       },
       "repetition": {
-        "mi": "7:36",
-        "km": "4:43",
-        "secPerMile": 456
+        "mi": "7:21",
+        "km": "4:34",
+        "secPerMile": 441
       }
     },
     "equivalents": {
@@ -1253,9 +1253,9 @@
         "secPerMile": 466
       },
       "repetition": {
-        "mi": "7:49",
-        "km": "4:51",
-        "secPerMile": 469
+        "mi": "7:31",
+        "km": "4:40",
+        "secPerMile": 451
       }
     },
     "equivalents": {
@@ -1317,9 +1317,9 @@
         "secPerMile": 491
       },
       "repetition": {
-        "mi": "8:14",
-        "km": "5:07",
-        "secPerMile": 494
+        "mi": "7:56",
+        "km": "4:56",
+        "secPerMile": 476
       }
     },
     "equivalents": {
@@ -1381,9 +1381,9 @@
         "secPerMile": 516
       },
       "repetition": {
-        "mi": "8:40",
-        "km": "5:23",
-        "secPerMile": 520
+        "mi": "8:20",
+        "km": "5:11",
+        "secPerMile": 500
       }
     },
     "equivalents": {
