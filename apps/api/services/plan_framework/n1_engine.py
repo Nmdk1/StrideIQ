@@ -227,7 +227,7 @@ def _pace_label(paces, zone):
     return {
         "easy": "easy effort", "marathon": "marathon effort",
         "threshold": "comfortably hard", "interval": "hard controlled effort",
-        "recovery": "very easy",
+        "repetition": "fast, relaxed turnover", "recovery": "very easy",
     }.get(zone, "moderate effort")
 
 
@@ -332,7 +332,9 @@ def plan_weeks(state: AthleteState) -> List[WeekRx]:
 
         mlr = 0.0
         if vol >= MLR_FLOOR_VOL and not is_taper and not is_cutback:
-            mlr = min(MLR_CAP, round(lr * 0.75, 1))
+            from_lr = round(lr * 0.75, 1)
+            from_athlete = round(state.current_long_run_miles * 0.75, 1)
+            mlr = min(MLR_CAP, max(from_lr, from_athlete))
 
         phase = _label_phase(i, build_n, taper_n, is_cutback, dist)
         q_sessions = quality_plan["midweek"][i] if not is_cutback else []
@@ -528,12 +530,13 @@ def _make_intervals(step, exp, paces):
 
 
 def _make_reps(exp, paces):
+    pace = _pace_label(paces, "repetition")
     if exp == ExperienceLevel.ELITE:
         return {"type": "repetitions", "name": "8x300m reps",
-                "desc": "2mi easy + 8x300m @ 1500m pace, 90s rest + 2mi easy",
+                "desc": f"2mi easy + 8x300m @ {pace}, 90s full rest + 2mi easy",
                 "miles": 8.0, "intensity": "hard"}
     return {"type": "repetitions", "name": "6x200m reps",
-            "desc": "2mi easy + 6x200m @ 1500m pace, 90s rest + 2mi easy",
+            "desc": f"2mi easy + 6x200m @ {pace}, 90s full rest + 2mi easy",
             "miles": 7.0, "intensity": "hard"}
 
 
@@ -851,9 +854,13 @@ def assemble_plan(state: AthleteState, week_rxs: List[WeekRx]) -> List[WeekPlan]
             norm = [w / wt_sum for w in raw_weights]
 
             easy_cap = min(14.0, rx.target_volume / max(state.days_per_week, 3) * 1.6)
+            post_quality_cap = min(8.0, rx.target_volume / max(state.days_per_week, 3) * 0.8)
             for idx_e, ed in enumerate(easy_dows):
                 mi = round(remaining * norm[idx_e], 1)
-                mi = min(mi, easy_cap)
+                if raw_weights[idx_e] <= 0.50:
+                    mi = min(mi, post_quality_cap)
+                else:
+                    mi = min(mi, easy_cap)
                 floor = 4.0 if raw_weights[idx_e] >= 1.0 else 2.0
                 mi = max(floor, mi)
 
@@ -1032,8 +1039,13 @@ def _apply_tune_up_races(
     tune_up_races: List[Dict],
     plan_start: date,
 ) -> List[WeekPlan]:
-    """Modify plan weeks for tune-up races: insert race day, reduce
-    surrounding quality, add recovery modifier to following week."""
+    """Modify plan weeks for tune-up races.
+
+    Tune-up week becomes mini-taper: keep one sharpening session,
+    drop MLR, reduce easy days, insert race day + pre-race shakeout.
+    Following week becomes hard taper: all quality converted to easy,
+    deep volume cut for absorption and compensation.
+    """
     if not tune_up_races:
         return weeks
 
@@ -1057,6 +1069,7 @@ def _apply_tune_up_races(
         race_name = tune.get("name") or f"{race_dist} tune-up"
 
         week = weeks[wk_idx]
+
         race_day = DayPlan(
             day_of_week=race_dow,
             workout_type="tune_up_race",
@@ -1068,19 +1081,67 @@ def _apply_tune_up_races(
             notes=[tune.get("purpose", "sharpening")],
         )
 
-        new_days = [d for d in week.days if d.day_of_week != race_dow]
-        new_days.append(race_day)
+        new_days = []
+        kept_one_quality = False
+        for d in week.days:
+            if d.day_of_week == race_dow:
+                continue
 
-        prev_day_dow = (race_dow - 1) % 7
-        for j, d in enumerate(new_days):
+            prev_day_dow = (race_dow - 1) % 7
             if d.day_of_week == prev_day_dow and d.workout_type not in ("rest",):
-                new_days[j] = DayPlan(
+                new_days.append(DayPlan(
                     day_of_week=prev_day_dow,
                     workout_type="easy",
                     name="Pre-race shakeout",
                     description="Short easy shakeout before tune-up race.",
                     target_miles=min(d.target_miles, 3.0),
                     intensity="easy",
+                    paces=d.paces,
+                ))
+                continue
+
+            if d.workout_type == "medium_long":
+                new_days.append(DayPlan(
+                    day_of_week=d.day_of_week,
+                    workout_type="easy",
+                    name="Easy run",
+                    description="Easy run — taper week, MLR dropped.",
+                    target_miles=min(d.target_miles, 7.0),
+                    intensity="easy",
+                    paces=d.paces,
+                ))
+                continue
+
+            if d.workout_type in MIDWEEK_QUALITY_TYPES and not kept_one_quality:
+                kept_one_quality = True
+                new_days.append(d)
+                continue
+
+            if d.workout_type in MIDWEEK_QUALITY_TYPES:
+                new_days.append(DayPlan(
+                    day_of_week=d.day_of_week,
+                    workout_type="easy",
+                    name="Easy run",
+                    description="Easy run — mini-taper, quality capped.",
+                    target_miles=min(d.target_miles, 6.0),
+                    intensity="easy",
+                    paces=d.paces,
+                ))
+                continue
+
+            new_days.append(d)
+
+        new_days.append(race_day)
+
+        for j, d in enumerate(new_days):
+            if d.workout_type in ("easy", "easy_strides") and d.target_miles > 6.0:
+                new_days[j] = DayPlan(
+                    day_of_week=d.day_of_week,
+                    workout_type=d.workout_type,
+                    name=d.name,
+                    description=d.description,
+                    target_miles=round(d.target_miles * 0.70, 1),
+                    intensity=d.intensity,
                     paces=d.paces,
                 )
 
@@ -1105,8 +1166,18 @@ def _apply_tune_up_races(
                         day_of_week=d.day_of_week,
                         workout_type="easy",
                         name="Post-race recovery",
-                        description="Easy recovery after tune-up race.",
+                        description="Easy — hard taper, let the body absorb.",
                         target_miles=max(3.0, round(d.target_miles * 0.5, 1)),
+                        intensity="easy",
+                        paces=d.paces,
+                    ))
+                elif d.workout_type == "medium_long":
+                    recovery_days.append(DayPlan(
+                        day_of_week=d.day_of_week,
+                        workout_type="easy",
+                        name="Easy run",
+                        description="Easy — hard taper, MLR dropped.",
+                        target_miles=min(d.target_miles, 6.0),
                         intensity="easy",
                         paces=d.paces,
                     ))

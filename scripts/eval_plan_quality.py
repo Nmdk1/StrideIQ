@@ -637,9 +637,17 @@ def check_bc9(plan, arch) -> Tuple[bool, str]:
     if arch.weeks < 10:
         return True, "WAIVED (<10 weeks)"
 
+    tune_up_wks = set()
+    for i, w in enumerate(plan):
+        if any(d.workout_type == "tune_up_race" for d in w.days):
+            tune_up_wks.add(w.week_number)
+            if i + 1 < len(plan):
+                tune_up_wks.add(plan[i + 1].week_number)
+
     vols = [
         (w.week_number, w.total_miles, w.is_cutback)
-        for w in plan if _phase(w) != "taper"
+        for w in plan
+        if _phase(w) != "taper" and w.week_number not in tune_up_wks
     ]
     if not vols:
         return False, "No non-taper weeks"

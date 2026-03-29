@@ -87,20 +87,21 @@ def _calculate_paces_from_training_paces(rpi: float) -> Dict[str, float]:
     marathon_sec = seconds_for("marathon")
     threshold_sec = seconds_for("threshold")
     interval_sec = seconds_for("interval")
+    repetition_sec = seconds_for("repetition")
 
     if easy_sec is None or marathon_sec is None or threshold_sec is None or interval_sec is None:
         logger.warning(
             "Could not derive training paces from rpi_calculator output; "
             f"rpi={rpi}, raw_keys={list(raw.keys())}"
         )
-        # Fail-safe: keep generator functional with conservative defaults rather than crashing.
-        # (Should not happen for valid RPIs.)
         easy_sec = easy_sec or 540  # 9:00
         marathon_sec = marathon_sec or 480  # 8:00
         threshold_sec = threshold_sec or 450  # 7:30
         interval_sec = interval_sec or 405  # 6:45
 
-    # Preserve existing keys expected across plan generation logic.
+    if repetition_sec is None:
+        repetition_sec = int(interval_sec * 0.92) if interval_sec else 373
+
     long_sec = easy_sec + 9
     recovery_sec = easy_sec + 30
 
@@ -110,6 +111,7 @@ def _calculate_paces_from_training_paces(rpi: float) -> Dict[str, float]:
         "marathon": marathon_sec / 60.0,
         "threshold": threshold_sec / 60.0,
         "interval": interval_sec / 60.0,
+        "repetition": repetition_sec / 60.0,
         "recovery": recovery_sec / 60.0,
     }
 
