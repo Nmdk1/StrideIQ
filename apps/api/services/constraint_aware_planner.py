@@ -34,6 +34,7 @@ from services.workout_prescription import (
     WeekPlan,
     DayPlan
 )
+from services.plan_framework.fingerprint_bridge import build_fingerprint_params
 from services.plan_framework.load_context import build_load_context, history_anchor_date
 from services.plan_framework.n1_engine import generate_n1_plan
 from services.race_signal_contract import normalize_distance_alias
@@ -323,6 +324,23 @@ class ConstraintAwarePlanner:
             bank.to_dict(), race_distance=race_distance,
         )
 
+        # 2b. Build fingerprint params — bridge between correlation engine
+        # and plan engine.  Drives cutback frequency, quality spacing, and
+        # limiter-based session selection from N=1 data.
+        fp_params = None
+        try:
+            if self.db is not None:
+                fp_params = build_fingerprint_params(athlete_id, self.db)
+                if fp_params.source == "fingerprint":
+                    rationale_tags.append("fingerprint_driven")
+                    logger.info(
+                        "Fingerprint bridge: cutback=%d spacing=%dh limiter=%s tss=%s",
+                        fp_params.cutback_frequency, fp_params.quality_spacing_min_hours,
+                        fp_params.limiter, fp_params.tss_sensitivity,
+                    )
+        except Exception as ex:
+            logger.warning("Fingerprint bridge unavailable, using defaults: %s", ex)
+
         # 3. Generate plan via N=1 engine
         weeks = generate_n1_plan(
             race_distance=race_distance,
@@ -339,6 +357,7 @@ class ConstraintAwarePlanner:
             goal_time=goal_time,
             personal_lr_floor=personal_lr_floor,
             taper_weeks=taper_weeks,
+            fingerprint=fp_params,
         )
 
         # 5. Inject race day with pre-race and post-race handling.

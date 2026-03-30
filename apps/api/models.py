@@ -2833,7 +2833,7 @@ class AthleteFact(Base):
     numeric_value = Column(Float, nullable=True)
 
     confidence = Column(Text, nullable=False, server_default="athlete_stated")
-    source_chat_id = Column(UUID(as_uuid=True), ForeignKey("coach_chat.id"), nullable=False)
+    source_chat_id = Column(UUID(as_uuid=True), ForeignKey("coach_chat.id"), nullable=True)
     source_excerpt = Column(Text, nullable=False)
 
     confirmed_by_athlete = Column(Boolean, nullable=False, default=False)

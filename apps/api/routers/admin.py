@@ -20,6 +20,7 @@ from models import (
     Athlete,
     Activity,
     ActivitySplit,
+    AthleteFact,
     NutritionEntry,
     WorkPattern,
     BodyComposition,
@@ -2472,4 +2473,114 @@ def set_race_forecast(
         logger.warning("Failed to record admin audit for race forecast (non-blocking)")
 
     return {"status": "ok", "key": key, "payload": payload}
+
+
+# --- Training Context Injection (Manual Fingerprint Override) ---
+
+class TrainingContextRequest(BaseModel):
+    athlete_id: UUID
+    fact_key: str = Field(..., min_length=1, max_length=120,
+                          description="Snake_case key (e.g. primary_loop_elevation)")
+    fact_value: str = Field(..., min_length=1, max_length=500,
+                           description="Context value")
+    numeric_value: Optional[float] = None
+    fact_type: str = Field(default="training_context",
+                           description="One of: training_context, preference, life_context")
+    reason: Optional[str] = Field(None, max_length=500,
+                                  description="Why this context is being set (audited)")
+
+
+@router.post("/users/{user_id}/context")
+def inject_training_context(
+    user_id: UUID,
+    request: TrainingContextRequest,
+    http_request: Request,
+    _: None = Depends(deny_impersonation_mutation("athlete.context.set")),
+    current_user: Athlete = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """Inject a training context fact directly into an athlete's fingerprint.
+
+    No coach chat required.  Used for confounding variable context,
+    route profiles, and other N=1 signals the founder knows directly.
+
+    Example: Larry's hilly loop context that explains cadence/efficiency
+    correlations, or an athlete's preference for consecutive training days.
+    """
+    if request.athlete_id != user_id:
+        raise HTTPException(status_code=400, detail="athlete_id must match user_id")
+
+    athlete = db.query(Athlete).filter(Athlete.id == user_id).first()
+    if not athlete:
+        raise HTTPException(status_code=404, detail="Athlete not found")
+
+    valid_types = {"training_context", "preference", "life_context"}
+    if request.fact_type not in valid_types:
+        raise HTTPException(
+            status_code=400,
+            detail=f"fact_type must be one of: {', '.join(sorted(valid_types))}",
+        )
+
+    existing = (
+        db.query(AthleteFact)
+        .filter(
+            AthleteFact.athlete_id == user_id,
+            AthleteFact.fact_key == request.fact_key,
+            AthleteFact.is_active == True,  # noqa: E712
+        )
+        .first()
+    )
+
+    before = {}
+    if existing:
+        before = {
+            "fact_key": existing.fact_key,
+            "fact_value": existing.fact_value,
+            "fact_type": existing.fact_type,
+        }
+        existing.is_active = False
+        existing.superseded_at = datetime.now(timezone.utc)
+
+    new_fact = AthleteFact(
+        athlete_id=user_id,
+        fact_type=request.fact_type,
+        fact_key=request.fact_key,
+        fact_value=request.fact_value,
+        numeric_value=request.numeric_value,
+        confidence="admin_injected",
+        source_chat_id=None,
+        source_excerpt=f"Admin context injection by {current_user.email}: {request.reason or 'no reason given'}",
+        temporal=False,
+        is_active=True,
+    )
+    db.add(new_fact)
+    db.commit()
+
+    after = {
+        "fact_key": request.fact_key,
+        "fact_value": request.fact_value,
+        "fact_type": request.fact_type,
+        "numeric_value": request.numeric_value,
+    }
+
+    try:
+        from services.admin_audit import record_admin_audit_event
+        record_admin_audit_event(
+            db,
+            request=http_request,
+            actor=current_user,
+            action="athlete.context.inject",
+            target_athlete_id=str(user_id),
+            reason=request.reason,
+            payload={"before": before, "after": after},
+        )
+    except Exception:
+        logger.warning("Failed to record admin audit for context injection (non-blocking)")
+
+    return {
+        "status": "ok",
+        "fact_id": str(new_fact.id),
+        "superseded": bool(before),
+        "fact": after,
+    }
 

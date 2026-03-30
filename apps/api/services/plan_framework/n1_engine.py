@@ -27,6 +27,7 @@ from enum import Enum
 from typing import Any, Dict, List, Optional
 
 from services.fitness_bank import ExperienceLevel
+from services.plan_framework.fingerprint_bridge import FingerprintParams
 from services.workout_prescription import (
     DayPlan,
     WeekPlan,
@@ -73,6 +74,7 @@ class AthleteState:
     is_day_one: bool
     taper_weeks_override: Optional[int] = None
     adaptation_needs: List[AdaptationNeed] = field(default_factory=list)
+    fingerprint: FingerprintParams = field(default_factory=FingerprintParams)
 
 
 def _parse_goal_time(gt: Optional[str]) -> Optional[int]:
@@ -136,6 +138,7 @@ def resolve_athlete_state(
     weeks_since_peak: int = 0,
     goal_time: Optional[str] = None,
     taper_weeks: Optional[int] = None,
+    fingerprint: Optional[FingerprintParams] = None,
 ) -> AthleteState:
     paces = None
     if best_rpi and best_rpi > 0:
@@ -194,6 +197,7 @@ def resolve_athlete_state(
         is_day_one=is_day_one,
         taper_weeks_override=taper_weeks,
         adaptation_needs=needs,
+        fingerprint=fingerprint or FingerprintParams(),
     )
 
 
@@ -264,12 +268,17 @@ def plan_weeks(state: AthleteState) -> List[WeekRx]:
     if dist == "marathon":
         lr_start = max(MARATHON_LR_FLOOR, lr_start)
 
-    # Identify cutback positions first (every 3rd week, not last build week)
+    # Cutback frequency: fingerprint-driven when available, else every 3rd week.
+    # Fast recoverers (e.g. 23.8h half-life) go every 4th-5th week.
+    # Slow recoverers (e.g. 51.3h half-life) go every 3rd week.
+    cutback_freq = state.fingerprint.cutback_frequency
+    if cutback_freq < 3:
+        cutback_freq = 3
     cutback_set = set()
     counter = 0
     for i in range(build_n):
         counter += 1
-        if counter >= 3 and i < build_n - 1 and i > 0:
+        if counter >= cutback_freq and i < build_n - 1 and i > 0:
             cutback_set.add(i)
             counter = 0
 
@@ -341,6 +350,7 @@ def plan_weeks(state: AthleteState) -> List[WeekRx]:
             from_lr = round(lr * 0.75, 1)
             from_athlete = round(state.current_long_run_miles * 0.75, 1)
             mlr = min(MLR_CAP, max(from_lr, from_athlete))
+            mlr = min(mlr, round(lr * 0.75, 1))
 
         phase = _label_phase(i, build_n, taper_n, is_cutback, dist)
         q_sessions = quality_plan["midweek"][i] if not is_cutback else []
@@ -872,14 +882,32 @@ def assemble_plan(state: AthleteState, week_rxs: List[WeekRx]) -> List[WeekPlan]
         running_needed = state.days_per_week - 1
         extra_rest = max(0, len(available) - running_needed)
 
-        # Quality DOWs first
+        # Quality DOWs — wider spacing for slow recoverers (72h+).
+        # Standard (48h): Tue/Thu or Mon/Thu patterns.
+        # Wide (72h): Tue/Fri or Wed/Sat-adjacent patterns.
+        #
+        # Graceful degradation: 3 midweek quality sessions with 72h spacing
+        # cannot fit in a Mon-Sat window.  Drop to 2 rather than compress
+        # spacing — the athlete's data says spacing matters more than volume
+        # of quality work.
         odd = rx.week_number % 2 == 1
+        wide_spacing = state.fingerprint.quality_spacing_min_hours >= 72
+        effective_midweek = midweek_rx
+        if wide_spacing and len(midweek_rx) >= 3:
+            effective_midweek = midweek_rx[:2]
+            logger.info(
+                "W%d: 72h spacing constraint — dropping from %d to 2 midweek quality sessions",
+                rx.week_number, len(midweek_rx),
+            )
         q_dows = []
-        if len(midweek_rx) >= 3:
+        if len(effective_midweek) >= 3:
             q_dows = [1, 3, 5] if odd else [2, 4, 5]
-        elif len(midweek_rx) >= 2:
-            q_dows = [2, 4] if odd else [1, 4]
-        elif len(midweek_rx) == 1:
+        elif len(effective_midweek) >= 2:
+            if wide_spacing:
+                q_dows = [1, 4] if odd else [2, 5]
+            else:
+                q_dows = [2, 4] if odd else [1, 4]
+        elif len(effective_midweek) == 1:
             q_dows = [2] if odd else [4]
 
         remaining_for_rest = [d for d in available if d not in q_dows]
@@ -902,17 +930,20 @@ def assemble_plan(state: AthleteState, week_rxs: List[WeekRx]) -> List[WeekPlan]
             days.append(_rest_day(rd))
 
         for i, qd in enumerate(q_dows):
-            if i < len(midweek_rx):
-                days.append(_make_day(qd, midweek_rx[i], state.paces))
+            if i < len(effective_midweek):
+                days.append(_make_day(qd, effective_midweek[i], state.paces))
 
-        assigned = set(q_dows[:len(midweek_rx)] + extra_rest_dows)
+        assigned = set(q_dows[:len(effective_midweek)] + extra_rest_dows)
         easy_dows = [d for d in available if d not in assigned]
 
         # Pre-long Saturday: lighter, parity-varied for week-to-week variety
         sat_factor = 0.40 if rx.week_number % 2 == 0 else 0.55
         sat_miles = max(2.0, round(rx.target_volume / state.days_per_week * sat_factor, 1))
+        is_taper_week = rx.phase_label == "taper"
         if 5 in easy_dows:
-            days.append(_easy_day(5, sat_miles, state.paces))
+            sat_strides = is_taper_week and not any(
+                d.workout_type == "easy_strides" for d in days)
+            days.append(_easy_day(5, sat_miles, state.paces, strides=sat_strides))
             easy_dows.remove(5)
 
         # MLR placement
@@ -969,13 +1000,19 @@ def assemble_plan(state: AthleteState, week_rxs: List[WeekRx]) -> List[WeekPlan]
                 stride_parity = rx.week_number % 2 == 0
                 low_days = state.days_per_week <= 3
                 is_post_q = raw_weights[idx_e] <= 0.45
+                is_taper_week = rx.phase_label == "taper"
                 needs_strides = (
                     not any(d.workout_type == "easy_strides" for d in days)
-                    and not is_post_q
                     and (
-                        (stride_parity and idx_e == 0)
-                        or (not stride_parity and idx_e == easy_count - 1)
-                        or low_days
+                        is_taper_week
+                        or (
+                            not is_post_q
+                            and (
+                                (stride_parity and idx_e == 0)
+                                or (not stride_parity and idx_e == easy_count - 1)
+                                or low_days
+                            )
+                        )
                     )
                 )
                 days.append(_easy_day(ed, mi, state.paces, strides=needs_strides))
@@ -1097,7 +1134,7 @@ def _make_day(dow, rx_dict, paces):
 # Couch-to-10K (day-one path)
 # ═══════════════════════════════════════════════════════════════════════
 
-def _generate_couch_to_10k(plan_start, horizon_weeks, race_date):
+def _generate_couch_to_10k(plan_start, horizon_weeks, race_date, days_per_week=6):
     STAGES = [
         ("Walk 1mi, Run 1mi, Walk 1mi", 3.0, "Run 3mi", 3.0),
         ("Walk 1mi, Run 1mi, Walk 1mi", 3.0, "Run 3mi", 3.0),
@@ -1115,22 +1152,31 @@ def _generate_couch_to_10k(plan_start, horizon_weeks, race_date):
     race_monday = race_date - timedelta(days=race_date.weekday())
     start = race_monday - timedelta(weeks=total_plan - 1)
 
+    weekday_running = min(days_per_week - 1, 6)
+    rest_dows = list(range(weekday_running, 6))
+
     weeks = []
     for idx, (dd, dm, ld, lm) in enumerate(selected):
         ws = start + timedelta(weeks=idx)
         wtype = "walk_run" if "Walk" in dd else "easy"
-        d = [DayPlan(dow, wtype, dd, dd, dm, "easy", {}, []) for dow in range(6)]
+        d = [DayPlan(dow, wtype, dd, dd, dm, "easy", {}, [])
+             for dow in range(weekday_running)]
+        for rd in rest_dows:
+            d.append(_rest_day(rd))
         d.append(DayPlan(6, "long", ld, ld, lm, "easy", {}, []))
-        weeks.append(WeekPlan(idx + 1, "progression", ws, d, round(dm * 6 + lm, 1)))
+        total = round(dm * weekday_running + lm, 1)
+        weeks.append(WeekPlan(idx + 1, "progression", ws, d, total))
 
     tw = len(selected) + 1
     ws = start + timedelta(weeks=len(selected))
+    taper_running = min(days_per_week - 1, 5)
     td = [DayPlan(dow, "easy", "Easy 3mi", "3mi easy", 3.0, "easy", {}, [])
-          for dow in range(5)]
-    td.append(_rest_day(5))
+          for dow in range(taper_running)]
+    for rd in range(taper_running, 6):
+        td.append(_rest_day(rd))
     td.append(DayPlan(6, "race", "Race Day", "Warm up, execute, celebrate.",
                        0.0, "race", {}, []))
-    weeks.append(WeekPlan(tw, "taper", ws, td, 15.0))
+    weeks.append(WeekPlan(tw, "taper", ws, td, round(3.0 * taper_running, 1)))
     return weeks
 
 
@@ -1331,6 +1377,7 @@ def generate_n1_plan(
     personal_lr_floor: float = 0.0,
     tune_up_races: Optional[List[Dict]] = None,
     taper_weeks: Optional[int] = None,
+    fingerprint: Optional[FingerprintParams] = None,
 ) -> List[WeekPlan]:
     if taper_weeks is not None:
         taper_weeks = max(1, min(taper_weeks, 3))
@@ -1343,10 +1390,12 @@ def generate_n1_plan(
         experience=experience, best_rpi=best_rpi,
         weeks_since_peak=weeks_since_peak, goal_time=goal_time,
         taper_weeks=taper_weeks,
+        fingerprint=fingerprint,
     )
 
     if state.is_day_one:
-        return _generate_couch_to_10k(plan_start, horizon_weeks, race_date)
+        return _generate_couch_to_10k(plan_start, horizon_weeks, race_date,
+                                      days_per_week=days_per_week)
 
     week_rxs = plan_weeks(state)
     weeks = assemble_plan(state, week_rxs)
