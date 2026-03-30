@@ -30,6 +30,9 @@ DEFAULTS = {
     "consecutive_day_preference": "standard",
 }
 
+ACTIVE_STATES = {"active", "active_fixed", None}
+STRUCTURAL_STATES = {"structural", "structural_monitored"}
+
 
 @dataclass
 class FingerprintParams:
@@ -167,8 +170,6 @@ def _detect_limiter(findings: list) -> Optional[str]:
       "threshold"  — L-THRESH: days_since_quality → pace_threshold
       "race_specific" — L-SPEC: active_fixed, pre-race integration
     """
-    ACTIVE_STATES = {"active", "active_fixed", None}
-
     volume_signal = 0.0
     recovery_signal = 0.0
     threshold_signal = 0.0
@@ -341,15 +342,26 @@ def build_fingerprint_params(
                 params.disclosures.append(consec_note)
 
             has_structural_lrec = any(
-                f.get("lifecycle_state") == "structural"
+                f.get("lifecycle_state") in STRUCTURAL_STATES
                 and f.get("input_name") in ("tsb", "daily_session_stress", "atl", "consecutive_run_days")
                 for f in findings
             )
             if has_structural_lrec:
-                params.disclosures.append(
-                    "Structural recovery trait detected — delivery modifications "
-                    "(spacing, cutback frequency) applied. Session types unchanged."
+                monitored = any(
+                    f.get("lifecycle_state") == "structural_monitored"
+                    and f.get("input_name") in ("tsb", "daily_session_stress", "atl", "consecutive_run_days")
+                    for f in findings
                 )
+                if monitored:
+                    params.disclosures.append(
+                        "Recovery trait detected (monitored) — this pattern is stable "
+                        "but may shift. Delivery modifications applied conservatively."
+                    )
+                else:
+                    params.disclosures.append(
+                        "Structural recovery trait detected — delivery modifications "
+                        "(spacing, cutback frequency) applied. Session types unchanged."
+                    )
 
             if params.limiter == "volume":
                 params.primary_quality_emphasis = "long_run_quality"

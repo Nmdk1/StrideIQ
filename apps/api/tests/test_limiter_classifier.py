@@ -96,13 +96,13 @@ def test_cg11_structural_high_halflife_stable():
 
 
 def test_cg11_structural_monitored_mid_halflife_stable():
-    """half-life 36-48h + stable → structural (monitored)"""
+    """half-life 36-48h + stable → structural_monitored"""
     finding = _make_finding(
         first_detected_at=NOW - timedelta(days=150),
         times_confirmed=6,
     )
     result = _classify_lrec(finding, half_life=42.0, now=NOW)
-    assert result == "structural"
+    assert result == "structural_monitored"
 
 
 def test_cg11_solvable_low_halflife_recent():
@@ -347,3 +347,60 @@ def test_detect_limiter_threshold():
         ),
     ]
     assert _detect_limiter(findings) == "threshold"
+
+
+def test_detect_limiter_structural_monitored_not_counted():
+    """structural_monitored findings do not drive limiter assignment."""
+    findings = [
+        _make_finding_dict(
+            input_name="daily_session_stress",
+            output_metric="efficiency",
+            correlation_coefficient=-0.58,
+            times_confirmed=8,
+            lifecycle_state="structural_monitored",
+        ),
+    ]
+    assert _detect_limiter(findings) is None
+
+
+# ---------------------------------------------------------------------------
+# active_fixed resolution path
+# ---------------------------------------------------------------------------
+
+def test_active_fixed_resolves_when_lspec_gate_closes():
+    """active_fixed → closed when L-SPEC gate no longer fires (race passed)."""
+    from services.plan_framework.limiter_classifier import classify_lifecycle_states
+
+    finding = _make_finding(
+        lifecycle_state="active_fixed",
+        lifecycle_state_updated_at=NOW - timedelta(days=14),
+    )
+
+    mock_db = MagicMock()
+    mock_db.query.return_value.filter.return_value.all.return_value = [finding]
+    mock_db.flush = MagicMock()
+
+    with patch("services.plan_framework.limiter_classifier._get_profile") as mock_profile, \
+         patch("services.plan_framework.limiter_classifier._check_lspec_gate") as mock_lspec:
+        mock_profile.return_value = MagicMock(
+            recovery_half_life_hours=40.0,
+            peak_weekly_miles=50.0,
+        )
+        mock_lspec.return_value = False
+
+        results = classify_lifecycle_states(ATHLETE_ID, mock_db)
+
+    assert results[finding.id] == "closed"
+    assert finding.lifecycle_state == "closed"
+
+
+# ---------------------------------------------------------------------------
+# structural_monitored bridge disclosure
+# ---------------------------------------------------------------------------
+
+def test_structural_monitored_produces_monitored_disclosure():
+    """structural_monitored findings produce distinct disclosure text."""
+    from services.plan_framework.fingerprint_bridge import FingerprintParams, STRUCTURAL_STATES
+
+    assert "structural_monitored" in STRUCTURAL_STATES
+    assert "structural" in STRUCTURAL_STATES

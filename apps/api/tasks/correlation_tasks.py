@@ -202,6 +202,17 @@ def run_daily_correlation_sweep(self, athlete_ids: List[str] | None = None):
                     )
             db.commit()
 
+            # Lifecycle classification pass (Phase 3)
+            try:
+                from services.plan_framework.limiter_classifier import classify_lifecycle_states
+                lc_results = classify_lifecycle_states(athlete_id, db)
+                if lc_results:
+                    db.commit()
+                    logger.info("Lifecycle classification: %d findings classified for %s", len(lc_results), athlete_id)
+            except Exception as exc:
+                logger.warning("Lifecycle classification failed for %s: %s", athlete_id, exc)
+                db.rollback()
+
             # Second pass: Layers 1–4 on confirmed findings
             try:
                 n = _run_layer_pass(athlete_id, db)
@@ -309,5 +320,48 @@ def run_athlete_first_session_sweep(self, athlete_id: str) -> Dict:
         db.rollback()
         logger.exception("First-session sweep failed for %s: %s", athlete_id, exc)
         raise self.retry(exc=exc)
+    finally:
+        db.close()
+
+
+@celery_app.task(name="tasks.backfill_lifecycle_states", bind=True, max_retries=0)
+def backfill_lifecycle_states(self):
+    """One-time backfill: classify lifecycle_state for all existing findings.
+
+    Transitional task for Phase 3 deployment. Runs classify_lifecycle_states
+    for every athlete who has CorrelationFinding rows with lifecycle_state IS NULL.
+    After this runs once, the daily sweep + persist_correlation_findings keep
+    states current. This task can be removed once all NULL states are resolved.
+    """
+    from services.plan_framework.limiter_classifier import classify_lifecycle_states
+
+    db = SessionLocal()
+    try:
+        null_athletes = (
+            db.query(CorrelationFinding.athlete_id)
+            .filter(
+                CorrelationFinding.lifecycle_state.is_(None),
+                CorrelationFinding.is_active == True,  # noqa: E712
+                CorrelationFinding.times_confirmed >= 3,
+            )
+            .distinct()
+            .all()
+        )
+        athlete_ids = [str(r[0]) for r in null_athletes]
+        logger.info("Lifecycle backfill: %d athletes with NULL lifecycle_state", len(athlete_ids))
+
+        classified_total = 0
+        for athlete_id in athlete_ids:
+            try:
+                results = classify_lifecycle_states(athlete_id, db)
+                if results:
+                    db.commit()
+                    classified_total += len(results)
+            except Exception as exc:
+                db.rollback()
+                logger.warning("Lifecycle backfill failed for %s: %s", athlete_id, exc)
+
+        logger.info("Lifecycle backfill complete: %d findings classified across %d athletes",
+                     classified_total, len(athlete_ids))
     finally:
         db.close()

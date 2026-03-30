@@ -1,18 +1,32 @@
 """Limiter Lifecycle Classifier (Phase 3)
 
 Assigns lifecycle states to CorrelationFinding records:
-  emerging     — correlation strengthening in L90, candidate frontier
-  active       — current frontier, drives plan session type + dosing
-  active_fixed — L-SPEC only: pre-race integration, resolves at race day
-  resolving    — intervention underway, correlation weakening
-  closed       — historical signal, athlete solved it
-  structural   — physiological trait, delivery modifications only
+  emerging            — correlation strengthening in L90, candidate frontier
+  active              — current frontier, drives plan session type + dosing
+  active_fixed        — L-SPEC only: pre-race integration, resolves at race day
+  resolving           — intervention underway, correlation weakening
+  closed              — historical signal, athlete solved it
+  structural          — confirmed physiological trait, delivery modifications only
+  structural_monitored — trait in 36-48h half-life range, stable but may shift
+                         if acute cause is identified. Coach layer surfaces
+                         differently from confirmed structural.
 
 Classification priority (from LIMITER_TAXONOMY_ANNOTATED.md):
   0. CG-12: L-SPEC context gate (rule-based, overrides all)
   1. CG-11: L-REC structural discriminator (three-tier half-life)
   2. CG-10: CS-6/CS-7 interaction gate (fast recoverers)
   3. Standard lifecycle: active/emerging/resolving/closed
+
+Resolution paths:
+  active_fixed → closed: triggered by race date passing (not correlation fade)
+  structural_monitored → active: if acute training cause identified
+
+Notes:
+  - ADVANCED_PEAK_MILES_FLOOR (30 mpw) is a conservative first-pass proxy
+    for the CG-12 advanced tier check. The KB defines advanced by adaptation
+    state and training history, not mileage alone. A 25 mpw athlete with 2
+    years of consistent training could qualify. This threshold will be refined
+    when the development ladder is implemented (Phase 5+).
 
 See: docs/specs/LIMITER_TAXONOMY_ANNOTATED.md
      docs/specs/LIMITER_ENGINE_BRIEF.md
@@ -65,12 +79,17 @@ def classify_lifecycle_states(
     now = datetime.now(timezone.utc)
     results: Dict[int, str] = {}
 
+    from sqlalchemy import or_
+
     findings = (
         db.query(CorrelationFinding)
         .filter(
             CorrelationFinding.athlete_id == athlete_id,
-            CorrelationFinding.is_active == True,  # noqa: E712
             CorrelationFinding.times_confirmed >= 3,
+            or_(
+                CorrelationFinding.is_active == True,  # noqa: E712
+                CorrelationFinding.lifecycle_state == "active_fixed",
+            ),
         )
         .all()
     )
@@ -87,9 +106,18 @@ def classify_lifecycle_states(
     )
 
     for finding in findings:
-        state = _classify_single(
-            finding, half_life, lspec_active, now,
-        )
+        if finding.lifecycle_state == "active_fixed" and not lspec_active:
+            state = "closed"
+            logger.info(
+                "limiter_classifier: active_fixed → closed for finding %s "
+                "(L-SPEC gate no longer fires — race passed or conditions changed)",
+                finding.id,
+            )
+        else:
+            state = _classify_single(
+                finding, half_life, lspec_active, now,
+            )
+
         results[finding.id] = state
 
         if finding.lifecycle_state != state:
@@ -227,7 +255,7 @@ def _classify_lrec(
 
     if 36.0 <= half_life <= 48.0:
         if stable:
-            return "structural"
+            return "structural_monitored"
         else:
             return "active"
 
