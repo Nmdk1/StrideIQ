@@ -46,6 +46,23 @@ pro# Training Plan & Daily Adaptation — Phased Build Plan
 >   `Plan Validation Strict`.
 > - Current strict matrix result: 15 pass, 6 explicit policy-waiver xfails (marathon low-volume MP/LR percentage cases), 0 unexpected failures.
 > - Monetization baseline note: legacy "Monetization CONTRACT ONLY" snapshot is historical and superseded by the 2-tier model decision in this document.
+>
+> **Operational Update — March 29, 2026 (N=1 Engine V3 Rebuild)**
+> - All legacy plan generators deleted (-16,920 lines). New `n1_engine.py` (1,078 lines)
+>   rebuilt from scratch with diagnosis-first architecture per `docs/specs/N1_ENGINE_ADR_V2.md`.
+> - Adaptation needs drive workout selection; phases are labels, not drivers.
+> - Original evaluator `scripts/eval_plan_quality.py` (852 lines) checks 12 Blocking
+>   Criteria across 14 archetypes: **143 PASS, 0 FAIL, 11 WAIVED**.
+> - KB Rule Evaluator `scripts/eval_kb_rules.py` replaces BC system as primary gate.
+>   Checks 33 HARD rules from `docs/specs/KB_RULE_REGISTRY_ANNOTATED.md` across all
+>   14 archetypes: **445 PASS, 0 FAIL, 0 WARN, 17 WAIVED**. Three engine bugs caught
+>   and fixed (beginner days_per_week, taper strides, MLR ceiling). Both evaluators agree.
+> - Legacy `plan_generator_v2.py`, `kb_driven_generator.py`, `test_plan_validation_matrix.py`,
+>   and all template-based generators are permanently removed.
+> - CI reorganized: push commits run fast gate (smoke + lint + migration); full backend suite
+>   runs nightly + manual trigger. Nightly failures auto-open GitHub issues.
+> - Intake context now wired into plan generation (onboarding questionnaire → FitnessBank seeds).
+> - Phase 1 status updated from "COMPLETE (template-based)" to "V3 REBUILT (diagnosis-first)".
 
 ---
 
@@ -612,7 +629,7 @@ Flags — NOT overrides. Fires only on sustained trajectories, not single-day si
 
 | Phase | What | Gate to Start | Status |
 |-------|------|---------------|--------|
-| **1** | World-class plans: marathon → half → 10K → 5K. N=1 overrides. Paces everywhere. Taper democratization. | None | ✅ COMPLETE |
+| **1** | World-class plans: marathon → half → 10K → 5K. N=1 overrides. Paces everywhere. Taper democratization. | None | ✅ V3 REBUILT — diagnosis-first engine (143 PASS / 14 archetypes) |
 | **2** | Daily adaptation engine: readiness score, rules engine, workout state machine, nightly replan, no-race modes. | Phase 1 substantially complete | ✅ COMPLETE |
 | **3A** | Adaptation narration: coach explains intelligence decisions. | Phase 2 running | ✅ COMPLETE |
 | **3B** | Contextual workout narratives. | Narration accuracy > 90% for 4 weeks | ✅ CODE COMPLETE — gate accruing |
@@ -659,7 +676,7 @@ Flags — NOT overrides. Fires only on sustained trajectories, not single-day si
 ## Build Priority (updated 2026-03-22)
 
 1. ~~**Monetization tier mapping**~~ — ✅ COMPLETE (2-tier model shipped 2026-03-19)
-2. **Coached plan output quality (P1-P5)** — long-run progression, weighted easy fill, narrative, load context, adaptive modulation
+2. ~~**Coached plan output quality (P1-P5)**~~ — ✅ V3 ENGINE REBUILT (2026-03-29). Diagnosis-first architecture. KB Rule Evaluator: 445 PASS / 0 FAIL across 33 coaching rules × 14 archetypes. Ongoing refinement.
 3. **Phase 4 (50K Ultra)** — new user segment + differentiation
 4. **Phase 3B** — when 4-week narration quality gate clears (monitor `/v1/intelligence/narration/quality`)
 5. **Phase 3C** — when 3+ month data/stat gates clear

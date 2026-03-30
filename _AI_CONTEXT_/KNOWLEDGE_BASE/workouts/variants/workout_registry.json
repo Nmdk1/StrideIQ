@@ -1,7 +1,7 @@
 {
-  "schema_version": "0.2",
+  "schema_version": "0.3",
   "spec_ref": "docs/specs/WORKOUT_FLUENCY_REGISTRY_SPEC.md v0.2.25",
-  "description": "Phase 2 machine index of SME-approved v1 pilot variants (schema 0.2: adds build_context_tags mirrored from pilot typical_build_context_tags). Prose remains canonical in *_pilot_v1.md.",
+  "description": "Phase 3 machine index: adds display_name, when_to_avoid, pairs_poorly_with extracted from pilot markdown (schema 0.3). Prose remains canonical in *_pilot_v1.md.",
   "variants": [
     {
       "id": "threshold_continuous_progressive",
@@ -9,6 +9,9 @@
       "volume_family": "T",
       "sme_status": "approved",
       "pilot": "threshold_pilot_v1.md",
+      "display_name": "Continuous threshold (periodized staple)",
+      "when_to_avoid": "Acute injury pain; illness; extreme heat without acclimation and adjusted expectations; first quality day back after layoff (shorter continuous block or fewer intervals first).",
+      "pairs_poorly_with": "Heavy VO2 session next day; long marathon-pace segment the same day; race week except experienced athletes under explicit guidance.",
       "build_context_tags": [
         "base_building",
         "durability_rebuild",
@@ -25,6 +28,9 @@
       "volume_family": "T",
       "sme_status": "approved",
       "pilot": "threshold_pilot_v1.md",
+      "display_name": "Progressive threshold run",
+      "when_to_avoid": "Athletes who cannot self-regulate early pace; injury_return where any late hard segment is contraindicated.",
+      "pairs_poorly_with": "All-out long run the next morning; adjacent threshold days for low-tolerance athletes.",
       "build_context_tags": [
         "base_building",
         "durability_rebuild",
@@ -38,6 +44,9 @@
       "volume_family": "T",
       "sme_status": "approved",
       "pilot": "threshold_pilot_v1.md",
+      "display_name": "Short continuous threshold",
+      "when_to_avoid": "Same as continuous threshold when systemic fatigue is extreme; redundant if another dense threshold session exists the same week without SME intent.",
+      "pairs_poorly_with": "Another threshold-dense day immediately after for fragile athletes.",
       "build_context_tags": [
         "durability_rebuild",
         "full_featured_healthy",
@@ -51,6 +60,9 @@
       "volume_family": "T",
       "sme_status": "approved",
       "pilot": "threshold_pilot_v1.md",
+      "display_name": "Broken continuous threshold (two blocks)",
+      "when_to_avoid": "injury_return unless blocks are short and SME-approved; minimal_sharpen (usually one short touch instead).",
+      "pairs_poorly_with": "Another double-threshold pattern in the same week without volume to support it.",
       "build_context_tags": [
         "full_featured_healthy",
         "peak_fitness",
@@ -63,6 +75,9 @@
       "volume_family": "T",
       "sme_status": "approved",
       "pilot": "threshold_pilot_v1.md",
+      "display_name": "Cruise intervals (easy jog recovery)",
+      "when_to_avoid": "Athlete turns jog into stride; acute calf/Achilles irritation from turnover changes.",
+      "pairs_poorly_with": "Heavy eccentric day (long steep downs) prior; VO2 micro-intervals same day.",
       "build_context_tags": [
         "base_building",
         "full_featured_healthy",
@@ -76,6 +91,9 @@
       "volume_family": "T",
       "sme_status": "approved",
       "pilot": "threshold_pilot_v1.md",
+      "display_name": "Threshold intervals \u2014 short reps (~5\u20136 min)",
+      "when_to_avoid": "First quality session off layoff\u2014prefer fewer reps or short continuous block.",
+      "pairs_poorly_with": "Long marathon-pace segment later the same day.",
       "build_context_tags": [
         "base_building",
         "full_featured_healthy",
@@ -89,6 +107,9 @@
       "volume_family": "T",
       "sme_status": "approved",
       "pilot": "threshold_pilot_v1.md",
+      "display_name": "Threshold intervals \u2014 longer reps",
+      "when_to_avoid": "Low durability unless volume is cut sharply.",
+      "pairs_poorly_with": "Heavy long-run fatigue + next-day repeat for injury-prone masters.",
       "build_context_tags": [
         "base_building",
         "full_featured_healthy",
@@ -102,6 +123,9 @@
       "volume_family": "T",
       "sme_status": "approved",
       "pilot": "threshold_pilot_v1.md",
+      "display_name": "Threshold intervals \u2014 float recovery",
+      "when_to_avoid": "Novices; injury_return; heat without fueling/hydration plan.",
+      "pairs_poorly_with": "Already-high average intensity week; strides + hills stacked as second hard CNS day.",
       "build_context_tags": [
         "full_featured_healthy",
         "peak_fitness",
@@ -114,6 +138,9 @@
       "volume_family": "T",
       "sme_status": "approved",
       "pilot": "threshold_pilot_v1.md",
+      "display_name": "On-minutes threshold (alternating)",
+      "when_to_avoid": "injury_return, durability_rebuild (surge-like loading); anyone who cannot separate threshold from VO2.",
+      "pairs_poorly_with": "Other high-transition hard sessions same microcycle for fragile athletes.",
       "build_context_tags": [
         "full_featured_healthy",
         "peak_fitness",
@@ -126,6 +153,9 @@
       "volume_family": "long",
       "sme_status": "approved",
       "pilot": "long_run_pilot_v1.md",
+      "display_name": "Easy long run",
+      "when_to_avoid": "Acute injury or medical guidance where long duration or impact is contraindicated; injury_return: length and tolerance are highly individual\u2014shorten or defer until load is re-established.",
+      "pairs_poorly_with": "Heavy VO2 or long MP block same day; racing long hard mid-week without recovery context.",
       "build_context_tags": [
         "base_building",
         "durability_rebuild",
@@ -141,6 +171,9 @@
       "volume_family": "composite",
       "sme_status": "approved",
       "pilot": "long_run_pilot_v1.md",
+      "display_name": "Progressive long (easy \u2192 moderate)",
+      "when_to_avoid": "injury_return until easy longs (and easy bulk discipline) are consistently tolerated; acute flare patterns with late-hard running.",
+      "pairs_poorly_with": "Standalone threshold-dense day next morning for low-tolerance athletes without explicit plan intent.",
       "build_context_tags": [
         "base_building",
         "full_featured_healthy",
@@ -154,6 +187,9 @@
       "volume_family": "composite",
       "sme_status": "approved",
       "pilot": "long_run_pilot_v1.md",
+      "display_name": "Fast-finish long (marathon \u2014 final ~2 mi)",
+      "when_to_avoid": "injury_return; low durability; extreme heat without adjusted expectations; novice/first-marathon athletes still building base.",
+      "pairs_poorly_with": "long_mp_continuous_marathon, long_mp_intervals_in_long, or long_hmp_finish_half_marathon in the same microcycle without explicit volume/tolerance rationale.",
       "build_context_tags": [
         "full_featured_healthy",
         "peak_fitness",
@@ -166,6 +202,9 @@
       "volume_family": "composite",
       "sme_status": "approved",
       "pilot": "long_run_pilot_v1.md",
+      "display_name": "Long run \u2014 MP over-under miles",
+      "when_to_avoid": "First marathon build or few lifetime long runs; injury_return; athletes who cannot hold two distinct gears; minimal_sharpen full dose; no recent steady MP foundation; novice or low-mileage profiles.",
+      "pairs_poorly_with": "vo2_3x2mi_long_reps same week without SME; long_mp_continuous_marathon dress-rehearsal week overload without rationale.",
       "build_context_tags": [
         "base_building",
         "full_featured_healthy",
@@ -179,6 +218,9 @@
       "volume_family": "long",
       "sme_status": "approved",
       "pilot": "long_run_pilot_v1.md",
+      "display_name": "Medium-long run (aerobic)",
+      "when_to_avoid": "When maximum simplicity is needed (fold into plain easy days); acute injury patterns where any extra duration mid-week hurts.",
+      "pairs_poorly_with": "Threshold intervals or VO2 same day; long_mp or heavy quality next day without recovery rationale.",
       "build_context_tags": [
         "base_building",
         "durability_rebuild",
@@ -192,6 +234,9 @@
       "volume_family": "composite",
       "sme_status": "approved",
       "pilot": "long_run_pilot_v1.md",
+      "display_name": "Long run with continuous marathon-pace block",
+      "when_to_avoid": "Half-marathon-primary athletes unless explicitly repurposed; injury_return; early base before easy longs and easy discipline are solid; low durability / low data confidence on appropriate MP.",
+      "pairs_poorly_with": "Dense long_hmp_finish_half_marathon week; long_mp_intervals_in_long plus this variant without volume rationale; threshold-heavy adjacent days for fragile athletes without intent.",
       "build_context_tags": [
         "full_featured_healthy",
         "peak_fitness",
@@ -204,6 +249,9 @@
       "volume_family": "composite",
       "sme_status": "approved",
       "pilot": "long_run_pilot_v1.md",
+      "display_name": "Long run with MP intervals (easy between)",
+      "when_to_avoid": "Same family contraindications as long_mp_continuous_marathon; novices without easy-long foundation; injury_return unless explicitly progressed.",
+      "pairs_poorly_with": "long_mp_continuous_marathon plus this pattern in the same week without volume support; stacked MP elsewhere without rationale.",
       "build_context_tags": [
         "full_featured_healthy",
         "peak_fitness",
@@ -216,6 +264,9 @@
       "volume_family": "composite",
       "sme_status": "approved",
       "pilot": "long_run_pilot_v1.md",
+      "display_name": "Long run with half-marathon pace finish",
+      "when_to_avoid": "Marathon-primary athletes unless explicitly repurposed; injury_return; early base; athletes without easy bulk discipline.",
+      "pairs_poorly_with": "Dense long_mp_continuous_marathon / long_mp_intervals_in_long in the same week for single-distance focus athletes without explicit rationale.",
       "build_context_tags": [
         "full_featured_healthy",
         "peak_fitness",
@@ -228,6 +279,9 @@
       "volume_family": "composite",
       "sme_status": "approved",
       "pilot": "long_run_pilot_v1.md",
+      "display_name": "Cutdown long (segments pick up pace)",
+      "when_to_avoid": "injury_return; athletes who cannot hold easy early; low self-regulation / always-overpace profiles until basics improve; low weekly mileage or few long-run exposures.",
+      "pairs_poorly_with": "Dense alternating_threshold_on_minutes or other threshold-heavy weeks for fragile athletes without rationale.",
       "build_context_tags": [
         "base_building",
         "full_featured_healthy",
@@ -241,6 +295,9 @@
       "volume_family": "E",
       "sme_status": "approved",
       "pilot": "easy_pilot_v1.md",
+      "display_name": "Easy run",
+      "when_to_avoid": "Acute injury where running is contraindicated; replace with rest or cross-train per medical guidance.",
+      "pairs_poorly_with": "None inherently\u2014errors are pace, not pairing.",
       "build_context_tags": [
         "base_building",
         "durability_rebuild",
@@ -257,6 +314,9 @@
       "volume_family": "E",
       "sme_status": "approved",
       "pilot": "easy_pilot_v1.md",
+      "display_name": "Recovery run",
+      "when_to_avoid": "When complete rest is clearly better (illness, acute pain, severe fatigue)\u2014prefer rest_day_complete or off-feet guidance.",
+      "pairs_poorly_with": "Back-to-back recovery runs used to avoid scheduling a real easy or rest\u2014usually a planning smell unless athlete-specific.",
       "build_context_tags": [
         "base_building",
         "durability_rebuild",
@@ -271,6 +331,9 @@
       "volume_family": "E",
       "sme_status": "approved",
       "pilot": "easy_pilot_v1.md",
+      "display_name": "Easy run with strides",
+      "when_to_avoid": "Acute hamstring/calf flare; injury_return where any fast mechanics are barred.",
+      "pairs_poorly_with": "Redundant stride gear when the week already saturated that system (complementarity in Deterministic selection logic).",
       "build_context_tags": [
         "base_building",
         "durability_rebuild",
@@ -286,6 +349,9 @@
       "volume_family": "composite",
       "sme_status": "approved",
       "pilot": "easy_pilot_v1.md",
+      "display_name": "Easy run with hill sprints",
+      "when_to_avoid": "Acute lower-leg / foot pain; injury_return until easy running is consistently tolerated; no suitable hill\u2014then substitute (e.g. easy_strides with appropriate gear).",
+      "pairs_poorly_with": "Uncontrolled stacking of multiple high-density power touches without recovery narrative\u2014detect via ledger.",
       "build_context_tags": [
         "base_building",
         "durability_rebuild",
@@ -301,6 +367,9 @@
       "volume_family": "E",
       "sme_status": "approved",
       "pilot": "easy_pilot_v1.md",
+      "display_name": "Strides (after easy running)",
+      "when_to_avoid": "Same as easy_strides_neuromuscular_touch.",
+      "pairs_poorly_with": "Same ledger redundancy rules as easy_strides_neuromuscular_touch.",
       "build_context_tags": [
         "base_building",
         "durability_rebuild",
@@ -316,6 +385,9 @@
       "volume_family": "composite",
       "sme_status": "approved",
       "pilot": "easy_pilot_v1.md",
+      "display_name": "Rest day",
+      "when_to_avoid": "N/A as a safety concept\u2014avoidance is about plan balance, not contraindication.",
+      "pairs_poorly_with": "Zero rest weeks for populations that require rest\u2014selection error.",
       "build_context_tags": [
         "base_building",
         "durability_rebuild",
@@ -332,6 +404,9 @@
       "volume_family": "I",
       "sme_status": "approved",
       "pilot": "intervals_pilot_v1.md",
+      "display_name": "VO2 \u2014 short repeats (400m)",
+      "when_to_avoid": "Acute hamstring/calf flare; no warm-up discipline; same week as maximal neuromuscular load without taper intent.",
+      "pairs_poorly_with": "Second VO2-density day for low-tolerance athletes; race week full dose except experienced profiles.",
       "build_context_tags": [
         "base_building",
         "durability_rebuild",
@@ -348,6 +423,9 @@
       "volume_family": "I",
       "sme_status": "approved",
       "pilot": "intervals_pilot_v1.md",
+      "display_name": "VO2 \u2014 800m repeats",
+      "when_to_avoid": "Athlete cannot hold even splits; returning from layoff\u2014prefer 400 variant or threshold first.",
+      "pairs_poorly_with": "Dense threshold_intervals same week without recovery narrative.",
       "build_context_tags": [
         "base_building",
         "full_featured_healthy",
@@ -362,6 +440,9 @@
       "volume_family": "I",
       "sme_status": "approved",
       "pilot": "intervals_pilot_v1.md",
+      "display_name": "VO2 \u2014 kilometer repeats",
+      "when_to_avoid": "injury_return default\u2014prefer shorter reps or omit; minimal_sharpen unless SME micro-dose.",
+      "pairs_poorly_with": "Same-day long MP blocks; back-to-back hard quality without easy between.",
       "build_context_tags": [
         "base_building",
         "durability_rebuild",
@@ -376,6 +457,9 @@
       "volume_family": "I",
       "sme_status": "approved",
       "pilot": "intervals_pilot_v1.md",
+      "display_name": "VO2 \u2014 1200m at 10K rhythm",
+      "when_to_avoid": "Marathon-primary plans without SME cross-goal reason; early build before short rep foundation. Single-quality weeks where interval day should prioritize ceiling (5K-anchor reps).",
+      "pairs_poorly_with": "Redundant long tempo-like work same week\u2014ledger check (threshold saturation).",
       "build_context_tags": [
         "full_featured_healthy",
         "peak_fitness",
@@ -388,6 +472,9 @@
       "volume_family": "I",
       "sme_status": "approved",
       "pilot": "intervals_pilot_v1.md",
+      "display_name": "VO2 \u2014 5K peak block (1000m)",
+      "when_to_avoid": "Wrong goal distance; too early in 5K progression (prefer 400/800 variants first).",
+      "pairs_poorly_with": "Duplicate 1K-heavy weeks without progression intent.",
       "build_context_tags": [
         "full_featured_healthy",
         "peak_fitness",
@@ -400,6 +487,9 @@
       "volume_family": "I",
       "sme_status": "approved",
       "pilot": "intervals_pilot_v1.md",
+      "display_name": "VO2 \u2014 conservative dose",
+      "when_to_avoid": "Acute pain; illness; when complete omission of VO2 is smarter.",
+      "pairs_poorly_with": "Full vo2_peak_fitness_sustained_reps same week.",
       "build_context_tags": [
         "durability_rebuild",
         "full_featured_healthy",
@@ -413,6 +503,9 @@
       "volume_family": "I",
       "sme_status": "approved",
       "pilot": "intervals_pilot_v1.md",
+      "display_name": "VO2 \u2014 minimal sharpen touch",
+      "when_to_avoid": "Peak week overload mistake\u2014this variant is not \"main load.\"",
+      "pairs_poorly_with": "Heavy threshold + heavy long quality same week.",
       "build_context_tags": [
         "full_featured_healthy",
         "minimal_sharpen",
@@ -425,6 +518,9 @@
       "volume_family": "I",
       "sme_status": "approved",
       "pilot": "intervals_pilot_v1.md",
+      "display_name": "VO2 \u2014 light touch (heavy threshold week)",
+      "when_to_avoid": "Planner forgets ledger and ships 1K stack\u2014regression mode.",
+      "pairs_poorly_with": "Unmodified vo2_1000m_reps_classic when ledger threshold-saturated.",
       "build_context_tags": [
         "base_building",
         "full_featured_healthy",
@@ -438,6 +534,9 @@
       "volume_family": "I",
       "sme_status": "approved",
       "pilot": "intervals_pilot_v1.md",
+      "display_name": "VO2 \u2014 sustained reps (peak)",
+      "when_to_avoid": "injury_return, durability_rebuild, minimal_sharpen (except SME), low sleep / illness flags.",
+      "pairs_poorly_with": "Stacked unknown-density weeks; duplicate VO2 without intent.",
       "build_context_tags": [
         "full_featured_healthy",
         "peak_fitness",
@@ -450,6 +549,9 @@
       "volume_family": "I",
       "sme_status": "approved",
       "pilot": "intervals_pilot_v1.md",
+      "display_name": "VO2 \u2014 pyramid ladder (float recovery)",
+      "when_to_avoid": "injury_return, minimal_sharpen (full ladder), early relationship with VO2 unless shortened ladder; weeks already dense in reps or threshold_intervals.",
+      "pairs_poorly_with": "Second complex VO2 or dense threshold without recovery narrative.",
       "build_context_tags": [
         "base_building",
         "full_featured_healthy",
@@ -463,6 +565,9 @@
       "volume_family": "I",
       "sme_status": "approved",
       "pilot": "intervals_pilot_v1.md",
+      "display_name": "VO2 \u2014 mile repeats",
+      "when_to_avoid": "injury_return; athletes without even-split discipline; same week as 1200m race-rhythm overload for 10K without rationale.",
+      "pairs_poorly_with": "vo2_peak_fitness_sustained_reps stacked blindly same week.",
       "build_context_tags": [
         "base_building",
         "full_featured_healthy",
@@ -476,6 +581,9 @@
       "volume_family": "I",
       "sme_status": "approved",
       "pilot": "intervals_pilot_v1.md",
+      "display_name": "VO2 \u2014 3 \u00d7 2 mile (long reps)",
+      "when_to_avoid": "injury_return, minimal_sharpen, low-mileage athletes without long rep history.",
+      "pairs_poorly_with": "long_mp_over_under_alternating_miles same week without explicit SME (both are heavy MP-adjacent stress families).",
       "build_context_tags": [
         "full_featured_healthy",
         "peak_fitness",
@@ -488,6 +596,9 @@
       "volume_family": "R",
       "sme_status": "approved",
       "pilot": "repetitions_pilot_v1.md",
+      "display_name": "Reps \u2014 200m (early pattern)",
+      "when_to_avoid": "Acute hamstring/calf pain; illness; injury_return unless SME shortens sharply.",
+      "pairs_poorly_with": "Second heavy speed day for fragile athletes; long MP block same day.",
       "build_context_tags": [
         "base_building",
         "full_featured_healthy",
@@ -501,6 +612,9 @@
       "volume_family": "R",
       "sme_status": "approved",
       "pilot": "repetitions_pilot_v1.md",
+      "display_name": "Reps \u2014 300m (build / sharpen)",
+      "when_to_avoid": "Same as 200m variant; minimal_sharpen usually shortens or defers to strides.",
+      "pairs_poorly_with": "Duplicate long-rep speed stress without intent.",
       "build_context_tags": [
         "base_building",
         "full_featured_healthy",

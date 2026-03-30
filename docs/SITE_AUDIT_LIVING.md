@@ -1,8 +1,30 @@
 # StrideIQ — Living Site Audit
 
 **Purpose:** Canonical full-product audit. This is the always-current inventory of what exists on the site, what is shipped, and what operational tools are available.
-**Last updated:** March 12, 2026
-**Last updated by:** Advisor session — VIP Sonnet cap deploy verification
+**Last updated:** March 29, 2026
+**Last updated by:** Cadence (advisor)
+
+---
+
+## 0. Delta Since Last Audit (Mar 26 → Mar 29)
+
+Shipped and now live in product/system behavior:
+
+- **N=1 Plan Engine V3 — Complete Rebuild (Mar 26-29, 2026)**: Legacy plan generators deleted (-16,920 lines). New `n1_engine.py` (1,078 lines) rebuilt from scratch with diagnosis-first architecture per ADR `docs/specs/N1_ENGINE_ADR_V2.md`. The algorithm: (1) diagnose adaptation needs from athlete state and goal distance, (2) select training tools from KB variant library, (3) set dosage and progression, (4) schedule anchor sessions first, (5) fill with purposeful easy running. Phases are labels applied AFTER the plan is built, not drivers of workout selection. **Key capabilities:** 6 adaptation needs (ceiling, threshold, durability, race-specific, neuromuscular, aerobic base). 7-day athlete support (no forced rest day). Tune-up race handling (mini-taper + post-race absorption). Half-marathon readiness gate with comeback exemption. Athlete-specified taper preference (1-3 weeks). Post-quality easy day cap. MLR floor respects athlete history. Volume distribution with sawtooth fidelity. Repetition pace zone now distinct from interval pace. **Validated against 14-archetype evaluator: 143 PASS, 0 FAIL, 11 WAIVED.** Commits: `2eff725` through `f09687b`.
+
+- **KB Rule Evaluator — Full Knowledge Base Gate (Mar 29, 2026)**: New `scripts/eval_kb_rules.py` replaces the 12-BC evaluator as the primary quality gate. Checks 33 HARD rules from the founder-annotated knowledge base (`docs/specs/KB_RULE_REGISTRY_ANNOTATED.md`) across all 14 archetypes. Rules sourced directly from coaching KB: phase progression (PH), volume/recovery (VR), session structure (SS), tempo/threshold (TP), interval/rep (IR), recovery (RC), marathon-specific (MA), plan progression (PP), easy day (ED), taper (TA), N=1 (N1), day quality (DQ), readiness gate (RG). **Result: 445 PASS, 0 FAIL, 0 WARN, 17 WAIVED.** Three engine bugs caught and fixed: (1) Couch-to-10K ignored `days_per_week` constraint — now adds rest days; (2) taper strides missing for low-day athletes — now placed on first available easy day; (3) MLR exceeded 75% of same-week LR — now capped at `min(mlr, lr * 0.75)`. Legacy 12-BC evaluator also verified clean (143 PASS). Both evaluators agree. 159 plan-related tests pass.
+
+- **Plan Quality Evaluator (Mar 26, 2026)**: New `scripts/eval_plan_quality.py` (852 lines). Original automated evaluator checks 12 Blocking Criteria across 14 archetypes from the ADR. Now serves as secondary validation alongside the KB Rule Evaluator. Generates full plan dumps (every day, every week) in human-readable format.
+
+- **RPI Pace Recalibration (Mar 28-29, 2026)**: Interval and repetition paces recalibrated against reference pace calculator. I/R paces in the 50-55 RPI band were 13-17s too fast. R > I ordering corrected at low RPIs (30-35) where linear extrapolation crossed pace lines — fixed with R_int = I_int * 1.04 anchor. Zone ordering (E>M>T>I>R) and monotonicity verified for full RPI 30-70 range. PSEO data regenerated from local formula (no API dependency). Commits: `2d4d2d3`, `f09687b`.
+
+- **Coaching Quality Patches (Mar 28, 2026)**: (1) Repetition pace zone: `workout_prescription.py` now surfaces R-pace from athlete data instead of hardcoded "1500m pace" text. (2) Post-quality easy day cap: day after threshold/intervals capped at `min(8mi, target_vol/days * 0.8)`. (3) MLR floor: uses `max(lr*0.75, current_lr*0.75)` capped at 15mi. (4) Two-race taper: tune-up week gets mini-taper + post-race absorption. Evaluator excludes tune-up/recovery weeks from sawtooth trend. Commit: `437ee66`.
+
+- **Structured Workout Splits in Briefing (Mar 28, 2026)**: Home page LLM briefing now receives detailed workout structure from `ActivitySplit` data instead of just overall average pace. New `_summarize_workout_structure()` helper detects warmup, work intervals (rep count, average pace, pace range, HR), and recovery segments. Prompt explicitly instructs LLM to coach from split breakdown, not the meaningless average pace. Fixes: interval workouts no longer misidentified as "disciplined aerobic pacing." Commit: `f6a6a85`.
+
+- **CI Split to Nightly (Mar 29, 2026)**: Full backend test suite (3,575+ tests) moved to nightly scheduled run + manual trigger. Push commits run fast gate only: backend-smoke (golden path tests), migration integrity, lint. Nightly failure reporting: GitHub issue auto-opened with `nightly-ci` label on failure, auto-closed with recovery comment when green. Codecov upload gated on token presence. Commit: `cb31509`.
+
+- **Intake Context Wiring (Mar 26, 2026)**: Onboarding questionnaire data now flows into plan generation. New `services/intake_context.py` with `IntakeContext` dataclass. `ConstraintAwarePlanner.generate_plan()` seeds cold-start FitnessBank from self-reported data (current long run, estimated weekly volume). Safety gate: athletes with <10 synced runs AND incomplete intake blocked with clear `intake_required` error. Questionnaire expanded with running experience, current runs/week, longest recent run, sport background. Commit: `2e1238d`.
 
 ---
 
@@ -99,7 +121,7 @@ Shipped and now live in product/system behavior:
 | **Object Storage** | MinIO (S3-compatible) | Docker: `strideiq_minio`, private bucket `strideiq-runtoon` |
 | **Cache/Queue** | Redis 7 Alpine | Celery broker + response cache |
 | **Proxy** | Caddy 2 | Auto-TLS, reverse proxy |
-| **CI** | GitHub Actions | `.github/workflows/` |
+| **CI** | GitHub Actions (push: smoke+lint+migration; nightly: full suite) | `.github/workflows/` |
 | **Production** | Hostinger KVM 8 (8 vCPU, 32GB RAM, 400GB NVMe) | `187.124.67.153` |
 | **Domain** | `strideiq.run` / `www.strideiq.run` / `api.strideiq.run` | Caddy routes |
 | **Repo** | `github.com/Nmdk1/StrideIQ` | Single `main` branch |
@@ -123,7 +145,7 @@ Migration runs automatically on API container startup. Manual migration: `docker
 
 ---
 
-## 2. Codebase Scale (as of 2026-03-11)
+## 2. Codebase Scale (as of 2026-03-29)
 
 | Metric | Count |
 |--------|-------|
@@ -131,8 +153,10 @@ Migration runs automatically on API container startup. Manual migration: `docker
 | FastAPI routers | 55 |
 | Python services | ~120 |
 | Celery task modules | 14 |
-| Test files | 175 |
-| Passing tests | 3,575+ |
+| Test files | 175+ |
+| Passing tests | 3,575+ (nightly full suite) |
+| KB rule evaluator | 445 PASS / 0 FAIL / 17 WAIVED (33 rules × 14 archetypes) |
+| Legacy BC evaluator | 143 PASS / 0 FAIL (12 BCs × 14 archetypes, secondary gate) |
 | Alembic migrations | 91 |
 | Correlation engine inputs | 70 |
 | React pages | 63 |
@@ -358,33 +382,33 @@ From `docs/TRAINING_PLAN_REBUILD_PLAN.md`:
 
 | Phase | Status | Tests |
 |-------|--------|-------|
-| Phase 1 (Plans) | COMPLETE | 158 passing |
+| Phase 1 (Plans) | **V3 REBUILT** — diagnosis-first N=1 engine | 445 PASS, 0 FAIL (KB rule evaluator, 33 rules × 14 archetypes) |
 | Phase 2 (Adaptation) | COMPLETE | 29 passing |
 | Phase 3A (Narration) | COMPLETE | 66 passing |
 | Coach Trust | COMPLETE | 22 passing |
 | Phase 3B (Workout Narratives) | CODE COMPLETE — gate accruing | 65+ passing, 24 xfail |
 | Phase 3C (N=1 Insights) | CODE COMPLETE — gate accruing | 65+ passing, 26 xfail |
 | Phase 4 (50K Ultra) | CONTRACT ONLY | 37 xfail |
-| Monetization Tiers | v1 COMPLETE (core revenue surfaces shipped) | residual xfails remain for deferred advisory/intelligence tier contracts |
+| Monetization Tiers | v2 COMPLETE (2-tier model shipped) | residual xfails remain for deferred contracts |
+
+**Plan engine rebuild context (Mar 26-29):**
+Legacy plan generators were deleted and replaced. The new engine (`n1_engine.py`, 1,078 lines) passes all 12 Blocking Criteria from `docs/specs/N1_ENGINE_ADR_V2.md` across 14 diverse archetypes (beginner through elite, 3-7 days/week, 5K through marathon, 5-18 week horizons). Validated by `scripts/eval_plan_quality.py` (852 lines). Ongoing refinement expected but the foundation is solid.
 
 **Build priority order (current):**
-1. Phase 4 (50K Ultra)
-2. Phase 3B (when narration quality gate clears — >90% for 4 weeks)
-3. Phase 3C (when per-athlete synced history + significant correlations exist)
-4. Monetization deferred contracts (promote remaining xfails only as underlying features land)
+1. Plan quality refinement (ongoing — evaluator catches regressions)
+2. Phase 4 (50K Ultra)
+3. Phase 3B (when narration quality gate clears — >90% for 4 weeks)
+4. Phase 3C (when per-athlete synced history + significant correlations exist)
 
 **Open gates:**
 - 3B: narration accuracy > 90% for 4 weeks (`/v1/intelligence/narration/quality`)
 - 3C: per-athlete synced history + significant correlations (founder rule: immediate if history exists)
-
-**119 xfail contract tests** become real tests when gates clear.
 
 ---
 
 ## 8. Known Issues & Technical Debt
 
 ### Active Issues
-- **Flaky Garmin sync tests cause CI hangs (HIGH PRIORITY)** — `test_garmin_d5_activity_sync.py` and `test_garmin_d6_health_sync.py` intermittently hang indefinitely. Mitigated with `pytest-timeout=120s` and job `timeout-minutes: 20`, but timeout-failure is a coverage lapse, not a green pass. Root cause unknown — may be related to mocked HTTP calls or event loop interactions. **Fix this before building new features.**
 - **Garmin physiology coverage is underfed for connected athletes** — monitor now exists (`/v1/admin/ops/ingestion/garmin-health`) and currently indicates sparse sleep/HRV population for some athletes.
 - ~~**Email deliverability wiring remains operationally sensitive**~~ — **RESOLVED (Feb 28, 2026).** Production email is live: `smtp.gmail.com:587`, sender `noreply@strideiq.run` via `michael@strideiq.run`. Password reset E2E verified by Codex. DNS hardening (SPF/DKIM/DMARC) still needed at Porkbun.
 - **Coach quality audit scoped (Mar 8, 2026):** Full audit of 11 failure patterns documented in `docs/COACH_QUALITY_AUDIT.md`. Covers: A-I-A template rigidity, reflexive conservatism, hallucinated external facts, math errors, sycophantic recovery, lecturing experienced athletes, not using tools, ignoring prior context. Fixes scoped: deterministic pre-checks (race day, recent activity, weather), system prompt rewrites, routing expansion for standard users. Queued behind current work.
@@ -562,13 +586,15 @@ Non-negotiable operating rules:
 
 ### Backend/API Inventory
 
-Current code scan snapshot (Mar 11, 2026):
+Current code scan snapshot (Mar 29, 2026):
 - SQLAlchemy model classes in `apps/api/models.py`: **53**
 - Router modules in `apps/api/routers/`: **55** files
 - Service modules in `apps/api/services/`: **~120** files
 - Task modules in `apps/api/tasks/`: **14** files
-- API test files in `apps/api/tests/`: **175** files
+- API test files in `apps/api/tests/`: **175+** files
 - Correlation engine input signals: **70** (expanded from 21 on Mar 10)
+- Plan engine: **1,078** lines (N=1 V3, diagnosis-first)
+- Plan evaluator: **852** lines (14 archetypes × 12 BCs)
 
 ### Frontend Inventory
 
@@ -654,7 +680,16 @@ apps/api/services/training_story_engine.py  ← Training story synthesis
 apps/api/services/weather_backfill.py       ← Historical weather data retrieval
 
 # Training Plans
-apps/api/services/plan_framework/           ← Plan generation framework
+apps/api/services/plan_framework/n1_engine.py ← N=1 Plan Engine V3 (1,078 lines, diagnosis-first)
+apps/api/services/constraint_aware_planner.py ← Orchestrator (wires athlete data → engine)
+apps/api/services/intake_context.py         ← Onboarding questionnaire → plan generation bridge
+scripts/eval_kb_rules.py                    ← KB Rule Evaluator: 33 rules × 14 archetypes (primary gate)
+scripts/eval_plan_quality.py                ← Legacy 12-BC evaluator (852 lines, secondary gate)
+docs/specs/KB_RULE_REGISTRY.md              ← Rule registry (33 HARD rules from coaching KB)
+docs/specs/KB_RULE_REGISTRY_ANNOTATED.md    ← Founder-annotated rule source
+scripts/smoke_plan_generation.py            ← Production plan generation smoke test
+docs/specs/N1_ENGINE_ADR_V2.md              ← ADR governing engine rebuild
+apps/api/services/plan_framework/           ← Plan generation framework (supporting modules)
 
 # Strava/Garmin Integration
 apps/api/routers/strava.py                  ← OAuth + API endpoints

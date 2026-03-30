@@ -2006,6 +2006,42 @@ class ConstraintAwarePlanRequest(BaseModel):
     taper_weeks: Optional[int] = Field(None, ge=1, le=3, description="Taper length: 1, 2, or 3 weeks. Auto-selected by distance if omitted.")
 
 
+_PHASE_TO_BUILD_CONTEXT: Dict[str, str] = {
+    "rebuild": "durability_rebuild",
+    "base": "base_building",
+    "build": "full_featured_healthy",
+    "peak": "peak_fitness",
+    "race": "race_specific",
+    "taper": "minimal_sharpen",
+    "recovery": "durability_rebuild",
+}
+
+
+def _resolve_variant_for_constraint_workout(
+    workout_type: str,
+    phase: str,
+    week_number: int,
+    total_weeks: int,
+    race_distance: str,
+    title: str,
+) -> Optional[str]:
+    """Map a constraint-aware workout to its best registry variant id."""
+    try:
+        from services.plan_framework.variant_selector import select_variant
+    except ImportError:
+        return None
+
+    build_context_tag = _PHASE_TO_BUILD_CONTEXT.get(phase, "full_featured_healthy")
+    return select_variant(
+        workout_type=workout_type,
+        build_context_tag=build_context_tag,
+        week_in_phase=week_number,
+        total_phase_weeks=total_weeks,
+        distance=race_distance,
+        title=title,
+    )
+
+
 def _save_constraint_aware_plan(
     db: Session,
     athlete_id: UUID,
@@ -2076,9 +2112,41 @@ def _save_constraint_aware_plan(
     db.add(db_plan)
     db.flush()  # Get the plan ID
     
+    # Pre-compute phase-local progression (week_in_phase / total_phase_weeks)
+    # so variant_selector gets phase-local inputs, not global plan position.
+    _phase_map = {
+        "rebuild_easy": "rebuild",
+        "rebuild_strides": "rebuild",
+        "build_t": "build",
+        "build_mp": "build",
+        "build_mixed": "build",
+        "recovery": "recovery",
+        "peak": "peak",
+        "sharpen": "peak",
+        "taper_1": "taper",
+        "taper_2": "taper",
+        "tune_up": "race",
+        "race": "race",
+    }
+    _week_phases: List[str] = []
+    for w in plan.weeks:
+        tv = w.theme.value if hasattr(w.theme, 'value') else str(w.theme)
+        _week_phases.append(_phase_map.get(tv, "build"))
+
+    _phase_spans: Dict[str, int] = {}
+    for ph in _week_phases:
+        _phase_spans[ph] = _phase_spans.get(ph, 0) + 1
+
+    _phase_counter: Dict[str, int] = {}
+
     # Create planned workouts from weeks
     seen_workout_dates: set = set()  # guard against duplicate-date workouts
-    for week in plan.weeks:
+    for week_idx, week in enumerate(plan.weeks):
+        phase = _week_phases[week_idx]
+        _phase_counter[phase] = _phase_counter.get(phase, 0) + 1
+        week_in_phase = _phase_counter[phase]
+        total_phase_weeks = _phase_spans[phase]
+
         for day in week.days:
             if day.workout_type == "rest":
                 continue  # Don't store rest days
@@ -2102,25 +2170,16 @@ def _save_constraint_aware_plan(
             if day.notes:
                 coach_notes_parts.extend(day.notes)
             coach_notes = " | ".join(coach_notes_parts) if coach_notes_parts else None
-            
-            # Map intensity to phase for display
-            phase_map = {
-                "rebuild_easy": "rebuild",
-                "rebuild_strides": "rebuild", 
-                "build_t": "build",
-                "build_mp": "build",
-                "build_mixed": "build",
-                "recovery": "recovery",
-                "peak": "peak",
-                "sharpen": "peak",
-                "taper_1": "taper",
-                "taper_2": "taper",
-                "tune_up": "race",
-                "race": "race"
-            }
-            theme_val = week.theme.value if hasattr(week.theme, 'value') else str(week.theme)
-            phase = phase_map.get(theme_val, "build")
-            
+
+            variant_id = _resolve_variant_for_constraint_workout(
+                day.workout_type,
+                phase,
+                week_in_phase,
+                total_phase_weeks,
+                plan.race_distance,
+                day.name or "",
+            )
+
             db_workout = PlannedWorkout(
                 plan_id=db_plan.id,
                 athlete_id=athlete_id,
@@ -2134,6 +2193,7 @@ def _save_constraint_aware_plan(
                 target_duration_minutes=int(day.tss_estimate / 0.8) if day.tss_estimate else None,
                 target_distance_km=round(day.target_miles * 1.609, 2) if day.target_miles else None,
                 coach_notes=coach_notes,
+                workout_variant_id=variant_id,
             )
             db.add(db_workout)
     

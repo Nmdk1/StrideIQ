@@ -17,8 +17,8 @@
 import React, { useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useUnits } from '@/lib/context/UnitsContext';
-import { useCalendarDay, useAddNote, useSendCoachMessage } from '@/lib/hooks/queries/calendar';
-import type { CalendarDay, CalendarNote, InlineInsight } from '@/lib/api/services/calendar';
+import { useCalendarDay, useAddNote, useSendCoachMessage, useWorkoutVariants, useSelectVariant } from '@/lib/hooks/queries/calendar';
+import type { CalendarDay, CalendarNote, InlineInsight, VariantOption } from '@/lib/api/services/calendar';
 import { apiClient } from '@/lib/api/client';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 
@@ -65,6 +65,21 @@ export function DayDetailPanel({ date, isOpen, onClose }: DayDetailPanelProps) {
 
   const planned = dayData?.planned_workout;
   const canEditPlannedWorkout = !!planned && !planned.completed && !planned.skipped;
+
+  const [variantOpen, setVariantOpen] = useState(false);
+  const hasVariant = !!planned?.workout_variant_id;
+  const { data: variantOptions, isLoading: variantsLoading } = useWorkoutVariants(
+    planned?.id,
+    canEditPlannedWorkout && (variantOpen || hasVariant),
+  );
+  const selectVariant = useSelectVariant();
+  const currentVariant = useMemo(() => {
+    if (!variantOptions || !planned?.workout_variant_id) return null;
+    return variantOptions.find((v: VariantOption) => v.id === planned.workout_variant_id) ?? null;
+  }, [variantOptions, planned?.workout_variant_id]);
+  const currentVariantName = currentVariant?.display_name
+    ?? planned?.workout_variant_id?.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
+    ?? null;
 
   // Init edit form from planned workout
   React.useEffect(() => {
@@ -332,12 +347,67 @@ export function DayDetailPanel({ date, isOpen, onClose }: DayDetailPanelProps) {
                 </div>
                 <div className="border-l-2 border-orange-500 pl-3">
                   <div className="font-semibold text-white">{dayData.planned_workout.title}</div>
-                  {dayData.planned_workout.target_distance_km && (
-                    <div className="text-slate-400 text-sm">
-                      {formatDistance(dayData.planned_workout.target_distance_km * 1000, 1)}
+
+                  {/* Variant selector — child of workout type */}
+                  {canEditPlannedWorkout && currentVariantName && (
+                    <div className="mt-1">
+                      <button
+                        onClick={() => setVariantOpen(v => !v)}
+                        className="flex items-center gap-1.5 text-sm text-slate-300 hover:text-orange-300 transition-colors"
+                      >
+                        <span>{currentVariantName}</span>
+                        <svg
+                          className={`w-3.5 h-3.5 transition-transform ${variantOpen ? 'rotate-180' : ''}`}
+                          fill="none" viewBox="0 0 24 24" stroke="currentColor"
+                        >
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                        </svg>
+                      </button>
+
+                      {variantOpen && (
+                        <div className="mt-2 bg-slate-900/80 border border-slate-700/50 rounded-lg overflow-hidden">
+                          {variantsLoading ? (
+                            <div className="px-3 py-2 text-xs text-slate-500">Loading variants...</div>
+                          ) : variantOptions && variantOptions.length > 0 ? (
+                            variantOptions.map((opt: VariantOption) => (
+                              <button
+                                key={opt.id}
+                                onClick={() => {
+                                  if (opt.id !== planned?.workout_variant_id) {
+                                    selectVariant.mutate(
+                                      { workoutId: planned!.id, variantId: opt.id },
+                                      { onSuccess: () => setVariantOpen(false) },
+                                    );
+                                  } else {
+                                    setVariantOpen(false);
+                                  }
+                                }}
+                                disabled={selectVariant.isPending}
+                                className={`w-full text-left px-3 py-2 text-sm transition-colors ${
+                                  opt.is_current
+                                    ? 'bg-orange-900/30 text-orange-300'
+                                    : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                                }`}
+                              >
+                                <div className="font-medium">{opt.display_name}</div>
+                              </button>
+                            ))
+                          ) : (
+                            <div className="px-3 py-2 text-xs text-slate-500">No alternatives available for this phase.</div>
+                          )}
+                        </div>
+                      )}
                     </div>
                   )}
-                  {/* Pace - the key training information */}
+
+                  {dayData.planned_workout.target_distance_km && (
+                    <div className="text-slate-400 text-sm mt-1">
+                      {formatDistance(dayData.planned_workout.target_distance_km * 1000, 1)}
+                      {dayData.planned_workout.phase && (
+                        <span> &middot; {dayData.planned_workout.phase.replace(/_/g, ' ')} phase</span>
+                      )}
+                    </div>
+                  )}
                   {dayData.planned_workout.coach_notes && (
                     <div className="text-green-400 text-sm mt-2 font-semibold">
                       {dayData.planned_workout.coach_notes}

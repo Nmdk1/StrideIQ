@@ -194,6 +194,19 @@ class CalendarRangeResponse(BaseModel):
     week_summaries: List[WeekSummaryResponse] = []
 
 
+class VariantOptionResponse(BaseModel):
+    id: str
+    display_name: str
+    stem: str
+    when_to_avoid: str
+    pairs_poorly_with: str
+    is_current: bool = False
+
+
+class VariantSelectRequest(BaseModel):
+    variant_id: str
+
+
 class CoachMessageRequest(BaseModel):
     message: str
     context_type: str = "open"  # 'day', 'week', 'build', 'open'
@@ -979,6 +992,129 @@ def delete_calendar_note(
     db.commit()
     
     return {"status": "deleted"}
+
+
+@router.get("/workouts/{workout_id}/variants", response_model=List[VariantOptionResponse])
+def get_workout_variant_options(
+    workout_id: UUID,
+    current_user: Athlete = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Return the filtered list of valid variant alternatives for a planned workout.
+
+    Filtering rules:
+    1. Same stem as the workout's current type (threshold variants for threshold workouts, etc.)
+    2. Must include the workout's build_context_tag (derived from phase)
+    3. Contraindication text (when_to_avoid, pairs_poorly_with) surfaced to athlete for informed choice
+    """
+    workout = db.query(PlannedWorkout).filter(
+        PlannedWorkout.id == workout_id,
+        PlannedWorkout.athlete_id == current_user.id,
+    ).first()
+    if not workout:
+        raise HTTPException(status_code=404, detail="Workout not found")
+
+    from services.plan_framework.variant_selector import _load_registry, _STEM_MAP
+
+    stem = _STEM_MAP.get(workout.workout_type or "", "")
+    if not stem:
+        return []
+
+    phase_to_tag = {
+        "rebuild": "durability_rebuild",
+        "base": "base_building",
+        "build": "full_featured_healthy",
+        "peak": "peak_fitness",
+        "race": "race_specific",
+        "taper": "minimal_sharpen",
+        "recovery": "durability_rebuild",
+    }
+    build_tag = phase_to_tag.get(workout.phase or "", "full_featured_healthy")
+
+    registry = _load_registry()
+    options: List[VariantOptionResponse] = []
+    for v in registry:
+        if v.get("stem") != stem:
+            continue
+        if build_tag not in (v.get("build_context_tags") or []):
+            continue
+        options.append(VariantOptionResponse(
+            id=v["id"],
+            display_name=v.get("display_name", v["id"].replace("_", " ").title()),
+            stem=v["stem"],
+            when_to_avoid=v.get("when_to_avoid", ""),
+            pairs_poorly_with=v.get("pairs_poorly_with", ""),
+            is_current=(v["id"] == workout.workout_variant_id),
+        ))
+
+    return options
+
+
+@router.patch("/workouts/{workout_id}/variant")
+def select_workout_variant(
+    workout_id: UUID,
+    request: VariantSelectRequest,
+    current_user: Athlete = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Athlete selects a workout variant. Persists the choice and logs it.
+    """
+    workout = db.query(PlannedWorkout).filter(
+        PlannedWorkout.id == workout_id,
+        PlannedWorkout.athlete_id == current_user.id,
+    ).first()
+    if not workout:
+        raise HTTPException(status_code=404, detail="Workout not found")
+
+    if workout.completed or workout.skipped:
+        raise HTTPException(status_code=400, detail="Cannot change variant on a completed or skipped workout")
+
+    from services.plan_framework.variant_selector import _load_registry, _STEM_MAP
+
+    stem = _STEM_MAP.get(workout.workout_type or "", "")
+    phase_to_tag = {
+        "rebuild": "durability_rebuild",
+        "base": "base_building",
+        "build": "full_featured_healthy",
+        "peak": "peak_fitness",
+        "race": "race_specific",
+        "taper": "minimal_sharpen",
+        "recovery": "durability_rebuild",
+    }
+    build_tag = phase_to_tag.get(workout.phase or "", "full_featured_healthy")
+
+    registry = _load_registry()
+    valid_ids = {
+        v["id"] for v in registry
+        if v.get("stem") == stem and build_tag in (v.get("build_context_tags") or [])
+    }
+    if request.variant_id not in valid_ids:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Variant '{request.variant_id}' is not eligible for workout type '{workout.workout_type}' in {workout.phase} phase",
+        )
+
+    old_variant = workout.workout_variant_id
+    workout.workout_variant_id = request.variant_id
+    db.commit()
+
+    import logging
+    logging.getLogger(__name__).info(
+        "variant_selection: athlete=%s workout=%s old=%s new=%s",
+        current_user.id, workout_id, old_variant, request.variant_id,
+    )
+
+    variant_entry = next((v for v in registry if v["id"] == request.variant_id), None)
+    display_name = variant_entry.get("display_name", request.variant_id) if variant_entry else request.variant_id
+
+    return {
+        "status": "updated",
+        "workout_id": str(workout_id),
+        "variant_id": request.variant_id,
+        "display_name": display_name,
+    }
 
 
 @router.post("/coach", response_model=CoachMessageResponse)

@@ -109,7 +109,8 @@ PILOT_PARSE_ORDER = [
 _VARIANT_HEADER_RE = re.compile(r"(?m)^## `([a-z][a-z0-9_]*)`\s*$")
 
 _REGISTRY_ROW_KEYS = frozenset(
-    {"id", "stem", "volume_family", "sme_status", "pilot", "build_context_tags"}
+    {"id", "stem", "volume_family", "sme_status", "pilot", "build_context_tags",
+     "display_name", "when_to_avoid", "pairs_poorly_with"}
 )
 
 
@@ -252,6 +253,23 @@ def test_workout_registry_stem_counts_sanity():
     assert stems.count("long") == 4
     assert stems.count("long_mp") == 3
     assert stems.count("intervals") == 12
+
+
+@pytest.mark.skipif(not REGISTRY_PATH.is_file(), reason="workout_registry.json not in workspace")
+def test_workout_registry_display_fields_complete():
+    """Every approved variant must have display_name, when_to_avoid, pairs_poorly_with (schema 0.3)."""
+    data = _load_registry()
+    for row in data["variants"]:
+        vid = row["id"]
+        assert isinstance(row.get("display_name"), str) and row["display_name"].strip(), (
+            f"display_name missing or empty for {vid}"
+        )
+        assert isinstance(row.get("when_to_avoid"), str) and row["when_to_avoid"].strip(), (
+            f"when_to_avoid missing or empty for {vid}"
+        )
+        assert isinstance(row.get("pairs_poorly_with"), str) and row["pairs_poorly_with"].strip(), (
+            f"pairs_poorly_with missing or empty for {vid}"
+        )
 
 
 @pytest.mark.skipif(not REGISTRY_PATH.is_file(), reason="workout_registry.json not in workspace")
