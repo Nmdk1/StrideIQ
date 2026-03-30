@@ -100,6 +100,13 @@ CONFOUNDER_MAP: Dict[Tuple[str, str], str] = {
     # Volume confounded by fitness
     ("weekly_volume_km", "efficiency"): "ctl",
     ("weekly_volume_km", "pace_easy"): "ctl",
+
+    # Cadence/stride confounded by elevation — hilly loops naturally
+    # produce lower cadence and shorter stride length.  Without this,
+    # athletes training on hilly terrain get spurious "cadence hurts
+    # efficiency" findings.
+    ("avg_cadence", "efficiency"): "elevation_gain_m",
+    ("avg_stride_length_m", "efficiency"): "elevation_gain_m",
 }
 
 # Expected physiological direction for (input, output) pairs.
@@ -157,6 +164,8 @@ def compute_partial_correlation(
     output_data: List[Tuple],
     control_data: List[Tuple],
     lag_days: int = 0,
+    temporal_weighting: bool = True,
+    reference_date: Optional[datetime] = None,
 ) -> Optional[float]:
     """
     Partial correlation r_xy.z using the standard formula:
@@ -167,16 +176,22 @@ def compute_partial_correlation(
     by ``lag_days`` before alignment (same shift used by
     ``find_time_shifted_correlations``).
 
+    When temporal_weighting is True, each component correlation uses
+    recency-weighted Pearson (L30=4x, L31-90=2x, L91-180=1x, >180=0.75x).
+
     Returns None when any component pair has < MIN_SAMPLE_SIZE aligned
     points, or when a denominator is zero.
     """
+    if reference_date is None:
+        reference_date = datetime.now()
+
     shifted_input = [
         (d + timedelta(days=lag_days), v) for d, v in input_data
     ]
 
-    xy = _align_time_series(shifted_input, output_data)
-    xz = _align_time_series(shifted_input, control_data)
-    yz = _align_time_series(output_data, control_data)
+    xy = _align_time_series_with_dates(shifted_input, output_data)
+    xz = _align_time_series_with_dates(shifted_input, control_data)
+    yz = _align_time_series_with_dates(output_data, control_data)
 
     if (
         len(xy) < MIN_SAMPLE_SIZE
@@ -185,15 +200,19 @@ def compute_partial_correlation(
     ):
         return None
 
-    r_xy, _ = calculate_pearson_correlation(
-        [p[0] for p in xy], [p[1] for p in xy]
-    )
-    r_xz, _ = calculate_pearson_correlation(
-        [p[0] for p in xz], [p[1] for p in xz]
-    )
-    r_yz, _ = calculate_pearson_correlation(
-        [p[0] for p in yz], [p[1] for p in yz]
-    )
+    def _corr(aligned_with_dates):
+        xs = [row[1] for row in aligned_with_dates]
+        ys = [row[2] for row in aligned_with_dates]
+        if temporal_weighting:
+            ws = [_recency_weight(row[0], reference_date) for row in aligned_with_dates]
+            r, _ = calculate_weighted_pearson_correlation(xs, ys, ws)
+        else:
+            r, _ = calculate_pearson_correlation(xs, ys)
+        return r
+
+    r_xy = _corr(xy)
+    r_xz = _corr(xz)
+    r_yz = _corr(yz)
 
     denom_sq = (1 - r_xz ** 2) * (1 - r_yz ** 2)
     if denom_sq <= 0:
@@ -282,6 +301,103 @@ def calculate_pearson_correlation(x: List[float], y: List[float], min_samples: i
         # Two-tailed p-value from exact t-distribution (scipy)
         p_value = float(2 * t_dist.sf(abs(t_statistic), df))
     
+    return r, p_value
+
+
+# ---------------------------------------------------------------------------
+# Temporal weighting — L90 recency dominance
+#
+# Limiter lifecycle: a strong 12-month-old correlation is a solved problem,
+# not an active limiter.  Recency weighting ensures the engine prescribes
+# for the current frontier, not historical achievements.
+#
+# See: docs/specs/LIMITER_ENGINE_BRIEF.md
+# ---------------------------------------------------------------------------
+
+TEMPORAL_WEIGHTS = {
+    30: 4.0,    # L30: most relevant to current state
+    90: 2.0,    # L31-90: recent, allows phase transitions
+    180: 1.0,   # L91-180: baseline weight
+    None: 0.75, # Beyond 180: historical context, fading relevance
+}
+
+
+def _recency_weight(observation_date, reference_date) -> float:
+    """Compute recency weight for a single observation.
+
+    Returns a weight multiplier based on how many days ago the
+    observation occurred relative to reference_date.
+    Accepts both datetime and date objects.
+    """
+    if isinstance(observation_date, datetime):
+        obs_date = observation_date.date() if hasattr(observation_date, 'date') else observation_date
+    else:
+        obs_date = observation_date
+
+    if isinstance(reference_date, datetime):
+        ref_date = reference_date.date() if hasattr(reference_date, 'date') else reference_date
+    else:
+        ref_date = reference_date
+
+    days_ago = (ref_date - obs_date).days
+    if days_ago < 0:
+        days_ago = 0
+
+    if days_ago <= 30:
+        return TEMPORAL_WEIGHTS[30]
+    elif days_ago <= 90:
+        return TEMPORAL_WEIGHTS[90]
+    elif days_ago <= 180:
+        return TEMPORAL_WEIGHTS[180]
+    else:
+        return TEMPORAL_WEIGHTS[None]
+
+
+def calculate_weighted_pearson_correlation(
+    x: List[float],
+    y: List[float],
+    weights: List[float],
+    min_samples: int = 5,
+) -> Tuple[float, float]:
+    """Weighted Pearson correlation coefficient with approximate p-value.
+
+    Uses the standard weighted correlation formula:
+        r_w = Σ w_i (x_i - x̄_w)(y_i - ȳ_w) /
+              √(Σ w_i (x_i - x̄_w)² × Σ w_i (y_i - ȳ_w)²)
+
+    where x̄_w = Σ w_i x_i / Σ w_i (weighted mean).
+
+    P-value is approximated using the effective sample size:
+        n_eff = (Σ w_i)² / Σ w_i²
+    """
+    n = len(x)
+    if n != len(y) or n != len(weights) or n < min_samples:
+        return 0.0, 1.0
+
+    w_sum = sum(weights)
+    if w_sum == 0:
+        return 0.0, 1.0
+
+    mean_x = sum(w * xi for w, xi in zip(weights, x)) / w_sum
+    mean_y = sum(w * yi for w, yi in zip(weights, y)) / w_sum
+
+    cov_xy = sum(w * (xi - mean_x) * (yi - mean_y) for w, xi, yi in zip(weights, x, y))
+    var_x = sum(w * (xi - mean_x) ** 2 for w, xi in zip(weights, x))
+    var_y = sum(w * (yi - mean_y) ** 2 for w, yi in zip(weights, y))
+
+    if var_x == 0 or var_y == 0:
+        return 0.0, 1.0
+
+    r = cov_xy / math.sqrt(var_x * var_y)
+
+    n_eff = w_sum ** 2 / sum(w ** 2 for w in weights)
+    if abs(r) >= 1.0 or n_eff <= 2:
+        p_value = 0.0 if abs(r) >= 1.0 else 1.0
+    else:
+        t_stat = r * math.sqrt((n_eff - 2) / (1 - r ** 2))
+        df = max(1, n_eff - 2)
+        p_value = float(2 * t_dist.sf(abs(t_stat), df))
+
     return r, p_value
 
 
@@ -1574,55 +1690,68 @@ def find_time_shifted_correlations(
     input_data: List[Tuple[datetime, float]],
     output_data: List[Tuple[datetime, float]],
     max_lag_days: int = 14,
-    min_samples: int = 3
+    min_samples: int = 3,
+    temporal_weighting: bool = True,
+    reference_date: Optional[datetime] = None,
 ) -> List[CorrelationResult]:
     """
     Find correlations with time shifts (delayed effects).
-    
+
     Tests correlations with input lagged by 0, 1, 2, ... max_lag_days days.
-    
+
+    When temporal_weighting is True (default), observations are weighted by
+    recency so that the L30 window dominates the correlation coefficient.
+    This ensures the engine identifies the athlete's current frontier, not
+    historical solved problems (see LIMITER_ENGINE_BRIEF.md).
+
     Args:
         input_data: List of (date, value) tuples for input variable
         output_data: List of (date, value) tuples for output variable
         max_lag_days: Maximum lag days to test
         min_samples: Minimum sample size for correlation (default 3)
-                     Higher-level functions should use MIN_SAMPLE_SIZE (10) for meaningful insights
+        temporal_weighting: Apply recency weights (L30=4x, L31-90=2x, etc.)
+        reference_date: Anchor for recency calculation (defaults to now)
     """
-    
+    if reference_date is None:
+        reference_date = datetime.now()
+
     results = []
-    
+
     for lag_days in range(max_lag_days + 1):
-        # Shift input data forward by lag_days
         shifted_input = [
             (date + timedelta(days=lag_days), value)
             for date, value in input_data
         ]
-        
-        # Align input and output by date
-        aligned_data = _align_time_series(shifted_input, output_data)
-        
-        if len(aligned_data) < min_samples:
+
+        aligned = _align_time_series_with_dates(shifted_input, output_data)
+
+        if len(aligned) < min_samples:
             continue
-        
-        x_values = [point[0] for point in aligned_data]
-        y_values = [point[1] for point in aligned_data]
-        
-        r, p_value = calculate_pearson_correlation(x_values, y_values)
-        
+
+        x_values = [row[1] for row in aligned]
+        y_values = [row[2] for row in aligned]
+
+        if temporal_weighting:
+            weights = [_recency_weight(row[0], reference_date) for row in aligned]
+            r, p_value = calculate_weighted_pearson_correlation(
+                x_values, y_values, weights,
+            )
+        else:
+            r, p_value = calculate_pearson_correlation(x_values, y_values)
+
         if abs(r) >= MIN_CORRELATION_STRENGTH:
-            # Note: input_name will be set by caller
             result = CorrelationResult(
-                input_name="",  # Will be set by caller
+                input_name="",
                 correlation_coefficient=r,
                 p_value=p_value,
-                sample_size=len(aligned_data),
+                sample_size=len(aligned),
                 is_significant=p_value < SIGNIFICANCE_LEVEL,
                 direction="positive" if r > 0 else "negative",
                 strength=classify_correlation_strength(r),
-                time_lag_days=lag_days
+                time_lag_days=lag_days,
             )
             results.append(result)
-    
+
     return results
 
 
@@ -1633,15 +1762,25 @@ def _align_time_series(
     """
     Align two time series by date, returning (value1, value2) pairs.
     """
-    # Create date lookup dictionaries
     dict1 = {date: value for date, value in series1}
     dict2 = {date: value for date, value in series2}
-    
-    # Find common dates
+
     common_dates = set(dict1.keys()) & set(dict2.keys())
-    
-    # Return aligned pairs
+
     return [(dict1[date], dict2[date]) for date in sorted(common_dates)]
+
+
+def _align_time_series_with_dates(
+    series1: List[Tuple[datetime, float]],
+    series2: List[Tuple[datetime, float]],
+) -> List[Tuple[datetime, float, float]]:
+    """Align two time series by date, preserving the date for weighting."""
+    dict1 = {date: value for date, value in series1}
+    dict2 = {date: value for date, value in series2}
+
+    common_dates = set(dict1.keys()) & set(dict2.keys())
+
+    return [(date, dict1[date], dict2[date]) for date in sorted(common_dates)]
 
 
 def analyze_correlations(
