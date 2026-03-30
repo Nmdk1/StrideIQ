@@ -2584,6 +2584,12 @@ class CorrelationFinding(Base):
     windows_confirmed = Column(Integer, nullable=True)      # count of windows passing significance
     stability_checked_at = Column(DateTime(timezone=True), nullable=True)
 
+    # --- Phase 3: Limiter Lifecycle ---
+    # See LIMITER_TAXONOMY_ANNOTATED.md for state definitions.
+    # Values: emerging, active, active_fixed, resolving, closed, structural
+    lifecycle_state = Column(Text, nullable=True)
+    lifecycle_state_updated_at = Column(DateTime(timezone=True), nullable=True)
+
     __table_args__ = (
         # One row per unique (athlete, input, output, lag) combination.
         Index(

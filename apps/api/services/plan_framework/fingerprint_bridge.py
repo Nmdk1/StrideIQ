@@ -155,16 +155,34 @@ def _classify_tss_sensitivity(findings: list) -> str:
 def _detect_limiter(findings: list) -> Optional[str]:
     """Identify the dominant limiter from correlation findings.
 
+    Phase 3: only findings with lifecycle_state in (active, active_fixed)
+    drive limiter assignment. Closed findings are solved problems.
+    Structural findings drive delivery modifications (handled separately
+    in the bridge), not limiter assignment.
+
     Limiter taxonomy:
-      "volume"     — long_run_ratio or weekly_volume strongly correlated with
-                     threshold/race performance
-      "recovery"   — TSB or rest-day correlations dominate
-      "speed"      — ceiling/vo2 metrics are the bottleneck
+      "volume"     — L-VOL: long_run_ratio or weekly_volume → performance
+      "recovery"   — L-REC: TSB or rest-day correlations dominate
+      "speed"      — L-CEIL: ceiling/vo2 metrics are the bottleneck
+      "threshold"  — L-THRESH: days_since_quality → pace_threshold
+      "race_specific" — L-SPEC: active_fixed, pre-race integration
     """
+    ACTIVE_STATES = {"active", "active_fixed", None}
+
     volume_signal = 0.0
     recovery_signal = 0.0
+    threshold_signal = 0.0
+    has_lspec = False
 
     for f in findings:
+        lifecycle = f.get("lifecycle_state")
+        if lifecycle not in ACTIVE_STATES:
+            continue
+
+        if lifecycle == "active_fixed":
+            has_lspec = True
+            continue
+
         inp = f.get("input_name", "")
         out = f.get("output_metric", "")
         r = abs(f.get("correlation_coefficient", 0))
@@ -172,16 +190,27 @@ def _detect_limiter(findings: list) -> Optional[str]:
 
         weight = min(r * confirmed, 3.0)
 
-        if inp in ("long_run_ratio", "weekly_volume_km") and out in ("pace_threshold", "pace_easy"):
+        if inp in ("long_run_ratio", "weekly_volume_km", "ctl") and out in ("pace_threshold", "pace_easy", "efficiency"):
             volume_signal += weight
 
-        if inp in ("tsb", "days_since_rest") and out in ("pace_threshold", "pace_easy", "efficiency"):
+        if inp in ("tsb", "daily_session_stress", "atl", "days_since_rest", "consecutive_run_days") and out in ("pace_threshold", "pace_easy", "efficiency"):
             recovery_signal += weight
 
-    if volume_signal > recovery_signal and volume_signal > 0.5:
-        return "volume"
-    if recovery_signal > volume_signal and recovery_signal > 0.5:
-        return "recovery"
+        if inp == "days_since_quality" and out == "pace_threshold":
+            threshold_signal += weight
+
+    if has_lspec:
+        return "race_specific"
+
+    signals = [
+        ("volume", volume_signal),
+        ("recovery", recovery_signal),
+        ("threshold", threshold_signal),
+    ]
+    signals.sort(key=lambda s: s[1], reverse=True)
+
+    if signals[0][1] > 0.5:
+        return signals[0][0]
 
     return None
 
@@ -297,6 +326,7 @@ def build_fingerprint_params(
                 "correlation_coefficient": f.correlation_coefficient,
                 "times_confirmed": f.times_confirmed,
                 "sample_size": f.sample_size,
+                "lifecycle_state": getattr(f, "lifecycle_state", None),
             }
             for f in findings_q
         ]
@@ -310,17 +340,40 @@ def build_fingerprint_params(
             if consec_note:
                 params.disclosures.append(consec_note)
 
+            has_structural_lrec = any(
+                f.get("lifecycle_state") == "structural"
+                and f.get("input_name") in ("tsb", "daily_session_stress", "atl", "consecutive_run_days")
+                for f in findings
+            )
+            if has_structural_lrec:
+                params.disclosures.append(
+                    "Structural recovery trait detected — delivery modifications "
+                    "(spacing, cutback frequency) applied. Session types unchanged."
+                )
+
             if params.limiter == "volume":
                 params.primary_quality_emphasis = "long_run_quality"
                 params.disclosures.append(
-                    "Limiter analysis: volume is your primary lever — "
+                    "Limiter analysis: volume is your current lever — "
                     "plan emphasizes long run quality over additional midweek sessions."
                 )
             elif params.limiter == "recovery":
                 params.primary_quality_emphasis = "conservative_spacing"
                 params.disclosures.append(
-                    "Limiter analysis: recovery is your primary lever — "
+                    "Limiter analysis: recovery is your current lever — "
                     "plan uses wider spacing between quality sessions."
+                )
+            elif params.limiter == "threshold":
+                params.primary_quality_emphasis = "threshold_emphasis"
+                params.disclosures.append(
+                    "Limiter analysis: threshold fitness is your current lever — "
+                    "plan emphasizes threshold sessions."
+                )
+            elif params.limiter == "race_specific":
+                params.primary_quality_emphasis = "support_crash_block"
+                params.disclosures.append(
+                    "Race-specific integration phase — plan supports your current "
+                    "training block, protects the taper, does not add stimulus."
                 )
 
             if params.tss_sensitivity == "high":

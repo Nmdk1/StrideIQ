@@ -194,10 +194,18 @@ def persist_correlation_findings(
         db.rollback()
         return {"created": 0, "confirmed": 0, "deactivated": 0, "error": str(e)}
 
+    try:
+        from services.plan_framework.limiter_classifier import classify_lifecycle_states
+        lifecycle_results = classify_lifecycle_states(athlete_id, db)
+        stats["lifecycle_classified"] = len(lifecycle_results)
+    except Exception as e:
+        logger.warning(f"Lifecycle classification failed for {athlete_id}: {e}")
+        stats["lifecycle_classified"] = 0
+
     logger.info(
         f"Correlation findings for {athlete_id}: "
         f"created={stats['created']}, confirmed={stats['confirmed']}, "
-        f"deactivated={stats['deactivated']}"
+        f"deactivated={stats['deactivated']}, lifecycle={stats.get('lifecycle_classified', 0)}"
     )
     return stats
 
