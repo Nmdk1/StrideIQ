@@ -232,7 +232,6 @@ def _detect_consecutive_day_preference(findings: list) -> tuple:
     """
     for f in findings:
         inp = f.get("input_name", "")
-        out = f.get("output_metric", "")
         direction = f.get("direction", "")
         r = abs(f.get("correlation_coefficient", 0))
         confirmed = f.get("times_confirmed", 1)

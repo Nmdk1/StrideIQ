@@ -761,60 +761,6 @@ def _short_distance_lr_tool(ratio, week_idx, lr_miles, paces, exp, dist):
     return "long", None
 
 
-# ── Midweek tool selection ────────────────────────────────────────────
-
-def _base_tools(state, needs, i_step):
-    """Base: aerobic base + neuromuscular touch only.
-    For 5K/10K experienced: ceiling work (intervals) even in base — KB says
-    intervals are safe and productive in base when legs are fresh.
-    For 10K all levels, threshold in base prepares the system early."""
-    if state.race_distance == "10k" and AdaptationNeed.THRESHOLD in needs:
-        return [_make_threshold(0, state.experience, state.paces)]
-    if (
-        state.race_distance == "5k"
-        and state.experience in (ExperienceLevel.EXPERIENCED, ExperienceLevel.ELITE)
-        and AdaptationNeed.CEILING in needs
-    ):
-        return [_make_intervals(min(i_step, 1), state.experience, state.paces)]
-    return []
-
-
-def _build_peak_tools(state, needs, ratio, t_step, i_step, lr_type):
-    """Build/Peak: select tools based on adaptation needs, not phase templates."""
-    dist = state.race_distance
-    exp = state.experience
-    paces = state.paces
-    mq = []
-
-    if dist == "marathon":
-        mq.append(_make_threshold(t_step, exp, paces))
-
-    elif dist == "half_marathon":
-        mq.append(_make_threshold(t_step, exp, paces))
-
-    elif dist == "10k":
-        if ratio < 0.55:
-            mq.append(_make_threshold(t_step, exp, paces))
-        else:
-            mq.append(_make_intervals(i_step, exp, paces))
-            mq.append(_make_threshold(min(t_step, 6), exp, paces))
-
-    elif dist == "5k":
-        if exp == ExperienceLevel.BEGINNER:
-            mq.append(_make_intervals(min(i_step, 2), exp, paces))
-        else:
-            mq.append(_make_intervals(i_step, exp, paces))
-            if ratio < 0.70:
-                mq.append(_make_threshold(min(t_step, 4), exp, paces))
-            if (
-                ratio > 0.70
-                and AdaptationNeed.NEUROMUSCULAR in needs
-                and exp in (ExperienceLevel.EXPERIENCED, ExperienceLevel.ELITE)
-            ):
-                mq.append(_make_reps(exp, paces))
-
-    return mq
-
 
 def _taper_tools(state, offset):
     """Taper: sharp and short. Maintain neuromuscular edge."""

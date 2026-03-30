@@ -36,7 +36,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timedelta, timezone
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, Optional
 from uuid import UUID
 
 from sqlalchemy.orm import Session
@@ -73,8 +73,7 @@ def classify_lifecycle_states(
     Returns a dict of {finding.id: lifecycle_state} for every finding
     that was classified or reclassified.
     """
-    from models import CorrelationFinding, TrainingPlan, Activity
-    from services.athlete_plan_profile import AthletePlanProfileService
+    from models import CorrelationFinding
 
     now = datetime.now(timezone.utc)
     results: Dict[int, str] = {}
@@ -208,7 +207,6 @@ def _classify_single(
     """Classify a single CorrelationFinding into a lifecycle state."""
 
     inp = finding.input_name
-    out = finding.output_metric
 
     if lspec_active:
         return "active_fixed"
