@@ -835,5 +835,5 @@ class TestAPILevelCoachPayload:
         )
         assert result is not None
         assert "--- Personal Fingerprint" in result
-        assert "EMERGING = pattern forming" in result
+        assert "=== EMERGING PATTERN" in result
         assert "Previously solved:" in result
