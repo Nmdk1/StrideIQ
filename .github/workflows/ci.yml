@@ -94,7 +94,9 @@ jobs:
             tests/test_phase8_security_golden_paths.py \
             tests/test_phase8_impersonation_high_risk_blocks.py \
             tests/test_phase8_token_jwt_invariants.py \
-            tests/test_phase9_backend_smoke_golden_paths.py
+            tests/test_phase9_backend_smoke_golden_paths.py \
+            tests/test_limiter_coach_integration.py \
+            tests/test_coach_lifecycle_quality.py
 
   backend-test:
     name: Backend Tests
