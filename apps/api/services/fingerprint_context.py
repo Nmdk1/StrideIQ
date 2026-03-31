@@ -210,6 +210,8 @@ def build_fingerprint_prompt_section(
     structural: List = []
     closed: List = []
 
+    finding_ids = {f.id for f in findings}
+
     for f in findings:
         ls = getattr(f, "lifecycle_state", None)
         if ls == "closed":
@@ -222,6 +224,23 @@ def build_fingerprint_prompt_section(
             structural.append(f)
         else:
             active.append(f)
+
+    if not emerging:
+        from models import CorrelationFinding as CF
+
+        extra_emerging = (
+            db.query(CF)
+            .filter(
+                CF.athlete_id == athlete_id,
+                CF.is_active == True,  # noqa: E712
+                CF.lifecycle_state == "emerging",
+                ~CF.id.in_(finding_ids) if finding_ids else True,
+            )
+            .order_by(CF.lifecycle_state_updated_at.desc().nullslast())
+            .limit(1)
+            .all()
+        )
+        emerging.extend(extra_emerging)
 
     if emerging:
         emerging.sort(

@@ -2757,17 +2757,19 @@ ATHLETE BRIEF:
 
         # --- 7. Emerging / resolving lifecycle findings ---
         try:
-            from services.fingerprint_context import (
-                _translate,
-                get_confirmed_findings,
-            )
+            from models import CorrelationFinding as CF
+            from services.fingerprint_context import _translate
 
-            fp_findings = get_confirmed_findings(athlete_id, self.db, min_confirmed=1, limit=20)
-
-            emerging_findings = sorted(
-                [f for f in fp_findings if getattr(f, "lifecycle_state", None) == "emerging"],
-                key=lambda f: (f.lifecycle_state_updated_at or f.first_detected_at or datetime.min),
-                reverse=True,
+            emerging_findings = (
+                self.db.query(CF)
+                .filter(
+                    CF.athlete_id == athlete_id,
+                    CF.is_active == True,  # noqa: E712
+                    CF.lifecycle_state == "emerging",
+                )
+                .order_by(CF.lifecycle_state_updated_at.desc().nullslast())
+                .limit(1)
+                .all()
             )
             if emerging_findings:
                 newest = emerging_findings[0]
@@ -2782,10 +2784,18 @@ ATHLETE BRIEF:
                     ),
                 )
 
-            resolving_findings = [
-                f for f in fp_findings if getattr(f, "lifecycle_state", None) == "resolving"
-            ]
-            for rf in resolving_findings[:1]:
+            resolving_findings = (
+                self.db.query(CF)
+                .filter(
+                    CF.athlete_id == athlete_id,
+                    CF.is_active == True,  # noqa: E712
+                    CF.lifecycle_state == "resolving",
+                )
+                .order_by(CF.lifecycle_state_updated_at.desc().nullslast())
+                .limit(1)
+                .all()
+            )
+            for rf in resolving_findings:
                 inp = _translate(rf.input_name)
                 ctx = getattr(rf, "resolving_context", None) or ""
                 add(
