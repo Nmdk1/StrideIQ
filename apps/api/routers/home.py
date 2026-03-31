@@ -1916,11 +1916,36 @@ def generate_coach_home_briefing(
     except Exception as fe:
         logger.warning(f"Fact injection into morning voice skipped: {fe}")
 
+    parts.append(
+        "=== PACE COMPARISON CONTRACT ===\n"
+        "NEVER compare paces between runs without accounting for these confounders:\n"
+        "1. ELEVATION: A hilly run (+1000ft gain) is inherently slower than a flat run. "
+        "If elevation data differs significantly between two runs, say so explicitly.\n"
+        "2. HEAT: Runs above 60°F are physiologically slower. A 9:00/mi in 85°F/80%rh is "
+        "FASTER effort than 8:30/mi in 50°F/30%rh. Use the heat-adjustment percentage when "
+        "available. If temperature data differs by >15°F between compared runs, you MUST note it.\n"
+        "3. SEASON: Do NOT compare a March run to a July run and claim the athlete is 'getting faster' "
+        "or 'slowing down' without noting the seasonal temperature difference.\n"
+        "4. WORKOUT TYPE: Do NOT compare an interval/tempo workout average pace to an easy run pace. "
+        "They measure different things.\n"
+        "If confounders are present, either normalize the comparison or explicitly caveat it. "
+        "Silence is better than a misleading pace comparison."
+    )
+
     parts.append("=== TODAY ===")
 
     if today_completed:
         c = today_completed
-        parts.append(f"COMPLETED today: {c.get('name')}, {c.get('distance_mi')}mi, pace {c.get('pace')}, HR {c.get('avg_hr', 'N/A')}, {c.get('duration_min')}min")
+        today_line = f"COMPLETED today: {c.get('name')}, {c.get('distance_mi')}mi, pace {c.get('pace')}, HR {c.get('avg_hr', 'N/A')}, {c.get('duration_min')}min"
+        if c.get("elevation_gain_ft") is not None:
+            today_line += f", elevation +{c['elevation_gain_ft']}ft"
+        if c.get("temperature_f") is not None:
+            today_line += f", {c['temperature_f']}°F"
+        if c.get("humidity_pct") is not None:
+            today_line += f" / {int(c['humidity_pct'])}% humidity"
+        if c.get("heat_adjustment_pct") is not None and c["heat_adjustment_pct"] > 0:
+            today_line += f" (heat-adjusted pace ≈ {c['heat_adjustment_pct']}% slower)"
+        parts.append(today_line)
         workout_structure = c.get("workout_structure")
         if workout_structure:
             parts.append(
@@ -3276,12 +3301,17 @@ async def get_home_data(
                         mins = int(pace_s // 60)
                         secs = int(pace_s % 60)
                         actual_pace = f"{mins}:{secs:02d}/mi"
+                    elev_m = float(today_actual.total_elevation_gain) if today_actual.total_elevation_gain is not None else None
                     today_completed = {
                         "name": today_actual.name or "Run",
                         "distance_mi": actual_mi,
                         "pace": actual_pace,
                         "avg_hr": int(today_actual.avg_hr) if today_actual.avg_hr else None,
                         "duration_min": round(today_actual.duration_s / 60, 0) if today_actual.duration_s else None,
+                        "elevation_gain_ft": int(round(elev_m * 3.28084)) if elev_m is not None else None,
+                        "temperature_f": round(float(today_actual.temperature_f), 1) if today_actual.temperature_f is not None else None,
+                        "humidity_pct": round(float(today_actual.humidity_pct), 0) if today_actual.humidity_pct is not None else None,
+                        "heat_adjustment_pct": round(float(today_actual.heat_adjustment_pct), 1) if today_actual.heat_adjustment_pct is not None else None,
                     }
                     try:
                         ws = _summarize_workout_structure(today_actual.id, db)

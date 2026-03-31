@@ -155,6 +155,7 @@ def _build_briefing_prompt(athlete_id: str, db: Session) -> Optional[tuple]:
                 mins = int(pace_s // 60)
                 secs = int(pace_s % 60)
                 actual_pace = f"{mins}:{secs:02d}/mi"
+            elev_m = float(today_actual.total_elevation_gain) if today_actual.total_elevation_gain is not None else None
             today_completed = {
                 "name": today_actual.name or "Run",
                 "distance_mi": actual_mi,
@@ -165,6 +166,10 @@ def _build_briefing_prompt(athlete_id: str, db: Session) -> Optional[tuple]:
                     if today_actual.duration_s
                     else None
                 ),
+                "elevation_gain_ft": int(round(elev_m * 3.28084)) if elev_m is not None else None,
+                "temperature_f": round(float(today_actual.temperature_f), 1) if today_actual.temperature_f is not None else None,
+                "humidity_pct": round(float(today_actual.humidity_pct), 0) if today_actual.humidity_pct is not None else None,
+                "heat_adjustment_pct": round(float(today_actual.heat_adjustment_pct), 1) if today_actual.heat_adjustment_pct is not None else None,
             }
             try:
                 from routers.home import _summarize_workout_structure

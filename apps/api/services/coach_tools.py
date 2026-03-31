@@ -3559,6 +3559,21 @@ def get_training_prescription_window(
         return {"ok": False, "tool": "get_training_prescription_window", "error": str(e)}
 
 
+def _format_run_context(run: dict) -> str:
+    """Compact elevation + weather suffix for a recent-run line."""
+    parts = []
+    elev = run.get("elevation_gain_ft")
+    if elev is not None and elev > 0:
+        parts.append(f"+{int(elev)}ft")
+    temp = run.get("temperature_f")
+    if temp is not None:
+        parts.append(f"{temp:.0f}°F")
+    hum = run.get("humidity_pct")
+    if hum is not None and temp is not None:
+        parts.append(f"{int(hum)}%rh")
+    return f" [{', '.join(parts)}]" if parts else ""
+
+
 def build_athlete_brief(db: Session, athlete_id: UUID) -> str:
     """
     ADR-16: Build a comprehensive pre-computed athlete brief.
@@ -3749,7 +3764,8 @@ def build_athlete_brief(db: Session, athlete_id: UUID) -> str:
                             hr = run.get("avg_hr", "")
                             hr_str = f" | HR {hr}" if hr else ""
                             tag = " [race]" if run.get("is_race") else ""
-                            lines.append(f"    • {name} — {dist:.1f}mi @ {pace}{hr_str}{tag}")
+                            ctx = _format_run_context(run)
+                            lines.append(f"    • {name} — {dist:.1f}mi @ {pace}{hr_str}{ctx}{tag}")
                     else:
                         run = day_runs[0]
                         name = run.get("name", "Run")
@@ -3757,7 +3773,8 @@ def build_athlete_brief(db: Session, athlete_id: UUID) -> str:
                         pace = run.get("pace_per_mile", "N/A")
                         hr = run.get("avg_hr", "")
                         hr_str = f" | HR {hr}" if hr else ""
-                        lines.append(f"  {run_date}{_day_rel}: {name} — {dist:.1f}mi @ {pace}{hr_str}")
+                        ctx = _format_run_context(run)
+                        lines.append(f"  {run_date}{_day_rel}: {name} — {dist:.1f}mi @ {pace}{hr_str}{ctx}")
 
                 sections.append("## Recent Runs\n" + "\n".join(lines))
     except Exception as e:
