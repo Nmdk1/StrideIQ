@@ -78,13 +78,13 @@ export default function Hero() {
             <svg className="w-5 h-5 text-orange-500" fill="currentColor" viewBox="0 0 20 20">
               <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
             </svg>
-            <span>Training pace calculator</span>
+            <span>Free 30-day trial</span>
           </div>
           <div className="flex items-center gap-2">
             <svg className="w-5 h-5 text-orange-500" fill="currentColor" viewBox="0 0 20 20">
               <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
             </svg>
-            <span>Research-backed formulas</span>
+            <span>No credit card required</span>
           </div>
           <div className="flex items-center gap-2">
             <svg className="w-5 h-5 text-orange-500" fill="currentColor" viewBox="0 0 20 20">
@@ -97,21 +97,20 @@ export default function Hero() {
         {/* Primary CTAs */}
         <div className="flex flex-col sm:flex-row gap-4 justify-center items-center mb-16">
           <a
-            href="#tools"
-            onClick={(e) => handleHashClick(e, 'tools')}
+            href="/register"
             className="group inline-flex items-center gap-2 bg-orange-500 hover:bg-orange-600 text-white font-semibold px-8 py-4 rounded-xl text-lg transition-all duration-300 shadow-lg shadow-orange-500/25 hover:shadow-xl hover:shadow-orange-500/30 hover:-translate-y-0.5"
           >
-            Use our training calculators
+            Get Started Free
             <svg className="w-5 h-5 transition-transform group-hover:translate-x-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 8l4 4m0 0l-4 4m4-4H3" />
             </svg>
           </a>
           <a
-            href="#pricing"
-            onClick={(e) => handleHashClick(e, 'pricing')}
+            href="#tools"
+            onClick={(e) => handleHashClick(e, 'tools')}
             className="inline-flex items-center gap-2 bg-white/5 hover:bg-white/10 text-white font-semibold px-8 py-4 rounded-xl text-lg transition-all duration-300 border border-white/20 hover:border-white/40 backdrop-blur-sm"
           >
-            View Pricing
+            Try Our Calculators
           </a>
         </div>
 

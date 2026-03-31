@@ -91,14 +91,14 @@ export function EmptyActivitiesState({ className = '' }: EmptyStateProps) {
         No activities synced yet
       </h3>
       <p className="text-slate-400 text-sm mb-4 max-w-md mx-auto">
-        Connect Strava to automatically sync your runs. 
+        Connect your watch to automatically sync your runs. 
         We analyze pace, heart rate, and efficiency—not just distance.
       </p>
       <Link
         href="/settings"
         className="inline-block px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-lg text-sm font-medium transition-colors"
       >
-        Connect Strava
+        Connect Watch
       </Link>
     </div>
   );

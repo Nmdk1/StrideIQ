@@ -445,6 +445,7 @@ export default function HomePage() {
     today,
     week,
     strava_connected,
+    garmin_connected,
     has_any_activities,
     total_activities,
     race_countdown,
@@ -459,6 +460,7 @@ export default function HomePage() {
     ? new Date(briefing_last_updated_at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
     : null;
 
+  const isConnected = strava_connected || garmin_connected;
   const hasAnyData = has_any_activities || week.completed_mi > 0;
   const workoutConfig = getWorkoutConfig(today.workout_type);
 
@@ -574,9 +576,9 @@ export default function HomePage() {
               <p className="text-sm text-slate-400 mt-1">
                 {hasAnyData
                   ? 'Recovery day.'
-                  : strava_connected
+                  : isConnected
                     ? 'Create a plan to see workouts.'
-                    : 'Connect Strava or create a plan.'}
+                    : 'Connect your watch to get started.'}
               </p>
             </div>
           )}
@@ -691,9 +693,9 @@ export default function HomePage() {
                     </>
                   ) : (
                     <p className="text-sm text-slate-500">
-                      {strava_connected
+                      {isConnected
                         ? total_activities > 0 ? 'No runs this week yet.' : 'Waiting for sync.'
-                        : 'Connect Strava to track.'}
+                        : 'Connect your watch to track.'}
                     </p>
                   )}
                 </div>

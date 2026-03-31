@@ -57,6 +57,12 @@ pro# Training Plan & Daily Adaptation — Phased Build Plan
 >   Checks 33 HARD rules from `docs/specs/KB_RULE_REGISTRY_ANNOTATED.md` across all
 >   14 archetypes: **445 PASS, 0 FAIL, 0 WARN, 17 WAIVED**. Three engine bugs caught
 >   and fixed (beginner days_per_week, taper strides, MLR ceiling). Both evaluators agree.
+> - Limiter Engine Phases 1-4 complete (Mar 29-31). Fingerprint bridge, temporal
+>   weighting, lifecycle classifier, and coach layer integration all shipped. Coach
+>   now surfaces `emerging` findings as natural language questions to athletes. Athlete
+>   confirmation creates `limiter_context` facts (90-day TTL) that promote findings
+>   through the lifecycle (`emerging` → `active` → `resolving` → `closed`). Tier 2
+>   quality validation passed on production data (founder account, 110 findings).
 > - Legacy `plan_generator_v2.py`, `kb_driven_generator.py`, `test_plan_validation_matrix.py`,
 >   and all template-based generators are permanently removed.
 > - CI reorganized: push commits run fast gate (smoke + lint + migration); full backend suite

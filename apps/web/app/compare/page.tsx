@@ -623,10 +623,10 @@ export default function ComparePage() {
                       <Footprints className="w-12 h-12 text-slate-600 mx-auto mb-4" />
                       <h3 className="text-xl font-semibold mb-2">No runs yet</h3>
                       <p className="text-slate-400 mb-4">
-                        Sync your Strava account to start comparing your runs
+                        Connect your watch to start comparing your runs
                       </p>
                       <Button asChild className="bg-orange-600 hover:bg-orange-500">
-                        <Link href="/settings">Connect Strava</Link>
+                        <Link href="/settings">Connect Watch</Link>
                       </Button>
                     </>
                   )}

@@ -275,7 +275,7 @@ def garmin_callback(
     )
     is_fresh_connect_flow = (not was_connected)
     if is_fresh_connect_flow and activity_count == 0:
-        redirect_url = _web_redirect(request, "/welcome?garmin=connected")
+        redirect_url = _web_redirect(request, "/home?garmin=connected")
     else:
         sep = "&" if "?" in return_to else "?"
         redirect_url = _web_redirect(request, f"{return_to}{sep}garmin=connected")

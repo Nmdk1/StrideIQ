@@ -79,11 +79,11 @@ export default function BottomTabs() {
     };
   }, [moreOpen]);
 
-  // Hide on public/unauthenticated routes
-  const shouldHide = HIDDEN_ROUTES.some(
+  // Hide on public routes or when not authenticated
+  const isHiddenRoute = HIDDEN_ROUTES.some(
     (r) => pathname === r || pathname?.startsWith(`${r}/`)
   );
-  if (shouldHide) return null;
+  if (isHiddenRoute || !user) return null;
 
   const isMoreActive =
     pathname === "/settings" ||

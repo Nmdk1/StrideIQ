@@ -2,14 +2,15 @@
  * Onboarding Flow Page
  * 
  * Multi-step wizard for new users following waterfall intake approach.
- * Stages: initial -> basic_profile -> goals -> nutrition_setup -> work_setup -> complete
+ * Stages: initial -> basic_profile -> goals -> consent_ai -> connect_strava -> complete
  * 
  * Tone: Sparse, non-guilt-inducing, everything optional except basics.
+ * Legacy: users stuck on nutrition_setup/work_setup auto-complete via AutoComplete.
  */
 
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
 import { useAuth } from '@/lib/hooks/useAuth';
@@ -35,8 +36,6 @@ interface OnboardingData {
   current_longest_run_miles?: string;
   sport_background?: string;
   goals?: string[];
-  nutrition_setup?: boolean;
-  work_setup?: boolean;
   // Onboarding value artifact (optional, produced by Goals stage save)
   pace_profile_status?: string;
   pace_profile?: any;
@@ -121,15 +120,14 @@ export default function OnboardingPage() {
           <div className="mb-8">
             <div className="flex items-center justify-between text-sm text-slate-400">
               <span className={currentStage !== 'initial' ? 'text-white' : ''}>Basics</span>
-              <span className={['basic_profile', 'goals', 'connect_strava', 'nutrition_setup', 'work_setup', 'complete'].includes(currentStage) ? 'text-white' : ''}>Profile</span>
-              <span className={['goals', 'connect_strava', 'nutrition_setup', 'work_setup', 'complete'].includes(currentStage) ? 'text-white' : ''}>Goals</span>
-              <span className={['connect_strava', 'nutrition_setup', 'work_setup', 'complete'].includes(currentStage) ? 'text-white' : ''}>Connect</span>
-              <span className={['nutrition_setup', 'work_setup', 'complete'].includes(currentStage) ? 'text-white' : ''}>Optional</span>
+              <span className={['basic_profile', 'goals', 'consent_ai', 'connect_strava', 'complete'].includes(currentStage) ? 'text-white' : ''}>Profile</span>
+              <span className={['goals', 'consent_ai', 'connect_strava', 'complete'].includes(currentStage) ? 'text-white' : ''}>Goals</span>
+              <span className={['connect_strava', 'complete'].includes(currentStage) ? 'text-white' : ''}>Connect</span>
             </div>
             <div className="h-1 bg-slate-800 rounded-full mt-2">
               <div 
                 className="h-1 bg-blue-600 rounded-full transition-all"
-                style={{ width: `${(['initial', 'basic_profile', 'goals', 'connect_strava', 'nutrition_setup', 'work_setup', 'complete'].indexOf(currentStage) + 1) * 16.67}%` }}
+                style={{ width: `${Math.min(100, (['initial', 'basic_profile', 'goals', 'consent_ai', 'connect_strava', 'complete'].indexOf(currentStage) + 1) * 20)}%` }}
               />
             </div>
           </div>
@@ -175,25 +173,14 @@ export default function OnboardingPage() {
             <ConnectStravaStage
               paceProfileStatus={data.pace_profile_status}
               paceProfile={data.pace_profile}
-              onNext={() => handleNext({}, 'nutrition_setup')}
-              onSkip={() => handleSkip('nutrition_setup')}
-            />
-          )}
-
-          {currentStage === 'nutrition_setup' && (
-            <NutritionSetupStage
-              data={data}
-              onNext={(d) => handleNext(d, 'work_setup')}
-              onSkip={() => handleSkip('work_setup')}
-            />
-          )}
-
-          {currentStage === 'work_setup' && (
-            <WorkSetupStage
-              data={data}
-              onComplete={handleComplete}
+              onNext={handleComplete}
               onSkip={handleComplete}
             />
+          )}
+
+          {/* Legacy: skip nutrition_setup / work_setup to complete */}
+          {(currentStage === 'nutrition_setup' || currentStage === 'work_setup') && (
+            <AutoComplete onComplete={handleComplete} />
           )}
         </div>
       </div>
@@ -858,40 +845,6 @@ function GoalsStage({ data, onNext, onSkip }: { data: OnboardingData; onNext: (d
   );
 }
 
-function NutritionSetupStage({ data, onNext, onSkip }: { data: OnboardingData; onNext: (d: OnboardingData) => void; onSkip: () => void }) {
-  return (
-    <div className="bg-slate-800 rounded-lg border border-slate-700/50 p-6">
-      <h2 className="text-xl font-semibold mb-4">Nutrition</h2>
-      <p className="text-slate-400 mb-6">
-        Optional. Helps spot patterns when you log.
-      </p>
-      
-      <div className="space-y-4 mb-6">
-        <p className="text-sm text-slate-300">
-          Pre-run fuel, post-run recovery, daily intake — log what you want, when convenient.
-        </p>
-        <p className="text-xs text-slate-500">
-          You can set this up anytime from the Nutrition page.
-        </p>
-      </div>
-
-      <div className="flex gap-2">
-        <button
-          onClick={() => onNext({ nutrition_setup: true })}
-          className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded text-white font-medium"
-        >
-          Continue
-        </button>
-        <button
-          onClick={onSkip}
-          className="px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded text-slate-300 font-medium"
-        >
-          Skip
-        </button>
-      </div>
-    </div>
-  );
-}
 
 function ConnectStravaStage({
   paceProfileStatus,
@@ -1096,37 +1049,17 @@ function ConnectStravaStage({
   );
 }
 
-function WorkSetupStage({ data, onComplete, onSkip }: { data: OnboardingData; onComplete: () => void; onSkip: () => void }) {
-  return (
-    <div className="bg-slate-800 rounded-lg border border-slate-700/50 p-6">
-      <h2 className="text-xl font-semibold mb-4">Work Patterns</h2>
-      <p className="text-slate-400 mb-6">
-        Optional. Helps identify work-performance correlations.
-      </p>
-      
-      <div className="space-y-4 mb-6">
-        <p className="text-sm text-slate-300">
-          Log work hours and stress levels to see how they affect your running.
-        </p>
-        <p className="text-xs text-slate-500">
-          Set up anytime from Settings.
-        </p>
-      </div>
 
-      <div className="flex gap-2">
-        <button
-          onClick={() => onComplete()}
-          className="flex-1 px-4 py-2 bg-green-600 hover:bg-green-700 rounded text-white font-medium"
-        >
-          Complete Setup
-        </button>
-        <button
-          onClick={onSkip}
-          className="px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded text-slate-300 font-medium"
-        >
-          Skip to Dashboard
-        </button>
-      </div>
+function AutoComplete({ onComplete }: { onComplete: () => void }) {
+  const fired = useRef(false);
+  useEffect(() => {
+    if (fired.current) return;
+    fired.current = true;
+    onComplete();
+  }, [onComplete]);
+  return (
+    <div className="flex items-center justify-center py-12">
+      <LoadingSpinner size="lg" />
     </div>
   );
 }
