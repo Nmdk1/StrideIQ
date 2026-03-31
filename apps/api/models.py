@@ -2590,6 +2590,11 @@ class CorrelationFinding(Base):
     lifecycle_state = Column(Text, nullable=True)
     lifecycle_state_updated_at = Column(DateTime(timezone=True), nullable=True)
 
+    # --- Phase 4: Coach layer integration ---
+    # Brief attribution string captured at active → resolving transition.
+    # Coach reads this to explain *what the athlete did* that caused the shift.
+    resolving_context = Column(Text, nullable=True)
+
     __table_args__ = (
         # One row per unique (athlete, input, output, lag) combination.
         Index(

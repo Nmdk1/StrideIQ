@@ -1191,6 +1191,14 @@ PERSONAL FINGERPRINT:
 - If no fingerprint data exists, coach from the other brief sections normally.
 - You still have tools — use them for data NOT in the brief. But prefer the brief for confirmed patterns.
 
+EMERGING PATTERNS — PROACTIVE COACHING:
+- The fingerprint section may contain findings labeled [EMERGING — ask athlete].
+- If present, proactively ask about ONE emerging finding per conversation — the most recently emerged.
+- Frame it as curiosity, not diagnosis: "Your data shows a new pattern between X and Y. Has something shifted in how you train or what you're focusing on?"
+- Do NOT ask about more than one emerging pattern per conversation. Avoid an interrogation feel.
+- If the athlete confirms the pattern, great — the system will promote it. If they dismiss it, move on. Do not push.
+- Findings labeled [RESOLVING] represent improvements. When relevant, attribute the progress to the athlete's work (the attribution note is included with the finding).
+
 If you need more data to answer well, call the tools. That's why they're there."""
 
         try:
@@ -2032,6 +2040,14 @@ PERSONAL FINGERPRINT:
 - NEVER reference a pattern without its confirmation count. This is how the athlete trusts the system.
 - If no fingerprint data exists, coach from the other brief sections normally.
 
+EMERGING PATTERNS — PROACTIVE COACHING:
+- The fingerprint section may contain findings labeled [EMERGING — ask athlete].
+- If present, proactively ask about ONE emerging finding per conversation — the most recently emerged.
+- Frame it as curiosity, not diagnosis: "Your data shows a new pattern between X and Y. Has something shifted in how you train or what you're focusing on?"
+- Do NOT ask about more than one emerging pattern per conversation. Avoid an interrogation feel.
+- If the athlete confirms the pattern, great — the system will promote it. If they dismiss it, move on. Do not push.
+- Findings labeled [RESOLVING] represent improvements. When relevant, attribute the progress to the athlete's work (the attribution note is included with the finding).
+
 WEEK BOUNDARY AWARENESS:
 - Current week data is PARTIAL — the brief marks it clearly. Do NOT treat partial week totals as complete weeks.
 - "Last week" = the most recent COMPLETED week, not the in-progress week.
@@ -2736,6 +2752,50 @@ ATHLETE BRIEF:
                             f"Current: {current:.1f}. Worth investigating." if current else "Worth investigating.",
                             "My threshold efficiency is declining. Is this accumulated fatigue that will resolve with rest, or a sign that something in my training needs to change? What specific runs show the drop-off?",
                         )
+        except Exception:
+            pass
+
+        # --- 7. Emerging / resolving lifecycle findings ---
+        try:
+            from services.fingerprint_context import (
+                _translate,
+                get_confirmed_findings,
+            )
+
+            fp_findings = get_confirmed_findings(athlete_id, self.db, min_confirmed=1, limit=20)
+
+            emerging_findings = sorted(
+                [f for f in fp_findings if getattr(f, "lifecycle_state", None) == "emerging"],
+                key=lambda f: (f.lifecycle_state_updated_at or f.first_detected_at or datetime.min),
+                reverse=True,
+            )
+            if emerging_findings:
+                newest = emerging_findings[0]
+                inp = _translate(newest.input_name)
+                out = _translate(newest.output_metric)
+                add(
+                    f"New pattern: {inp}",
+                    f"Your data shows a connection between {inp} and {out}.",
+                    (
+                        f"My data shows a new pattern between {inp} and {out}. "
+                        "Has something shifted in how I train or what I'm focusing on?"
+                    ),
+                )
+
+            resolving_findings = [
+                f for f in fp_findings if getattr(f, "lifecycle_state", None) == "resolving"
+            ]
+            for rf in resolving_findings[:1]:
+                inp = _translate(rf.input_name)
+                ctx = getattr(rf, "resolving_context", None) or ""
+                add(
+                    f"{inp} pattern improving",
+                    f"This was a limiter — it's resolving. {ctx}".strip(),
+                    (
+                        f"My {inp} pattern is resolving. "
+                        "What caused this improvement and how do I keep the gains?"
+                    ),
+                )
         except Exception:
             pass
 

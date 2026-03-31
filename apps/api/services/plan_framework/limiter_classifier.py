@@ -1,4 +1,4 @@
-"""Limiter Lifecycle Classifier (Phase 3)
+"""Limiter Lifecycle Classifier (Phase 3 + Phase 4 coach integration)
 
 Assigns lifecycle states to CorrelationFinding records:
   emerging            — correlation strengthening in L90, candidate frontier
@@ -15,11 +15,15 @@ Classification priority (from LIMITER_TAXONOMY_ANNOTATED.md):
   0. CG-12: L-SPEC context gate (rule-based, overrides all)
   1. CG-11: L-REC structural discriminator (three-tier half-life)
   2. CG-10: CS-6/CS-7 interaction gate (fast recoverers)
-  3. Standard lifecycle: active/emerging/resolving/closed
+  3. Fact-aware promotion (Phase 4): limiter_context facts promote emerging
+  4. Standard lifecycle: active/emerging/resolving/closed
 
 Resolution paths:
   active_fixed → closed: triggered by race date passing (not correlation fade)
   structural_monitored → active: if acute training cause identified
+  emerging → active: athlete-confirmed via limiter_context fact (Phase 4)
+  emerging → closed: athlete explains pattern as historical via fact
+  active → resolving: resolving_context captured for coach attribution
 
 Notes:
   - ADVANCED_PEAK_MILES_FLOOR (30 mpw) is a conservative first-pass proxy
@@ -63,12 +67,37 @@ LSPEC_WEEKS_TO_RACE = 6
 STRUCTURAL_STABILITY_DAYS = 90
 SOLVABLE_EMERGENCE_DAYS = 60
 
+INPUT_TO_LIMITER_TYPE: Dict[str, str] = {
+    "long_run_ratio": "L-VOL",
+    "weekly_volume_km": "L-VOL",
+    "ctl": "L-VOL",
+    "tsb": "L-REC",
+    "daily_session_stress": "L-REC",
+    "atl": "L-REC",
+    "consecutive_run_days": "L-REC",
+    "garmin_body_battery_end": "L-REC",
+    "sleep_hours": "L-REC",
+    "days_since_quality": "L-THRESH",
+    "days_since_rest": "L-CON",
+}
+
+
+def _get_limiter_type_for_finding(finding) -> Optional[str]:
+    """Map a finding's input_name to its limiter category."""
+    return INPUT_TO_LIMITER_TYPE.get(finding.input_name)
+
 
 def classify_lifecycle_states(
     athlete_id: UUID,
     db: Session,
 ) -> Dict[int, str]:
     """Classify lifecycle state for all active correlation findings.
+
+    Phase 4 additions:
+      - Loads active limiter_context facts for the athlete.
+      - Uses structured limiter_type matching to promote emerging → active
+        (confirming) or emerging → closed (athlete explains as historical).
+      - Captures resolving_context when a finding transitions to resolving.
 
     Returns a dict of {finding.id: lifecycle_state} for every finding
     that was classified or reclassified.
@@ -104,8 +133,13 @@ def classify_lifecycle_states(
         athlete_id, db, now, peak_miles,
     )
 
+    limiter_facts = _load_limiter_context_facts(athlete_id, db, now)
+    expired_fact_types = _detect_expired_fact_types(athlete_id, db, now)
+
     for finding in findings:
-        if finding.lifecycle_state == "active_fixed" and not lspec_active:
+        old_state = finding.lifecycle_state
+
+        if old_state == "active_fixed" and not lspec_active:
             state = "closed"
             logger.info(
                 "limiter_classifier: active_fixed → closed for finding %s "
@@ -117,9 +151,28 @@ def classify_lifecycle_states(
                 finding, half_life, lspec_active, now,
             )
 
+        state = _apply_fact_promotion(finding, state, limiter_facts)
+
+        finding_limiter = _get_limiter_type_for_finding(finding)
+        if (
+            old_state == "active"
+            and state != "active"
+            and finding_limiter in expired_fact_types
+        ):
+            logger.info(
+                "limiter_classifier: active → %s for finding %s "
+                "(limiter_context fact expired, forced re-evaluation)",
+                state, finding.id,
+            )
+
+        if old_state == "active" and state == "resolving":
+            finding.resolving_context = _build_resolving_context(
+                finding, limiter_facts, db, athlete_id,
+            )
+
         results[finding.id] = state
 
-        if finding.lifecycle_state != state:
+        if old_state != state:
             finding.lifecycle_state = state
             finding.lifecycle_state_updated_at = now
 
@@ -325,3 +378,178 @@ def _is_stable(finding, now: datetime) -> bool:
         first = first.replace(tzinfo=timezone.utc)
     age = (now - first).days
     return age >= STRUCTURAL_STABILITY_DAYS and finding.times_confirmed >= 5
+
+
+# ---------------------------------------------------------------------------
+# Phase 4: Fact-aware promotion and resolving context
+# ---------------------------------------------------------------------------
+
+def _load_limiter_context_facts(
+    athlete_id: UUID,
+    db: Session,
+    now: datetime,
+) -> list:
+    """Load active (non-expired) limiter_context facts for the athlete."""
+    from models import AthleteFact
+
+    facts = (
+        db.query(AthleteFact)
+        .filter(
+            AthleteFact.athlete_id == athlete_id,
+            AthleteFact.fact_type == "limiter_context",
+            AthleteFact.is_active == True,  # noqa: E712
+        )
+        .all()
+    )
+
+    active_facts = []
+    for f in facts:
+        if _is_fact_expired(f, now):
+            continue
+        active_facts.append(f)
+    return active_facts
+
+
+def _is_fact_expired(fact, now: datetime) -> bool:
+    """Check if a temporal fact has expired based on extracted_at + ttl_days."""
+    try:
+        if not fact.temporal or not fact.ttl_days:
+            return False
+        extracted = fact.extracted_at
+        if extracted is None:
+            return False
+        if not isinstance(extracted, datetime):
+            return False
+        if extracted.tzinfo is None:
+            extracted = extracted.replace(tzinfo=timezone.utc)
+        return (extracted + timedelta(days=int(fact.ttl_days))) < now
+    except (TypeError, ValueError):
+        return False
+
+
+def _detect_expired_fact_types(
+    athlete_id: UUID,
+    db: Session,
+    now: datetime,
+) -> frozenset:
+    """Find limiter_type values whose limiter_context facts have expired.
+
+    Used to log forced re-evaluation when a supporting fact lapses.
+    """
+    from models import AthleteFact
+
+    expired_types: set = set()
+    facts = (
+        db.query(AthleteFact)
+        .filter(
+            AthleteFact.athlete_id == athlete_id,
+            AthleteFact.fact_type == "limiter_context",
+            AthleteFact.is_active == True,  # noqa: E712
+        )
+        .all()
+    )
+    for f in facts:
+        if _is_fact_expired(f, now):
+            lt = _extract_limiter_type_from_fact(f)
+            if lt:
+                expired_types.add(lt)
+    return frozenset(expired_types)
+
+
+def _apply_fact_promotion(
+    finding,
+    proposed_state: str,
+    limiter_facts: list,
+) -> str:
+    """Check if a limiter_context fact should override the proposed state.
+
+    Matching: the fact's fact_key must contain a structured limiter_type
+    that matches the finding's input_name → limiter category mapping.
+
+    Promotion rules:
+      - emerging + confirming fact → active
+      - emerging + historical-context fact → closed
+    Only fires for emerging findings with a matching fact.
+    """
+    if proposed_state != "emerging":
+        return proposed_state
+
+    finding_limiter = _get_limiter_type_for_finding(finding)
+    if not finding_limiter:
+        return proposed_state
+
+    for fact in limiter_facts:
+        fact_limiter = _extract_limiter_type_from_fact(fact)
+        if fact_limiter != finding_limiter:
+            continue
+
+        disposition = (fact.fact_value or "").strip().lower()
+        if disposition in ("historical", "resolved", "past", "closed"):
+            logger.info(
+                "limiter_classifier: emerging → closed for finding %s "
+                "(athlete explained as historical via fact %s)",
+                finding.id, fact.id,
+            )
+            return "closed"
+
+        logger.info(
+            "limiter_classifier: emerging → active for finding %s "
+            "(athlete confirmed via limiter_context fact %s)",
+            finding.id, fact.id,
+        )
+        return "active"
+
+    return proposed_state
+
+
+def _extract_limiter_type_from_fact(fact) -> Optional[str]:
+    """Extract the structured limiter_type from a limiter_context fact.
+
+    fact_key format: "limiter_type:L-VOL" or just "L-VOL".
+    """
+    key = (fact.fact_key or "").strip()
+    if key.startswith("limiter_type:"):
+        return key.split(":", 1)[1].strip()
+    if key.startswith("L-"):
+        return key
+    return None
+
+
+def _build_resolving_context(
+    finding,
+    limiter_facts: list,
+    db: Session,
+    athlete_id: UUID,
+) -> Optional[str]:
+    """Build attribution string at active → resolving transition.
+
+    Combines limiter_context fact values and current plan phase
+    to explain what the athlete did that caused the shift.
+    """
+    parts = []
+
+    finding_limiter = _get_limiter_type_for_finding(finding)
+    for fact in limiter_facts:
+        fact_limiter = _extract_limiter_type_from_fact(fact)
+        if fact_limiter == finding_limiter and fact.fact_value:
+            parts.append(fact.fact_value.strip())
+
+    try:
+        from models import TrainingPlan
+        plan = (
+            db.query(TrainingPlan)
+            .filter(
+                TrainingPlan.athlete_id == athlete_id,
+                TrainingPlan.status == "active",
+            )
+            .order_by(TrainingPlan.created_at.desc())
+            .first()
+        )
+        if plan and plan.name:
+            parts.append(f"during {plan.name}")
+    except Exception:
+        pass
+
+    if not parts:
+        return None
+    return "; ".join(parts)

@@ -28,6 +28,7 @@ FACT_TTL_CATEGORIES = {
     "upcoming_race": 7,
     "race_goal": 7,
     "race_plan": 7,
+    "limiter_context": 90,
 }
 
 _RELATIVE_TIME_PATTERN = re.compile(
@@ -50,10 +51,11 @@ Extract any concrete, specific factual claims the athlete made about:
 - Their race history (PRs, recent race results, upcoming goals)
 - Their health (resting heart rate, blood pressure, medications, etc.)
 - Their upcoming race details (race name, date, distance, course profile like flat/hilly, goal time, goal pace)
+- Their training context when confirming or explaining a pattern the coach asked about (limiter_context)
 - Anything else specific and factual that would be useful coaching context
 
 For each fact, return:
-- fact_type: one of [body_composition, strength_pr, injury_history, current_symptoms, training_phase, equipment, preference, life_context, race_history, health, upcoming_race, race_goal, race_plan, other]
+- fact_type: one of [body_composition, strength_pr, injury_history, current_symptoms, training_phase, equipment, preference, life_context, race_history, health, upcoming_race, race_goal, race_plan, limiter_context, other]
 - fact_key: a snake_case identifier (e.g., "dexa_bone_density_t_score", "deadlift_1rm_lbs")
 - fact_value: the value as a string (e.g., "3.2", "315", "before 8am")
 - numeric_value: the numeric value if applicable, else null
@@ -72,6 +74,22 @@ Examples of upcoming_race facts:
 - fact_key: "upcoming_race_course_profile", fact_value: "flat"
 - fact_key: "upcoming_race_distance_miles", fact_value: "20"
 - fact_key: "upcoming_race_goal_pace", fact_value: "8:20/mi"
+
+Examples of limiter_context facts (when the athlete confirms or explains a pattern):
+- When asked about long runs and threshold pace:
+  fact_type: "limiter_context", fact_key: "limiter_type:L-VOL", fact_value: "Yes, I've been building mileage and my long runs are getting longer", source_excerpt: "..."
+- When the athlete explains a pattern as historical/resolved:
+  fact_type: "limiter_context", fact_key: "limiter_type:L-VOL", fact_value: "historical", source_excerpt: "That was from my base building phase last year, I've moved past that"
+- When asked about recovery patterns:
+  fact_type: "limiter_context", fact_key: "limiter_type:L-REC", fact_value: "I've been sleeping poorly and doing doubles", source_excerpt: "..."
+
+Limiter type codes for fact_key:
+  L-VOL = volume-related (long runs, weekly mileage, chronic load)
+  L-REC = recovery-related (freshness, session stress, fatigue, sleep, body battery)
+  L-THRESH = threshold-related (days since quality sessions)
+  L-CEIL = ceiling-related (VO2max, speed development)
+  L-CON = consecutive-day patterns
+  L-SPEC = race-specific preparation
 
 Return as a JSON array. If no facts found, return [].
 """

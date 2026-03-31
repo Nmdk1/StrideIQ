@@ -14,6 +14,10 @@ Shipped and now live in product/system behavior:
 
 - **KB Rule Evaluator — Full Knowledge Base Gate (Mar 29, 2026)**: New `scripts/eval_kb_rules.py` replaces the 12-BC evaluator as the primary quality gate. Checks 33 HARD rules from the founder-annotated knowledge base (`docs/specs/KB_RULE_REGISTRY_ANNOTATED.md`) across all 14 archetypes. Rules sourced directly from coaching KB: phase progression (PH), volume/recovery (VR), session structure (SS), tempo/threshold (TP), interval/rep (IR), recovery (RC), marathon-specific (MA), plan progression (PP), easy day (ED), taper (TA), N=1 (N1), day quality (DQ), readiness gate (RG). **Result: 445 PASS, 0 FAIL, 0 WARN, 17 WAIVED.** Three engine bugs caught and fixed: (1) Couch-to-10K ignored `days_per_week` constraint — now adds rest days; (2) taper strides missing for low-day athletes — now placed on first available easy day; (3) MLR exceeded 75% of same-week LR — now capped at `min(mlr, lr * 0.75)`. Legacy 12-BC evaluator also verified clean (143 PASS). Both evaluators agree. 159 plan-related tests pass.
 
+- **Variant Dropdown — N1 Engine Phase 3 (Mar 29, 2026)**: Frontend can now render workout variant selection from the registry. Each plan day emits `workout_stem`, `phase_context`, `week_in_phase`, `experience`, and `stimulus_already_covered` — enabling the dropdown to filter valid variants per `build_context_tags`, `when_to_avoid`, `pairs_poorly_with`, and `sme_status == "approved"`. The athlete picks; the system serves only valid options.
+
+- **Limiter Engine — Phases 1-3 Complete (Mar 29, 2026)**: Three-phase build of the N=1 limiter intelligence system. **(Phase 1) Fingerprint-to-Plan Bridge** — `fingerprint_bridge.py` translates confirmed correlation findings into plan delivery modifications. Structural traits (recovery half-life, L-REC) modify spacing, cutback frequency, and quality caps. Active limiters adjust session type ratios within distance floors. **(Phase 2) Temporal Weighting** — Correlation engine now weights observations by recency (L30: 4×, L31-90: 2×, L91-180: 1×, >180d: 0.5×). This correctly weakens old solved-problem correlations (Michael's L-VOL) while preserving stable structural signals (Brian's L-REC). **(Phase 3) Lifecycle State Classifier** — Every `CorrelationFinding` gains a lifecycle state: `emerging` (strengthening in L90), `active` (current frontier, confirmed), `resolving` (weakening under intervention), `closed` (historically solved), `structural` (physiological trait, not solvable). Plan engine reads only `active` limiters. Coach layer surfaces `emerging` limiters for athlete confirmation. Validated against three real athlete profiles (Michael, Larry, Brian). Spec: `docs/specs/LIMITER_TAXONOMY.md`.
+
 - **Plan Quality Evaluator (Mar 26, 2026)**: New `scripts/eval_plan_quality.py` (852 lines). Original automated evaluator checks 12 Blocking Criteria across 14 archetypes from the ADR. Now serves as secondary validation alongside the KB Rule Evaluator. Generates full plan dumps (every day, every week) in human-readable format.
 
 - **RPI Pace Recalibration (Mar 28-29, 2026)**: Interval and repetition paces recalibrated against reference pace calculator. I/R paces in the 50-55 RPI band were 13-17s too fast. R > I ordering corrected at low RPIs (30-35) where linear extrapolation crossed pace lines — fixed with R_int = I_int * 1.04 anchor. Zone ordering (E>M>T>I>R) and monotonicity verified for full RPI 30-70 range. PSEO data regenerated from local formula (no API dependency). Commits: `2d4d2d3`, `f09687b`.
@@ -391,14 +395,16 @@ From `docs/TRAINING_PLAN_REBUILD_PLAN.md`:
 | Phase 4 (50K Ultra) | CONTRACT ONLY | 37 xfail |
 | Monetization Tiers | v2 COMPLETE (2-tier model shipped) | residual xfails remain for deferred contracts |
 
-**Plan engine rebuild context (Mar 26-29):**
-Legacy plan generators were deleted and replaced. The new engine (`n1_engine.py`, 1,078 lines) passes all 12 Blocking Criteria from `docs/specs/N1_ENGINE_ADR_V2.md` across 14 diverse archetypes (beginner through elite, 3-7 days/week, 5K through marathon, 5-18 week horizons). Validated by `scripts/eval_plan_quality.py` (852 lines). Ongoing refinement expected but the foundation is solid.
+**Plan engine and intelligence context (Mar 26-29):**
+Legacy plan generators were deleted and replaced. The new engine (`n1_engine.py`, 1,078 lines) passes 33 KB rules across 14 archetypes (445 PASS, 0 FAIL). Limiter engine Phases 1-3 complete: fingerprint bridge, temporal weighting, lifecycle classifier. Variant dropdown shipped. The system now produces individualized, KB-grounded plans with N=1 limiter intelligence and evaluator-enforced quality gates.
 
 **Build priority order (current):**
-1. Plan quality refinement (ongoing — evaluator catches regressions)
-2. Phase 4 (50K Ultra)
-3. Phase 3B (when narration quality gate clears — >90% for 4 weeks)
-4. Phase 3C (when per-athlete synced history + significant correlations exist)
+1. Limiter Engine Phase 4: Coach layer integration — `emerging` limiters surfaced via coach as natural language questions, athlete confirmation → `active` limiter assignment
+2. Limiter Engine Phase 5: Transition detection — `active` → `resolving` → `closed` triggers next-frontier scan
+3. N1 Engine Phase 4: Adaptive Re-Plan — "Coach noticed..." trigger, diff engine, athlete approval flow
+4. Phase 4 (50K Ultra) — new user segment + differentiation (37 xfail contract tests waiting)
+5. Phase 3B (when narration quality gate clears — >90% for 4 weeks)
+6. Phase 3C (when per-athlete synced history + significant correlations exist)
 
 **Open gates:**
 - 3B: narration accuracy > 90% for 4 weeks (`/v1/intelligence/narration/quality`)
@@ -689,6 +695,8 @@ docs/specs/KB_RULE_REGISTRY.md              ← Rule registry (33 HARD rules fro
 docs/specs/KB_RULE_REGISTRY_ANNOTATED.md    ← Founder-annotated rule source
 scripts/smoke_plan_generation.py            ← Production plan generation smoke test
 docs/specs/N1_ENGINE_ADR_V2.md              ← ADR governing engine rebuild
+docs/specs/LIMITER_TAXONOMY.md              ← Limiter → session type mapping (lifecycle-aware)
+apps/api/services/fingerprint_bridge.py     ← Correlation findings → plan delivery modifications
 apps/api/services/plan_framework/           ← Plan generation framework (supporting modules)
 
 # Strava/Garmin Integration
