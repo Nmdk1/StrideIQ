@@ -240,9 +240,9 @@ class TestT1_2_ClosedGrouping:
 
 
 class TestT1_3_SingleEmerging:
-    """Only the single most recently emerged finding appears in the prompt."""
+    """Only the single most recently emerged finding appears, in a separated block."""
 
-    def test_three_emerging_produce_one_line(self):
+    def test_three_emerging_produce_one_block(self):
         findings = [
             _make_finding(
                 input_name="long_run_ratio",
@@ -275,13 +275,8 @@ class TestT1_3_SingleEmerging:
             result = build_fingerprint_prompt_section(ATHLETE_ID, mock_db)
 
         assert result is not None
-        emerging_lines = [
-            line for line in result.split("\n")
-            if "[EMERGING — ask athlete" in line
-        ]
-        assert len(emerging_lines) == 1, (
-            f"Expected 1 emerging line, got {len(emerging_lines)}"
-        )
+        assert result.count("=== EMERGING PATTERN") == 1
+        assert "ASK ABOUT THIS FIRST" in result
 
     def test_newest_emerging_is_selected(self):
         older = _make_finding(
@@ -308,14 +303,11 @@ class TestT1_3_SingleEmerging:
 
         assert result is not None
         assert "running cadence" in result
-        emerging_lines = [
-            line for line in result.split("\n")
-            if "[EMERGING — ask athlete" in line
-        ]
-        assert len(emerging_lines) == 1
-        assert "long runs" not in emerging_lines[0]
+        assert result.count("=== EMERGING PATTERN") == 1
+        emerging_block = result.split("=== END EMERGING ===")[0]
+        assert "long runs" not in emerging_block
 
-    def test_zero_emerging_produces_no_emerging_line(self):
+    def test_zero_emerging_produces_no_emerging_block(self):
         active = _make_finding(lifecycle_state="active", input_name="tsb")
 
         mock_db = MagicMock()
@@ -326,11 +318,58 @@ class TestT1_3_SingleEmerging:
             result = build_fingerprint_prompt_section(ATHLETE_ID, mock_db)
 
         assert result is not None
-        emerging_lines = [
-            line for line in result.split("\n")
-            if "[EMERGING — ask athlete" in line
-        ]
-        assert len(emerging_lines) == 0
+        assert "=== EMERGING PATTERN" not in result
+
+    def test_emerging_block_has_pre_generated_question(self):
+        finding = _make_finding(
+            input_name="soreness_1_5",
+            output_metric="efficiency",
+            lifecycle_state="emerging",
+            lifecycle_state_updated_at=NOW - timedelta(days=5),
+            first_detected_at=NOW - timedelta(days=5),
+            times_confirmed=3,
+        )
+
+        mock_db = MagicMock()
+        with patch(
+            "services.fingerprint_context.get_confirmed_findings",
+            return_value=[finding],
+        ):
+            result = build_fingerprint_prompt_section(ATHLETE_ID, mock_db)
+
+        assert result is not None
+        assert "=== EMERGING PATTERN" in result
+        assert 'Ask: "' in result
+        assert "soreness" in result
+        assert "running efficiency" in result
+        assert "soreness_1_5" not in result
+
+    def test_emerging_block_appears_before_active_findings(self):
+        active = _make_finding(
+            input_name="long_run_ratio",
+            lifecycle_state="active",
+        )
+        emerging_f = _make_finding(
+            input_name="cadence",
+            lifecycle_state="emerging",
+            lifecycle_state_updated_at=NOW - timedelta(days=2),
+            first_detected_at=NOW - timedelta(days=2),
+            times_confirmed=2,
+        )
+
+        mock_db = MagicMock()
+        with patch(
+            "services.fingerprint_context.get_confirmed_findings",
+            return_value=[active, emerging_f],
+        ):
+            result = build_fingerprint_prompt_section(ATHLETE_ID, mock_db)
+
+        assert result is not None
+        emerging_pos = result.index("=== EMERGING PATTERN")
+        active_pos = result.index("[ACTIVE")
+        assert emerging_pos < active_pos, (
+            "Emerging block must appear before active findings"
+        )
 
 
 # ===================================================================
@@ -611,7 +650,7 @@ class TestT1_8_NoPromotionWithoutFact:
 class TestPromptHeaderDirectives:
     """The verbose prompt header includes lifecycle coaching instructions."""
 
-    def test_verbose_header_has_all_lifecycle_directives(self):
+    def test_verbose_header_has_lifecycle_directives(self):
         finding = _make_finding(lifecycle_state="active")
         mock_db = MagicMock()
         with patch(
@@ -624,11 +663,9 @@ class TestPromptHeaderDirectives:
 
         assert result is not None
         assert "ACTIVE = proven" in result
-        assert "EMERGING = pattern forming" in result
         assert "RESOLVING = improving" in result
         assert "STRUCTURAL = physiological trait" in result
         assert "do not try to fix" in result
-        assert "statistical internals" in result.lower() or "coaching language" in result.lower()
 
     def test_compact_header_has_lifecycle_counts(self):
         findings = [
@@ -650,5 +687,4 @@ class TestPromptHeaderDirectives:
 
         assert result is not None
         assert "1 active" in result
-        assert "1 emerging" in result
-        assert "emerging" in result.lower()
+        assert "=== EMERGING PATTERN" in result

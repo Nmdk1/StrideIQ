@@ -240,14 +240,11 @@ class TestEmergingSingleNewestFirst:
             result = build_fingerprint_prompt_section(ATHLETE_ID, mock_db)
 
         assert result is not None
-        finding_lines = [
-            line for line in result.split("\n")
-            if "[EMERGING — ask athlete" in line
-        ]
-        assert len(finding_lines) == 1, (
-            f"Expected exactly 1 emerging finding in payload, got {len(finding_lines)}"
+        assert result.count("=== EMERGING PATTERN") == 1, (
+            "Expected exactly 1 emerging block in payload"
         )
-        assert "sleep duration" in finding_lines[0], (
+        emerging_block = result.split("=== END EMERGING ===")[0]
+        assert "sleep duration" in emerging_block, (
             "Newest emerging finding (sleep_hours) should be the one included"
         )
 
@@ -544,8 +541,9 @@ class TestCoachPromptDirective:
                 pytest.skip("Coach prompt build requires full DB context")
 
         assert "EMERGING PATTERNS" in prompt
-        assert "ONE emerging finding per conversation" in prompt
-        assert "interrogation" in prompt
+        assert "=== EMERGING PATTERN" in prompt
+        assert "ASK ABOUT THIS FIRST" in prompt
+        assert "MUST ask that question" in prompt
 
 
 # ===================================================================
@@ -800,12 +798,15 @@ class TestAPILevelCoachPayload:
 
         lines = result.split("\n")
 
-        emerging_lines = [ln for ln in lines if "[EMERGING — ask athlete" in ln]
-        assert len(emerging_lines) == 1, (
-            f"Expected exactly 1 emerging finding in prompt, got {len(emerging_lines)}: {emerging_lines}"
+        assert result.count("=== EMERGING PATTERN") == 1, (
+            "Expected exactly 1 emerging block in prompt"
         )
-        assert "sleep duration" in emerging_lines[0], (
+        emerging_block = result.split("=== END EMERGING ===")[0]
+        assert "sleep duration" in emerging_block, (
             "Newest emerging (sleep_hours, updated 3 days ago) should be the one"
+        )
+        assert 'Ask: "' in emerging_block, (
+            "Emerging block must contain a pre-generated question"
         )
 
         assert "Previously solved:" in result, "Closed findings should be grouped"

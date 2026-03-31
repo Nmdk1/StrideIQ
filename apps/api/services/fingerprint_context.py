@@ -36,12 +36,24 @@ COACHING_LANGUAGE: Dict[str, str] = {
     "days_since_rest": "days since rest",
     "cadence": "running cadence",
     "elevation_gain": "elevation gain",
+    "elevation_gain_m": "elevation gain",
     "heart_rate_avg": "average heart rate",
     "pace_threshold": "threshold pace",
     "pace_easy": "easy pace",
     "efficiency": "running efficiency",
+    "efficiency_threshold": "threshold efficiency",
+    "efficiency_trend": "efficiency trend",
     "vo2_estimate": "VO2 estimate",
     "distance_km": "run distance",
+    "readiness_1_5": "readiness",
+    "soreness_1_5": "soreness",
+    "motivation_1_5": "motivation",
+    "stress_1_5": "stress level",
+    "confidence_1_5": "confidence",
+    "sleep_quality_1_5": "sleep quality",
+    "feedback_leg_feel": "leg freshness",
+    "feedback_perceived_effort": "perceived effort",
+    "run_start_hour": "time of day",
 }
 
 
@@ -255,29 +267,59 @@ def build_fingerprint_prompt_section(
 
     sections = []
 
+    if emerging:
+        ef = emerging[0]
+        inp = _translate(ef.input_name)
+        out = _translate(ef.output_metric)
+        direction_word = "improves" if ef.direction == "positive" else "declines"
+        first_det = getattr(ef, "first_detected_at", None)
+        if first_det:
+            from datetime import timezone as _tz
+
+            if first_det.tzinfo is None:
+                first_det = first_det.replace(tzinfo=_tz.utc)
+            age_days = max(1, (datetime.now(_tz.utc) - first_det).days)
+        else:
+            age_days = None
+        age_str = f"Forming over the last {age_days} days." if age_days else ""
+        question = (
+            f"I've noticed a new pattern in your data connecting "
+            f"{inp} and {out}. Has anything shifted recently in "
+            f"how your body feels or how you're training?"
+        )
+        sections.append(
+            f"=== EMERGING PATTERN — ASK ABOUT THIS FIRST ===\n"
+            f"Before discussing other training data, ask the athlete about "
+            f"this new pattern. One question, framed as curiosity.\n"
+            f"\n"
+            f"Your data suggests {inp} {direction_word} your {out}. "
+            f"{age_str} Not yet confirmed — {ef.times_confirmed}x observed.\n"
+            f"\n"
+            f'Ask: "{question}"\n'
+            f"=== END EMERGING ==="
+        )
+
     if verbose:
         header = (
             "--- Personal Fingerprint (data-proven patterns) ---\n"
             "ACTIVE = proven — state as fact in coaching language.\n"
-            "EMERGING = pattern forming — ask the athlete about it.\n"
             "RESOLVING = improving — attribute to the athlete's work.\n"
             "STRUCTURAL = physiological trait — adjust delivery, do not try to fix.\n"
-            "Translate to coaching language; do not expose statistical internals to the athlete.\n"
+            "Do not expose statistical internals to the athlete.\n"
             "Use threshold/decay data for specific advice.\n"
         )
     else:
         n_active = len(active)
-        n_emerging = len(emerging)
         header = (
-            f"({n_active} active, {n_emerging} emerging, "
+            f"({n_active} active, "
             f"{len(resolving)} resolving, {len(structural)} structural, "
             f"{len(closed)} closed patterns. "
-            "Treat ACTIVE as fact. Hedge EMERGING as 'your data suggests'. "
+            "Treat ACTIVE as fact. "
             "Attribute RESOLVING to the athlete's work.)"
         )
     sections.append(header)
 
-    for group in (active, structural, resolving, emerging):
+    for group in (active, structural, resolving):
         for f in group:
             sections.append(format_finding_line(f, verbose=verbose))
 

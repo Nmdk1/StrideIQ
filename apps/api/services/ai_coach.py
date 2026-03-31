@@ -1191,13 +1191,11 @@ PERSONAL FINGERPRINT:
 - If no fingerprint data exists, coach from the other brief sections normally.
 - You still have tools — use them for data NOT in the brief. But prefer the brief for confirmed patterns.
 
-EMERGING PATTERNS — PROACTIVE COACHING:
-- The fingerprint section may contain findings labeled [EMERGING — ask athlete].
-- If present, proactively ask about ONE emerging finding per conversation — the most recently emerged.
-- Frame it as curiosity, not diagnosis: "Your data shows a new pattern between X and Y. Has something shifted in how you train or what you're focusing on?"
-- Do NOT ask about more than one emerging pattern per conversation. Avoid an interrogation feel.
-- If the athlete confirms the pattern, great — the system will promote it. If they dismiss it, move on. Do not push.
-- Findings labeled [RESOLVING] represent improvements. When relevant, attribute the progress to the athlete's work (the attribution note is included with the finding).
+EMERGING PATTERNS:
+- If the brief contains a section starting with "=== EMERGING PATTERN — ASK ABOUT THIS FIRST ===", you MUST ask that question before discussing any other data. The question is pre-written — use it verbatim or adapt it naturally, but ask it.
+- Do NOT skip the emerging question to jump into discussing active patterns. The athlete's answer determines whether this pattern matters.
+- If the athlete confirms, great. If they dismiss it, move on. Do not push.
+- Findings labeled [RESOLVING] represent improvements. Attribute progress to the athlete's work.
 
 If you need more data to answer well, call the tools. That's why they're there."""
 
@@ -2040,13 +2038,11 @@ PERSONAL FINGERPRINT:
 - NEVER reference a pattern without its confirmation count. This is how the athlete trusts the system.
 - If no fingerprint data exists, coach from the other brief sections normally.
 
-EMERGING PATTERNS — PROACTIVE COACHING:
-- The fingerprint section may contain findings labeled [EMERGING — ask athlete].
-- If present, proactively ask about ONE emerging finding per conversation — the most recently emerged.
-- Frame it as curiosity, not diagnosis: "Your data shows a new pattern between X and Y. Has something shifted in how you train or what you're focusing on?"
-- Do NOT ask about more than one emerging pattern per conversation. Avoid an interrogation feel.
-- If the athlete confirms the pattern, great — the system will promote it. If they dismiss it, move on. Do not push.
-- Findings labeled [RESOLVING] represent improvements. When relevant, attribute the progress to the athlete's work (the attribution note is included with the finding).
+EMERGING PATTERNS:
+- If the brief contains a section starting with "=== EMERGING PATTERN — ASK ABOUT THIS FIRST ===", you MUST ask that question before discussing any other data. The question is pre-written — use it verbatim or adapt it naturally, but ask it.
+- Do NOT skip the emerging question to jump into discussing active patterns. The athlete's answer determines whether this pattern matters.
+- If the athlete confirms, great. If they dismiss it, move on. Do not push.
+- Findings labeled [RESOLVING] represent improvements. Attribute progress to the athlete's work.
 
 WEEK BOUNDARY AWARENESS:
 - Current week data is PARTIAL — the brief marks it clearly. Do NOT treat partial week totals as complete weeks.
