@@ -68,8 +68,14 @@ interface ModelDrivenPreview {
   };
 }
 
-function formatPlanCreateError(err: unknown): string {
+function formatPlanCreateError(err: unknown): { message: string; isUpgrade?: boolean } {
   if (err instanceof ApiClientError) {
+    if (err.status === 403) {
+      return {
+        message: 'Personalized training plans are a premium feature. Upgrade to unlock N=1 plan generation built from your actual training data.',
+        isUpgrade: true,
+      };
+    }
     const detail = (err.data as { detail?: unknown } | undefined)?.detail;
     if (detail && typeof detail === 'object') {
       const payload = detail as {
@@ -85,13 +91,13 @@ function formatPlanCreateError(err: unknown): string {
         const nextAction = payload.next_action
           ? payload.next_action.replaceAll('_', ' ')
           : 'adjust plan inputs';
-        return `Plan quality gate blocked this draft.\n${reasonText}\nNext step: ${nextAction}.`;
+        return { message: `Plan quality gate blocked this draft.\n${reasonText}\nNext step: ${nextAction}.` };
       }
-      return `Request failed (${err.status}).`;
+      return { message: `Request failed (${err.status}).` };
     }
-    return err.message;
+    return { message: err.message };
   }
-  return err instanceof Error ? err.message : 'Failed to create plan';
+  return { message: err instanceof Error ? err.message : 'Failed to create plan' };
 }
 
 const DISTANCES = [
@@ -114,7 +120,7 @@ export default function CreatePlanPage() {
   const [step, setStep] = useState<Step>('plan-type');
   const [isLoading, setIsLoading] = useState(false);
   const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<{ message: string; isUpgrade?: boolean } | null>(null);
   const [modelPreview, setModelPreview] = useState<ModelDrivenPreview | null>(null);
   const [modelPlanResult, setModelPlanResult] = useState<import('@/lib/api/services/plans').ModelDrivenPlanResponse | null>(null);
   
@@ -239,7 +245,7 @@ export default function CreatePlanPage() {
       router.push('/calendar');
     } catch (err) {
       console.error('[Plan Create] Error applying to calendar:', err);
-      setError('Failed to apply plan to calendar');
+      setError({ message: 'Failed to apply plan to calendar' });
     } finally {
       setIsLoading(false);
     }
@@ -285,12 +291,12 @@ export default function CreatePlanPage() {
       router.push('/calendar');
     } catch (err) {
       console.error('[Plan Create] Error applying to calendar:', err);
-      setError('Failed to apply plan to calendar');
+      setError({ message: 'Failed to apply plan to calendar' });
     } finally {
       setIsLoading(false);
     }
   };
-  
+
   const handleSubmit = async () => {
     setIsLoading(true);
     setError(null);
@@ -675,13 +681,25 @@ export default function CreatePlanPage() {
               </div>
               
               {error && (
-                <div className="mt-4 p-4 bg-red-900/50 border border-red-700 rounded-lg text-red-400 whitespace-pre-line text-sm">
-                  {error}
-                </div>
+                error.isUpgrade ? (
+                  <div className="mt-4 p-5 bg-gradient-to-r from-amber-900/40 to-amber-800/20 border border-amber-600/50 rounded-lg">
+                    <p className="text-amber-200 text-sm font-medium mb-3">{error.message}</p>
+                    <a
+                      href="/#pricing"
+                      className="inline-block px-5 py-2.5 bg-amber-500 hover:bg-amber-400 text-slate-900 font-semibold rounded-lg text-sm transition-colors"
+                    >
+                      View Plans & Upgrade
+                    </a>
+                  </div>
+                ) : (
+                  <div className="mt-4 p-4 bg-red-900/50 border border-red-700 rounded-lg text-red-400 whitespace-pre-line text-sm">
+                    {error.message}
+                  </div>
+                )
               )}
             </div>
           )}
-          
+
           {/* Model-Driven Preview */}
           {step === 'model-driven-preview' && modelPlanResult && (
             <div>
@@ -928,9 +946,21 @@ export default function CreatePlanPage() {
               </div>
               
               {error && (
-                <div className="mt-4 p-4 bg-red-900/50 border border-red-700 rounded-lg text-red-400 whitespace-pre-line text-sm">
-                  {error}
-                </div>
+                error.isUpgrade ? (
+                  <div className="mt-4 p-5 bg-gradient-to-r from-amber-900/40 to-amber-800/20 border border-amber-600/50 rounded-lg">
+                    <p className="text-amber-200 text-sm font-medium mb-3">{error.message}</p>
+                    <a
+                      href="/#pricing"
+                      className="inline-block px-5 py-2.5 bg-amber-500 hover:bg-amber-400 text-slate-900 font-semibold rounded-lg text-sm transition-colors"
+                    >
+                      View Plans & Upgrade
+                    </a>
+                  </div>
+                ) : (
+                  <div className="mt-4 p-4 bg-red-900/50 border border-red-700 rounded-lg text-red-400 whitespace-pre-line text-sm">
+                    {error.message}
+                  </div>
+                )
               )}
             </div>
           )}
@@ -1482,9 +1512,21 @@ export default function CreatePlanPage() {
               </div>
               
               {error && (
-                <div className="mt-4 p-4 bg-red-900/50 border border-red-700 rounded-lg text-red-400 whitespace-pre-line text-sm">
-                  {error}
-                </div>
+                error.isUpgrade ? (
+                  <div className="mt-4 p-5 bg-gradient-to-r from-amber-900/40 to-amber-800/20 border border-amber-600/50 rounded-lg">
+                    <p className="text-amber-200 text-sm font-medium mb-3">{error.message}</p>
+                    <a
+                      href="/#pricing"
+                      className="inline-block px-5 py-2.5 bg-amber-500 hover:bg-amber-400 text-slate-900 font-semibold rounded-lg text-sm transition-colors"
+                    >
+                      View Plans & Upgrade
+                    </a>
+                  </div>
+                ) : (
+                  <div className="mt-4 p-4 bg-red-900/50 border border-red-700 rounded-lg text-red-400 whitespace-pre-line text-sm">
+                    {error.message}
+                  </div>
+                )
               )}
             </div>
           )}
