@@ -47,7 +47,7 @@ class Athlete(Base):
     admin_permissions = Column(JSONB, nullable=False, default=list)
     
     # Paid subscription tiers (two-tier contract).
-    PAID_TIERS = {"subscriber"}
+    PAID_TIERS = {"subscriber", "premium", "elite"}
     
     @property
     def has_active_subscription(self) -> bool:
