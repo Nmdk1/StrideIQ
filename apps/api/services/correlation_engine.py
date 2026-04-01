@@ -28,7 +28,7 @@ from models import (
     Activity, ActivitySplit, NutritionEntry, DailyCheckin, 
     WorkPattern, BodyComposition, ActivityFeedback,
     PlannedWorkout, TrainingPlan, PersonalBest,
-    GarminDay, ActivityReflection,
+    GarminDay, ActivityReflection, StrengthExerciseSet,
 )
 from datetime import date as date_type
 from services.efficiency_calculation import calculate_activity_efficiency_with_decoupling
@@ -1789,6 +1789,223 @@ def _align_time_series_with_dates(
     return [(date, dict1[date], dict2[date]) for date in sorted(common_dates)]
 
 
+def aggregate_cross_training_inputs(
+    athlete_id: str,
+    start_date: datetime,
+    end_date: datetime,
+    db: Session,
+) -> Dict[str, List[Tuple[date_type, float]]]:
+    """Compute cross-training signals for the correlation engine.
+
+    Strength signals come from StrengthExerciseSet (structured).
+    Cycling/flexibility signals come from Activity-level fields.
+    Timing signals are computed from Activity timestamps.
+    """
+    from models import StrengthExerciseSet
+    from collections import defaultdict
+
+    inputs: Dict[str, List[Tuple[date_type, float]]] = {}
+
+    # --- Strength signals (from StrengthExerciseSet) ---
+
+    strength_activities = (
+        db.query(Activity)
+        .filter(
+            Activity.athlete_id == athlete_id,
+            Activity.sport == "strength",
+            Activity.start_time >= start_date,
+            Activity.start_time <= end_date,
+        )
+        .order_by(Activity.start_time)
+        .all()
+    )
+
+    if strength_activities:
+        strength_activity_ids = [a.id for a in strength_activities]
+
+        all_sets = (
+            db.query(StrengthExerciseSet)
+            .filter(
+                StrengthExerciseSet.activity_id.in_(strength_activity_ids),
+                StrengthExerciseSet.set_type == "active",
+            )
+            .all()
+        )
+
+        sets_by_activity = defaultdict(list)
+        for s in all_sets:
+            sets_by_activity[s.activity_id].append(s)
+
+        peak_1rm_rows = (
+            db.query(
+                StrengthExerciseSet.exercise_category,
+                func.max(StrengthExerciseSet.estimated_1rm_kg),
+            )
+            .filter(
+                StrengthExerciseSet.athlete_id == athlete_id,
+                StrengthExerciseSet.estimated_1rm_kg.isnot(None),
+            )
+            .group_by(StrengthExerciseSet.exercise_category)
+            .all()
+        )
+        peak_1rm = {cat: val for cat, val in peak_1rm_rows if val}
+
+        daily_strength_sessions: Dict[date_type, int] = defaultdict(int)
+        daily_strength_duration: Dict[date_type, float] = defaultdict(float)
+        daily_lower_body: Dict[date_type, int] = defaultdict(int)
+        daily_upper_body: Dict[date_type, int] = defaultdict(int)
+        daily_core: Dict[date_type, int] = defaultdict(int)
+        daily_plyo: Dict[date_type, int] = defaultdict(int)
+        daily_heavy: Dict[date_type, int] = defaultdict(int)
+        daily_volume_kg: Dict[date_type, float] = defaultdict(float)
+        daily_unilateral: Dict[date_type, int] = defaultdict(int)
+        has_heavy_data = bool(peak_1rm)
+
+        _LOWER_PATTERNS = {"hip_hinge", "squat", "lunge", "calf", "plyometric"}
+        _UPPER_PATTERNS = {"push", "pull"}
+
+        for act in strength_activities:
+            d = act.start_time.date()
+            daily_strength_sessions[d] += 1
+            daily_strength_duration[d] += float(act.duration_s or 0) / 60.0
+
+            act_sets = sets_by_activity.get(act.id, [])
+            for s in act_sets:
+                if s.movement_pattern in _LOWER_PATTERNS:
+                    daily_lower_body[d] += 1
+                if s.movement_pattern in _UPPER_PATTERNS:
+                    daily_upper_body[d] += 1
+                if s.movement_pattern == "core":
+                    daily_core[d] += 1
+                if s.movement_pattern == "plyometric":
+                    daily_plyo[d] += 1
+                if s.is_unilateral:
+                    daily_unilateral[d] += 1
+                if s.weight_kg and s.reps:
+                    daily_volume_kg[d] += s.weight_kg * s.reps
+                if has_heavy_data and s.weight_kg and s.exercise_category in peak_1rm:
+                    if s.weight_kg >= 0.85 * peak_1rm[s.exercise_category]:
+                        daily_heavy[d] += 1
+
+        inputs["ct_strength_sessions"] = [(d, float(v)) for d, v in sorted(daily_strength_sessions.items())]
+        inputs["ct_strength_duration_min"] = [(d, v) for d, v in sorted(daily_strength_duration.items())]
+        inputs["ct_lower_body_sets"] = [(d, float(v)) for d, v in sorted(daily_lower_body.items())]
+        inputs["ct_upper_body_sets"] = [(d, float(v)) for d, v in sorted(daily_upper_body.items())]
+        inputs["ct_core_sets"] = [(d, float(v)) for d, v in sorted(daily_core.items())]
+        inputs["ct_plyometric_sets"] = [(d, float(v)) for d, v in sorted(daily_plyo.items())]
+
+        if has_heavy_data:
+            inputs["ct_heavy_sets"] = [(d, float(v)) for d, v in sorted(daily_heavy.items())]
+
+        inputs["ct_total_volume_kg"] = [(d, v) for d, v in sorted(daily_volume_kg.items())]
+        inputs["ct_unilateral_sets"] = [(d, float(v)) for d, v in sorted(daily_unilateral.items())]
+
+        # --- Timing signals: lag from strength to run ---
+        run_activities = (
+            db.query(Activity.start_time)
+            .filter(
+                Activity.athlete_id == athlete_id,
+                Activity.sport == "run",
+                Activity.start_time >= start_date,
+                Activity.start_time <= end_date,
+            )
+            .order_by(Activity.start_time)
+            .all()
+        )
+
+        if run_activities:
+            strength_times = sorted(a.start_time for a in strength_activities)
+
+            lag_24h = []
+            lag_48h = []
+            lag_72h = []
+            hours_since = []
+
+            for row in run_activities:
+                run_time = row.start_time
+                run_date = run_time.date()
+                most_recent_strength = None
+                for st in reversed(strength_times):
+                    if st < run_time:
+                        most_recent_strength = st
+                        break
+
+                if most_recent_strength:
+                    gap_hours = (run_time - most_recent_strength).total_seconds() / 3600
+                    hours_since.append((run_date, gap_hours))
+                    lag_24h.append((run_date, 1.0 if gap_hours <= 24 else 0.0))
+                    lag_48h.append((run_date, 1.0 if gap_hours <= 48 else 0.0))
+                    lag_72h.append((run_date, 1.0 if gap_hours <= 72 else 0.0))
+
+            if hours_since:
+                inputs["ct_hours_since_strength"] = hours_since
+                inputs["ct_strength_lag_24h"] = lag_24h
+                inputs["ct_strength_lag_48h"] = lag_48h
+                inputs["ct_strength_lag_72h"] = lag_72h
+
+        # Weekly frequency
+        from collections import Counter
+        weekly_counts = Counter()
+        for act in strength_activities:
+            iso = act.start_time.isocalendar()
+            weekly_counts[(iso[0], iso[1])] += 1
+
+        freq_7d = []
+        for act in strength_activities:
+            iso = act.start_time.isocalendar()
+            freq_7d.append((act.start_time.date(), float(weekly_counts[(iso[0], iso[1])])))
+        if freq_7d:
+            inputs["ct_strength_frequency_7d"] = freq_7d
+
+    # --- Cycling signals ---
+    cycling = (
+        db.query(
+            func.date(Activity.start_time).label("day"),
+            func.sum(Activity.duration_s).label("dur"),
+            func.sum(Activity.intensity_score).label("tss"),
+        )
+        .filter(
+            Activity.athlete_id == athlete_id,
+            Activity.sport == "cycling",
+            Activity.start_time >= start_date,
+            Activity.start_time <= end_date,
+        )
+        .group_by(func.date(Activity.start_time))
+        .all()
+    )
+    if cycling:
+        inputs["ct_cycling_duration_min"] = [
+            (row.day, float(row.dur) / 60.0)
+            for row in cycling if row.dur
+        ]
+        inputs["ct_cycling_tss"] = [
+            (row.day, float(row.tss))
+            for row in cycling if row.tss
+        ]
+
+    # --- Flexibility signals ---
+    flex_weekly = (
+        db.query(
+            func.date(Activity.start_time).label("day"),
+            func.count(Activity.id).label("cnt"),
+        )
+        .filter(
+            Activity.athlete_id == athlete_id,
+            Activity.sport == "flexibility",
+            Activity.start_time >= start_date,
+            Activity.start_time <= end_date,
+        )
+        .group_by(func.date(Activity.start_time))
+        .all()
+    )
+    if flex_weekly:
+        inputs["ct_flexibility_sessions_7d"] = [
+            (row.day, float(row.cnt)) for row in flex_weekly
+        ]
+
+    return inputs
+
+
 def analyze_correlations(
     athlete_id: str,
     days: int = 90,
@@ -1839,6 +2056,11 @@ def analyze_correlations(
         athlete_id, start_date, end_date, db
     )
     inputs.update(pattern_inputs)
+
+    cross_training_inputs = aggregate_cross_training_inputs(
+        athlete_id, start_date, end_date, db
+    )
+    inputs.update(cross_training_inputs)
 
     # Daily session stress (acute load proxy for confounder control)
     inputs["daily_session_stress"] = aggregate_daily_session_stress(

@@ -191,6 +191,25 @@ FRIENDLY_NAMES: Dict[str, str] = {
     "pace_threshold": "threshold pace",
     "completion": "workout completion",
     "efficiency_threshold": "threshold running efficiency",
+
+    # Cross-training (Phase A)
+    "ct_strength_sessions": "strength training sessions",
+    "ct_strength_duration_min": "strength training duration",
+    "ct_lower_body_sets": "lower body strength sets",
+    "ct_upper_body_sets": "upper body strength sets",
+    "ct_core_sets": "core training sets",
+    "ct_plyometric_sets": "explosive/plyometric sets",
+    "ct_heavy_sets": "heavy resistance sets",
+    "ct_total_volume_kg": "total strength volume",
+    "ct_unilateral_sets": "single-leg exercise sets",
+    "ct_strength_lag_24h": "strength within 24 hours before run",
+    "ct_strength_lag_48h": "strength within 48 hours before run",
+    "ct_strength_lag_72h": "strength within 72 hours before run",
+    "ct_hours_since_strength": "hours between strength and running",
+    "ct_strength_frequency_7d": "strength sessions per week",
+    "ct_cycling_duration_min": "cycling duration",
+    "ct_cycling_tss": "cycling training stress",
+    "ct_flexibility_sessions_7d": "flexibility sessions per week",
 }
 
 
