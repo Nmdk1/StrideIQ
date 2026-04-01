@@ -80,7 +80,14 @@ class AthleteState:
 def _parse_goal_time(gt: Optional[str]) -> Optional[int]:
     if not gt:
         return None
-    parts = gt.strip().split(":")
+    gt = gt.strip()
+    if ":" not in gt:
+        try:
+            val = int(gt)
+            return val if val > 0 else None
+        except ValueError:
+            return None
+    parts = gt.split(":")
     try:
         if len(parts) == 3:
             return int(parts[0]) * 3600 + int(parts[1]) * 60 + int(parts[2])
@@ -296,7 +303,6 @@ def plan_weeks(state: AthleteState) -> List[WeekRx]:
 
     # Volume curve (only non-cutback weeks grow)
     volumes = _build_volume_curve(vol_start, vol_peak, build_n, taper_n, state)
-
     # Apply cutback and sawtooth: post-cutback > pre-cutback
     for i in sorted(cutback_set):
         prev_vol = volumes[max(0, i - 1)]
@@ -980,8 +986,8 @@ def assemble_plan(state: AthleteState, week_rxs: List[WeekRx]) -> List[WeekPlan]
 
         days.sort(key=lambda d: d.day_of_week)
 
-        # Cap assembled volume at target to preserve sawtooth fidelity
         raw_total = sum(d.target_miles for d in days)
+
         if raw_total > rx.target_volume > 0:
             overshoot = raw_total - rx.target_volume
             easy_pool = sorted(
@@ -995,6 +1001,21 @@ def assemble_plan(state: AthleteState, week_rxs: List[WeekRx]) -> List[WeekPlan]
                 if trim > 0:
                     d.target_miles = round(d.target_miles - trim, 1)
                     overshoot -= trim
+        elif raw_total < rx.target_volume and rx.target_volume > 0:
+            shortfall = rx.target_volume - raw_total
+            e_cap = min(14.0, rx.target_volume / max(state.days_per_week, 3) * 1.6)
+            easy_pool = sorted(
+                [d for d in days if d.workout_type in ("easy", "easy_strides", "recovery")],
+                key=lambda d: d.target_miles,
+            )
+            for d in easy_pool:
+                if shortfall <= 0:
+                    break
+                room = e_cap - d.target_miles
+                add = min(shortfall, room)
+                if add > 0:
+                    d.target_miles = round(d.target_miles + add, 1)
+                    shortfall -= add
 
         total = round(sum(d.target_miles for d in days), 1)
 

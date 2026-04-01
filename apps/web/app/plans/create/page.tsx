@@ -139,6 +139,7 @@ export default function CreatePlanPage() {
     target_peak_weekly_min: undefined,
     target_peak_weekly_max: undefined,
   });
+  const [goalTimeDisplay, setGoalTimeDisplay] = useState('');
   const [constraintAwareResult, setConstraintAwareResult] = useState<import('@/lib/api/services/plans').ConstraintAwarePlanResponse | null>(null);
   const [constraintAwarePreview, setConstraintAwarePreview] = useState<import('@/lib/api/services/plans').ConstraintAwarePreview | null>(null);
   
@@ -838,6 +839,28 @@ export default function CreatePlanPage() {
                     placeholder="e.g., Boston Marathon"
                     className="w-full px-4 py-3 bg-slate-900 border border-slate-700/50 rounded-lg text-white placeholder-slate-500"
                   />
+                </div>
+
+                {/* Goal Time */}
+                <div>
+                  <label className="block text-sm font-medium text-slate-400 mb-2">Goal Time (optional)</label>
+                  <input
+                    type="text"
+                    value={goalTimeDisplay}
+                    onChange={(e) => {
+                      const raw = e.target.value;
+                      setGoalTimeDisplay(raw);
+                      const secs = parseTimeToSeconds(raw);
+                      setFormData({ ...formData, goal_time_seconds: secs ?? undefined });
+                    }}
+                    placeholder={formData.distance === 'marathon' || formData.distance === 'half_marathon' ? 'e.g. 1:45:00' : 'e.g. 55:00'}
+                    className="w-full px-4 py-3 bg-slate-900 border border-slate-700/50 rounded-lg text-white placeholder-slate-500"
+                  />
+                  <div className="text-xs text-slate-500 mt-2">
+                    {formData.goal_time_seconds
+                      ? `${Math.floor(formData.goal_time_seconds / 3600) > 0 ? Math.floor(formData.goal_time_seconds / 3600) + 'h ' : ''}${Math.floor((formData.goal_time_seconds % 3600) / 60)}m ${formData.goal_time_seconds % 60}s — we'll set your training paces from this.`
+                      : 'Enter H:MM:SS or MM:SS. Used to calculate your training paces.'}
+                  </div>
                 </div>
 
                 {/* Athlete peak mileage override */}

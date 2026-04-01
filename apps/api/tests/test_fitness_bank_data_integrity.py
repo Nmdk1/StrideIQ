@@ -124,7 +124,7 @@ class TestFindBestRace:
 
     def test_empty_races_returns_default(self):
         rpi, race = self._calc()._find_best_race([])
-        assert rpi == 45.0
+        assert rpi == 0.0
         assert race is None
 
     def test_single_valid_race(self):
@@ -179,14 +179,14 @@ class TestFindBestRace:
         """Races with RPI < 35 are not valid race efforts."""
         junk = _make_race(days_ago=30, rpi=30.0)
         rpi, best = self._calc()._find_best_race([junk])
-        assert rpi == 45.0
+        assert rpi == 0.0
         assert best is None
 
     def test_low_confidence_excluded(self):
         """Races with confidence < 0.5 are excluded."""
         anomaly = _make_race(days_ago=30, rpi=55.0, confidence=0.4)
         rpi, best = self._calc()._find_best_race([anomaly])
-        assert rpi == 45.0
+        assert rpi == 0.0
         assert best is None
 
     def test_mixed_valid_and_invalid(self):

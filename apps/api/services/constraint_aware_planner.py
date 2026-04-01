@@ -302,14 +302,15 @@ class ConstraintAwarePlanner:
         else:
             days_per_week = max(3, min(6, 7 - len(bank.typical_rest_days or [])))
 
-        # Abbreviated plan peak cap: 1 mile per running session (not the
-        # debunked "10% rule").  If the target is within the athlete's
-        # established peak, no cap — that's a return to proven mileage.
+        # Abbreviated plan volume: guarantee at least 1 mile per running
+        # session of build room.  The volume contract's 10K/5K cap may
+        # have shrunk applied_peak below starting_vol + dpw — override it.
         if is_abbreviated:
-            returning_to_established = _applied_peak <= bank.peak_weekly_miles
-            if not returning_to_established:
-                safe_increase = days_per_week
-                _applied_peak = min(_applied_peak, starting_vol + safe_increase)
+            safe_increase = days_per_week
+            min_peak = starting_vol + safe_increase
+            _applied_peak = max(_applied_peak, min_peak)
+            if _applied_peak > bank.peak_weekly_miles:
+                _applied_peak = min(bank.peak_weekly_miles, min_peak)
             volume_contract["applied_peak"] = round(_applied_peak, 1)
             volume_contract["band_max"] = round(_applied_peak, 1)
         if starting_vol != bank.current_weekly_miles:
@@ -855,7 +856,14 @@ class ConstraintAwarePlanner:
     def _parse_goal_seconds(gt: Optional[str]) -> Optional[int]:
         if not gt:
             return None
-        parts = gt.strip().split(":")
+        gt = gt.strip()
+        if ":" not in gt:
+            try:
+                val = int(gt)
+                return val if val > 0 else None
+            except ValueError:
+                return None
+        parts = gt.split(":")
         try:
             if len(parts) == 3:
                 return int(parts[0]) * 3600 + int(parts[1]) * 60 + int(parts[2])
