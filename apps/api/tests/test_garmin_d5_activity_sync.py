@@ -353,16 +353,16 @@ class TestPayloadShapeNormalization:
         assert result["created"] == 0
         assert result["updated"] == 0
 
-    def test_mixed_list_only_runs_processed(self):
-        """Mixed list: only running activities created; cycling skipped."""
+    def test_mixed_list_all_accepted_sports_processed(self):
+        """Mixed list: both running and cycling activities are created."""
         mock_db = _make_mock_db()
         mock_athlete = _make_mock_athlete()
 
         payload = [_RUNNING_RAW, _CYCLING_RAW]
         result = self._run_task(mock_db, mock_athlete, payload)
 
-        assert result["created"] == 1
-        assert result["skipped"] == 1
+        assert result["created"] == 2
+        assert result["skipped"] == 0
 
 
 # ---------------------------------------------------------------------------
@@ -370,7 +370,7 @@ class TestPayloadShapeNormalization:
 # ---------------------------------------------------------------------------
 
 class TestActivityTypeFiltering:
-    """Only running activities (sport="run") should be created as Activity rows."""
+    """Accepted sports are created; unmapped types are skipped."""
 
     def _run_item(self, raw_payload):
         from tasks.garmin_webhook_tasks import _ingest_activity_item
@@ -388,17 +388,28 @@ class TestActivityTypeFiltering:
         result = self._run_item(_TRAIL_RUNNING_RAW)
         assert result == "created"
 
-    def test_cycling_activity_is_skipped(self):
+    def test_cycling_activity_is_created(self):
         result = self._run_item(_CYCLING_RAW)
-        assert result == "skipped"
+        assert result == "created"
 
     def test_treadmill_running_is_created(self):
         raw = {**_RUNNING_RAW, "activityType": "TREADMILL_RUNNING", "summaryId": "sum-treadmill-001"}
         result = self._run_item(raw)
         assert result == "created"
 
-    def test_unknown_sport_is_skipped(self):
-        raw = {**_RUNNING_RAW, "activityType": "YOGA", "summaryId": "sum-yoga-001"}
+    def test_cross_training_types_are_created(self):
+        for garmin_type in ("WALKING", "HIKING", "STRENGTH_TRAINING", "YOGA", "PILATES"):
+            raw = {**_RUNNING_RAW, "activityType": garmin_type, "summaryId": f"sum-{garmin_type.lower()}-001"}
+            result = self._run_item(raw)
+            assert result == "created", f"{garmin_type} should be created"
+
+    def test_unmapped_sport_is_skipped(self):
+        raw = {**_RUNNING_RAW, "activityType": "GOLF", "summaryId": "sum-golf-001"}
+        result = self._run_item(raw)
+        assert result == "skipped"
+
+    def test_swimming_is_skipped(self):
+        raw = {**_RUNNING_RAW, "activityType": "SWIMMING", "summaryId": "sum-swim-001"}
         result = self._run_item(raw)
         assert result == "skipped"
 
@@ -621,7 +632,7 @@ class TestLastGarminSyncUpdate:
         assert isinstance(mock_athlete.last_garmin_sync, datetime)
 
     def test_last_garmin_sync_updated_even_when_all_skipped(self):
-        """Sync timestamp updated even if all items are skipped (e.g. cycling only)."""
+        """Sync timestamp updated even if all items are skipped (e.g. unmapped sport)."""
         from tasks.garmin_webhook_tasks import process_garmin_activity_task
         mock_db = _make_mock_db()
         mock_athlete = _make_mock_athlete()
@@ -629,9 +640,10 @@ class TestLastGarminSyncUpdate:
         mock_db.query.return_value.filter.return_value.first.return_value = None
         mock_db.query.return_value.filter.return_value.all.return_value = []
 
+        golf_raw = {**_RUNNING_RAW, "activityType": "GOLF", "summaryId": "sum-golf-skip"}
         with patch("tasks.garmin_webhook_tasks.get_db_sync", return_value=mock_db), \
              patch("tasks.garmin_webhook_tasks._find_athlete_in_db", return_value=mock_athlete):
-            process_garmin_activity_task.run(ATHLETE_ID, _CYCLING_RAW)
+            process_garmin_activity_task.run(ATHLETE_ID, golf_raw)
 
         assert mock_athlete.last_garmin_sync is not None
 
@@ -676,7 +688,7 @@ class TestLastGarminSyncUpdate:
         mock_db = _make_mock_db()
         mock_athlete = _make_mock_athlete()
 
-        # CYCLING payload is skipped by _ingest_activity_item
+        golf_raw = {**_RUNNING_RAW, "activityType": "GOLF", "summaryId": "sum-golf-nobriefing"}
         mock_db.query.return_value.filter.return_value.first.return_value = None
         mock_db.query.return_value.filter.return_value.all.return_value = []
 
@@ -684,7 +696,7 @@ class TestLastGarminSyncUpdate:
              patch("tasks.garmin_webhook_tasks._find_athlete_in_db", return_value=mock_athlete), \
              patch("services.home_briefing_cache.mark_briefing_dirty") as mock_dirty, \
              patch("tasks.home_briefing_tasks.enqueue_briefing_refresh") as mock_enq:
-            process_garmin_activity_task.run(ATHLETE_ID, _CYCLING_RAW)
+            process_garmin_activity_task.run(ATHLETE_ID, golf_raw)
 
         mock_dirty.assert_not_called()
         mock_enq.assert_not_called()
@@ -830,6 +842,7 @@ class TestStreamIngestionTask:
         activity.garmin_activity_id = 5001968355
         activity.start_time = datetime.fromtimestamp(_SAMPLE_UNIX, tz=timezone.utc)
         activity.stream_fetch_status = "pending"
+        activity.sport = "run"
         return activity
 
     def _run_task(self, payload, activity=None):
@@ -919,6 +932,7 @@ class TestStreamIngestionTask:
         activity_b.garmin_activity_id = 9999000001
         activity_b.start_time = datetime.fromtimestamp(_SAMPLE_UNIX, tz=timezone.utc)
         activity_b.stream_fetch_status = "pending"
+        activity_b.sport = "run"
 
         payload_b = {**_DETAIL_PAYLOAD, "activityId": 9999000001}
 
@@ -952,3 +966,13 @@ class TestStreamIngestionTask:
         result, mock_db = self._run_task(_DETAIL_PAYLOAD, activity=activity)
 
         assert result["processed"] == 1
+
+    def test_non_run_detail_stored_in_session_detail(self):
+        """Non-run activity detail: raw payload stored in session_detail, no stream created."""
+        activity = self._make_activity()
+        activity.sport = "cycling"
+        result, mock_db = self._run_task(_DETAIL_PAYLOAD, activity=activity)
+
+        assert result["processed"] == 1
+        assert activity.session_detail == _DETAIL_PAYLOAD
+        mock_db.add.assert_not_called()

@@ -467,6 +467,11 @@ class Activity(Base):
     stream_fetch_retry_count = Column(Integer, nullable=False, default=0, server_default="0")
     stream_fetch_deferred_until = Column(DateTime(timezone=True), nullable=True)
 
+    # --- CROSS-TRAINING METADATA ---
+    garmin_activity_type = Column(Text, nullable=True)
+    cadence_unit = Column(Text, nullable=True)
+    session_detail = Column(JSONB, nullable=True)
+
     # --- GARMIN ACTIVITY OFFICIAL FIELDS (D3 / garmin_004) ---
     # From the official ClientActivity JSON schema (portal verified Feb 2026).
     # garmin_activity_id is Garmin's native int64 — different from summaryId

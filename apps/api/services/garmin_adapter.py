@@ -43,13 +43,42 @@ from services.pace_normalization import calculate_ngp_from_split
 logger = logging.getLogger(__name__)
 
 # --- Activity type → internal sport mapping ---
-# Only run types map to "run". All others are skipped by the ingest task.
 _ACTIVITY_TYPE_MAP: Dict[str, Optional[str]] = {
+    # Run types
     "RUNNING": "run",
     "TRAIL_RUNNING": "run",
     "TREADMILL_RUNNING": "run",
     "INDOOR_RUNNING": "run",
     "VIRTUAL_RUN": "run",
+    "TRACK_RUNNING": "run",
+    "STREET_RUNNING": "run",
+    "ULTRA_RUN": "run",
+    "OBSTACLE_RUN": "run",
+    # Cycling (aerobic cross-training, same load bucket)
+    "CYCLING": "cycling",
+    "INDOOR_CYCLING": "cycling",
+    "MOUNTAIN_BIKING": "cycling",
+    "ELLIPTICAL": "cycling",
+    "STAIR_CLIMBING": "cycling",
+    # Walking / hiking (distinct stimuli)
+    "WALKING": "walking",
+    "HIKING": "hiking",
+    # Strength
+    "STRENGTH_TRAINING": "strength",
+    # Flexibility (recovery modalities, not training load)
+    "YOGA": "flexibility",
+    "PILATES": "flexibility",
+}
+
+_ACCEPTED_SPORTS = {"run", "cycling", "walking", "hiking", "strength", "flexibility"}
+
+_CADENCE_UNIT_MAP: Dict[str, Optional[str]] = {
+    "run": "spm",
+    "walking": "spm",
+    "hiking": "spm",
+    "cycling": "rpm",
+    "strength": None,
+    "flexibility": None,
 }
 
 
@@ -73,6 +102,9 @@ def adapt_activity_summary(raw: Dict[str, Any]) -> Dict[str, Any]:
         Dict with internal field names only. All values may be None if the
         corresponding Garmin field is absent from the payload.
     """
+    sport = _map_activity_type(raw.get("activityType"))
+    raw_type = _str_or_none(raw.get("activityType"))
+
     return {
         # --- Identifiers ---
         "external_activity_id": _str_or_none(raw.get("summaryId")),
@@ -84,7 +116,9 @@ def adapt_activity_summary(raw: Dict[str, Any]) -> Dict[str, Any]:
         "duration_s": _int_or_none(raw.get("durationInSeconds")),
 
         # --- Sport classification ---
-        "sport": _map_activity_type(raw.get("activityType")),
+        "sport": sport,
+        "garmin_activity_type": raw_type,
+        "cadence_unit": _CADENCE_UNIT_MAP.get(sport) if sport else None,
 
         # --- Metadata ---
         "name": _str_or_none(raw.get("activityName")),
@@ -780,8 +814,8 @@ def _map_activity_type(garmin_type: Any) -> Optional[str]:
     """
     Map Garmin activityType string to internal sport code.
 
-    Returns "run" for known running types, None for everything else.
-    The ingest task skips activities where sport is None.
+    Returns a sport string for known types, None for unmapped types.
+    The ingest task skips activities where sport is not in _ACCEPTED_SPORTS.
     """
     if garmin_type is None:
         return None

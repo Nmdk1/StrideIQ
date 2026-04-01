@@ -43,6 +43,7 @@ from services.garmin_adapter import (
     adapt_stress_detail,
     adapt_daily_summary,
     adapt_user_metrics,
+    _ACCEPTED_SPORTS,
 )
 from services.activity_deduplication import match_activities, TIME_WINDOW_S
 from services.garmin_backfill import request_deep_garmin_backfill, request_garmin_backfill
@@ -274,6 +275,8 @@ def _create_activity_from_adapted(adapted: Dict[str, Any], athlete_id) -> Activi
         garmin_activity_id=adapted.get("garmin_activity_id"),
         source=adapted.get("source") or "garmin",
         sport=adapted.get("sport", "run"),
+        garmin_activity_type=adapted.get("garmin_activity_type"),
+        cadence_unit=adapted.get("cadence_unit"),
         name=adapted.get("name"),
         start_time=adapted["start_time"],
         duration_s=adapted.get("duration_s"),
@@ -468,10 +471,11 @@ def _ingest_activity_item(
     """
     adapted = adapt_activity_summary(raw_item)
 
-    if adapted.get("sport") != "run":
+    if adapted.get("sport") not in _ACCEPTED_SPORTS:
         logger.debug(
-            "Skipping non-run activity (sport=%s, external_id=%s)",
+            "Skipping unmapped activity (sport=%s, type=%s, external_id=%s)",
             adapted.get("sport"),
+            adapted.get("garmin_activity_type"),
             adapted.get("external_activity_id"),
         )
         return "skipped"
@@ -606,6 +610,15 @@ def _ingest_activity_detail_item(
         )
         return False
 
+    if activity.sport != "run":
+        activity.session_detail = raw_item
+        logger.info(
+            "Non-run detail stored in session_detail for garmin_activity_id=%s (sport=%s)",
+            garmin_activity_id_int,
+            activity.sport,
+        )
+        return True
+
     samples = envelope.get("samples") or []
 
     # Determine early whether laps exist — both samples and laps are optional,
@@ -732,7 +745,7 @@ def process_garmin_activity_task(
 
     Steps per activity item:
       1. adapt_activity_summary() — Garmin→internal field translation
-      2. Filter: sport="run" only (RUNNING, TRAIL_RUNNING, TREADMILL_RUNNING, etc.)
+      2. Filter: sport must be in _ACCEPTED_SPORTS (run, cycling, walking, hiking, strength, flexibility)
       3. Idempotency: skip if already synced as Garmin (same external_activity_id)
       4. Deduplication: time-window check against existing activities
       5. Garmin wins on dedup match: update existing row, provider→"garmin"

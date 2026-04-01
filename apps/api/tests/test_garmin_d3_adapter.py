@@ -160,13 +160,37 @@ class TestAdaptActivitySummary:
             out = adapt_activity_summary(self._sample_raw(activityType=garmin_type))
             assert out["sport"] == "run", f"Expected 'run' for {garmin_type}"
 
-    def test_cycling_maps_to_none(self):
+    def test_cycling_maps_to_cycling(self):
         out = adapt_activity_summary(self._sample_raw(activityType="CYCLING"))
-        assert out["sport"] is None
+        assert out["sport"] == "cycling"
+        assert out["garmin_activity_type"] == "CYCLING"
+        assert out["cadence_unit"] == "rpm"
+
+    def test_cross_training_types(self):
+        cases = {
+            "INDOOR_CYCLING": ("cycling", "rpm"),
+            "MOUNTAIN_BIKING": ("cycling", "rpm"),
+            "ELLIPTICAL": ("cycling", "rpm"),
+            "STAIR_CLIMBING": ("cycling", "rpm"),
+            "WALKING": ("walking", "spm"),
+            "HIKING": ("hiking", "spm"),
+            "STRENGTH_TRAINING": ("strength", None),
+            "YOGA": ("flexibility", None),
+            "PILATES": ("flexibility", None),
+            "TRACK_RUNNING": ("run", "spm"),
+            "ULTRA_RUN": ("run", "spm"),
+        }
+        for garmin_type, (expected_sport, expected_cadence) in cases.items():
+            out = adapt_activity_summary(self._sample_raw(activityType=garmin_type))
+            assert out["sport"] == expected_sport, f"{garmin_type} → {out['sport']}"
+            assert out["cadence_unit"] == expected_cadence, f"{garmin_type} cadence"
+            assert out["garmin_activity_type"] == garmin_type
 
     def test_unknown_type_maps_to_none(self):
         out = adapt_activity_summary(self._sample_raw(activityType="GOLF"))
         assert out["sport"] is None
+        assert out["garmin_activity_type"] == "GOLF"
+        assert out["cadence_unit"] is None
 
     def test_missing_type_maps_to_none(self):
         out = adapt_activity_summary(self._sample_raw(activityType=None))
