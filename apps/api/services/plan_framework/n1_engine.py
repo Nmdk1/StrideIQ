@@ -980,15 +980,17 @@ def assemble_plan(state: AthleteState, week_rxs: List[WeekRx]) -> List[WeekPlan]
         raw_total = sum(d.target_miles for d in days)
         if raw_total > rx.target_volume > 0:
             overshoot = raw_total - rx.target_volume
-            easy_pool = [
-                d for d in days
-                if d.workout_type in ("easy", "easy_strides", "recovery")
-            ]
-            easy_sum = sum(d.target_miles for d in easy_pool)
-            if easy_sum > overshoot:
-                scale = (easy_sum - overshoot) / easy_sum
-                for d in easy_pool:
-                    d.target_miles = max(2.0, round(d.target_miles * scale, 1))
+            easy_pool = sorted(
+                [d for d in days if d.workout_type in ("easy", "easy_strides", "recovery")],
+                key=lambda d: -d.target_miles,
+            )
+            for d in easy_pool:
+                if overshoot <= 0:
+                    break
+                trim = min(overshoot, d.target_miles - 2.0)
+                if trim > 0:
+                    d.target_miles = round(d.target_miles - trim, 1)
+                    overshoot -= trim
 
         total = round(sum(d.target_miles for d in days), 1)
 
