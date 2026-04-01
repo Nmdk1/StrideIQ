@@ -283,18 +283,30 @@ class ConstraintAwarePlanner:
 
         # Starting volume: use the HIGHEST of trailing average, 8w median, and
         # last complete week so W1 never prescribes below what they already ran.
-        starting_vol = max(
-            bank.current_weekly_miles,
-            bank.recent_8w_median_weekly_miles or 0.0,
-            bank.last_complete_week_miles or 0.0,
-        )
+        # For abbreviated plans (≤5 weeks), use the median instead of max to
+        # avoid inflating from one outlier week — there's no time to safely
+        # absorb a volume jump.
+        is_abbreviated = horizon_weeks <= 5
+        if is_abbreviated:
+            candidates = [
+                bank.current_weekly_miles,
+                bank.recent_8w_median_weekly_miles or 0.0,
+            ]
+            starting_vol = max(candidates)
+        else:
+            starting_vol = max(
+                bank.current_weekly_miles,
+                bank.recent_8w_median_weekly_miles or 0.0,
+                bank.last_complete_week_miles or 0.0,
+            )
         if starting_vol != bank.current_weekly_miles:
             logger.info(
                 "Starting volume adjusted: bank.current=%.1f -> %.1f "
-                "(8w_median=%.1f, last_complete_week=%.1f)",
+                "(8w_median=%.1f, last_complete_week=%.1f, abbreviated=%s)",
                 bank.current_weekly_miles, starting_vol,
                 bank.recent_8w_median_weekly_miles or 0.0,
                 bank.last_complete_week_miles or 0.0,
+                is_abbreviated,
             )
 
         # Days per week: intake questionnaire is the authority when available.
