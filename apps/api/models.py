@@ -471,6 +471,7 @@ class Activity(Base):
     garmin_activity_type = Column(Text, nullable=True)
     cadence_unit = Column(Text, nullable=True)
     session_detail = Column(JSONB, nullable=True)
+    strength_session_type = Column(Text, nullable=True)
 
     # --- GARMIN ACTIVITY OFFICIAL FIELDS (D3 / garmin_004) ---
     # From the official ClientActivity JSON schema (portal verified Feb 2026).
@@ -547,6 +548,7 @@ class Activity(Base):
     athlete = relationship("Athlete", back_populates="activities")
     splits = relationship("ActivitySplit", back_populates="activity", lazy="dynamic", order_by="ActivitySplit.split_number")
     stream = relationship("ActivityStream", back_populates="activity", uselist=False)
+    strength_exercise_sets = relationship("StrengthExerciseSet", back_populates="activity", cascade="all, delete-orphan")
 
     @property
     def pace_per_mile(self) -> Optional[float]:
@@ -557,6 +559,39 @@ class Activity(Base):
         if self.average_speed is None or float(self.average_speed) == 0:
             return None
         return 26.8224 / float(self.average_speed)
+
+
+class StrengthExerciseSet(Base):
+    """Individual exercise set within a strength training activity.
+
+    Parsed from Garmin exerciseSets API response. Movement pattern and muscle
+    group are classified via the taxonomy in services/strength_taxonomy.py.
+    Estimated 1RM is computed at write time using the Epley formula.
+    """
+    __tablename__ = "strength_exercise_set"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    activity_id = Column(UUID(as_uuid=True), ForeignKey("activity.id", ondelete="CASCADE"), nullable=False, index=True)
+    athlete_id = Column(UUID(as_uuid=True), ForeignKey("athlete.id", ondelete="CASCADE"), nullable=False)
+    set_order = Column(Integer, nullable=False)
+    exercise_name_raw = Column(Text, nullable=False)
+    exercise_category = Column(Text, nullable=False)
+    movement_pattern = Column(Text, nullable=False)
+    muscle_group = Column(Text, nullable=True)
+    is_unilateral = Column(Boolean, default=False, nullable=False)
+    set_type = Column(Text, nullable=False, default="active")
+    reps = Column(Integer, nullable=True)
+    weight_kg = Column(Float, nullable=True)
+    duration_s = Column(Float, nullable=True)
+    estimated_1rm_kg = Column(Float, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    __table_args__ = (
+        Index("ix_strength_set_athlete_pattern", "athlete_id", "movement_pattern"),
+    )
+
+    activity = relationship("Activity", back_populates="strength_exercise_sets")
+    athlete = relationship("Athlete")
 
 
 class PerformanceEvent(Base):
