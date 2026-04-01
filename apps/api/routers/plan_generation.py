@@ -2236,12 +2236,17 @@ async def create_constraint_aware_plan(
     
     # Check feature flag
     flags = FeatureFlagService(db)
-    if not flags.is_enabled("plan.model_driven_generation", athlete):
+    flag_ok = flags.is_enabled("plan.model_driven_generation", athlete)
+    logger.info("constraint-aware gate: athlete=%s tier=%s flag=%s has_active=%s role=%s",
+                athlete.id, athlete.subscription_tier, flag_ok,
+                athlete.has_active_subscription, athlete.role)
+    if not flag_ok:
         raise HTTPException(
             status_code=403,
             detail={
                 "reason": "Constraint-aware plans require an active paid subscription",
-                "upgrade_path": "/pricing"
+                "upgrade_path": "/pricing",
+                "gate": "feature_flag",
             }
         )
     
@@ -2251,7 +2256,8 @@ async def create_constraint_aware_plan(
             status_code=403,
             detail={
                 "reason": "Constraint-aware plans require an active paid subscription",
-                "upgrade_path": "/pricing"
+                "upgrade_path": "/pricing",
+                "gate": "paid_entitlement",
             }
         )
     
