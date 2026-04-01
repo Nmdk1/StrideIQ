@@ -640,10 +640,13 @@ def _build_quality(state, needs, week_ratio, weekly_vol, lr_type):
 
     if dist == "10k":
         mq.append(_make_threshold_scaled(week_ratio, weekly_vol, exp, paces, dist))
-        if exp in (ExperienceLevel.EXPERIENCED, ExperienceLevel.ELITE):
-            mq.append(_make_intervals_scaled(week_ratio, weekly_vol, exp, paces))
-        elif week_ratio > 0.50:
-            mq.append(_make_intervals_scaled(week_ratio, weekly_vol, exp, paces))
+        lr_share = state.current_long_run_miles / max(weekly_vol, 1.0)
+        volume_allows_second = lr_share < 0.45
+        if volume_allows_second:
+            if exp in (ExperienceLevel.EXPERIENCED, ExperienceLevel.ELITE):
+                mq.append(_make_intervals_scaled(week_ratio, weekly_vol, exp, paces))
+            elif week_ratio > 0.50:
+                mq.append(_make_intervals_scaled(week_ratio, weekly_vol, exp, paces))
 
     elif dist == "5k":
         mq.append(_make_intervals_scaled(week_ratio, weekly_vol, exp, paces))
