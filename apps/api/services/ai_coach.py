@@ -1223,6 +1223,13 @@ If you need more data to answer well, call the tools. That's why they're there."
         except Exception:
             pass
 
+        try:
+            ct_context = _build_cross_training_context(str(athlete_id), self.db)
+            if ct_context:
+                system_prompt += ct_context
+        except Exception:
+            pass
+
         return system_prompt
 
     async def query_opus(
@@ -5447,6 +5454,126 @@ ATHLETE BRIEF:
                 lines.append(f"- {e.get('date')}: {e.get('value')}{suffix}")
 
         return "\n".join(lines)
+
+
+def _build_cross_training_context(athlete_id: str, db: Session) -> Optional[str]:
+    """Build cross-training context for coach prompt.
+
+    Returns a formatted string section if the athlete has cross-training data
+    in the last 7 days, or None if no relevant data exists.
+    """
+    from datetime import timezone
+    from collections import defaultdict
+
+    now = datetime.now(timezone.utc)
+    week_ago = now - timedelta(days=7)
+
+    strength_activities = (
+        db.query(Activity)
+        .filter(
+            Activity.athlete_id == athlete_id,
+            Activity.sport == "strength",
+            Activity.start_time >= week_ago,
+            Activity.start_time <= now,
+        )
+        .order_by(Activity.start_time)
+        .all()
+    )
+
+    cycling_activities = (
+        db.query(Activity)
+        .filter(
+            Activity.athlete_id == athlete_id,
+            Activity.sport == "cycling",
+            Activity.start_time >= week_ago,
+            Activity.start_time <= now,
+        )
+        .order_by(Activity.start_time)
+        .all()
+    )
+
+    flex_activities = (
+        db.query(Activity)
+        .filter(
+            Activity.athlete_id == athlete_id,
+            Activity.sport == "flexibility",
+            Activity.start_time >= week_ago,
+            Activity.start_time <= now,
+        )
+        .order_by(Activity.start_time)
+        .all()
+    )
+
+    if not strength_activities and not cycling_activities and not flex_activities:
+        return None
+
+    lines = ["\n\nCROSS-TRAINING CONTEXT (Last 7 Days):"]
+
+    if strength_activities:
+        from models import StrengthExerciseSet
+        days_str = ", ".join(
+            sorted(set(a.start_time.strftime("%a") for a in strength_activities))
+        )
+        lines.append(f"Strength: {len(strength_activities)} session(s) ({days_str})")
+
+        all_sets = (
+            db.query(StrengthExerciseSet)
+            .filter(
+                StrengthExerciseSet.activity_id.in_([a.id for a in strength_activities]),
+                StrengthExerciseSet.set_type == "active",
+            )
+            .order_by(StrengthExerciseSet.set_order)
+            .all()
+        )
+
+        if all_sets:
+            pattern_counts = defaultdict(int)
+            total_volume = 0.0
+            for s in all_sets:
+                pattern_counts[s.movement_pattern] += 1
+                if s.weight_kg and s.reps:
+                    total_volume += s.weight_kg * s.reps
+
+            pattern_summary = ", ".join(
+                f"{p} ({c} sets)" for p, c in
+                sorted(pattern_counts.items(), key=lambda x: -x[1])[:4]
+            )
+            lines.append(f"  Movement patterns: {pattern_summary}")
+
+            if total_volume > 0:
+                lines.append(f"  Total volume: {total_volume:,.0f} kg")
+
+        for act in strength_activities:
+            if act.strength_session_type:
+                lines.append(
+                    f"  {act.start_time.strftime('%a')}: {act.strength_session_type} session"
+                    f" ({int((act.duration_s or 0) / 60)} min)"
+                )
+
+        last_strength = strength_activities[-1]
+        hours_since = (now - last_strength.start_time).total_seconds() / 3600
+        lines.append(f"  Last strength session: {hours_since:.0f} hours ago")
+
+    if cycling_activities:
+        total_min = sum((a.duration_s or 0) for a in cycling_activities) / 60
+        lines.append(
+            f"Cycling: {len(cycling_activities)} session(s) — {total_min:.0f} min total"
+        )
+
+    if flex_activities:
+        total_min = sum((a.duration_s or 0) for a in flex_activities) / 60
+        lines.append(
+            f"Flexibility: {len(flex_activities)} session(s) — {total_min:.0f} min total"
+        )
+
+    lines.append("")
+    lines.append(
+        "The coach does NOT prescribe strength programming. "
+        "Observe what the athlete does, surface what the data shows about "
+        "timing and recovery, and answer questions in context."
+    )
+
+    return "\n".join(lines)
 
 
 def get_ai_coach(db: Session) -> AICoach:
