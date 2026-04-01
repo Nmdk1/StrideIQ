@@ -899,9 +899,14 @@ class ConstraintAwarePlanner:
         if quality_sessions_28d < 3:
             rationale_tags.append("quality_gap")
 
-        base_rpi = bank.best_rpi
+        base_rpi = bank.best_rpi if bank.best_rpi and bank.best_rpi > 0 else None
+        if base_rpi is None and goal_time:
+            dist_m_for_rpi = _DISTANCE_METERS.get(distance)
+            goal_secs = self._parse_goal_seconds(goal_time)
+            if dist_m_for_rpi and goal_secs and goal_secs > 0:
+                base_rpi = calculate_rpi_from_race_time(dist_m_for_rpi, goal_secs)
+                rationale_tags.append("goal_time_derived")
         if base_rpi is None:
-            # No race history — use a conservative estimate from volume
             base_rpi = max(25.0, min(45.0, 30.0 + bank.current_weekly_miles * 0.20))
             rationale_tags.append("no_race_history")
         if is_injury_return:
@@ -933,7 +938,8 @@ class ConstraintAwarePlanner:
                 base_rpi -= 0.4
 
         conservative_rpi = base_rpi - (1.0 if is_injury_return else 0.5)
-        aggressive_rpi = max(base_rpi + (0.5 if quality_sessions_28d >= 3 else 0.15), (bank.best_rpi or base_rpi) - 0.2)
+        proven_rpi = bank.best_rpi if bank.best_rpi and bank.best_rpi > 0 else base_rpi
+        aggressive_rpi = max(base_rpi + (0.5 if quality_sessions_28d >= 3 else 0.15), proven_rpi - 0.2)
 
         # Keep ranges sane.
         conservative_rpi = max(20.0, conservative_rpi)
