@@ -41,6 +41,9 @@ def _make_finding(**overrides):
         "category": "what_works",
         "confidence": 0.85,
         "is_active": True,
+        "lifecycle_state": None,
+        "lifecycle_state_updated_at": None,
+        "resolving_context": None,
         "threshold_value": 6.2,
         "threshold_direction": "below_hurts",
         "r_below_threshold": -0.71,
@@ -131,15 +134,14 @@ class TestBuildFingerprintPromptSection:
         db.query.return_value.filter.return_value.order_by.return_value.limit.return_value.all.return_value = [f]
         result = build_fingerprint_prompt_section(ATHLETE_ID, db, verbose=True)
         assert "Personal Fingerprint" in result
-        assert "STRONG/CONFIRMED" in result
+        assert "ACTIVE" in result
 
     def test_compact_section_has_instruction(self):
         f = _make_finding()
         db = MagicMock()
         db.query.return_value.filter.return_value.order_by.return_value.limit.return_value.all.return_value = [f]
         result = build_fingerprint_prompt_section(ATHLETE_ID, db, verbose=False)
-        assert "confirmed" in result
-        assert "STRONG/CONFIRMED" in result
+        assert "Treat ACTIVE as fact" in result
 
     def test_limits_findings(self):
         findings = [_make_finding(times_confirmed=50 - i) for i in range(12)]

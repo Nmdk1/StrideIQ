@@ -14,7 +14,14 @@ from pathlib import Path
 
 import pytest
 
-REPO_ROOT = Path(__file__).resolve().parents[3]
+def _find_repo_root() -> Path:
+    p = Path(__file__).resolve()
+    for parent in p.parents:
+        if (parent / "_AI_CONTEXT_").is_dir():
+            return parent
+    return p.parents[min(3, len(p.parents) - 1)]
+
+REPO_ROOT = _find_repo_root()
 VARIANTS_DIR = REPO_ROOT / "_AI_CONTEXT_" / "KNOWLEDGE_BASE" / "workouts" / "variants"
 REGISTRY_PATH = VARIANTS_DIR / "workout_registry.json"
 

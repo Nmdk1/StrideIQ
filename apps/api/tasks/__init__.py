@@ -5,7 +5,6 @@ Tasks are defined here and imported by both the API (to enqueue) and
 the worker (to execute).
 """
 from celery import Celery
-from celery.schedules import crontab
 from core.config import settings
 
 # Create Celery app instance
@@ -34,14 +33,14 @@ celery_app.conf.update(
     },
 )
 
-# Import tasks to register them
-from . import strava_tasks  # noqa: E402
-from . import digest_tasks  # noqa: E402
-from . import best_effort_tasks  # noqa: E402
-from . import import_tasks  # noqa: E402
-from . import intelligence_tasks  # noqa: E402
-from . import home_briefing_tasks  # noqa: E402
-from . import auto_discovery_tasks  # noqa: E402
+# Import tasks to register them with Celery
+from . import strava_tasks  # noqa: E402, F401
+from . import digest_tasks  # noqa: E402, F401
+from . import best_effort_tasks  # noqa: E402, F401
+from . import import_tasks  # noqa: E402, F401
+from . import intelligence_tasks  # noqa: E402, F401
+from . import home_briefing_tasks  # noqa: E402, F401
+from . import auto_discovery_tasks  # noqa: E402, F401
 
 # SEV-1 guardrail: fail worker startup if home briefing imports are broken.
 try:

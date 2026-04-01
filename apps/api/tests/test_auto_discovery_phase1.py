@@ -916,10 +916,15 @@ class TestMigrationIntegrity:
         from alembic.config import Config
         from alembic.script import ScriptDirectory
 
-        heads_path = os.path.join(
-            os.path.dirname(__file__), "..", "..", "..", ".github",
-            "scripts", "ci_alembic_heads_check.py",
-        )
+        p = Path(__file__).resolve()
+        heads_path = None
+        for parent in p.parents:
+            candidate = parent / ".github" / "scripts" / "ci_alembic_heads_check.py"
+            if candidate.exists():
+                heads_path = str(candidate)
+                break
+        if heads_path is None:
+            pytest.skip("ci_alembic_heads_check.py not found — not in full repo checkout")
         spec = importlib.util.spec_from_file_location("ci", heads_path)
         ci = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(ci)

@@ -13,8 +13,15 @@ from services.plan_framework.workout_variant_dispatch import (
     resolve_workout_variant_id,
 )
 
+def _find_repo_root() -> Path:
+    p = Path(__file__).resolve()
+    for parent in p.parents:
+        if (parent / "_AI_CONTEXT_").is_dir():
+            return parent
+    return p.parents[min(3, len(p.parents) - 1)]
+
 REGISTRY_PATH = (
-    Path(__file__).resolve().parents[3]
+    _find_repo_root()
     / "_AI_CONTEXT_"
     / "KNOWLEDGE_BASE"
     / "workouts"

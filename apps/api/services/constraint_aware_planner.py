@@ -535,10 +535,6 @@ class ConstraintAwarePlanner:
                     f"{override_floor:.1f}-{override_ceiling:.1f}mpw."
                 )
 
-        # 10K plans can remain high-mileage; only soften extreme long-distance spillover.
-        if race_distance.lower() == "10k" and source != "athlete_override":
-            applied_peak = min(applied_peak, max(band_max, band_center))
-
         return {
             "band_min": round(band_min, 1),
             "band_max": round(band_max, 1),

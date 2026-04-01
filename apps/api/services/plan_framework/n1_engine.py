@@ -1313,7 +1313,7 @@ def _apply_tune_up_races(
                         day_of_week=d.day_of_week,
                         workout_type="long",
                         name=f"Long run -- {d.target_miles:.0f}mi",
-                        description=f"Easy long run — absorption week, no quality.",
+                        description="Easy long run — absorption week, no quality.",
                         target_miles=round(d.target_miles * 0.75, 1),
                         intensity="easy",
                         paces=d.paces,
