@@ -265,7 +265,7 @@ def plan_weeks(state: AthleteState) -> List[WeekRx]:
     elif state.experience == ExperienceLevel.BEGINNER:
         lr_step = 1.5
 
-    if is_abbreviated:
+    if state.is_abbreviated:
         lr_start = state.current_long_run_miles
     else:
         lr_start = state.current_long_run_miles + 1
