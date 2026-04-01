@@ -49,6 +49,7 @@ def calculate_recovery_half_life(
     # Get hard sessions and subsequent easy sessions
     activities = db.query(Activity).filter(
         Activity.athlete_id == athlete_id,
+        Activity.sport == "run",
         Activity.start_time >= start_date,
         Activity.avg_hr.isnot(None)
     ).order_by(Activity.start_time).all()
@@ -121,6 +122,7 @@ def calculate_durability_index(
     # Get activities for the period
     activities = db.query(Activity).filter(
         Activity.athlete_id == athlete_id,
+        Activity.sport == "run",
         Activity.start_time >= start_date,
         Activity.avg_hr.isnot(None),
         Activity.average_speed.isnot(None)
@@ -185,6 +187,7 @@ def calculate_consistency_index(
     # Count activities per week
     activities = db.query(Activity).filter(
         Activity.athlete_id == athlete_id,
+        Activity.sport == "run",
         Activity.start_time >= start_date
     ).all()
     
@@ -264,6 +267,7 @@ def detect_false_fitness(
     
     activities = db.query(Activity).filter(
         Activity.athlete_id == athlete_id,
+        Activity.sport == "run",
         Activity.start_time >= start_date,
         Activity.avg_hr.isnot(None),
         Activity.average_speed.isnot(None)
@@ -315,6 +319,7 @@ def detect_masked_fatigue(
     
     activities = db.query(Activity).filter(
         Activity.athlete_id == athlete_id,
+        Activity.sport == "run",
         Activity.start_time >= start_date,
         Activity.avg_hr.isnot(None),
         Activity.average_speed.isnot(None)
@@ -382,6 +387,7 @@ def compute_recovery_curve(
         db.query(Activity)
         .filter(
             Activity.athlete_id == athlete_id,
+            Activity.sport == "run",
             Activity.start_time >= before_start,
             Activity.avg_hr.isnot(None),
         )

@@ -308,6 +308,7 @@ class InsightAggregator:
             self.db.query(Activity)
             .filter(
                 Activity.athlete_id == self.athlete.id,
+                Activity.sport == "run",
                 Activity.avg_hr.isnot(None),
                 Activity.average_speed.isnot(None),
                 Activity.start_time >= datetime.now(timezone.utc) - timedelta(days=42)
@@ -402,6 +403,7 @@ class InsightAggregator:
             self.db.query(Activity)
             .filter(
                 Activity.athlete_id == self.athlete.id,
+                Activity.sport == "run",
                 Activity.start_time >= datetime.now(timezone.utc) - timedelta(days=28),
                 Activity.avg_hr.isnot(None),
             )
@@ -468,6 +470,7 @@ class InsightAggregator:
             self.db.query(Activity)
             .filter(
                 Activity.athlete_id == self.athlete.id,
+                Activity.sport == "run",
                 Activity.id != activity.id,
                 Activity.distance_m.between(distance_min, distance_max),
                 Activity.avg_hr.isnot(None),
@@ -546,6 +549,7 @@ class InsightAggregator:
             self.db.query(Activity)
             .filter(
                 Activity.athlete_id == self.athlete.id,
+                Activity.sport == "run",
                 Activity.avg_hr.isnot(None),
                 Activity.average_speed.isnot(None),
             )
@@ -651,6 +655,7 @@ class InsightAggregator:
             )
             .filter(
                 Activity.athlete_id == self.athlete.id,
+                Activity.sport == "run",
                 Activity.start_time >= week_ago,
             )
             .first()
@@ -680,6 +685,7 @@ class InsightAggregator:
             )
             .filter(
                 Activity.athlete_id == self.athlete.id,
+                Activity.sport == "run",
                 Activity.start_time >= month_ago,
             )
             .first()
@@ -709,6 +715,7 @@ class InsightAggregator:
             self.db.query(func.count(Activity.id))
             .filter(
                 Activity.athlete_id == self.athlete.id,
+                Activity.sport == "run",
                 Activity.start_time >= two_weeks,
                 Activity.workout_type.in_(HARD_TYPES),
             )

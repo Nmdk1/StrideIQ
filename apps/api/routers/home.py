@@ -2029,6 +2029,7 @@ def generate_coach_home_briefing(
             db.query(_func.count(_Activity.id))
             .filter(
                 _Activity.athlete_id == athlete_id,
+                _Activity.sport == "run",
                 _Activity.start_time >= _week_start,
                 _Activity.start_time < _today + __import__("datetime").timedelta(days=1),
             )
@@ -2375,6 +2376,7 @@ def _build_rich_intelligence_context(athlete_id: str, db: Session) -> str:
     try:
         recent = db.query(Activity).filter(
             Activity.athlete_id == athlete_uuid,
+            Activity.sport == "run",
             Activity.shape_sentence.isnot(None),
         ).order_by(Activity.start_time.desc()).limit(5).all()
         if recent:
@@ -2710,6 +2712,7 @@ def compute_last_run(
         db.query(Activity)
         .filter(
             Activity.athlete_id == athlete_id,
+            Activity.sport == "run",
             Activity.start_time >= cutoff,
         )
         .order_by(desc(Activity.start_time))
@@ -2722,6 +2725,7 @@ def compute_last_run(
             db.query(Activity)
             .filter(
                 Activity.athlete_id == athlete_id,
+                Activity.sport == "run",
                 Activity.source == "demo",
             )
             .order_by(desc(Activity.start_time))
@@ -2907,6 +2911,7 @@ async def get_home_data(
 
     yesterday_activity = db.query(Activity).filter(
         Activity.athlete_id == current_user.id,
+        Activity.sport == "run",
         Activity.start_time >= _yest_start_utc,
         Activity.start_time < _yest_end_utc
     ).order_by(Activity.start_time.desc()).first()
@@ -2944,9 +2949,10 @@ async def get_home_data(
             insight=insight
         )
     else:
-        # No yesterday activity - find most recent activity for context
+        # No yesterday activity - find most recent run for context
         last_activity = db.query(Activity).filter(
-            Activity.athlete_id == current_user.id
+            Activity.athlete_id == current_user.id,
+            Activity.sport == "run",
         ).order_by(Activity.start_time.desc()).first()
 
         if last_activity:
@@ -2985,6 +2991,7 @@ async def get_home_data(
 
     _week_actuals_raw = db.query(Activity).filter(
         Activity.athlete_id == current_user.id,
+        Activity.sport == "run",
         Activity.start_time >= local_day_bounds_utc(monday, _ath_tz)[0],
         Activity.start_time < local_day_bounds_utc(sunday, _ath_tz)[1],
     ).all()
@@ -3288,6 +3295,7 @@ async def get_home_data(
                 briefing_state = None
                 today_actual = db.query(Activity).filter(
                     Activity.athlete_id == current_user.id,
+                    Activity.sport == "run",
                     Activity.start_time >= _today_start_utc,
                     Activity.start_time < _today_end_utc,
                 ).order_by(Activity.start_time.desc()).first()

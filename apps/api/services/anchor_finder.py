@@ -227,7 +227,8 @@ class AnchorFinder:
             Activity.athlete_id == self.athlete_id,
             Activity.start_time >= datetime.combine(start_date, datetime.min.time()),
             Activity.start_time < datetime.combine(today - timedelta(days=7), datetime.min.time()),  # Not too recent
-            Activity.workout_type == workout_type
+            Activity.workout_type == workout_type,
+            Activity.sport.ilike("run"),
         ).order_by(Activity.start_time.desc())
         
         activities = query.limit(20).all()
@@ -246,6 +247,7 @@ class AnchorFinder:
                 Activity.athlete_id == self.athlete_id,
                 Activity.start_time >= datetime.combine(race_window_start, datetime.min.time()),
                 Activity.start_time <= datetime.combine(race_window_end, datetime.min.time()),
+                Activity.sport.ilike("run"),
                 or_(
                     Activity.workout_type == "race",
                     Activity.is_race_candidate
@@ -416,6 +418,7 @@ class AnchorFinder:
         # Get race candidates
         races = self.db.query(Activity).filter(
             Activity.athlete_id == self.athlete_id,
+            Activity.sport.ilike("run"),
             or_(
                 Activity.workout_type == "race",
                 Activity.is_race_candidate
@@ -516,6 +519,7 @@ class AnchorFinder:
                     Activity.athlete_id == self.athlete_id,
                     Activity.start_time >= datetime.combine(week, datetime.min.time()),
                     Activity.start_time <= datetime.combine(race_window_end, datetime.min.time()),
+                    Activity.sport.ilike("run"),
                     or_(
                         Activity.workout_type == "race",
                         Activity.is_race_candidate

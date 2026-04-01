@@ -237,6 +237,7 @@ class RunAnalysisEngine:
         ninety_days_ago = datetime.now(timezone.utc) - timedelta(days=90)
         recent_runs = self.db.query(Activity).filter(
             Activity.athlete_id == athlete_id,
+            Activity.sport == "run",
             Activity.start_time >= ninety_days_ago,
             Activity.distance_m.isnot(None),
             Activity.distance_m > 1000,  # At least 1km
@@ -511,6 +512,7 @@ class RunAnalysisEngine:
         # Training load (simplified - would need proper TSS calculation)
         activities_7d = self.db.query(Activity).filter(
             Activity.athlete_id == athlete_id,
+            Activity.sport == "run",
             Activity.start_time >= datetime.combine(week_ago, datetime.min.time()),
             Activity.start_time < datetime.combine(run_date, datetime.min.time())
         ).all()
@@ -603,6 +605,7 @@ class RunAnalysisEngine:
         # Get recent activities within the time window
         activities = self.db.query(Activity).filter(
             Activity.athlete_id == athlete_id,
+            Activity.sport == "run",
             Activity.start_time >= datetime.combine(earliest_date, datetime.min.time()),
             Activity.start_time < datetime.combine(before_date, datetime.min.time())
         ).order_by(Activity.start_time.desc()).limit(100).all()
@@ -624,6 +627,7 @@ class RunAnalysisEngine:
         
         activities = self.db.query(Activity).filter(
             Activity.athlete_id == athlete_id,
+            Activity.sport == "run",
             Activity.start_time >= datetime.combine(week_start, datetime.min.time()),
             Activity.start_time < datetime.combine(run_date + timedelta(days=1), datetime.min.time())
         ).all()
@@ -640,6 +644,7 @@ class RunAnalysisEngine:
         
         activities = self.db.query(Activity).filter(
             Activity.athlete_id == athlete_id,
+            Activity.sport == "run",
             Activity.start_time >= datetime.combine(month_start, datetime.min.time()),
             Activity.start_time < datetime.combine(run_date + timedelta(days=1), datetime.min.time())
         ).all()
@@ -656,6 +661,7 @@ class RunAnalysisEngine:
         
         activities = self.db.query(Activity).filter(
             Activity.athlete_id == athlete_id,
+            Activity.sport == "run",
             Activity.start_time >= datetime.combine(year_start, datetime.min.time()),
             Activity.start_time < datetime.combine(run_date + timedelta(days=1), datetime.min.time())
         ).all()
@@ -808,6 +814,7 @@ class RunAnalysisEngine:
             self.db.query(Activity)
             .filter(
                 Activity.athlete_id == athlete_id,
+                Activity.sport == "run",
                 Activity.start_time >= start_date,
                 Activity.distance_m.isnot(None),
                 Activity.distance_m > 1609,
@@ -866,6 +873,7 @@ class RunAnalysisEngine:
         """Get efficiency data points for trend analysis"""
         activities = self.db.query(Activity).filter(
             Activity.athlete_id == athlete_id,
+            Activity.sport == "run",
             Activity.start_time >= start_date,
             Activity.avg_hr.isnot(None),
             Activity.distance_m > 0,
@@ -889,6 +897,7 @@ class RunAnalysisEngine:
         """Get weekly volume data points"""
         activities = self.db.query(Activity).filter(
             Activity.athlete_id == athlete_id,
+            Activity.sport == "run",
             Activity.start_time >= start_date,
             Activity.distance_m > 0
         ).order_by(Activity.start_time).all()

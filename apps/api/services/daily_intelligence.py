@@ -219,6 +219,7 @@ class DailyIntelligenceEngine:
                 db.query(Activity)
                 .filter(
                     Activity.athlete_id == athlete_id,
+                    Activity.sport == "run",
                     Activity.start_time >= datetime.combine(start, datetime.min.time()),
                     Activity.start_time < datetime.combine(end + timedelta(days=1), datetime.min.time()),
                 )
@@ -242,6 +243,7 @@ class DailyIntelligenceEngine:
                 db.query(Activity)
                 .filter(
                     Activity.athlete_id == athlete_id,
+                    Activity.sport == "run",
                     Activity.start_time >= datetime.combine(current_start, datetime.min.time()),
                     Activity.start_time < datetime.combine(target_date + timedelta(days=1), datetime.min.time()),
                 )
@@ -414,6 +416,7 @@ class DailyIntelligenceEngine:
             db.query(Activity)
             .filter(
                 Activity.athlete_id == athlete_id,
+                Activity.sport == "run",
                 Activity.start_time >= day_start,
                 Activity.start_time < day_end,
                 Activity.distance_m.isnot(None),
@@ -635,6 +638,7 @@ class DailyIntelligenceEngine:
             db.query(Activity)
             .filter(
                 Activity.athlete_id == athlete_id,
+                Activity.sport == "run",
                 Activity.start_time >= datetime.combine(lookback, datetime.min.time()),
                 Activity.start_time < datetime.combine(target_date + timedelta(days=1), datetime.min.time()),
             )
@@ -786,6 +790,7 @@ class DailyIntelligenceEngine:
             db.query(Activity)
             .filter(
                 Activity.athlete_id == athlete_id,
+                Activity.sport == "run",
                 Activity.start_time >= datetime.combine(window_start, datetime.min.time()),
                 Activity.start_time < datetime.combine(target_date + timedelta(days=1), datetime.min.time()),
                 Activity.avg_hr.isnot(None),

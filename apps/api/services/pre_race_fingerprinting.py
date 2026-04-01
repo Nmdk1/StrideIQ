@@ -269,6 +269,7 @@ def extract_pre_race_state(
     
     last_hard = db.query(Activity).filter(
         Activity.athlete_id == race.athlete_id,
+        Activity.sport == "run",
         Activity.start_time < race.start_time,
         Activity.workout_type.in_(hard_workout_types)
     ).order_by(Activity.start_time.desc()).first()
@@ -449,6 +450,7 @@ def generate_readiness_profile(
     # Get all races for athlete
     races = db.query(Activity).filter(
         Activity.athlete_id == athlete_id,
+        Activity.sport == "run",
         Activity.workout_type == 'race'
     ).order_by(Activity.start_time.desc()).all()
     
@@ -456,6 +458,7 @@ def generate_readiness_profile(
     if len(races) < min_races:
         race_candidates = db.query(Activity).filter(
             Activity.athlete_id == athlete_id,
+            Activity.sport == "run",
             Activity.is_race_candidate,
             Activity.id.notin_([r.id for r in races])
         ).all()

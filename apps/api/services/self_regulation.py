@@ -124,6 +124,7 @@ class SelfRegulationDetector:
             self.db.query(Activity)
             .filter(
                 Activity.athlete_id == athlete_id,
+                Activity.sport == "run",
                 Activity.start_time >= day_start,
                 Activity.start_time < day_end,
             )

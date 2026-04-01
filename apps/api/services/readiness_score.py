@@ -256,6 +256,7 @@ class ReadinessScoreCalculator:
             db.query(Activity)
             .filter(
                 Activity.athlete_id == athlete_id,
+                Activity.sport == "run",
                 Activity.start_time >= datetime.combine(window_start, datetime.min.time()),
                 Activity.start_time < datetime.combine(target_date + timedelta(days=1), datetime.min.time()),
                 Activity.avg_hr.isnot(None),
@@ -410,6 +411,7 @@ class ReadinessScoreCalculator:
             db.query(Activity)
             .filter(
                 Activity.athlete_id == athlete_id,
+                Activity.sport == "run",
                 Activity.start_time < datetime.combine(target_date + timedelta(days=1), datetime.min.time()),
                 Activity.workout_type.in_(list(QUALITY_WORKOUT_TYPES)),
             )
@@ -428,6 +430,7 @@ class ReadinessScoreCalculator:
             db.query(Activity)
             .filter(
                 Activity.athlete_id == athlete_id,
+                Activity.sport == "run",
                 Activity.start_time >= datetime.combine(lookback, datetime.min.time()),
                 Activity.start_time < datetime.combine(target_date + timedelta(days=1), datetime.min.time()),
                 Activity.avg_hr.isnot(None),

@@ -384,7 +384,8 @@ class ExperienceGuardrail:
         aid = _UUID(self.athlete_id) if isinstance(self.athlete_id, str) else self.athlete_id
         latest = (
             self.db.query(Activity)
-            .filter(Activity.athlete_id == aid, Activity.is_duplicate.is_(False))
+            .filter(Activity.athlete_id == aid, Activity.is_duplicate.is_(False),
+                    Activity.sport == "run")
             .order_by(Activity.start_time.desc())
             .first()
         )
@@ -445,7 +446,8 @@ class ExperienceGuardrail:
         aid = _UUID(self.athlete_id) if isinstance(self.athlete_id, str) else self.athlete_id
         latest = (
             self.db.query(Activity)
-            .filter(Activity.athlete_id == aid, Activity.is_duplicate.is_(False))
+            .filter(Activity.athlete_id == aid, Activity.is_duplicate.is_(False),
+                    Activity.sport == "run")
             .order_by(Activity.start_time.desc())
             .first()
         )
@@ -541,7 +543,8 @@ class ExperienceGuardrail:
 
         recent_acts = (
             self.db.query(Activity)
-            .filter(Activity.athlete_id == aid, Activity.is_duplicate.is_(False))
+            .filter(Activity.athlete_id == aid, Activity.is_duplicate.is_(False),
+                    Activity.sport == "run")
             .filter(Activity.distance_m.isnot(None), Activity.distance_m > 0)
             .filter(Activity.moving_time_s.isnot(None), Activity.moving_time_s > 0)
             .order_by(Activity.start_time.desc())
@@ -812,7 +815,8 @@ class ExperienceGuardrail:
         aid = _UUID(self.athlete_id) if isinstance(self.athlete_id, str) else self.athlete_id
         latest = (
             self.db.query(Activity)
-            .filter(Activity.athlete_id == aid, Activity.is_duplicate.is_(False))
+            .filter(Activity.athlete_id == aid, Activity.is_duplicate.is_(False),
+                    Activity.sport == "run")
             .order_by(Activity.start_time.desc())
             .first()
         )
@@ -863,6 +867,7 @@ class ExperienceGuardrail:
             .filter(
                 Activity.athlete_id == aid,
                 Activity.is_duplicate.is_(False),
+                Activity.sport == "run",
                 Activity.start_time >= datetime.combine(week_start, datetime.min.time()),
             )
             .count()
@@ -1129,7 +1134,8 @@ class ExperienceGuardrail:
         aid = _UUID(self.athlete_id) if isinstance(self.athlete_id, str) else self.athlete_id
         return (
             self.db.query(Activity)
-            .filter(Activity.athlete_id == aid, Activity.is_duplicate.is_(False))
+            .filter(Activity.athlete_id == aid, Activity.is_duplicate.is_(False),
+                    Activity.sport == "run")
             .order_by(Activity.start_time.desc())
             .first()
         )

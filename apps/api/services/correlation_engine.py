@@ -1249,6 +1249,7 @@ def aggregate_daily_session_stress(
         )
         .filter(
             Activity.athlete_id == athlete_id,
+            Activity.sport == "run",
             Activity.start_time >= start_date,
             Activity.start_time <= end_date,
             Activity.distance_m.isnot(None),
@@ -1354,6 +1355,7 @@ def aggregate_pace_at_effort(
 
     activities = db.query(Activity).filter(
         Activity.athlete_id == athlete_id,
+        Activity.sport == "run",
         Activity.is_duplicate == False,  # noqa: E712
         Activity.start_time >= start_date,
         Activity.start_time <= end_date,
@@ -1445,6 +1447,7 @@ def aggregate_efficiency_outputs(
     """
     activities = db.query(Activity).filter(
         Activity.athlete_id == athlete_id,
+        Activity.sport == "run",
         Activity.is_duplicate == False,  # noqa: E712
         Activity.start_time >= start_date,
         Activity.start_time <= end_date
@@ -1491,6 +1494,7 @@ def aggregate_efficiency_by_effort_zone(
 
     activities = db.query(Activity).filter(
         Activity.athlete_id == athlete_id,
+        Activity.sport == "run",
         Activity.is_duplicate == False,  # noqa: E712
         Activity.start_time >= start_date,
         Activity.start_time <= end_date,
@@ -1569,6 +1573,7 @@ def aggregate_pb_events(
     # Get all activity dates
     activities = db.query(Activity.start_time).filter(
         Activity.athlete_id == athlete_id,
+        Activity.sport == "run",
         Activity.start_time >= start_date,
         Activity.start_time <= end_date
     ).all()
@@ -1596,6 +1601,7 @@ def aggregate_race_pace(
 
     activities = db.query(Activity).filter(
         Activity.athlete_id == athlete_id,
+        Activity.sport == "run",
         Activity.is_duplicate == False,  # noqa: E712
         Activity.start_time >= start_date,
         Activity.start_time <= end_date,

@@ -239,6 +239,7 @@ class RacePredictor:
         # Use race detection fields (is_race_candidate, user_verified_race, workout_type)
         races = self.db.query(Activity).filter(
             Activity.athlete_id == athlete_id,
+            Activity.sport == "run",
             authoritative_race_filter(Activity),
             Activity.distance_m >= distance_m - tolerance,
             Activity.distance_m <= distance_m + tolerance,
@@ -296,6 +297,7 @@ class RacePredictor:
         # Use race detection fields
         races = self.db.query(Activity).filter(
             Activity.athlete_id == athlete_id,
+            Activity.sport == "run",
             authoritative_race_filter(Activity),
             Activity.start_time >= cutoff,
             Activity.duration_s.isnot(None),
@@ -330,6 +332,7 @@ class RacePredictor:
         
         threshold_workouts = self.db.query(Activity).filter(
             Activity.athlete_id == athlete_id,
+            Activity.sport == "run",
             Activity.start_time >= cutoff,
             Activity.workout_type.in_(['tempo', 'threshold']),
             Activity.duration_s.isnot(None),

@@ -514,6 +514,7 @@ class TrainingLoadCalculator:
         activities = self.db.query(Activity).filter(
             Activity.athlete_id == athlete_id,
             Activity.is_duplicate == False,  # noqa: E712
+            Activity.sport == "run",
         ).order_by(Activity.start_time).all()
 
         if not activities:
@@ -653,6 +654,7 @@ class TrainingLoadCalculator:
         activities = self.db.query(Activity).filter(
             Activity.athlete_id == athlete_id,
             Activity.is_duplicate == False,  # noqa: E712
+            Activity.sport == "run",
             Activity.start_time >= datetime.combine(start_date, datetime.min.time()),
             Activity.start_time < datetime.combine(end_date + timedelta(days=1), datetime.min.time()),
         ).order_by(Activity.start_time).all()
@@ -1012,6 +1014,7 @@ class TrainingLoadCalculator:
         
         last_hard = self.db.query(Activity).filter(
             Activity.athlete_id == athlete_id,
+            Activity.sport == "run",
             Activity.start_time < datetime.combine(target_date, datetime.min.time()),
             Activity.workout_type.in_(hard_types)
         ).order_by(Activity.start_time.desc()).first()

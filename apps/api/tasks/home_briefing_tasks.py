@@ -68,7 +68,7 @@ def _build_data_fingerprint(
     try:
         latest_activity = (
             db.query(Activity.id, Activity.start_time)
-            .filter(Activity.athlete_id == athlete_id)
+            .filter(Activity.athlete_id == athlete_id, Activity.sport == "run")
             .order_by(desc(Activity.start_time))
             .first()
         )
@@ -137,6 +137,7 @@ def _build_briefing_prompt(athlete_id: str, db: Session) -> Optional[tuple]:
             db.query(Activity)
             .filter(
                 Activity.athlete_id == athlete_id,
+                Activity.sport == "run",
                 Activity.start_time >= today,
                 Activity.start_time < today + timedelta(days=1),
             )
@@ -369,7 +370,7 @@ def _build_deterministic_briefing(athlete_id: str, db: Session) -> Dict[str, str
 
     latest = (
         db.query(Activity)
-        .filter(Activity.athlete_id == athlete_id)
+        .filter(Activity.athlete_id == athlete_id, Activity.sport == "run")
         .order_by(desc(Activity.start_time))
         .first()
     )

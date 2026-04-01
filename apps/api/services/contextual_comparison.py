@@ -528,6 +528,7 @@ class ContextualComparisonService:
         cutoff = datetime.utcnow() - timedelta(days=days_back)
         candidates = self.db.query(Activity).filter(
             Activity.athlete_id == athlete_id,
+            Activity.sport == "run",
             Activity.id != activity_id,
             Activity.start_time >= cutoff,
             Activity.distance_m >= 1000,  # At least 1km
@@ -1256,6 +1257,7 @@ class ContextualComparisonService:
         # Find activities within HR range
         candidates = self.db.query(Activity).filter(
             Activity.athlete_id == athlete_id,
+            Activity.sport == "run",
             Activity.id != activity_id,
             Activity.start_time >= cutoff,
             Activity.avg_hr.isnot(None),
@@ -1302,6 +1304,7 @@ class ContextualComparisonService:
         # Find activities within max HR range
         candidates = self.db.query(Activity).filter(
             Activity.athlete_id == athlete_id,
+            Activity.sport == "run",
             Activity.id != activity_id,
             Activity.start_time >= cutoff,
             Activity.max_hr.isnot(None),
@@ -1343,6 +1346,7 @@ class ContextualComparisonService:
         
         query = self.db.query(Activity).filter(
             Activity.athlete_id == athlete_id,
+            Activity.sport == "run",
             Activity.start_time >= cutoff,
             Activity.avg_hr.isnot(None),
             Activity.avg_hr >= min_hr,
@@ -1437,6 +1441,7 @@ class ContextualComparisonService:
         cutoff = datetime.utcnow() - timedelta(days=365)
         candidates = self.db.query(Activity).filter(
             Activity.athlete_id == athlete_id,
+            Activity.sport == "run",
             Activity.id != activity_id,
             Activity.start_time >= cutoff,
             Activity.distance_m >= 1000,
