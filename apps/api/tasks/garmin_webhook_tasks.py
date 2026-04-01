@@ -570,6 +570,28 @@ def _ingest_activity_item(
     except Exception:
         logger.warning("Workout classification failed for garmin activity %s — non-fatal", external_id, exc_info=True)
 
+    if adapted.get("sport") == "strength" and adapted.get("garmin_activity_id"):
+        try:
+            fetch_garmin_exercise_sets_task.apply_async(
+                args=[
+                    str(athlete.id),
+                    str(new_activity.id),
+                    int(adapted["garmin_activity_id"]),
+                ],
+                countdown=5,
+            )
+            logger.info(
+                "Exercise set fetch enqueued for strength activity %s (garmin_id=%s)",
+                external_id,
+                adapted["garmin_activity_id"],
+            )
+        except Exception:
+            logger.warning(
+                "Exercise set fetch enqueue failed for %s — non-fatal",
+                external_id,
+                exc_info=True,
+            )
+
     return "created"
 
 
@@ -611,7 +633,10 @@ def _ingest_activity_detail_item(
         return False
 
     if activity.sport != "run":
-        activity.session_detail = raw_item
+        activity.session_detail = {
+            **(activity.session_detail or {}),
+            "detail_webhook_raw": raw_item,
+        }
         logger.info(
             "Non-run detail stored in session_detail for garmin_activity_id=%s (sport=%s)",
             garmin_activity_id_int,
@@ -1248,3 +1273,152 @@ def process_garmin_permissions_task(
         "[D5 STUB] process_garmin_permissions_task",
         extra={"athlete_id": athlete_id},
     )
+
+
+# ---------------------------------------------------------------------------
+# Exercise Set Fetch — Cross-Training Phase A
+# ---------------------------------------------------------------------------
+
+_GARMIN_ACTIVITY_API_BASE = "https://apis.garmin.com/wellness-api/rest"
+_EXERCISE_SETS_TIMEOUT_S = 15
+
+
+@celery_app.task(
+    name="fetch_garmin_exercise_sets_task",
+    bind=True,
+    max_retries=3,
+    default_retry_delay=120,
+    rate_limit="3/m",
+)
+def fetch_garmin_exercise_sets_task(
+    self,
+    athlete_id: str,
+    activity_id: str,
+    garmin_activity_id: int,
+) -> Dict[str, Any]:
+    """Fetch exercise sets from Garmin and process via strength parser.
+
+    Triggered when a strength activity is created or updated.
+    Fetches the exerciseSets endpoint, parses into StrengthExerciseSet rows,
+    classifies session intensity, and stores raw response in session_detail.
+    """
+    import requests as http_requests
+
+    db = get_db_sync()
+    try:
+        athlete = _find_athlete_in_db(athlete_id, db)
+        if athlete is None:
+            logger.warning("fetch_exercise_sets: athlete %s not found", athlete_id)
+            return {"status": "skipped", "reason": "athlete_not_found"}
+
+        from services.garmin_oauth import ensure_fresh_garmin_token
+        token = ensure_fresh_garmin_token(athlete, db)
+        if not token:
+            logger.warning(
+                "fetch_exercise_sets: no valid token for athlete %s", athlete_id
+            )
+            return {"status": "skipped", "reason": "no_token"}
+
+        activity = (
+            db.query(Activity)
+            .filter(Activity.id == activity_id)
+            .first()
+        )
+        if activity is None:
+            logger.warning(
+                "fetch_exercise_sets: activity %s not found", activity_id
+            )
+            return {"status": "skipped", "reason": "activity_not_found"}
+
+        url = f"{_GARMIN_ACTIVITY_API_BASE}/activities/{garmin_activity_id}/exerciseSets"
+        headers = {"Authorization": f"Bearer {token}"}
+
+        try:
+            resp = http_requests.get(url, headers=headers, timeout=_EXERCISE_SETS_TIMEOUT_S)
+        except Exception as exc:
+            logger.error(
+                "fetch_exercise_sets: request failed for garmin_activity_id=%s: %s",
+                garmin_activity_id, exc,
+            )
+            raise self.retry(exc=exc)
+
+        if resp.status_code == 404:
+            logger.info(
+                "fetch_exercise_sets: 404 for garmin_activity_id=%s — no exercise data",
+                garmin_activity_id,
+            )
+            activity.session_detail = {
+                **(activity.session_detail or {}),
+                "exercise_sets_status": "unavailable",
+            }
+            db.commit()
+            return {"status": "ok", "reason": "no_exercise_data"}
+
+        if resp.status_code == 401:
+            token = ensure_fresh_garmin_token(athlete, db)
+            if token:
+                headers = {"Authorization": f"Bearer {token}"}
+                resp = http_requests.get(url, headers=headers, timeout=_EXERCISE_SETS_TIMEOUT_S)
+            if not token or resp.status_code != 200:
+                logger.warning(
+                    "fetch_exercise_sets: auth failed for garmin_activity_id=%s",
+                    garmin_activity_id,
+                )
+                raise self.retry(countdown=300)
+
+        if resp.status_code == 429:
+            retry_after = int(resp.headers.get("Retry-After", 60))
+            logger.warning(
+                "fetch_exercise_sets: rate limited for garmin_activity_id=%s, retry after %ds",
+                garmin_activity_id, retry_after,
+            )
+            raise self.retry(countdown=retry_after)
+
+        if resp.status_code >= 500:
+            logger.warning(
+                "fetch_exercise_sets: server error %d for garmin_activity_id=%s",
+                resp.status_code, garmin_activity_id,
+            )
+            raise self.retry(countdown=60)
+
+        if resp.status_code != 200:
+            logger.error(
+                "fetch_exercise_sets: unexpected status %d for garmin_activity_id=%s",
+                resp.status_code, garmin_activity_id,
+            )
+            return {"status": "error", "code": resp.status_code}
+
+        raw_data = resp.json()
+
+        from services.strength_parser import process_strength_activity
+        result = process_strength_activity(db, activity, raw_data)
+        db.commit()
+
+        logger.info(
+            "Exercise sets processed for garmin_activity_id=%s: %d sets, type=%s",
+            garmin_activity_id,
+            result["sets_written"],
+            result["session_type"],
+        )
+
+        if result["unknown_exercises"]:
+            logger.warning(
+                "Unknown exercises in garmin_activity_id=%s: %s",
+                garmin_activity_id,
+                result["unknown_exercises"],
+            )
+
+        return {
+            "status": "ok",
+            "sets_written": result["sets_written"],
+            "session_type": result["session_type"],
+        }
+
+    except self.MaxRetriesExceededError:
+        logger.error(
+            "fetch_exercise_sets: max retries exceeded for garmin_activity_id=%s",
+            garmin_activity_id,
+        )
+        return {"status": "error", "reason": "max_retries_exceeded"}
+    finally:
+        db.close()
