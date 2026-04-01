@@ -17,13 +17,9 @@ describe('Landing conversion CTA', () => {
     const freeLink = screen.getAllByRole('link', { name: 'Start 30-Day Free Trial' })[0];
     expect(freeLink).toHaveAttribute('href', '/register');
 
-    // One-time plan unlock ($5)
-    const planLink = screen.getByRole('link', { name: 'Unlock a plan for $5' });
-    expect(planLink).toHaveAttribute('href', '/register');
-
     // StrideIQ paid tier
     const premiumLink = screen.getAllByRole('link', { name: 'Start 30-Day Free Trial' })[1];
-    expect(premiumLink).toHaveAttribute('href', '/register?tier=premium&period=annual');
+    expect(premiumLink).toHaveAttribute('href', '/register?tier=subscriber&period=annual');
   });
 
   it('shows annual prices by default', () => {

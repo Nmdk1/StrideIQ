@@ -14,13 +14,6 @@ const FREE_FEATURES = [
   'Plan structure preview (phases, weeks, distances)',
 ];
 
-const PLAN_UNLOCK_FEATURES = [
-  'Everything in Free',
-  'One race-plan unlock with full training paces',
-  'Calculated training paces (Easy / Threshold / Interval / MP)',
-  'Single plan entitlement, no recurring subscription',
-];
-
 const STRIDEIQ_FEATURES = [
   'Personal AI running coach',
   'Morning briefing with your data',
@@ -42,8 +35,8 @@ export default function Pricing() {
   // Authenticated users go straight to Settings upgrade panel.
   // New users go to /register; they upgrade in Settings after onboarding.
   const strideiqHref = isAuthenticated
-    ? `/settings?upgrade=premium&period=${period}`
-    : `/register?tier=premium&period=${period}`;
+    ? `/settings?upgrade=subscriber&period=${period}`
+    : `/register?tier=subscriber&period=${period}`;
 
   return (
     <section id="pricing" className="py-20 bg-slate-800 scroll-mt-16">
@@ -90,7 +83,7 @@ export default function Pricing() {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-5 max-w-3xl mx-auto">
 
           {/* ── Free ── */}
           <div className="bg-slate-900 rounded-2xl p-6 border border-slate-700/50 flex flex-col">
@@ -112,32 +105,6 @@ export default function Pricing() {
               className="block w-full text-center bg-slate-700 hover:bg-slate-600 text-white py-2.5 rounded-lg transition-colors text-sm font-medium"
             >
               Start 30-Day Free Trial
-            </Link>
-          </div>
-
-          {/* ── One-Time Plan Unlock ($5) ── */}
-          <div className="bg-sky-950/50 rounded-2xl p-6 border border-sky-700/40 flex flex-col">
-            <div className="mb-5">
-              <div className="flex items-center gap-2 mb-1">
-                <h3 className="text-lg font-bold">Plan Unlock</h3>
-                <span className="text-xs bg-sky-600/30 text-sky-400 px-2 py-0.5 rounded-full font-medium">One-time</span>
-              </div>
-              <div className="text-3xl font-bold">$5</div>
-              <p className="text-xs text-sky-400/70 mt-1">Per race plan, no subscription</p>
-            </div>
-            <ul className="space-y-2 text-sm text-slate-300 flex-1 mb-6">
-              {PLAN_UNLOCK_FEATURES.map(f => (
-                <li key={f} className="flex items-start gap-2">
-                  <span className="text-sky-500 mt-0.5 shrink-0">✓</span>
-                  {f}
-                </li>
-              ))}
-            </ul>
-            <Link
-              href="/register"
-              className="block w-full text-center bg-sky-700 hover:bg-sky-600 text-white py-2.5 rounded-lg transition-colors text-sm font-medium"
-            >
-              Unlock a plan for $5
             </Link>
           </div>
 
