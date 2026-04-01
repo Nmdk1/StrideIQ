@@ -187,45 +187,49 @@ class TestDirectQueryVerification:
 # ---------------------------------------------------------------------------
 
 class TestTrainingLoadSportFilter:
-    """Training load calculations must exclude non-run activities."""
+    """Training load now includes cross-training; TSS routing is sport-aware."""
 
-    def test_history_excludes_cycling_in_mixed(
+    def test_history_includes_both_sports_in_mixed(
         self, db_session, athlete_with_mixed_sports
     ):
-        """With 1 run + 1 cycling: history should contain ONLY the run."""
+        """With 1 run + 1 cycling: both contribute to training load."""
         athlete, run_act, cycling_act = athlete_with_mixed_sports
         from services.training_load import TrainingLoadCalculator
 
         calc = TrainingLoadCalculator(db_session)
         history = calc.compute_training_state_history(athlete.id)
 
-        all_activity_ids = set()
-        for day_summary in history.values():
-            for a in getattr(day_summary, "activities", []):
-                all_activity_ids.add(a.id)
-
-        assert cycling_act.id not in all_activity_ids, (
-            "Cycling activity appeared in training load history"
+        assert len(history) > 0, "Mixed-sport athlete should have load history"
+        any_day = list(history.values())[0]
+        assert any_day.current_atl > 0 or any_day.current_ctl > 0, (
+            "Load should be > 0 with activities present"
         )
 
-    def test_history_empty_for_cycling_only(
+    def test_cycling_only_athlete_has_load(
         self, db_session, cycling_only_athlete
     ):
-        """With only cycling data, training load history should have no activities."""
+        """Cycling-only athlete should have training load from cross-training TSS."""
         athlete, _ = cycling_only_athlete
         from services.training_load import TrainingLoadCalculator
 
         calc = TrainingLoadCalculator(db_session)
         history = calc.compute_training_state_history(athlete.id)
 
-        all_activity_ids = set()
-        for day_summary in history.values():
-            for a in getattr(day_summary, "activities", []):
-                all_activity_ids.add(a.id)
+        assert len(history) > 0, (
+            "Cycling-only athlete should have load history from cross-training"
+        )
 
-        assert len(all_activity_ids) == 0, (
-            f"Cycling-only athlete should have empty load history, "
-            f"got {len(all_activity_ids)} activities"
+    def test_cross_training_tss_uses_sport_method(self, db_session, athlete_with_mixed_sports):
+        """Cycling activity routes to cross-training TSS, not running TSS."""
+        athlete, run_act, cycling_act = athlete_with_mixed_sports
+        from services.training_load import TrainingLoadCalculator
+
+        calc = TrainingLoadCalculator(db_session)
+        ath = db_session.query(Athlete).filter(Athlete.id == athlete.id).first()
+        stress = calc.calculate_workout_tss(cycling_act, ath)
+
+        assert "cycling" in stress.calculation_method or stress.calculation_method == "hrTSS", (
+            f"Cycling should use cross-training method, got {stress.calculation_method}"
         )
 
 
