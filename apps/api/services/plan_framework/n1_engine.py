@@ -255,7 +255,8 @@ def plan_weeks(state: AthleteState) -> List[WeekRx]:
     vol_start = state.current_weekly_miles
     vol_peak = state.peak_weekly_miles
     if state.is_abbreviated:
-        vol_peak = min(vol_peak, vol_start * 1.10)
+        safe_increase = state.days_per_week
+        vol_peak = min(vol_peak, vol_start + safe_increase)
 
     lr_ceiling = LR_CEILING.get(dist, 18.0)
     if state.is_slow_marathoner:

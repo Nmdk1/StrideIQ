@@ -38,6 +38,14 @@ from services.plan_framework.fingerprint_bridge import build_fingerprint_params
 from services.plan_framework.load_context import build_load_context, history_anchor_date
 from services.plan_framework.n1_engine import generate_n1_plan
 from services.race_signal_contract import normalize_distance_alias
+from services.rpi_calculator import calculate_rpi_from_race_time
+
+_DISTANCE_METERS = {
+    "5k": 5000,
+    "10k": 10000,
+    "half_marathon": 21097.5,
+    "marathon": 42195,
+}
 
 logger = logging.getLogger(__name__)
 
@@ -282,25 +290,26 @@ class ConstraintAwarePlanner:
         is_abbreviated = horizon_weeks <= 5
         _applied_peak = volume_contract.get("applied_peak") or bank.current_weekly_miles
 
-        # Starting volume: use the HIGHEST of trailing average, 8w median, and
-        # last complete week so W1 never prescribes below what they already ran.
-        # For abbreviated plans (≤5 weeks), use the median instead of max to
-        # avoid inflating from one outlier week — there's no time to safely
-        # absorb a volume jump.
-        if is_abbreviated:
-            candidates = [
-                bank.current_weekly_miles,
-                bank.recent_8w_median_weekly_miles or 0.0,
-            ]
-            starting_vol = max(candidates)
+        starting_vol = max(
+            bank.current_weekly_miles,
+            bank.recent_8w_median_weekly_miles or 0.0,
+            bank.last_complete_week_miles or 0.0,
+        )
+
+        # Days per week: intake questionnaire is the authority when available.
+        if intake and intake.days_per_week:
+            days_per_week = max(3, min(6, intake.days_per_week))
         else:
-            starting_vol = max(
-                bank.current_weekly_miles,
-                bank.recent_8w_median_weekly_miles or 0.0,
-                bank.last_complete_week_miles or 0.0,
-            )
+            days_per_week = max(3, min(6, 7 - len(bank.typical_rest_days or [])))
+
+        # Abbreviated plan peak cap: 1 mile per running session (not the
+        # debunked "10% rule").  If the target is within the athlete's
+        # established peak, no cap — that's a return to proven mileage.
         if is_abbreviated:
-            _applied_peak = min(_applied_peak, starting_vol * 1.10)
+            returning_to_established = _applied_peak <= bank.peak_weekly_miles
+            if not returning_to_established:
+                safe_increase = days_per_week
+                _applied_peak = min(_applied_peak, starting_vol + safe_increase)
             volume_contract["applied_peak"] = round(_applied_peak, 1)
             volume_contract["band_max"] = round(_applied_peak, 1)
         if starting_vol != bank.current_weekly_miles:
@@ -312,12 +321,6 @@ class ConstraintAwarePlanner:
                 bank.last_complete_week_miles or 0.0,
                 is_abbreviated,
             )
-
-        # Days per week: intake questionnaire is the authority when available.
-        if intake and intake.days_per_week:
-            days_per_week = max(3, min(6, intake.days_per_week))
-        else:
-            days_per_week = max(3, min(6, 7 - len(bank.typical_rest_days or [])))
 
         # Current long run: use the best available from L30, bank, or load context
         l30_from_ctx = (load_ctx.l30_max_easy_long_mi if load_ctx is not None else None) or 0.0
@@ -357,7 +360,19 @@ class ConstraintAwarePlanner:
         except Exception as ex:
             logger.warning("Fingerprint bridge unavailable, using defaults: %s", ex)
 
-        # 3. Generate plan via N=1 engine
+        # 3. Derive RPI: proven race > goal-time-derived > none.
+        _best_rpi = bank.best_rpi
+        if (not _best_rpi or _best_rpi <= 0) and goal_time:
+            dist_m = _DISTANCE_METERS.get(race_distance)
+            goal_secs = self._parse_goal_seconds(goal_time)
+            if dist_m and goal_secs and goal_secs > 0:
+                _best_rpi = calculate_rpi_from_race_time(dist_m, goal_secs)
+                if _best_rpi:
+                    logger.info(
+                        "RPI derived from goal time: %s in %s -> RPI=%.1f",
+                        race_distance, goal_time, _best_rpi,
+                    )
+
         weeks = generate_n1_plan(
             race_distance=race_distance,
             race_date=race_date,
@@ -368,7 +383,7 @@ class ConstraintAwarePlanner:
             current_lr=_current_lr,
             applied_peak=_applied_peak,
             experience=bank.experience_level,
-            best_rpi=bank.best_rpi,
+            best_rpi=_best_rpi,
             weeks_since_peak=bank.weeks_since_peak,
             goal_time=goal_time,
             personal_lr_floor=personal_lr_floor,
@@ -835,6 +850,20 @@ class ConstraintAwarePlanner:
         if score >= 1:
             return "medium"
         return "low"
+
+    @staticmethod
+    def _parse_goal_seconds(gt: Optional[str]) -> Optional[int]:
+        if not gt:
+            return None
+        parts = gt.strip().split(":")
+        try:
+            if len(parts) == 3:
+                return int(parts[0]) * 3600 + int(parts[1]) * 60 + int(parts[2])
+            if len(parts) == 2:
+                return int(parts[0]) * 60 + int(parts[1])
+        except (ValueError, IndexError):
+            pass
+        return None
 
     def _predict_race(self, bank: FitnessBank, distance: str, goal_time: Optional[str]) -> tuple:
         """Predict race time using conservative/base/aggressive scenarios."""

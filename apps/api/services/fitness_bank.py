@@ -718,14 +718,12 @@ class FitnessBankCalculator:
         Return the athlete's peak proven RPI and the race that established it.
 
         Uses the highest confidence-adjusted RPI from races in the last 24 months.
-        Recency is NOT used to select or downgrade peak RPI — we want to know what
-        the athlete has proven they can do, not what they did most recently.
-
-        Races with confidence < 0.5 (e.g., race-day anomalies flagged by the system)
-        or RPI < 35 (clearly not a race effort) are excluded from consideration.
+        Returns (0.0, None) when no valid races exist — the planner derives paces
+        from the athlete's goal time instead; prescribing wrong paces is worse
+        than prescribing no paces.
         """
         if not races:
-            return 45.0, None
+            return 0.0, None
 
         today = date.today()
         cutoff = today - timedelta(days=730)  # 24-month window
@@ -738,13 +736,11 @@ class FitnessBankCalculator:
         ]
 
         if not valid:
-            # No valid races in window — fall back to any race above threshold
             valid = [r for r in races if r.rpi >= 35.0 and r.confidence >= 0.5]
 
         if not valid:
-            return 45.0, None
+            return 0.0, None
 
-        # Best race = highest confidence-adjusted RPI
         best_race = max(valid, key=lambda r: r.rpi * r.confidence)
         return best_race.rpi, best_race
 
@@ -1166,7 +1162,7 @@ class FitnessBankCalculator:
             peak_threshold_miles=5.0,
             peak_ctl=40.0,
             race_performances=[],
-            best_rpi=40.0,
+            best_rpi=0.0,
             best_race=None,
             current_weekly_miles=0.0,
             current_ctl=30.0,
