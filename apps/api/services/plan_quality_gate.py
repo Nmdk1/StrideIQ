@@ -62,8 +62,9 @@ def evaluate_constraint_aware_plan(plan: Any) -> QualityGateResult:
         invariant_conflicts=invariant_conflicts,
     )
 
+    current_lr = float((fitness_bank.get("current", {}) or {}).get("long_run", 0) or 0)
     if race_distance == "10k":
-        _evaluate_10k_rules(weeks, reasons, invariant_conflicts)
+        _evaluate_10k_rules(weeks, reasons, invariant_conflicts, current_lr=current_lr)
     elif race_distance == "marathon":
         _evaluate_marathon_rules(weeks, len(weeks), reasons, invariant_conflicts)
     elif race_distance in ("half", "half_marathon", "10_mile"):
@@ -278,7 +279,10 @@ def _suggested_long_run_max(race_distance: str) -> float:
     return 18.0
 
 
-def _evaluate_10k_rules(weeks: List[Any], reasons: List[str], invariant_conflicts: List[str]) -> None:
+def _evaluate_10k_rules(
+    weeks: List[Any], reasons: List[str], invariant_conflicts: List[str],
+    current_lr: float = 0.0,
+) -> None:
     has_marathon_pace_work = False
     for week in weeks:
         week_total = max(float(getattr(week, "total_miles", 0) or 0), 1.0)
@@ -286,8 +290,12 @@ def _evaluate_10k_rules(weeks: List[Any], reasons: List[str], invariant_conflict
             wt = (day.workout_type or "").lower()
             if wt == "long":
                 long_miles = float(day.target_miles or 0)
-                if _exceeds_with_tolerance(long_miles, 18.0, miles_eps=MILES_EPS) or _exceeds_ratio_with_tolerance(
-                    long_miles / week_total, TENK_LONG_DOMINANCE_RATIO_CEILING, ratio_eps=RATIO_EPS
+                within_established = current_lr > 0 and long_miles <= current_lr + MILES_EPS
+                if not within_established and (
+                    _exceeds_with_tolerance(long_miles, 18.0, miles_eps=MILES_EPS)
+                    or _exceeds_ratio_with_tolerance(
+                        long_miles / week_total, TENK_LONG_DOMINANCE_RATIO_CEILING, ratio_eps=RATIO_EPS
+                    )
                 ):
                     reasons.append(
                         f"10K long-run dominance breach in week {week.week_number}: "

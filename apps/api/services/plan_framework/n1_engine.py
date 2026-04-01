@@ -254,10 +254,17 @@ def plan_weeks(state: AthleteState) -> List[WeekRx]:
 
     vol_start = state.current_weekly_miles
     vol_peak = state.peak_weekly_miles
+    if state.is_abbreviated:
+        vol_peak = min(vol_peak, vol_start * 1.10)
+
     lr_ceiling = LR_CEILING.get(dist, 18.0)
     if state.is_slow_marathoner:
         lr_ceiling = LR_CEILING_SLOW
-    lr_ceiling = min(lr_ceiling, state.current_long_run_miles * 1.25) if state.current_long_run_miles > 0 else lr_ceiling
+    if state.current_long_run_miles > 0:
+        if state.is_abbreviated:
+            lr_ceiling = min(lr_ceiling, state.current_long_run_miles)
+        else:
+            lr_ceiling = min(lr_ceiling, state.current_long_run_miles * 1.25)
 
     lr_step = 2.0
     if state.experience == ExperienceLevel.ELITE:
