@@ -279,6 +279,7 @@ class ConstraintAwarePlanner:
         
         # 2. Determine plan parameters from fitness bank
         horizon_weeks = max(4, (race_date - date.today()).days // 7)
+        is_abbreviated = horizon_weeks <= 5
         _applied_peak = volume_contract.get("applied_peak") or bank.current_weekly_miles
 
         # Starting volume: use the HIGHEST of trailing average, 8w median, and
@@ -286,7 +287,6 @@ class ConstraintAwarePlanner:
         # For abbreviated plans (≤5 weeks), use the median instead of max to
         # avoid inflating from one outlier week — there's no time to safely
         # absorb a volume jump.
-        is_abbreviated = horizon_weeks <= 5
         if is_abbreviated:
             candidates = [
                 bank.current_weekly_miles,
@@ -299,6 +299,10 @@ class ConstraintAwarePlanner:
                 bank.recent_8w_median_weekly_miles or 0.0,
                 bank.last_complete_week_miles or 0.0,
             )
+        if is_abbreviated:
+            _applied_peak = min(_applied_peak, starting_vol * 1.10)
+            volume_contract["applied_peak"] = round(_applied_peak, 1)
+            volume_contract["band_max"] = round(_applied_peak, 1)
         if starting_vol != bank.current_weekly_miles:
             logger.info(
                 "Starting volume adjusted: bank.current=%.1f -> %.1f "
