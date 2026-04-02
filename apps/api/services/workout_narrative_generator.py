@@ -323,6 +323,7 @@ def _call_narrative_llm(
         temperature=NARRATIVE_TEMPERATURE,
         response_mode="text",
         timeout_s=60,
+        disable_thinking=True,
     )
     return (
         result["text"],

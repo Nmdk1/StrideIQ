@@ -77,6 +77,7 @@ def _call_anthropic(
     temperature: float,
     response_mode: Literal["text", "json"],
     timeout_s: int,
+    disable_thinking: bool = False,
 ) -> LLMResponse:
     """Anthropic Messages API adapter (text + JSON modes)."""
     try:
@@ -120,6 +121,7 @@ def _call_kimi(
     temperature: float,
     response_mode: Literal["text", "json"],
     timeout_s: int,
+    disable_thinking: bool = False,
 ) -> LLMResponse:
     """
     Kimi (Moonshot) via OpenAI-compatible SDK.
@@ -127,6 +129,9 @@ def _call_kimi(
     Supports both kimi-k2-turbo-preview and kimi-k2.5. For k2.5 in JSON
     mode, thinking is disabled so output goes to `content` normally.
     K2.5 uses fixed temperature (1.0 thinking, 0.6 non-thinking).
+
+    Set disable_thinking=True for short-form text generation so K2.5
+    doesn't burn the entire token budget on reasoning.
     """
     try:
         from openai import OpenAI
@@ -151,7 +156,9 @@ def _call_kimi(
         extra_kwargs["response_format"] = {"type": "json_object"}
         if is_reasoning:
             extra_body["thinking"] = {"type": "disabled"}
-    if not is_reasoning:
+    elif disable_thinking and is_reasoning:
+        extra_body["thinking"] = {"type": "disabled"}
+    if not is_reasoning or disable_thinking:
         extra_kwargs["temperature"] = temperature
 
     t0 = time.monotonic()
@@ -187,6 +194,7 @@ def _call_gemini(
     temperature: float,
     response_mode: Literal["text", "json"],
     timeout_s: int,
+    disable_thinking: bool = False,
 ) -> LLMResponse:
     """Google GenAI adapter (text + JSON modes via response_mime_type)."""
     try:
@@ -288,6 +296,7 @@ def call_llm(
     temperature: float,
     response_mode: Literal["text", "json"] = "text",
     timeout_s: int = 45,
+    disable_thinking: bool = False,
 ) -> LLMResponse:
     """
     Route an LLM completion to the correct provider with automatic fallback.
@@ -300,6 +309,9 @@ def call_llm(
 
     Never raises to the caller if any fallback succeeds. Raises RuntimeError
     only if all providers in the chain fail.
+
+    Set ``disable_thinking=True`` for short-form text generation on reasoning
+    models (K2.5) to prevent the thinking budget consuming all output tokens.
     """
     primary_provider = _provider_for_model(model)
     chain = [primary_provider] + list(_FALLBACK_CHAIN.get(primary_provider, ()))
@@ -325,6 +337,7 @@ def call_llm(
                 temperature=temperature,
                 response_mode=response_mode,
                 timeout_s=timeout_s,
+                disable_thinking=disable_thinking,
             )
             if i > 0:
                 logger.warning(
