@@ -14,7 +14,6 @@ Non-negotiable rules:
 from __future__ import annotations
 
 import re
-import time
 from collections import Counter
 from dataclasses import dataclass
 from datetime import date, timedelta
@@ -24,12 +23,7 @@ from uuid import UUID
 from sqlalchemy import desc
 from sqlalchemy.orm import Session
 from core.config import settings
-from core.llm_client import call_llm
-
-try:
-    from google import genai  # module-level so tests can patch services.workout_narrative_generator.genai
-except ImportError:
-    genai = None  # type: ignore[assignment]
+from core.llm_client import call_llm, resolve_briefing_model
 
 
 # ---------------------------------------------------------------------------
@@ -51,8 +45,10 @@ NO_INTENSITY_PHASES = {"taper", "recovery"}
 NO_INTENSITY_AFTER = {"long", "long_run", "long_mp", "long_hmp"}
 
 
-def _resolved_workout_narrative_model() -> str:
-    """Resolve workout narrative model via config/env."""
+def _resolved_workout_narrative_model(athlete_id: Optional[UUID] = None) -> str:
+    """Resolve workout narrative model via canary routing, config, or default."""
+    if athlete_id is not None:
+        return resolve_briefing_model(athlete_id=str(athlete_id))
     return settings.WORKOUT_NARRATIVE_MODEL or NARRATIVE_MODEL
 
 # ---------------------------------------------------------------------------
@@ -305,77 +301,35 @@ def _get_recent_narratives(
 
 
 # ---------------------------------------------------------------------------
-# LLM call (mirrors adaptation_narrator.py pattern)
+# LLM call — routes through centralized call_llm() for Kimi/Anthropic/Gemini
 # ---------------------------------------------------------------------------
 
-def _call_llm(
-    client: Any,
+def _call_narrative_llm(
+    athlete_id: UUID,
     user_prompt: str,
 ) -> Tuple[str, int, int, int]:
-    """Call configured narrative model. Returns (text, input_tokens, output_tokens, latency_ms)."""
-    model_name = _resolved_workout_narrative_model()
+    """Call configured narrative model via centralized routing.
 
-    if not model_name.startswith("gemini"):
-        result = call_llm(
-            model=model_name,
-            system=SYSTEM_PROMPT,
-            messages=[{"role": "user", "content": user_prompt}],
-            max_tokens=NARRATIVE_MAX_TOKENS,
-            temperature=NARRATIVE_TEMPERATURE,
-            response_mode="text",
-            timeout_s=60,
-        )
-        return (
-            result["text"],
-            int(result["input_tokens"]),
-            int(result["output_tokens"]),
-            int(result["latency_ms"]),
-        )
+    Returns (text, input_tokens, output_tokens, latency_ms).
+    Respects canary routing (Kimi for canary athletes) and fallback chains.
+    """
+    model_name = _resolved_workout_narrative_model(athlete_id)
 
-    if client is None:
-        raise RuntimeError("No Gemini client provided.")
-
-    start = time.monotonic()
-
-    try:
-        import google.genai.types as genai_types
-        contents = [
-            genai_types.Content(
-                role="user",
-                parts=[genai_types.Part(text=user_prompt)],
-            ),
-        ]
-        config = genai_types.GenerateContentConfig(
-            system_instruction=SYSTEM_PROMPT,
-            max_output_tokens=NARRATIVE_MAX_TOKENS,
-            temperature=NARRATIVE_TEMPERATURE,
-        )
-    except Exception:
-        contents = [{"role": "user", "parts": [{"text": user_prompt}]}]
-        config = {
-            "system_instruction": SYSTEM_PROMPT,
-            "max_output_tokens": NARRATIVE_MAX_TOKENS,
-            "temperature": NARRATIVE_TEMPERATURE,
-        }
-
-    response = client.models.generate_content(
+    result = call_llm(
         model=model_name,
-        contents=contents,
-        config=config,
+        system=SYSTEM_PROMPT,
+        messages=[{"role": "user", "content": user_prompt}],
+        max_tokens=NARRATIVE_MAX_TOKENS,
+        temperature=NARRATIVE_TEMPERATURE,
+        response_mode="text",
+        timeout_s=60,
     )
-
-    latency_ms = int((time.monotonic() - start) * 1000)
-
-    text = ""
-    if response.candidates:
-        candidate = response.candidates[0]
-        if candidate.content and candidate.content.parts:
-            text = candidate.content.parts[0].text or ""
-
-    input_tokens = getattr(response.usage_metadata, "prompt_token_count", 0) or 0
-    output_tokens = getattr(response.usage_metadata, "candidates_token_count", 0) or 0
-
-    return text, input_tokens, output_tokens, latency_ms
+    return (
+        result["text"],
+        int(result["input_tokens"]),
+        int(result["output_tokens"]),
+        int(result["latency_ms"]),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -548,6 +502,8 @@ def generate_workout_narrative(
     """Generate a contextual workout narrative for the target date.
 
     Returns WorkoutNarrativeResult.  `narrative` is None when suppressed.
+    ``gemini_client`` is accepted for backward compatibility but ignored;
+    routing goes through call_llm() which handles all providers.
     """
     if _is_3b_kill_switched(db):
         return WorkoutNarrativeResult(
@@ -565,9 +521,9 @@ def generate_workout_narrative(
 
     user_prompt = _build_prompt(ctx)
 
-    # Call LLM
+    # Call LLM via centralized routing (Kimi/Anthropic/Gemini with fallback)
     try:
-        text, in_tok, out_tok, lat = _call_llm(gemini_client, user_prompt)
+        text, in_tok, out_tok, lat = _call_narrative_llm(athlete_id, user_prompt)
     except Exception as exc:
         return WorkoutNarrativeResult(
             suppressed=True,
@@ -575,12 +531,14 @@ def generate_workout_narrative(
             prompt_used=user_prompt,
         )
 
+    resolved_model = _resolved_workout_narrative_model(athlete_id)
+
     if not text or not text.strip():
         return WorkoutNarrativeResult(
             suppressed=True,
             suppression_reason="LLM returned empty response.",
             prompt_used=user_prompt,
-            model_used=NARRATIVE_MODEL,
+            model_used=resolved_model,
             input_tokens=in_tok,
             output_tokens=out_tok,
             latency_ms=lat,
@@ -594,7 +552,7 @@ def generate_workout_narrative(
             suppressed=True,
             suppression_reason="Narrative contained banned metric acronyms.",
             prompt_used=user_prompt,
-            model_used=NARRATIVE_MODEL,
+            model_used=resolved_model,
             input_tokens=in_tok,
             output_tokens=out_tok,
             latency_ms=lat,
@@ -615,7 +573,7 @@ def generate_workout_narrative(
                     suppressed=True,
                     suppression_reason="Narrative encouraged intensity in taper/post-long context.",
                     prompt_used=user_prompt,
-                    model_used=NARRATIVE_MODEL,
+                    model_used=resolved_model,
                     input_tokens=in_tok,
                     output_tokens=out_tok,
                     latency_ms=lat,
@@ -628,7 +586,7 @@ def generate_workout_narrative(
             suppressed=True,
             suppression_reason="Narrative too similar to recent workout notes (>50% overlap).",
             prompt_used=user_prompt,
-            model_used=NARRATIVE_MODEL,
+            model_used=resolved_model,
             input_tokens=in_tok,
             output_tokens=out_tok,
             latency_ms=lat,
@@ -641,7 +599,7 @@ def generate_workout_narrative(
         narrative=text,
         suppressed=False,
         prompt_used=user_prompt,
-        model_used=NARRATIVE_MODEL,
+        model_used=resolved_model,
         input_tokens=in_tok,
         output_tokens=out_tok,
         latency_ms=lat,
@@ -672,8 +630,9 @@ class WorkoutNarrativeGenerator:
         """
         Check consent then dispatch LLM.
 
-        Returns the _call_llm tuple (text, in_tok, out_tok, lat_ms) or None
-        if consent is not granted.
+        Returns the _call_narrative_llm tuple (text, in_tok, out_tok, lat_ms)
+        or None if consent is not granted.
+        ``client`` is accepted for backward compatibility but ignored.
         """
         if athlete_id is not None:
             _db = db
@@ -690,4 +649,5 @@ class WorkoutNarrativeGenerator:
                 if _close:
                     _db.close()
 
-        return _call_llm(client, prompt)
+        _aid = athlete_id if isinstance(athlete_id, UUID) else UUID(str(athlete_id)) if athlete_id else UUID(int=0)
+        return _call_narrative_llm(_aid, prompt)

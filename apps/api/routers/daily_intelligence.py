@@ -428,19 +428,10 @@ def get_workout_narrative(
     # Generate narrative
     from services.workout_narrative_generator import generate_workout_narrative
 
-    # Get Gemini client (best-effort; None = suppressed with reason)
-    gemini_client = None
-    try:
-        from tasks.intelligence_tasks import _get_gemini_client
-        gemini_client = _get_gemini_client()
-    except Exception:
-        pass
-
     result = generate_workout_narrative(
         athlete_id=current_user.id,
         target_date=target_date,
         db=db,
-        gemini_client=gemini_client,
     )
 
     # Persist audit record — includes 4-criterion quality_score for founder QA.
