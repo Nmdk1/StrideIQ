@@ -135,6 +135,13 @@ def _run_intelligence_for_athlete(
         db=db,
     )
 
+    # Step 3B: Workout narrative (Phase 3B)
+    workout_narrative_stats = _generate_workout_narrative_if_eligible(
+        athlete_id=athlete_id,
+        target_date=target_date,
+        db=db,
+    )
+
     # Step 4: Commit insights + narrations
     try:
         db.commit()
@@ -161,6 +168,7 @@ def _run_intelligence_for_athlete(
         "self_regulation_logged": intel_result.self_regulation_logged,
         "rules_fired": [i.rule_id for i in intel_result.insights],
         **narration_stats,
+        **workout_narrative_stats,
     }
 
 
@@ -331,6 +339,92 @@ def _persist_narration(
                 insight_row.narrative_contradicts = narration_result.score_result.contradicts_engine
     except Exception as e:
         logger.warning(f"Could not update InsightLog with narration: {e}")
+
+
+def _generate_workout_narrative_if_eligible(
+    athlete_id: UUID,
+    target_date: date,
+    db: Session,
+) -> Dict:
+    """Generate a Phase 3B workout narrative if the athlete qualifies.
+
+    Checks eligibility, calls the generator, persists the NarrationLog,
+    and computes a scalar quality score for the quality gate.
+    """
+    stats = {
+        "workout_narrative_generated": False,
+        "workout_narrative_suppressed": False,
+    }
+
+    try:
+        from services.phase3_eligibility import get_3b_eligibility
+        elig = get_3b_eligibility(athlete_id, db, as_of=target_date)
+        if not elig.eligible:
+            return stats
+
+        from services.workout_narrative_generator import generate_workout_narrative
+        result = generate_workout_narrative(athlete_id, target_date, db)
+
+        if result.suppressed:
+            stats["workout_narrative_suppressed"] = True
+        else:
+            stats["workout_narrative_generated"] = True
+
+        _persist_workout_narrative(athlete_id, target_date, result, elig, db)
+
+    except Exception as e:
+        logger.warning(
+            f"Workout narrative failed for {athlete_id}: {e}", exc_info=True,
+        )
+
+    return stats
+
+
+def _persist_workout_narrative(
+    athlete_id: UUID,
+    target_date: date,
+    result,
+    eligibility,
+    db: Session,
+) -> None:
+    """Persist a workout narrative result to NarrationLog."""
+    from models import NarrationLog
+    import uuid as _uuid
+
+    qs = result.quality_score or {}
+    criteria = ["contextual", "non_repetitive", "physiologically_sound", "tone_rules_ok"]
+    passed = sum(1 for c in criteria if qs.get(c, False))
+    score = passed / len(criteria) if criteria else 0.0
+
+    log = NarrationLog(
+        id=_uuid.uuid4(),
+        athlete_id=athlete_id,
+        trigger_date=target_date,
+        rule_id="WORKOUT_NARRATIVE",
+        narration_text=result.narrative,
+        prompt_used=result.prompt_used,
+        suppressed=result.suppressed,
+        suppression_reason=result.suppression_reason,
+        model_used=result.model_used,
+        input_tokens=result.input_tokens,
+        output_tokens=result.output_tokens,
+        latency_ms=result.latency_ms,
+        ground_truth={
+            "eligibility": {
+                "eligible": eligibility.eligible,
+                "provisional": eligibility.provisional,
+                "reason": eligibility.reason,
+            },
+            "suppression_reason": result.suppression_reason,
+            "quality_score": qs,
+        },
+        factually_correct=qs.get("contextual"),
+        no_raw_metrics=qs.get("tone_rules_ok"),
+        actionable_language=qs.get("physiologically_sound"),
+        criteria_passed=passed,
+        score=score if not result.suppressed else None,
+    )
+    db.add(log)
 
 
 def _get_gemini_client():

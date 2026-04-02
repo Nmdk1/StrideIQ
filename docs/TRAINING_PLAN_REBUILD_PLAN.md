@@ -69,6 +69,27 @@ pro# Training Plan & Daily Adaptation — Phased Build Plan
 >   runs nightly + manual trigger. Nightly failures auto-open GitHub issues.
 > - Intake context now wired into plan generation (onboarding questionnaire → FitnessBank seeds).
 > - Phase 1 status updated from "COMPLETE (template-based)" to "V3 REBUILT (diagnosis-first)".
+>
+> **Operational Update — April 1, 2026 (Plan volume regression + goal-time derivation)**
+> - Plan generation regression fixed for athletes without race history (e.g., Larry Shaffer).
+> - `_find_best_race` default changed from 45.0 RPI to 0.0 — no fabricated fitness data.
+>   `_estimate_rpi_from_training` method removed entirely from fitness_bank.py.
+> - When `best_rpi` is 0 and athlete provides a goal time, RPI is derived from
+>   `calculate_rpi_from_race_time`. Paces then come from real goal-anchored data.
+> - Frontend "Goal Time (optional)" input added to constraint-aware plan form.
+> - Removed arbitrary 10K volume cap in `_build_volume_contract` (was crushing
+>   `applied_peak` to `band_max`). No distance should override an athlete's proven mileage.
+> - Abbreviated plan peak now guarantees `starting_vol + days_per_week` (1 mi/session build room),
+>   capped at historical peak for safety.
+> - Volume undershoot handler added to `assemble_plan` — distributes shortfall to easy runs
+>   when assembled days fall below target volume.
+> - Race prediction (`_predict_race`) fixed: `best_rpi=0.0` was treated as valid, producing
+>   5-hour 10K base predictions. Now correctly falls back to goal-time-derived or
+>   volume-estimated RPI.
+> - **Technical debt noted:** Recovery-modulated ramp ceiling — use athlete's actual
+>   tau1/tau2/HRV signature for volume ramp ceiling (N=1), not blanket 1mi/session.
+>   The 1mi/session is a floor; the ceiling should be individualized.
+> - CI #804 and #805: GREEN. Commits: `f258cd4`, `6aa149e`, `f0cbb21`.
 
 ---
 
@@ -592,9 +613,10 @@ Flags — NOT overrides. Fires only on sustained trajectories, not single-day si
 - [ ] Founder review of first 50 narratives before general rollout
 - [ ] Kill switch: if quality degrades, narratives are suppressed (silence > bad narrative)
 
-### 3C. N=1 Personalized Insights — CONTRACT TESTS ONLY (26 xfail)
+### 3C. N=1 Personalized Insights — ✅ GRADUATED (2026-03-28)
 
 **Gate:** Intelligence Bank has 3+ months of data for the athlete AND correlation engine has statistically significant findings.
+**Gate cleared:** 611 days synced history, 109 confirmed findings, 2 surviving Bonferroni correction. 26 contract tests graduated from xfail to passing. Tier gate updated to include canonical "subscriber" tier.
 
 **What:** Insights derived from the athlete's own data patterns.
 
@@ -638,8 +660,8 @@ Flags — NOT overrides. Fires only on sustained trajectories, not single-day si
 | **1** | World-class plans: marathon → half → 10K → 5K. N=1 overrides. Paces everywhere. Taper democratization. | None | ✅ V3 REBUILT — diagnosis-first engine (143 PASS / 14 archetypes) |
 | **2** | Daily adaptation engine: readiness score, rules engine, workout state machine, nightly replan, no-race modes. | Phase 1 substantially complete | ✅ COMPLETE |
 | **3A** | Adaptation narration: coach explains intelligence decisions. | Phase 2 running | ✅ COMPLETE |
-| **3B** | Contextual workout narratives. | Narration accuracy > 90% for 4 weeks | ✅ CODE COMPLETE — gate accruing |
-| **3C** | N=1 personalized insights. | 3+ months data + significant correlations | ✅ CODE COMPLETE — gate accruing |
+| **3B** | Contextual workout narratives. | Narration accuracy > 90% for 4 weeks | ✅ CODE COMPLETE — pipeline wired to Celery, gate accruing |
+| **3C** | N=1 personalized insights. | 3+ months data + significant correlations | ✅ GRADUATED (2026-03-28) — 26 contract tests passing, eligible for founder |
 | **4** | 50K ultra: new primitives. | Phases 1-2 complete | 📋 CONTRACT ONLY — ready to build |
 | **Monetization** | Tier mapping: Free (30-day trial) / StrideIQ Subscriber ($24.99/mo or $199/yr). | Phases 1-2 complete | ✅ v2 COMPLETE — 2-tier model, coach gated by subscription, 30-day auto-trial (2026-03-19) |
 | **Parallel** | Coach trust: test harness, HRV study, narration scoring, advisory mode, autonomy. | Starts Day 1 | ✅ COMPLETE (ongoing accrual) |
@@ -772,7 +794,7 @@ consumed by the volume progression or workout scaler. Next step.
 
 ### N=1 Gap: Cross-Training & Injury-Return Context
 
-**Status:** Tracked — near-future project, not current sprint
+**Status:** Workstream 1 (data infrastructure) COMPLETE Apr 1, 2026. Workstream 2 (plan engine integration) not yet started.
 **Date noted:** March 26, 2026
 
 **The problem:** The Fitness Bank cannot produce N=1 prescriptions for
@@ -810,8 +832,8 @@ does NOT meet the N=1 standard. This is an acknowledged deviation from
 product ethos, not an oversight.
 
 **Remediation plan:**
-- Expand Garmin activity streams to ingest cross-training activities
-  (cycling, swimming, elliptical, strength) into the fingerprint.
+- ~~Expand Garmin activity streams to ingest cross-training activities
+  (cycling, swimming, elliptical, strength) into the fingerprint.~~ ✅ DONE (Apr 1, 2026). Garmin adapter now accepts 6 sports (run, cycling, walking, hiking, strength, flexibility) across 21 Garmin activity types. 76 downstream consumers have sport filters. Training load includes cross-training TSS.
 - Backfill cross-training history for existing athletes.
 - Add fields to FitnessBank: `pre_injury_12w_avg_miles`,
   `weeks_fully_off`, `cross_training_hours_during_break`,

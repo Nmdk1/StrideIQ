@@ -35,8 +35,10 @@ NARRATION_QUALITY_WINDOW_DAYS = 28
 
 # Tiers that qualify for each feature.
 # Must stay aligned with the router tier checks in routers/insights.py.
-TIERS_3B = {"premium"}
-TIERS_3C = {"guided", "premium", "elite", "pro"}
+# Includes both canonical ("subscriber") and legacy ("premium", "guided", etc.)
+# tier names since athlete rows may carry either form.
+TIERS_3B = {"subscriber", "premium"}
+TIERS_3C = {"subscriber", "guided", "premium", "elite", "pro"}
 
 # Kill-switch env var (also checked via FeatureFlag table)
 KILL_SWITCH_3B_ENV = "STRIDEIQ_3B_KILL_SWITCH"
