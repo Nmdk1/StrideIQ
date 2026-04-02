@@ -1556,6 +1556,11 @@ def _summarize_workout_structure(activity_id, db: Session) -> Optional[str]:
     and return a coaching-useful summary instead of flat averages.
 
     Returns None if no splits, < 4 splits, or no interval pattern detected.
+
+    Uses pace-aware classification:
+    - Warmup/cooldown must be slower than work pace (not just long splits)
+    - Trailing GPS artifacts are skipped for cooldown detection
+    - Time-based labeling when intervals cluster around round minutes
     """
     METERS_PER_MILE = 1609.344
 
@@ -1576,45 +1581,60 @@ def _summarize_workout_structure(activity_id, db: Session) -> Optional[str]:
         pace_per_mi = (elapsed / dist_mi) if dist_mi > 0.01 else 99999
         parsed.append({
             "num": s.split_number,
+            "dist_m": dist_m,
             "dist_mi": round(dist_mi, 2),
             "elapsed_s": elapsed,
             "pace_s_per_mi": pace_per_mi,
             "hr": int(s.average_heartrate) if s.average_heartrate else None,
         })
 
-    # Classify each split: warmup (>=0.4mi, at start), work (0.1-0.5mi, fast),
-    # rest (<0.15mi or very slow), cooldown (>=0.4mi, at end), or other
-    work_candidates = []
-    rest_candidates = []
+    real_paces = sorted(
+        p["pace_s_per_mi"] for p in parsed
+        if p["dist_mi"] > 0.05 and p["pace_s_per_mi"] < 50000
+    )
+    if len(real_paces) < 4:
+        return None
+
+    q25_pace = real_paces[len(real_paces) // 4]
+    work_pace_cutoff = q25_pace * 1.15
+
     warmup_splits = []
-    cooldown_splits = []
-
-    median_pace = sorted(p["pace_s_per_mi"] for p in parsed)[len(parsed) // 2]
-
-    # Find warmup: consecutive splits >= 0.4mi at the start
     i = 0
-    while i < len(parsed) and parsed[i]["dist_mi"] >= 0.4:
-        warmup_splits.append(parsed[i])
+    while i < len(parsed):
+        sp = parsed[i]
+        if sp["dist_mi"] < 0.3:
+            break
+        if sp["pace_s_per_mi"] <= work_pace_cutoff:
+            break
+        warmup_splits.append(sp)
         i += 1
 
-    # Find cooldown: consecutive splits >= 0.4mi at the end
     j = len(parsed) - 1
-    while j > i and parsed[j]["dist_mi"] >= 0.4:
-        cooldown_splits.append(parsed[j])
+    while j > i and parsed[j]["dist_mi"] < 0.1:
         j -= 1
+    cooldown_splits = []
+    k = j
+    while k > i:
+        sp = parsed[k]
+        if sp["dist_mi"] < 0.3:
+            break
+        if sp["pace_s_per_mi"] <= work_pace_cutoff:
+            break
+        cooldown_splits.append(sp)
+        k -= 1
     cooldown_splits.reverse()
+    j = k
 
-    # Middle splits: detect work/rest alternation
     middle = parsed[i:j + 1]
     if len(middle) < 2:
         return None
 
+    work_candidates = []
+    rest_candidates = []
     for sp in middle:
-        if sp["dist_mi"] < 0.12:
+        if sp["dist_mi"] < 0.05:
             rest_candidates.append(sp)
-        elif 0.12 <= sp["dist_mi"] <= 0.65 and sp["pace_s_per_mi"] < median_pace:
-            work_candidates.append(sp)
-        elif sp["dist_mi"] > 0.65:
+        elif sp["pace_s_per_mi"] <= work_pace_cutoff:
             work_candidates.append(sp)
         else:
             rest_candidates.append(sp)
@@ -1622,15 +1642,16 @@ def _summarize_workout_structure(activity_id, db: Session) -> Optional[str]:
     if len(work_candidates) < 3:
         return None
 
-    # Compute work interval stats
     work_paces = [w["pace_s_per_mi"] for w in work_candidates]
     work_hrs = [w["hr"] for w in work_candidates if w["hr"]]
     work_dists = [w["dist_mi"] for w in work_candidates]
+    work_times = [w["elapsed_s"] for w in work_candidates]
 
     avg_work_pace_s = sum(work_paces) / len(work_paces)
     min_work_pace_s = min(work_paces)
     max_work_pace_s = max(work_paces)
     avg_work_dist = sum(work_dists) / len(work_dists)
+    avg_work_time_s = sum(work_times) / len(work_times)
     avg_work_hr = round(sum(work_hrs) / len(work_hrs)) if work_hrs else None
 
     def _fmt_pace(s_per_mi):
@@ -1646,24 +1667,38 @@ def _summarize_workout_structure(activity_id, db: Session) -> Optional[str]:
         wu_pace = wu_time / wu_dist if wu_dist > 0 else 0
         parts.append(f"Warmup: {wu_dist:.1f}mi at {_fmt_pace(wu_pace)}")
 
-    # Determine rep distance label
+    rep_label = None
     avg_work_m = avg_work_dist * METERS_PER_MILE
-    if 350 < avg_work_m < 450:
-        rep_label = "400m"
-    elif 750 < avg_work_m < 900:
-        rep_label = "800m"
-    elif 900 < avg_work_m < 1100:
-        rep_label = "1000m"
-    elif 1500 < avg_work_m < 1700:
-        rep_label = "1mi"
-    elif 1100 < avg_work_m < 1400:
-        rep_label = "1200m"
-    elif 180 < avg_work_m < 250:
-        rep_label = "200m"
-    elif 250 < avg_work_m < 350:
-        rep_label = "300m"
-    else:
-        rep_label = f"{avg_work_dist:.2f}mi"
+    if len(work_times) >= 3 and avg_work_time_s > 0:
+        time_spread = (max(work_times) - min(work_times)) / avg_work_time_s
+        work_dists_m = [w["dist_m"] for w in work_candidates]
+        dist_spread = (
+            (max(work_dists_m) - min(work_dists_m)) / avg_work_m
+            if avg_work_m > 0 else 999
+        )
+        rounded_min = round(avg_work_time_s / 60)
+        time_near_round = abs(avg_work_time_s - rounded_min * 60) < 15
+
+        if time_spread <= dist_spread and time_near_round and rounded_min >= 1:
+            rep_label = f"{rounded_min} min"
+
+    if rep_label is None:
+        if 350 < avg_work_m < 450:
+            rep_label = "400m"
+        elif 750 < avg_work_m < 900:
+            rep_label = "800m"
+        elif 900 < avg_work_m < 1100:
+            rep_label = "1000m"
+        elif 1500 < avg_work_m < 1700:
+            rep_label = "1mi"
+        elif 1100 < avg_work_m < 1400:
+            rep_label = "1200m"
+        elif 180 < avg_work_m < 250:
+            rep_label = "200m"
+        elif 250 < avg_work_m < 350:
+            rep_label = "300m"
+        else:
+            rep_label = f"{avg_work_dist:.2f}mi"
 
     pace_range = f"{_fmt_pace(min_work_pace_s)}-{_fmt_pace(max_work_pace_s)}"
     if abs(min_work_pace_s - max_work_pace_s) < 10:
@@ -1676,8 +1711,10 @@ def _summarize_workout_structure(activity_id, db: Session) -> Optional[str]:
     )
 
     if rest_candidates:
-        avg_rest_s = sum(r["elapsed_s"] for r in rest_candidates) / len(rest_candidates)
-        parts.append(f"Recovery: ~{int(avg_rest_s)}s between reps")
+        rest_jogs = [r for r in rest_candidates if r["elapsed_s"] > 0 and r["dist_mi"] < 0.5]
+        if rest_jogs:
+            avg_rest_s = sum(r["elapsed_s"] for r in rest_jogs) / len(rest_jogs)
+            parts.append(f"Recovery: ~{int(avg_rest_s)}s between reps")
 
     if cooldown_splits:
         cd_dist = sum(c["dist_mi"] for c in cooldown_splits)
