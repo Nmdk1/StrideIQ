@@ -362,8 +362,13 @@ def _generate_workout_narrative_if_eligible(
         if not elig.eligible:
             return stats
 
+        gemini_client = _get_gemini_client()
+        if gemini_client is None:
+            logger.info("Gemini client not available — skipping workout narrative")
+            return stats
+
         from services.workout_narrative_generator import generate_workout_narrative
-        result = generate_workout_narrative(athlete_id, target_date, db)
+        result = generate_workout_narrative(athlete_id, target_date, db, gemini_client=gemini_client)
 
         if result.suppressed:
             stats["workout_narrative_suppressed"] = True
