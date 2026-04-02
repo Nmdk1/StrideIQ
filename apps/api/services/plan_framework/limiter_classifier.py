@@ -62,6 +62,9 @@ LTHRESH_INPUT_NAMES = frozenset({"days_since_quality"})
 
 TSB_INPUTS = frozenset({"tsb"})
 
+LSPEC_INPUT_NAME = "lspec_rule_based"
+LSPEC_OUTPUT_METRIC = "race_readiness"
+
 ADVANCED_PEAK_MILES_FLOOR = 30.0
 LSPEC_WEEKS_TO_RACE = 6
 STRUCTURAL_STABILITY_DAYS = 90
@@ -93,6 +96,11 @@ def classify_lifecycle_states(
 ) -> Dict[int, str]:
     """Classify lifecycle state for all active correlation findings.
 
+    L-SPEC (priority 0): If the athlete meets L-SPEC conditions (≤6w to
+    race + advanced + intervals/threshold in L30), a synthetic finding
+    with lifecycle_state=active_fixed is created or maintained. This does
+    NOT override other findings — they keep their correct lifecycle states.
+
     Phase 4 additions:
       - Loads active limiter_context facts for the athlete.
       - Uses structured limiter_type matching to promote emerging → active
@@ -106,6 +114,17 @@ def classify_lifecycle_states(
 
     now = datetime.now(timezone.utc)
     results: Dict[int, str] = {}
+
+    profile = _get_profile(athlete_id, db)
+    half_life = profile.recovery_half_life_hours if profile else None
+    peak_miles = profile.peak_weekly_miles if profile else 0.0
+
+    lspec_active = _check_lspec_gate(
+        athlete_id, db, now, peak_miles,
+    )
+    lspec_finding = _manage_lspec_finding(athlete_id, db, now, lspec_active)
+    if lspec_finding:
+        results[lspec_finding.id] = lspec_finding.lifecycle_state
 
     from sqlalchemy import or_
 
@@ -125,30 +144,27 @@ def classify_lifecycle_states(
     if not findings:
         return results
 
-    profile = _get_profile(athlete_id, db)
-    half_life = profile.recovery_half_life_hours if profile else None
-    peak_miles = profile.peak_weekly_miles if profile else 0.0
-
-    lspec_active = _check_lspec_gate(
-        athlete_id, db, now, peak_miles,
-    )
-
     limiter_facts = _load_limiter_context_facts(athlete_id, db, now)
     expired_fact_types = _detect_expired_fact_types(athlete_id, db, now)
 
     for finding in findings:
+        if finding.input_name == LSPEC_INPUT_NAME:
+            if finding.id not in results:
+                results[finding.id] = finding.lifecycle_state
+            continue
+
         old_state = finding.lifecycle_state
 
-        if old_state == "active_fixed" and not lspec_active:
+        if old_state == "active_fixed":
             state = "closed"
             logger.info(
                 "limiter_classifier: active_fixed → closed for finding %s "
-                "(L-SPEC gate no longer fires — race passed or conditions changed)",
+                "(non-synthetic active_fixed cleaned up)",
                 finding.id,
             )
         else:
             state = _classify_single(
-                finding, half_life, lspec_active, now,
+                finding, half_life, now,
             )
 
         state = _apply_fact_promotion(finding, state, limiter_facts)
@@ -195,20 +211,111 @@ def _get_profile(athlete_id: UUID, db: Session):
         return None
 
 
+def _manage_lspec_finding(
+    athlete_id: UUID,
+    db: Session,
+    now: datetime,
+    lspec_active: bool,
+):
+    """Create, maintain, or deactivate the synthetic L-SPEC finding.
+
+    When CG-12 gate fires: creates or reactivates a synthetic finding
+    with lifecycle_state=active_fixed and input_name=lspec_rule_based.
+
+    When CG-12 stops firing: deactivates the synthetic finding (closed).
+
+    Returns the finding (or None if L-SPEC never existed).
+    """
+    import uuid as uuid_mod
+    from models import CorrelationFinding
+
+    existing = (
+        db.query(CorrelationFinding)
+        .filter(
+            CorrelationFinding.athlete_id == athlete_id,
+            CorrelationFinding.input_name == LSPEC_INPUT_NAME,
+            CorrelationFinding.output_metric == LSPEC_OUTPUT_METRIC,
+        )
+        .first()
+    )
+
+    if lspec_active:
+        if existing:
+            if existing.lifecycle_state != "active_fixed":
+                logger.info(
+                    "limiter_classifier: L-SPEC reactivated for athlete %s",
+                    athlete_id,
+                )
+                existing.lifecycle_state = "active_fixed"
+                existing.lifecycle_state_updated_at = now
+                existing.is_active = True
+            existing.last_confirmed_at = now
+            return existing
+
+        finding = CorrelationFinding(
+            id=uuid_mod.uuid4(),
+            athlete_id=athlete_id,
+            input_name=LSPEC_INPUT_NAME,
+            output_metric=LSPEC_OUTPUT_METRIC,
+            direction="positive",
+            time_lag_days=0,
+            correlation_coefficient=1.0,
+            p_value=0.0,
+            sample_size=1,
+            strength="strong",
+            times_confirmed=3,
+            first_detected_at=now,
+            last_confirmed_at=now,
+            category="pattern",
+            confidence=1.0,
+            is_active=True,
+            lifecycle_state="active_fixed",
+            lifecycle_state_updated_at=now,
+            discovery_source="lspec_rule",
+        )
+        db.add(finding)
+        logger.info(
+            "limiter_classifier: L-SPEC synthetic finding created for athlete %s",
+            athlete_id,
+        )
+        return finding
+
+    if existing and existing.lifecycle_state == "active_fixed":
+        existing.lifecycle_state = "closed"
+        existing.lifecycle_state_updated_at = now
+        existing.is_active = False
+        logger.info(
+            "limiter_classifier: L-SPEC deactivated for athlete %s "
+            "(gate no longer fires)",
+            athlete_id,
+        )
+        return existing
+
+    return existing
+
+
+LSPEC_PACE_TOLERANCE = 1.03
+LSPEC_THRESHOLD_MIN_SECONDS = 600
+
 def _check_lspec_gate(
     athlete_id: UUID,
     db: Session,
     now: datetime,
     peak_miles: float,
 ) -> bool:
-    """CG-12: L-SPEC context gate.
+    """CG-12: L-SPEC context gate (pace-verified).
 
     Fires when ALL conditions are met:
-      - ≤6 weeks to goal race
-      - Advanced athlete (peak miles ≥ 30)
-      - Intervals AND threshold present in L30 activities
+      1. ≤6 weeks to active goal race
+      2. Advanced athlete (peak miles ≥ 30)
+      3. Any L30 split at interval pace (from RPI)
+      4. Any L30 activity with ≥10 min total at threshold pace (from RPI)
+
+    Pace data is the truth — workout_type labels are ignored.
+    A fartlek at interval pace IS an interval session.
+    A progression run with 12 min at threshold pace IS threshold work.
     """
-    from models import TrainingPlan, Activity
+    from models import TrainingPlan, Athlete
 
     if peak_miles < ADVANCED_PEAK_MILES_FLOOR:
         return False
@@ -218,6 +325,7 @@ def _check_lspec_gate(
         db.query(TrainingPlan)
         .filter(
             TrainingPlan.athlete_id == athlete_id,
+            TrainingPlan.status == "active",
             TrainingPlan.goal_race_date <= cutoff,
             TrainingPlan.goal_race_date >= now.date(),
         )
@@ -228,41 +336,141 @@ def _check_lspec_gate(
     if not upcoming_plan:
         return False
 
+    athlete = db.query(Athlete).filter(Athlete.id == athlete_id).first()
+    if not athlete or not athlete.rpi:
+        return False
+
+    pace_thresholds = _get_pace_thresholds(athlete.rpi)
+    if not pace_thresholds:
+        return False
+
+    interval_pace, threshold_pace = pace_thresholds
     l30_start = now - timedelta(days=30)
-    recent_types = set(
-        row[0] for row in
-        db.query(Activity.workout_type)
+
+    has_intervals = _any_split_at_pace(
+        athlete_id, db, l30_start, interval_pace,
+    )
+    if not has_intervals:
+        return False
+
+    has_threshold = _any_session_sustained_pace(
+        athlete_id, db, l30_start, threshold_pace, LSPEC_THRESHOLD_MIN_SECONDS,
+    )
+
+    return has_threshold
+
+
+def _get_pace_thresholds(rpi: float) -> Optional[tuple]:
+    """Derive interval and threshold pace thresholds (seconds/mile) from RPI."""
+    try:
+        from services.rpi_calculator import calculate_training_paces
+        paces = calculate_training_paces(rpi)
+        interval_pace = paces.get("interval_pace")
+        threshold_pace = paces.get("threshold_pace")
+        if interval_pace and threshold_pace:
+            return (interval_pace, threshold_pace)
+    except Exception as ex:
+        logger.warning("limiter_classifier: pace threshold derivation failed: %s", ex)
+    return None
+
+
+def _any_split_at_pace(
+    athlete_id: UUID,
+    db: Session,
+    since: datetime,
+    target_pace_sec_per_mile: int,
+) -> bool:
+    """Check if any L30 split hit interval pace (with tolerance)."""
+    from models import Activity, ActivitySplit
+
+    max_pace = target_pace_sec_per_mile * LSPEC_PACE_TOLERANCE
+
+    splits = (
+        db.query(
+            ActivitySplit.distance,
+            ActivitySplit.moving_time,
+            ActivitySplit.elapsed_time,
+        )
+        .join(Activity, ActivitySplit.activity_id == Activity.id)
         .filter(
             Activity.athlete_id == athlete_id,
-            Activity.start_time >= l30_start,
-            Activity.workout_type.isnot(None),
+            Activity.sport == "run",
+            Activity.start_time >= since,
+            ActivitySplit.distance > 50,
         )
-        .distinct()
         .all()
     )
 
-    has_intervals = bool(
-        recent_types & {"intervals", "interval", "vo2", "speed", "repetitions", "repeats"}
-    )
-    has_threshold = bool(
-        recent_types & {"threshold", "tempo", "tempo_run", "threshold_intervals", "cruise_intervals"}
+    for s in splits:
+        dist_m = float(s.distance) if s.distance else 0
+        time_s = s.moving_time or s.elapsed_time or 0
+        if dist_m < 50 or time_s < 10:
+            continue
+        pace = time_s / (dist_m / 1609.34)
+        if pace <= max_pace:
+            return True
+
+    return False
+
+
+def _any_session_sustained_pace(
+    athlete_id: UUID,
+    db: Session,
+    since: datetime,
+    target_pace_sec_per_mile: int,
+    min_duration_seconds: int,
+) -> bool:
+    """Check if any L30 activity has >= min_duration at threshold pace."""
+    from models import Activity, ActivitySplit
+
+    max_pace = target_pace_sec_per_mile * LSPEC_PACE_TOLERANCE
+
+    activities = (
+        db.query(Activity)
+        .filter(
+            Activity.athlete_id == athlete_id,
+            Activity.sport == "run",
+            Activity.start_time >= since,
+        )
+        .all()
     )
 
-    return has_intervals and has_threshold
+    for act in activities:
+        splits = (
+            db.query(
+                ActivitySplit.distance,
+                ActivitySplit.moving_time,
+                ActivitySplit.elapsed_time,
+            )
+            .filter(ActivitySplit.activity_id == act.id)
+            .all()
+        )
+        total_at_pace = 0
+        for s in splits:
+            dist_m = float(s.distance) if s.distance else 0
+            time_s = s.moving_time or s.elapsed_time or 0
+            if dist_m < 50 or time_s < 10:
+                continue
+            pace = time_s / (dist_m / 1609.34)
+            if pace <= max_pace:
+                total_at_pace += time_s
+        if total_at_pace >= min_duration_seconds:
+            return True
+
+    return False
 
 
 def _classify_single(
     finding,
     half_life: Optional[float],
-    lspec_active: bool,
     now: datetime,
 ) -> str:
-    """Classify a single CorrelationFinding into a lifecycle state."""
+    """Classify a single CorrelationFinding into a lifecycle state.
 
+    L-SPEC is handled separately by _manage_lspec_finding — this function
+    classifies correlation-derived findings only.
+    """
     inp = finding.input_name
-
-    if lspec_active:
-        return "active_fixed"
 
     if inp in LREC_INPUT_NAMES:
         state = _classify_lrec(finding, half_life, now)

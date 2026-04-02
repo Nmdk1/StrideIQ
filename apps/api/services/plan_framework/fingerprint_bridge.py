@@ -155,25 +155,33 @@ def _classify_tss_sensitivity(findings: list) -> str:
     return "moderate"
 
 
-def _detect_limiter(findings: list) -> Optional[str]:
+def _detect_limiter(
+    findings: list,
+    recovery_half_life_hours: Optional[float] = None,
+) -> tuple:
     """Identify the dominant limiter from correlation findings.
 
-    Phase 3: only findings with lifecycle_state in (active, active_fixed)
-    drive limiter assignment. Closed findings are solved problems.
-    Structural findings drive delivery modifications (handled separately
-    in the bridge), not limiter assignment.
+    Returns (limiter, timing_notes) where timing_notes is a list of
+    disclosure strings for TSB correlations that were filtered by CG-10.
+
+    CG-10 gate: TSB correlations (CS-6, CS-7) only count toward L-REC
+    when |r| > 0.45 AND recovery half-life > 36h. A fast recoverer with
+    a TSB correlation is exhibiting the universal freshness pattern, not
+    a genuine recovery constraint.
 
     Limiter taxonomy:
       "volume"     — L-VOL: long_run_ratio or weekly_volume → performance
       "recovery"   — L-REC: TSB or rest-day correlations dominate
-      "speed"      — L-CEIL: ceiling/vo2 metrics are the bottleneck
+      "ceiling"    — L-CEIL: days_since_quality → pace_easy (speed ceiling atrophies)
       "threshold"  — L-THRESH: days_since_quality → pace_threshold
       "race_specific" — L-SPEC: active_fixed, pre-race integration
     """
     volume_signal = 0.0
     recovery_signal = 0.0
     threshold_signal = 0.0
+    ceiling_signal = 0.0
     has_lspec = False
+    timing_notes: List[str] = []
 
     for f in findings:
         lifecycle = f.get("lifecycle_state")
@@ -194,26 +202,44 @@ def _detect_limiter(findings: list) -> Optional[str]:
         if inp in ("long_run_ratio", "weekly_volume_km", "ctl") and out in ("pace_threshold", "pace_easy", "efficiency"):
             volume_signal += weight
 
-        if inp in ("tsb", "daily_session_stress", "atl", "days_since_rest", "consecutive_run_days") and out in ("pace_threshold", "pace_easy", "efficiency"):
-            recovery_signal += weight
+        if out in ("pace_threshold", "pace_easy", "efficiency"):
+            if inp == "tsb":
+                tsb_passes_cg10 = (
+                    r > 0.45
+                    and recovery_half_life_hours is not None
+                    and recovery_half_life_hours > 36.0
+                )
+                if tsb_passes_cg10:
+                    recovery_signal += weight
+                elif r > 0.30:
+                    timing_notes.append(
+                        f"Freshness predicts your {out.replace('_', ' ')} "
+                        f"(r={r:.2f}) — optimal timing matters for quality sessions."
+                    )
+            elif inp in ("daily_session_stress", "atl", "days_since_rest", "consecutive_run_days"):
+                recovery_signal += weight
 
         if inp == "days_since_quality" and out == "pace_threshold":
             threshold_signal += weight
 
+        if inp == "days_since_quality" and out == "pace_easy":
+            ceiling_signal += weight
+
     if has_lspec:
-        return "race_specific"
+        return "race_specific", timing_notes
 
     signals = [
         ("volume", volume_signal),
         ("recovery", recovery_signal),
         ("threshold", threshold_signal),
+        ("ceiling", ceiling_signal),
     ]
     signals.sort(key=lambda s: s[1], reverse=True)
 
     if signals[0][1] > 0.5:
-        return signals[0][0]
+        return signals[0][0], timing_notes
 
-    return None
+    return None, timing_notes
 
 
 def _detect_consecutive_day_preference(findings: list) -> tuple:
@@ -333,7 +359,12 @@ def build_fingerprint_params(
 
         if findings:
             params.tss_sensitivity = _classify_tss_sensitivity(findings)
-            params.limiter = _detect_limiter(findings)
+            params.limiter, timing_notes = _detect_limiter(
+                findings,
+                recovery_half_life_hours=params.recovery_half_life_hours,
+            )
+            for note in timing_notes:
+                params.disclosures.append(note)
 
             consec_pref, consec_note = _detect_consecutive_day_preference(findings)
             params.consecutive_day_preference = consec_pref
@@ -379,6 +410,12 @@ def build_fingerprint_params(
                 params.disclosures.append(
                     "Limiter analysis: threshold fitness is your current lever — "
                     "plan emphasizes threshold sessions."
+                )
+            elif params.limiter == "ceiling":
+                params.primary_quality_emphasis = "interval_emphasis"
+                params.disclosures.append(
+                    "Limiter analysis: speed ceiling is your current lever — "
+                    "plan emphasizes interval and ceiling-raising work."
                 )
             elif params.limiter == "race_specific":
                 params.primary_quality_emphasis = "support_crash_block"

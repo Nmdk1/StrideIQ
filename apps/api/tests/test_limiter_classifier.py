@@ -262,21 +262,23 @@ def test_detect_limiter_closed_findings_ignored():
             lifecycle_state="closed",
         ),
     ]
-    assert _detect_limiter(findings) is None
+    limiter, _ = _detect_limiter(findings)
+    assert limiter is None
 
 
 def test_detect_limiter_active_fixed_returns_race_specific():
     """active_fixed findings → race_specific limiter (L-SPEC)."""
     findings = [
         _make_finding_dict(
-            input_name="weekly_volume_km",
-            output_metric="pace_easy",
-            correlation_coefficient=0.50,
-            times_confirmed=10,
+            input_name="lspec_rule_based",
+            output_metric="race_readiness",
+            correlation_coefficient=1.0,
+            times_confirmed=3,
             lifecycle_state="active_fixed",
         ),
     ]
-    assert _detect_limiter(findings) == "race_specific"
+    limiter, _ = _detect_limiter(findings)
+    assert limiter == "race_specific"
 
 
 def test_detect_limiter_structural_not_counted():
@@ -290,7 +292,8 @@ def test_detect_limiter_structural_not_counted():
             lifecycle_state="structural",
         ),
     ]
-    assert _detect_limiter(findings) is None
+    limiter, _ = _detect_limiter(findings)
+    assert limiter is None
 
 
 def test_detect_limiter_active_volume():
@@ -304,7 +307,8 @@ def test_detect_limiter_active_volume():
             lifecycle_state="active",
         ),
     ]
-    assert _detect_limiter(findings) == "volume"
+    limiter, _ = _detect_limiter(findings)
+    assert limiter == "volume"
 
 
 def test_detect_limiter_active_recovery():
@@ -318,7 +322,8 @@ def test_detect_limiter_active_recovery():
             lifecycle_state="active",
         ),
     ]
-    assert _detect_limiter(findings) == "recovery"
+    limiter, _ = _detect_limiter(findings)
+    assert limiter == "recovery"
 
 
 def test_detect_limiter_none_lifecycle_treated_as_active():
@@ -332,7 +337,8 @@ def test_detect_limiter_none_lifecycle_treated_as_active():
             lifecycle_state=None,
         ),
     ]
-    assert _detect_limiter(findings) == "volume"
+    limiter, _ = _detect_limiter(findings)
+    assert limiter == "volume"
 
 
 def test_detect_limiter_threshold():
@@ -346,7 +352,8 @@ def test_detect_limiter_threshold():
             lifecycle_state="active",
         ),
     ]
-    assert _detect_limiter(findings) == "threshold"
+    limiter, _ = _detect_limiter(findings)
+    assert limiter == "threshold"
 
 
 def test_detect_limiter_structural_monitored_not_counted():
@@ -360,7 +367,8 @@ def test_detect_limiter_structural_monitored_not_counted():
             lifecycle_state="structural_monitored",
         ),
     ]
-    assert _detect_limiter(findings) is None
+    limiter, _ = _detect_limiter(findings)
+    assert limiter is None
 
 
 # ---------------------------------------------------------------------------
@@ -368,10 +376,11 @@ def test_detect_limiter_structural_monitored_not_counted():
 # ---------------------------------------------------------------------------
 
 def test_active_fixed_resolves_when_lspec_gate_closes():
-    """active_fixed → closed when L-SPEC gate no longer fires (race passed)."""
+    """Non-synthetic active_fixed finding → closed (cleanup of old blanket override)."""
     from services.plan_framework.limiter_classifier import classify_lifecycle_states
 
     finding = _make_finding(
+        input_name="daily_session_stress",
         lifecycle_state="active_fixed",
         lifecycle_state_updated_at=NOW - timedelta(days=14),
     )
@@ -381,12 +390,14 @@ def test_active_fixed_resolves_when_lspec_gate_closes():
     mock_db.flush = MagicMock()
 
     with patch("services.plan_framework.limiter_classifier._get_profile") as mock_profile, \
-         patch("services.plan_framework.limiter_classifier._check_lspec_gate") as mock_lspec:
+         patch("services.plan_framework.limiter_classifier._check_lspec_gate") as mock_lspec, \
+         patch("services.plan_framework.limiter_classifier._manage_lspec_finding") as mock_manage:
         mock_profile.return_value = MagicMock(
             recovery_half_life_hours=40.0,
             peak_weekly_miles=50.0,
         )
         mock_lspec.return_value = False
+        mock_manage.return_value = None
 
         results = classify_lifecycle_states(ATHLETE_ID, mock_db)
 
@@ -404,3 +415,150 @@ def test_structural_monitored_produces_monitored_disclosure():
 
     assert "structural_monitored" in STRUCTURAL_STATES
     assert "structural" in STRUCTURAL_STATES
+
+
+# ---------------------------------------------------------------------------
+# L-SPEC synthetic finding management
+# ---------------------------------------------------------------------------
+
+def test_manage_lspec_creates_synthetic_finding():
+    """L-SPEC gate active → synthetic finding created with active_fixed."""
+    from services.plan_framework.limiter_classifier import (
+        _manage_lspec_finding, LSPEC_INPUT_NAME,
+    )
+
+    mock_db = MagicMock()
+    mock_db.query.return_value.filter.return_value.first.return_value = None
+
+    result = _manage_lspec_finding(ATHLETE_ID, mock_db, NOW, lspec_active=True)
+
+    assert result is not None
+    assert result.input_name == LSPEC_INPUT_NAME
+    assert result.lifecycle_state == "active_fixed"
+    assert result.correlation_coefficient == 1.0
+    assert result.discovery_source == "lspec_rule"
+    mock_db.add.assert_called_once()
+
+
+def test_manage_lspec_reactivates_existing():
+    """L-SPEC gate active + existing closed finding → reactivated."""
+    from services.plan_framework.limiter_classifier import (
+        _manage_lspec_finding, LSPEC_INPUT_NAME,
+    )
+
+    existing = MagicMock()
+    existing.lifecycle_state = "closed"
+    existing.is_active = False
+
+    mock_db = MagicMock()
+    mock_db.query.return_value.filter.return_value.first.return_value = existing
+
+    result = _manage_lspec_finding(ATHLETE_ID, mock_db, NOW, lspec_active=True)
+
+    assert result.lifecycle_state == "active_fixed"
+    assert result.is_active is True
+    mock_db.add.assert_not_called()
+
+
+def test_manage_lspec_deactivates_when_gate_closes():
+    """L-SPEC gate inactive + existing active_fixed → closed + deactivated."""
+    from services.plan_framework.limiter_classifier import _manage_lspec_finding
+
+    existing = MagicMock()
+    existing.lifecycle_state = "active_fixed"
+    existing.is_active = True
+
+    mock_db = MagicMock()
+    mock_db.query.return_value.filter.return_value.first.return_value = existing
+
+    result = _manage_lspec_finding(ATHLETE_ID, mock_db, NOW, lspec_active=False)
+
+    assert result.lifecycle_state == "closed"
+    assert result.is_active is False
+
+
+def test_manage_lspec_noop_when_inactive_no_existing():
+    """L-SPEC gate inactive + no existing finding → returns None."""
+    from services.plan_framework.limiter_classifier import _manage_lspec_finding
+
+    mock_db = MagicMock()
+    mock_db.query.return_value.filter.return_value.first.return_value = None
+
+    result = _manage_lspec_finding(ATHLETE_ID, mock_db, NOW, lspec_active=False)
+    assert result is None
+
+
+def test_lspec_does_not_override_other_findings():
+    """When L-SPEC fires, other findings keep their correct lifecycle states."""
+    from services.plan_framework.limiter_classifier import classify_lifecycle_states
+
+    volume_finding = _make_finding(
+        input_name="long_run_ratio",
+        output_metric="pace_threshold",
+        correlation_coefficient=0.65,
+        times_confirmed=12,
+        first_detected_at=NOW - timedelta(days=120),
+        last_confirmed_at=NOW - timedelta(days=3),
+        lifecycle_state="active",
+    )
+
+    mock_db = MagicMock()
+    mock_db.query.return_value.filter.return_value.all.return_value = [volume_finding]
+    mock_db.flush = MagicMock()
+
+    lspec_finding = MagicMock()
+    lspec_finding.id = uuid.uuid4()
+    lspec_finding.lifecycle_state = "active_fixed"
+
+    with patch("services.plan_framework.limiter_classifier._get_profile") as mock_profile, \
+         patch("services.plan_framework.limiter_classifier._check_lspec_gate") as mock_lspec, \
+         patch("services.plan_framework.limiter_classifier._manage_lspec_finding") as mock_manage:
+        mock_profile.return_value = MagicMock(
+            recovery_half_life_hours=40.0,
+            peak_weekly_miles=50.0,
+        )
+        mock_lspec.return_value = True
+        mock_manage.return_value = lspec_finding
+
+        results = classify_lifecycle_states(ATHLETE_ID, mock_db)
+
+    assert results[volume_finding.id] == "active", (
+        "Volume finding should stay active when L-SPEC fires, not become active_fixed"
+    )
+    assert results[lspec_finding.id] == "active_fixed"
+
+
+# ---------------------------------------------------------------------------
+# CG-10 in _detect_limiter (bridge layer)
+# ---------------------------------------------------------------------------
+
+def test_cg10_bridge_michael_scenario():
+    """Michael: TSB r=0.52 + half-life 23.8h → NOT L-REC."""
+    findings = [
+        _make_finding_dict(
+            input_name="tsb",
+            output_metric="pace_threshold",
+            correlation_coefficient=0.52,
+            times_confirmed=5,
+            lifecycle_state="active",
+        ),
+    ]
+    limiter, notes = _detect_limiter(findings, recovery_half_life_hours=23.8)
+    assert limiter is None
+    assert any("Freshness" in n for n in notes)
+
+
+def test_cg10_bridge_slow_recoverer():
+    """Slow recoverer: TSB r=0.55 + half-life 52h → L-REC."""
+    findings = [
+        _make_finding_dict(
+            input_name="tsb",
+            output_metric="pace_threshold",
+            correlation_coefficient=0.55,
+            times_confirmed=5,
+            lifecycle_state="active",
+        ),
+    ]
+    limiter, notes = _detect_limiter(findings, recovery_half_life_hours=52.0)
+    assert limiter == "recovery"
+    assert len(notes) == 0
