@@ -880,6 +880,42 @@ def _is_garmin_noise(field_name: str) -> bool:
     return field_name in _GARMIN_NOISE_INPUTS
 
 
+# Subjective inputs and the Garmin metrics that measure the same phenomenon.
+# If the mediator is just a device measurement of what the athlete already
+# reported, the chain is confounded (common cause), not causal.
+_CONFOUNDED_PAIRS: Dict[str, frozenset] = {
+    "readiness_1_5": frozenset({
+        "garmin_sleep_awake_s", "garmin_body_battery_end",
+        "garmin_sleep_score", "garmin_avg_stress",
+    }),
+    "sleep_quality_1_5": frozenset({
+        "garmin_sleep_awake_s", "garmin_sleep_score",
+        "garmin_sleep_deep_s", "garmin_sleep_light_s",
+        "garmin_sleep_rem_s",
+    }),
+    "soreness_1_5": frozenset({
+        "garmin_body_battery_end", "garmin_avg_stress",
+        "garmin_max_stress",
+    }),
+    "stress_1_5": frozenset({
+        "garmin_avg_stress", "garmin_max_stress",
+    }),
+    "sleep_hours": frozenset({
+        "garmin_sleep_awake_s", "garmin_sleep_score",
+        "garmin_sleep_deep_s", "garmin_sleep_light_s",
+        "garmin_sleep_rem_s",
+    }),
+}
+
+
+def _is_confounded_mediator(input_name: str, mediator_variable: str) -> bool:
+    """True when input and mediator measure the same underlying phenomenon."""
+    confounds = _CONFOUNDED_PAIRS.get(input_name)
+    if confounds and mediator_variable in confounds:
+        return True
+    return False
+
+
 def _build_cascade_stories(
     all_entries: List[Dict[str, Any]],
 ) -> List[Dict[str, Any]]:
@@ -918,16 +954,16 @@ def _build_cascade_stories(
                 ratio = c.get("mediation_ratio")
                 if not med_name or ratio is None:
                     continue
-                if _is_garmin_noise(med_var):
+                if _is_garmin_noise(med_var) or _is_confounded_mediator(input_name, med_var):
                     existing = garmin_mediators.get(med_name, 0)
                     garmin_mediators[med_name] = max(existing, ratio)
                 else:
                     existing = meaningful_mediators.get(med_name, 0)
                     meaningful_mediators[med_name] = max(existing, ratio)
 
-        # Only show stories where the mechanism is understandable.
-        # If the only mediators are garmin noise metrics (steps, body battery),
-        # the causal chain is likely noise — skip it.
+        # Skip stories where the only mediators are noise or confounded.
+        # "readiness → time awake → efficiency" isn't a mechanism —
+        # poor sleep causes both low readiness and high awake time.
         if not meaningful_mediators:
             continue
         display_mediators = meaningful_mediators
