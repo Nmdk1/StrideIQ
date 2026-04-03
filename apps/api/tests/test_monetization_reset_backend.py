@@ -181,6 +181,159 @@ def test_checkout_ignores_tier_and_forces_single_paid_tier(monkeypatch):
         _cleanup_athlete(athlete.email)
 
 
+def test_trial_checkout_returns_url_for_free_user(monkeypatch):
+    """Free user with no active subscription gets a trial checkout URL."""
+    from services import stripe_service as ss
+
+    mock_cfg = ss.StripeConfig(
+        secret_key="sk_test_dummy",
+        webhook_secret=None,
+        checkout_success_url="https://example.com/success",
+        checkout_cancel_url="https://example.com/cancel",
+        portal_return_url="https://example.com/portal",
+        price_strideiq_monthly_id="price_strideiq_m",
+        price_strideiq_annual_id="price_strideiq_a",
+    )
+
+    def _fake_trial_checkout(self, *, athlete, billing_period="monthly",
+                             trial_days=30, success_url=None, cancel_url=None):
+        return "https://stripe.test/trial-checkout"
+
+    monkeypatch.setattr(ss, "_get_stripe_config", lambda: mock_cfg)
+    monkeypatch.setattr(ss.StripeService, "create_trial_checkout_session", _fake_trial_checkout)
+
+    db = SessionLocal()
+    athlete = Athlete(
+        email=f"trial_ck_{uuid4()}@example.com",
+        display_name="TrialCheckout",
+        role="athlete",
+        subscription_tier="free",
+    )
+    db.add(athlete)
+    db.commit()
+    db.refresh(athlete)
+    db.close()
+
+    try:
+        resp = client.post(
+            "/v1/billing/checkout/trial",
+            headers=_headers(athlete),
+            json={"billing_period": "monthly"},
+        )
+        assert resp.status_code == 200, resp.text
+        data = resp.json()
+        assert data["url"] == "https://stripe.test/trial-checkout"
+        assert data["trial_days"] == 30
+        assert data["amount_due_today"] == "$0.00"
+    finally:
+        _cleanup_athlete(athlete.email)
+
+
+def test_trial_checkout_blocked_for_paid_tier(monkeypatch):
+    """Subscriber-tier athlete is blocked from trial checkout (409)."""
+    from services import stripe_service as ss
+    monkeypatch.setattr(ss, "_get_stripe_config", lambda: ss.StripeConfig(
+        secret_key="sk_test_dummy", webhook_secret=None,
+        checkout_success_url="x", checkout_cancel_url="x", portal_return_url="x",
+    ))
+
+    db = SessionLocal()
+    athlete = Athlete(
+        email=f"trial_paid_{uuid4()}@example.com",
+        display_name="PaidTrialBlock",
+        role="athlete",
+        subscription_tier="subscriber",
+    )
+    db.add(athlete)
+    db.commit()
+    db.refresh(athlete)
+    db.close()
+
+    try:
+        resp = client.post(
+            "/v1/billing/checkout/trial",
+            headers=_headers(athlete),
+            json={"billing_period": "monthly"},
+        )
+        assert resp.status_code == 409, f"Expected 409, got {resp.status_code}: {resp.text}"
+    finally:
+        _cleanup_athlete(athlete.email)
+
+
+def test_trial_checkout_blocked_for_active_stripe_subscription(monkeypatch):
+    """Free-tier athlete with active Stripe subscription is blocked (409)."""
+    from services import stripe_service as ss
+    monkeypatch.setattr(ss, "_get_stripe_config", lambda: ss.StripeConfig(
+        secret_key="sk_test_dummy", webhook_secret=None,
+        checkout_success_url="x", checkout_cancel_url="x", portal_return_url="x",
+    ))
+
+    db = SessionLocal()
+    athlete = Athlete(
+        email=f"trial_stripe_{uuid4()}@example.com",
+        display_name="StripeTrialBlock",
+        role="athlete",
+        subscription_tier="free",
+    )
+    db.add(athlete)
+    db.commit()
+    db.refresh(athlete)
+
+    from models import Subscription
+    sub = Subscription(
+        athlete_id=athlete.id,
+        stripe_customer_id="cus_test123",
+        stripe_subscription_id="sub_test123",
+        status="trialing",
+    )
+    db.add(sub)
+    db.commit()
+    db.close()
+
+    try:
+        resp = client.post(
+            "/v1/billing/checkout/trial",
+            headers=_headers(athlete),
+            json={"billing_period": "monthly"},
+        )
+        assert resp.status_code == 409, f"Expected 409, got {resp.status_code}: {resp.text}"
+    finally:
+        db2 = SessionLocal()
+        try:
+            s = db2.query(Subscription).filter(Subscription.athlete_id == athlete.id).first()
+            if s:
+                db2.delete(s)
+                db2.commit()
+        finally:
+            db2.close()
+        _cleanup_athlete(athlete.email)
+
+
+def test_trial_checkout_invalid_billing_period():
+    """Invalid billing_period returns 400."""
+    db = SessionLocal()
+    athlete = Athlete(
+        email=f"trial_bad_{uuid4()}@example.com",
+        display_name="BadPeriod",
+        role="athlete",
+        subscription_tier="free",
+    )
+    db.add(athlete)
+    db.commit()
+    db.refresh(athlete)
+    db.close()
+
+    try:
+        resp = client.post(
+            "/v1/billing/checkout/trial",
+            headers=_headers(athlete),
+            json={"billing_period": "weekly"},
+        )
+        assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
+    finally:
+        _cleanup_athlete(athlete.email)
+
+
 def test_trial_status_endpoint_returns_counts():
     db = SessionLocal()
     athlete = Athlete(

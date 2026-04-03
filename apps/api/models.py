@@ -46,16 +46,12 @@ class Athlete(Base):
     # (JSONB) until Phase 6+ stabilizes billing/employee auth architecture.
     admin_permissions = Column(JSONB, nullable=False, default=list)
     
-    # Paid subscription tiers (two-tier contract).
-    PAID_TIERS = {"subscriber", "premium", "elite"}
-    
     @property
     def has_active_subscription(self) -> bool:
-        """Check if athlete has an active paid subscription."""
-        # Stripe / DB-tier based access
-        if self.subscription_tier in self.PAID_TIERS:
+        """Check if athlete has an active paid subscription or active trial."""
+        from core.tier_utils import tier_satisfies
+        if tier_satisfies(self.subscription_tier, "subscriber"):
             return True
-        # Trial access (time-bound)
         try:
             ends = getattr(self, "trial_ends_at", None)
             if ends is not None:

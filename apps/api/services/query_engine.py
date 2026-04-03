@@ -293,7 +293,7 @@ class QueryEngine:
         if scope == QueryScope.ADMIN_ONLY:
             return user.role in ('admin', 'owner')
         elif scope == QueryScope.TOP_TIER:
-            return user.role in ('admin', 'owner') or user.subscription_tier in ('premium', 'pro', 'elite')
+            return user.role in ('admin', 'owner') or user.has_active_subscription
         return True  # SELF_ONLY is always allowed
     
     def _apply_time_filter(self, query, model, spec: QuerySpec):

@@ -1,41 +1,42 @@
-# LIMITER → SESSION TAXONOMY — Annotation-Ready Draft
+# LIMITER → SESSION TAXONOMY — Annotated Spec
 
-**Date:** 2026-03-29
-**Status:** DRAFT — incorporates founder lifecycle directive. Awaiting annotation on mappings.
+**Date:** 2026-03-29 (annotated 2026-04-02)
+**Status:** ANNOTATED — All 7 open questions resolved. Build-safe.
 **Supersedes:** Static limiter model. Read `LIMITER_ENGINE_BRIEF.md` first.
 **Depends on:** `KB_RULE_REGISTRY_ANNOTATED.md`, `03_WORKOUT_TYPES.md`, `fingerprint_bridge.py`
 
-**Process:** Same as KB Rule Registry. I draft from the KB, correlation engine, and three athlete profiles. You annotate. Annotated version becomes the spec. I code from the annotated spec.
+**Process:** Drafted from the KB, correlation engine, and three athlete profiles. Annotated by founder 2026-04-02. This is the spec. Code from this.
 
-**Architectural context:** Limiters are temporary. A strong historical correlation is evidence of a solved problem, not an active limiter. Every limiter carries a lifecycle state (`emerging`, `active`, `resolving`, `closed`, `structural`). The correlation signatures below identify WHAT is correlated. The lifecycle classifier (Phase 3) determines WHETHER it is currently actionable. The mappings in Layers 1-2 remain valid — what changes is that they apply only to `active` and `structural` limiters, not to the entire historical dataset.
+**Architectural context:** Limiters are temporary. A strong historical correlation is evidence of a solved problem, not an active limiter. Every limiter carries a lifecycle state (`emerging`, `active`, `active_fixed`, `resolving`, `closed`, `structural`, `structural_monitored`). The correlation signatures below identify WHAT is correlated. The lifecycle classifier determines WHETHER it is currently actionable. The mappings in Layers 1-2 apply only to `active`, `active_fixed`, and `structural` limiters, not to the entire historical dataset.
 
 **Notation key:**
-- `[PROPOSE]` = my best guess at the mapping — needs founder confirmation or correction
-- `[FOUNDER]` = annotation from founder brief (2026-03-29)
+- `[FOUNDER]` = annotation from founder (2026-03-29 brief or 2026-04-02 annotation session)
 - `[VALIDATE: athlete]` = this mapping should produce the right answer for the named athlete
 
 ---
 
 ## LAYER 0: LIMITER LIFECYCLE STATES
 
-_Source: Founder architectural brief, 2026-03-29_
+_Source: Founder architectural brief (2026-03-29), annotation session (2026-04-02)_
 
-Every limiter finding carries one of five lifecycle states. The plan engine only reads `active` limiters. The coach layer surfaces `emerging` limiters for athlete confirmation. `Structural` traits modify plan delivery but are not treated as problems to solve.
+Every limiter finding carries a lifecycle state. The plan engine reads `active` and `active_fixed` limiters. The coach layer surfaces `emerging` limiters for athlete confirmation. `Structural` and `structural_monitored` traits modify plan delivery but are not treated as problems to solve.
 
 | State | Definition | Who reads it | Plan effect |
 |---|---|---|---|
 | `emerging` | Correlation strengthening in L90 data. Not yet dominant in full history. Candidate frontier. | Coach layer | None — surfaced as question to athlete |
 | `active` | Current frontier. Strongest recent signal. Confirmed by training pattern or athlete. | Plan engine | Session type and dosing adjustments per LM mappings |
+| `active_fixed` | Rule-based assignment (not correlation-driven). Resolves at race day, not through correlation weakening. Used for L-SPEC. | Plan engine | Session type set to race-specific emphasis |
 | `resolving` | Intervention underway. Correlation weakening. Limiter closing. | Plan engine (reduced) | Reduced emphasis, engine scanning for next frontier |
 | `closed` | Historical signal. Athlete solved it. No longer constrains performance. | None (archived) | None — preserved in development arc |
-| `structural` | Physiological trait, not a solvable limiter. Recovery half-life, injury history. | Fingerprint bridge | Delivery parameter modifications (spacing, cutback, dosing) |
+| `structural` | Physiological trait, not a solvable limiter. Recovery half-life > 48h + stable 90+ days. | Fingerprint bridge | Delivery parameter modifications (spacing, cutback, dosing) |
+| `structural_monitored` | Borderline physiological trait. Recovery half-life 36-48h + stable. Needs watching. | Fingerprint bridge | Same delivery mods as structural, with monitoring disclosure |
 
-**Implementation phases:**
-- Phase 1 (done): Static taxonomy + fingerprint bridge. Works for `structural` traits (Brian's L-REC). Wrong for historical solved problems (Michael's L-VOL).
-- Phase 2 (next): Temporal weighting in correlation engine. L90 recency dominance.
-- Phase 3: `lifecycle_state` field on CorrelationFinding. Classifier assigns states.
-- Phase 4: Coach layer integration for `emerging` → `active` confirmation flow.
-- Phase 5: Transition detection. `active` → `resolving` → `closed` triggers next-frontier scan.
+**Implementation status (all phases complete):**
+- Phase 1: Static taxonomy + fingerprint bridge.
+- Phase 2: Temporal weighting in correlation engine. L90 recency dominance. **DONE.**
+- Phase 3: `lifecycle_state` field on CorrelationFinding. Classifier assigns states. **DONE.**
+- Phase 4: Coach layer integration for `emerging` → `active` confirmation flow. **DONE.**
+- Phase 5 (next): Transition detection. `active` → `resolving` → `closed` triggers next-frontier scan.
 
 ---
 
@@ -52,8 +53,9 @@ Every limiter finding carries one of five lifecycle states. The plan engine only
 | L-VOL | Volume-constrained | More aerobic volume is the primary lever | Solvable — closes when volume reaches target |
 | L-CEIL | Ceiling-constrained | VO2max / speed ceiling is the bottleneck | Solvable — closes when ceiling rises |
 | L-THRESH | Threshold-constrained | Lactate threshold fitness is the limiter | Solvable — closes when threshold improves |
-| L-REC | Recovery-constrained | Accumulated load / insufficient recovery is the limiter | Can be structural OR solvable. Brian = structural. An overtrained athlete = solvable. |
+| L-REC | Recovery-constrained | Accumulated load / insufficient recovery is the limiter | Can be structural OR solvable. Brian = structural. An overtrained athlete = solvable. Three-tier gate: half-life > 48h + stable = `structural`. Half-life 36-48h + stable = `structural_monitored`. Half-life < 36h + recent = solvable. |
 | L-CON | Consistency-responsive | Performance improves with consecutive training days | `[FOUNDER]` Renamed from L-DUR. Larry's signal. Rare, athlete-specific. |
+| L-SPEC | Race-specific | Systems are sufficient but not integrated at race-specific intensity/duration | `[FOUNDER]` Permanent category. Assigned via `active_fixed` lifecycle. Rule-based: ≤6 weeks to race + advanced tier + intervals and threshold in L30. Resolves at race day. Adding more threshold or ceiling work is counterproductive — the job is to organize what exists and protect the taper. |
 | L-NONE | No limiter identified | Insufficient data or balanced profile | Default to population rules |
 
 ---
@@ -67,8 +69,8 @@ Every limiter finding carries one of five lifecycle states. The plan engine only
 | CS-3 | `weekly_volume_km → pace_threshold` | positive | L-VOL | More total volume → faster threshold. | |
 | CS-4 | `weekly_volume_km → pace_easy` | positive | L-VOL | More total volume → faster easy pace. | |
 | CS-5 | `weekly_volume_km → efficiency` | positive | L-VOL | Volume drives efficiency (after CTL confounder control). | |
-| CS-6 | `tsb → pace_threshold` | positive (strong) | L-REC | Freshness drives threshold performance. Has fitness, can't access it when fatigued. | `[FOUNDER]` Michael r=0.52. May indicate structural freshness-sensitivity rather than solvable recovery constraint. Context: everyone performs better fresh — signal must be STRONGER than population baseline to indicate L-REC. |
-| CS-7 | `tsb → efficiency` | positive (strong) | L-REC | Freshness drives efficiency. | |
+| CS-6 | `tsb → pace_threshold` | positive (strong) | L-REC | Freshness drives threshold performance. Has fitness, can't access it when fatigued. | `[FOUNDER]` Michael r=0.52. Only flags L-REC when \|r\| > 0.45 AND half-life > 36h. A fast recoverer (half-life < 36h) with TSB correlation at r=0.52 gets a timing signal note, not L-REC assignment. This correctly classifies Michael — his TSB correlation is real but his 23.8h half-life means he is not recovery-constrained. |
+| CS-7 | `tsb → efficiency` | positive (strong) | L-REC | Freshness drives efficiency. | `[FOUNDER]` Same gate as CS-6: \|r\| > 0.45 AND half-life > 36h required for L-REC assignment. |
 | CS-8 | `daily_session_stress → efficiency` | negative (strong) | L-REC | Hard sessions directly hurt next-day efficiency. | `[FOUNDER]` Brian r=-0.58. Structural — stable across time, multiple confirming signals. |
 | CS-9 | `atl → efficiency` | negative | L-REC | Accumulated load hurts efficiency. | `[FOUNDER]` Brian — confirming signal for structural L-REC. |
 | CS-10 | `days_since_rest → pb_events` | positive | L-CON | More consecutive days → better PBs. Consistency-responsive. | `[FOUNDER]` Larry r=0.77, n=11. Selection bias risk. Renamed L-DUR → L-CON. "suggested" until n≥20. |
@@ -83,22 +85,32 @@ Every limiter finding carries one of five lifecycle states. The plan engine only
 
 ---
 
-### Limiter Resolution Logic `[PROPOSE]`
+### Limiter Resolution Logic
 
 When multiple correlation signatures are present in `active` or `emerging` state, resolve to a single primary limiter:
 
 | Priority | Rule | Rationale | Founder Notes |
 |---|---|---|---|
-| 1 | L-REC structural (stable, multiple confirming, not shifting) → classify as `structural`, not `active` | Accommodated in delivery, not targeted as a training problem. | `[FOUNDER]` Brian's pattern. |
-| 2 | L-REC solvable (recent onset, acute overtraining signal) → `active` L-REC | Recovery must be addressed first. Training without recovery is counterproductive. | |
+| 0 | L-SPEC rule-based (≤6 weeks to race + advanced tier + intervals and threshold in L30) → `active_fixed` L-SPEC | Race-specific sharpening takes precedence. Systems are sufficient — organize and protect the taper. | `[FOUNDER]` Permanent category. Resolves at race day, not through correlation weakening. |
+| 1 | L-REC structural (half-life > 48h + stable L-REC signals 90+ days) → `structural` L-REC | Accommodated in delivery, not targeted as a training problem. | `[FOUNDER]` Brian's pattern. |
+| 1b | L-REC structural_monitored (half-life 36-48h + stable L-REC signals 90+ days) → `structural_monitored` L-REC | Same delivery mods as structural, but monitored for reclassification. | `[FOUNDER]` Borderline athletes need watching, not immediate classification. |
+| 2 | L-REC solvable (half-life < 36h + recent L-REC emergence OR half-life 36-48h + recent emergence) → `active` L-REC | Recovery must be addressed first. Training without recovery is counterproductive. | |
 | 3 | If L-VOL signals dominate in L90 data → `active` L-VOL | Volume is the current lever. | |
 | 4 | If L-THRESH (CS-11) or L-CEIL (CS-12) in L90 → assign directly | Specific system deficiency. | |
 | 5 | If L-CON (CS-10) → assign at confidence tier | Rare, athlete-specific. | |
 | 6 | No clear dominant L90 signal → L-NONE | Default to distance-based prescription. | |
 
-**Key distinction (from founder brief):** L-REC can be either structural OR solvable. Brian's L-REC is structural — his physiology. An overtrained athlete's L-REC is solvable — address it, then move on. The lifecycle classifier must distinguish these by checking temporal stability: stable for 90+ days = structural. Recent emergence = solvable.
+**L-REC three-tier gate (Q1 — annotated 2026-04-02):**
 
-**Founder Notes:** _[Does the structural vs solvable L-REC distinction need additional signals beyond temporal stability? For example: recovery half-life > 48h + stable L-REC signals → structural. Recovery half-life < 36h + recent L-REC signals → solvable (overtraining). Is half-life a useful gate here?]_
+| Half-life | L-REC signal stability | Classification |
+|---|---|---|
+| > 48h | Stable 90+ days | `structural` — permanent trait, delivery mods only |
+| 36-48h | Stable 90+ days | `structural_monitored` — delivery mods + monitoring disclosure |
+| 36-48h | Recent emergence | `active` (solvable) — overtrained, cut quality and rebuild |
+| < 36h | Recent emergence | `active` (solvable) — overtrained |
+| < 36h | Any | NOT L-REC (fast recoverer with TSB correlation is timing signal, not recovery constraint) |
+
+**CS-6/CS-7 half-life interaction rule (Q5):** TSB → performance correlations (CS-6, CS-7) only flag L-REC when |r| > 0.45 AND half-life > 36h. A fast recoverer with a TSB correlation is exhibiting the universal "everyone runs faster when fresh" pattern, not a genuine recovery constraint. [VALIDATE: Michael] TSB → threshold r=0.52, half-life 23.8h → does NOT flag L-REC. Correct: Michael is not recovery-constrained.
 
 ---
 
@@ -125,25 +137,36 @@ Distance rules set the FLOOR — minimum session types that must be present. Act
 
 | ID | Limiter | Primary Quality Emphasis | Session Types Favored | Session Types De-emphasized | KB Cross-ref | Founder Notes |
 |---|---|---|---|---|---|---|
-| LM-1 | L-VOL (active) | Long run quality | Long runs with quality (MP, progressive, fast finish), MLR, volume growth | Additional midweek quality beyond 2 | GP-1, CS-1 | `[PROPOSE]` Only applies when L-VOL is the CURRENT frontier, not historical. Distance floor still applies. |
-| LM-2 | L-CEIL (active) | Interval emphasis | VO2 intervals (800m-1200m), reps (200m-400m), ceiling-raising | Long run quality volume (keep LRs easy) | GP-1, DQ-1, DQ-2 | `[PROPOSE]` Half marathoner with L-CEIL gets 10K-style training per DQ-5 annotation. |
-| LM-3 | L-THRESH (active) | Threshold emphasis | Cruise intervals, continuous threshold, tempo, HMP in long runs | VO2 at maintenance dose | GP-1, DQ-3, DQ-6 | `[PROPOSE]` |
-| LM-4 | L-REC (structural) | No session type change | Unchanged from distance default | Unchanged | GP-3, RC-2, VR-11 | `[FOUNDER]` Session TYPE unchanged — SPACING and FREQUENCY change. 2 quality max, 72h spacing, cutback every 3rd week. This is delivery, not prescription. |
-| LM-4b | L-REC (active/solvable) | Recovery block | Reduced quality, increased easy volume, active recovery emphasis | All quality sessions reduced or suspended | GP-3 | `[PROPOSE]` Overtrained athlete. Short-term intervention: cut quality, rebuild, then resume. Different from structural L-REC. |
+| LM-1 | L-VOL (active) | Long run quality | Long runs with quality (MP, progressive, fast finish), MLR, volume growth | Additional midweek quality beyond 2 | GP-1, CS-1 | `[FOUNDER]` Only applies when L-VOL is the CURRENT frontier, not historical. Distance floor still applies. |
+| LM-2 | L-CEIL (active) | Interval emphasis | VO2 intervals (800m-1200m), reps (200m-400m), ceiling-raising | Long run quality volume (keep LRs easy) | GP-1, DQ-1, DQ-2 | `[FOUNDER]` Half marathoner with L-CEIL gets 10K-style training per DQ-5 annotation. |
+| LM-3 | L-THRESH (active) | Threshold emphasis | Cruise intervals, continuous threshold, tempo, HMP in long runs | VO2 at maintenance dose | GP-1, DQ-3, DQ-6 | |
+| LM-4 | L-REC (structural / structural_monitored) | No session type change | Unchanged from distance default | Unchanged | GP-3, RC-2, VR-11 | `[FOUNDER]` Session TYPE unchanged — SPACING and FREQUENCY change. 2 quality max, 72h spacing, cutback every 3rd week. This is delivery, not prescription. For `structural_monitored`: same delivery mods with disclosure "based on your early recovery data, building in extra space — will refine as patterns become clearer." |
+| LM-4b | L-REC (active/solvable) | Recovery block | Reduced quality, increased easy volume, active recovery emphasis | All quality sessions reduced or suspended | GP-3 | Overtrained athlete. Short-term intervention: cut quality, rebuild, then resume. Different from structural L-REC. |
 | LM-5 | L-CON (suggested/confirmed) | Consistency emphasis | Consecutive running days, MLR, easy mileage accumulation | Unnecessary rest days, aggressive cutbacks | CS-10 | `[FOUNDER]` Renamed from L-DUR. At "suggested": don't add rest. At "confirmed": actively reduce rest. |
-| LM-6 | L-NONE | Distance-based default | Per DQ-1 through DQ-6 | No overrides | All DQ rules | Default fallback. |
+| LM-6 | L-SPEC (active_fixed) | Race-specific emphasis | Race-pace stimulus, taper protection, sharpening sessions, dress rehearsals | Volume building, new system development. Adding more threshold or ceiling work is counterproductive. | All DQ rules (distance floor maintained) | `[FOUNDER]` Permanent category. Systems are sufficient but not integrated at race-specific intensity/duration. Organize what exists and protect the taper. Assigned rule-based (≤6 weeks to race + advanced + intervals and threshold in L30). Resolves at race day. |
+| LM-7 | L-NONE | Distance-based default | Per DQ-1 through DQ-6 | No overrides | All DQ rules | Default fallback. |
 
 ---
 
-### Half Marathon Special Case — DQ-5 Limiter Fork `[PROPOSE]`
+### Half Marathon Special Case — DQ-5 Limiter Fork
 
 | Profile | Fingerprint Signal (active limiter) | Build Structure | Training Style |
 |---|---|---|---|
 | Marathon-profile | L-VOL active | T-block → HMP long runs → dress rehearsal | Marathon-type: high volume, threshold emphasis |
-| Speed-profile | L-CEIL active | Intervals → threshold → HMP sharpening | 10K-type: interval emphasis, ceiling work |
+| Speed-profile | L-CEIL active | Intervals → threshold → HMP sharpening | 10K-type: interval emphasis, ceiling work. NO MP long runs — that is marathon-profile exclusively. |
 | Unknown | L-NONE | DQ-5 default: T-block → HMP long runs | Population default (marathon-profile assumed) |
 
-**Founder Notes:** _[Is this fork correct? Are there intermediate profiles? Does the speed-profile half marathoner ever get MP long runs, or is that exclusively marathon-profile?]_
+`[FOUNDER]` Two profiles cover the space. L-NONE defaults to marathon-profile because the marathon-profile prescription (T-block → HMP long runs) is the safer default — it builds the aerobic base that supports the race distance. Speed-profile half marathoners do not get MP long runs under any circumstances. The L-NONE → marathon-profile default is not an assumption that every unknown athlete is aerobic-limited — it is a conservative default that does less harm than defaulting to interval-heavy 10K-style training for an athlete who may not have the speed foundation.
+
+### Distance Floor Interaction Rule
+
+`[FOUNDER]` Distance rules (DQ-1 through DQ-6) set the FLOOR — minimum session types that must be present. Active limiter adjusts the RATIO within that floor. The floor session types are never removed.
+
+The ratio adjustment can be significant. A 5K runner with active L-VOL might shift from 60% interval emphasis to 30% interval emphasis with 40% long run quality added. The intervals do not disappear but they become secondary.
+
+**Floor = session type exists in the plan. It does not mean the floor session type maintains its default volume.** Volume within the session type can be reduced when the limiter calls for emphasis elsewhere.
+
+Implementation rule: the plan engine must include at least one session of the floor type per week for the distance (e.g., at least one interval session per week for 5K) regardless of limiter, but it can reduce that session's volume prescription when the active limiter calls for emphasis elsewhere.
 
 ---
 
@@ -155,8 +178,8 @@ Distance rules set the FLOOR — minimum session types that must be present. Act
 |---|---|---|---|---|---|
 | CG-1 | Correlation strength | \|r\| >= 0.30, p < 0.05 | Finding not persisted | Finding persisted | Already enforced |
 | CG-2 | Reproducibility | times_confirmed >= 3 | Not surfaced, not used for limiter | Eligible for limiter assignment | Already enforced |
-| CG-3 | Limiter (suggested) | ≥2 CS-rules matching same limiter, each confirmed ≥3× | L-NONE | Conservative overrides only | `[PROPOSE]` |
-| CG-4 | Limiter (confirmed) | ≥3 CS-rules, each confirmed ≥5×, ≥20 total observations | Suggested overrides | Full overrides | `[PROPOSE]` |
+| CG-3 | Limiter (suggested) | ≥2 CS-rules matching same limiter, each confirmed ≥3× | L-NONE | Conservative overrides only | |
+| CG-4 | Limiter (confirmed) | ≥3 CS-rules, each confirmed ≥5×, ≥20 total observations | Suggested overrides | Full overrides | |
 | CG-5 | Recovery bridge | recovery_confidence >= 0.3 | Default cutback/spacing | Fingerprint-driven | Already implemented |
 | CG-6 | Load tier override | ≥90% peak or building at ≥80% | Half-life alone | Half-life capped by VR-11 safety | Already implemented |
 | CG-7 | L-CON preference | Per `_detect_consecutive_day_preference` | Standard rest scheduling | suggested (n<20): don't add rest. confirmed (n≥20): reduce rest. | Already implemented |
@@ -170,43 +193,53 @@ Distance rules set the FLOOR — minimum session types that must be present. Act
 | Primary quality type | Unchanged from distance default | Shifted to limiter-driven emphasis |
 | Quality session count | Unchanged | May increase or decrease |
 | Long run quality type | Unchanged | Shifted (e.g., L-VOL → more quality LRs) |
-| Quality spacing | Unchanged (except L-REC structural, which overrides at suggested) | Fully limiter-driven |
+| Quality spacing | L-REC structural/structural_monitored overrides at suggested (with disclosure) | Fully limiter-driven |
 | Rest day scheduling | Unchanged | L-CON confirmed can reduce rest |
 | Cutback frequency | Already fingerprint-driven via CG-5 | Same |
 
-**Founder Notes:** _[Should L-REC (structural) override at suggested level? Conservative spacing is safety, not optimization. Rather be too conservative than too aggressive.]_
+`[FOUNDER]` L-REC structural and structural_monitored override at suggested confidence, with explicit disclosure. The athlete should know the spacing is based on early data: "Based on your early recovery data, I'm building in extra space between hard sessions — we'll refine this as your patterns become clearer." This preserves the safety benefit while being honest about confidence level. Conservative spacing is safety, not optimization — apply early, disclose honestly.
+
+### CS-6/CS-7 Sensitivity Gate (CG-10)
+
+`[FOUNDER]` Added gate for TSB → performance correlations:
+
+| ID | Gate | Minimum | Effect Below Gate | Effect Above Gate |
+|---|---|---|---|---|
+| CG-10 | TSB → L-REC assignment | \|r\| > 0.45 AND half-life > 36h | Timing signal note only (not L-REC) | L-REC assignment eligible |
+
+Rationale: |r| > 0.45 sits in the meaningful-signal zone above population baseline. 0.50 is slightly too aggressive (may miss genuine L-REC in moderately sensitive athletes). 0.40 is too permissive (will flag athletes who simply respond normally to freshness). The half-life interaction is mandatory: a fast recoverer (< 36h) with TSB correlation is not recovery-constrained — their physiology handles recovery fine, the correlation just reflects the universal "everyone runs faster fresh" pattern.
 
 ---
 
-## LAYER 4: TEMPORAL WEIGHTING (Phase 2 Spec)
+## LAYER 4: TEMPORAL WEIGHTING — IMPLEMENTED
 
-_Source: Founder architectural brief, 2026-03-29_
+_Source: Founder architectural brief (2026-03-29), annotation (2026-04-02)_
 
-The correlation engine needs L90 weighting before lifecycle classification works. Without it, strong old correlations dominate weak new emerging signals.
+The correlation engine uses L90 weighting so lifecycle classification works correctly. Without it, strong old correlations dominate weak new emerging signals.
 
-### Proposed Weights
+### Locked Weights
 
 | Window | Weight | Rationale |
 |---|---|---|
 | L30 (last 30 days) | 4× | Most recent data is most relevant to current state |
 | L31-90 | 2× | Recent but allowing for training phase transitions |
 | L91-180 | 1× | Baseline (standard weight) |
-| Beyond 180 days | 0.5× | Historical context, fading relevance |
+| Beyond 180 days | 0.75× | Historical context, fading relevance. Preserves structural trait evidence. |
 
-### Expected Effect on Three Athletes
+`[FOUNDER]` Keep 0.75× for >180d. Old data still carries structural trait information. Brian's L-REC signals from 8 months ago confirm the stability of his structural classification. Dropping to 0.5× would underweight evidence of structural stability and could cause the classifier to miss structural traits in athletes whose signal-generating period was longer ago. 0.75× is the correct balance between recency dominance and historical context preservation.
+
+### Expected Effect on Four Athletes
 
 | Athlete | Signal | L90 effect | Expected lifecycle state |
 |---|---|---|---|
 | Michael | CS-1 (long_run_ratio → threshold, r=0.75) | Weakens — signal is 8+ months old, training shifted to threshold/intervals | `closed` |
-| Michael | Current training: threshold + intervals + quality LRs | Strengthens — recent pattern | `active` L-CEIL or L-THRESH (emerging) |
+| Michael | Current training: intervals + threshold + quality LRs, ≤6w to race | Rule-based assignment | `active_fixed` L-SPEC |
 | Larry | CS-10 (days_since_rest → PBs, r=0.77) | Stable — ongoing pattern, n=11 | `emerging` L-CON (still insufficient n) |
 | Brian | CS-8 (session_stress → efficiency, r=-0.58) | Stable — recent and consistent, multiple confirming | `structural` L-REC |
 
 ### Implementation Location
 
-`correlation_engine.py` → `find_time_shifted_correlations` → weight observations by recency before computing r.
-
-**Founder Notes:** _[Are the exact weights right? 4×/2×/1×/0.5× is the proposal. The principle (recency dominates) is non-negotiable. The coefficients are adjustable.]_
+`correlation_engine.py` → `TEMPORAL_WEIGHTS` constant + `_recency_weight()` + `calculate_weighted_pearson_correlation()`. Already implemented and deployed.
 
 ---
 
@@ -217,8 +250,8 @@ The correlation engine needs L90 weighting before lifecycle classification works
 - **Recovery:** 23.8h half-life, high load currently (crash block for 10K)
 - **Key correlations:** long_run_ratio → threshold (r=0.75), TSB → threshold (r=0.52)
 - **Static taxonomy says:** L-VOL primary
-- **Lifecycle model says:** `[FOUNDER]` L-VOL is `closed`. He ran 40 long runs and fixed it. Threshold improved as a result. Then threshold became the weakness. The correlation captured the history of solved problems. His CURRENT limiter is race-specific sharpening — intervals, threshold, quality long runs. The plan should support exactly what he is already doing, not add long run emphasis.
-- **Phase 2 effect:** L90 weighting correctly weakens CS-1. Current training pattern (intervals + threshold) would surface as `emerging` L-CEIL or L-THRESH.
+- **Lifecycle model says:** `[FOUNDER]` L-VOL is `closed`. He ran 40 long runs and fixed it. TSB → threshold (r=0.52) does NOT flag L-REC because half-life is 23.8h (< 36h gate). His CURRENT limiter is L-SPEC — race-specific sharpening. Systems are sufficient (threshold and ceiling both adequate) but have not been integrated at race-specific intensity and duration for the 10K. Adding more threshold or ceiling work would be counterproductive. The plan's job is to organize what exists and protect the taper. Assigned via `active_fixed` lifecycle (≤6 weeks to race + advanced + intervals and threshold in L30).
+- **Phase 2 effect:** L90 weighting correctly weakens CS-1. L-SPEC assignment is rule-based, not correlation-driven.
 
 ### Larry Shaffer (79, state record holder)
 
@@ -236,18 +269,26 @@ The correlation engine needs L90 weighting before lifecycle classification works
 
 ---
 
-## OPEN QUESTIONS FOR ANNOTATION
+## RESOLVED DECISIONS (2026-04-02 Annotation Session)
 
-1. **L-REC structural vs solvable gate.** `[PROPOSE]` Recovery half-life > 48h + stable L-REC signals across 90+ days = structural. Recovery half-life < 36h + recent L-REC emergence = solvable (overtraining). Is half-life a useful discriminator here?
+All 7 open questions resolved by founder. No further annotation needed.
 
-2. **Does L-REC structural override at "suggested" confidence?** Conservative spacing is safety, not optimization. Founder brief implies yes.
+1. **L-REC structural vs solvable gate.** Three-tier discriminator using half-life + temporal stability. > 48h stable = `structural`. 36-48h stable = `structural_monitored`. < 36h or recent emergence = solvable. See Layer 1 resolution logic.
 
-3. **Half marathon fork — intermediate profiles?** DQ-5 annotation describes two profiles. Is there a third?
+2. **L-REC structural override at suggested confidence.** Yes, with explicit disclosure. "Based on your early recovery data, I'm building in extra space between hard sessions — we'll refine this as your patterns become clearer." See Layer 3 CG-3 row.
 
-4. **Limiter vs distance floor interaction.** `[PROPOSE]` Distance rules set the minimum session types. Active limiter adjusts the RATIO. A 5K runner with active L-VOL still gets VO2 intervals (DQ-1 floor) but the balance shifts toward volume investment. Correct?
+3. **Half marathon fork.** Two profiles cover it. L-NONE defaults to marathon-profile. Speed-profile does NOT get MP long runs. See Layer 2 DQ-5 fork.
 
-5. **CS-6 (TSB → threshold) sensitivity.** Everyone performs better fresh. At what strength does TSB → performance stop being "obviously true for all humans" and start being a genuine L-REC signal? `[PROPOSE]` Only flag L-REC from TSB when |r| > 0.50 (stronger than typical population baseline).
+4. **Limiter vs distance floor.** Distance sets floor (session type must exist). Limiter adjusts ratio (volume within session type can be reduced). See Layer 2 floor interaction rule.
 
-6. **Phase 2 temporal weights.** 4×/2×/1×/0.5× proposed. Principle is non-negotiable. Coefficients adjustable. Are these coefficients right?
+5. **CS-6 TSB sensitivity.** |r| > 0.45 AND half-life > 36h. Fast recoverers with TSB correlation are not L-REC. See Layer 3 CG-10 and Layer 1 CS-6/CS-7 notes.
 
-7. **What is Michael's CURRENT active limiter?** The brief says race-specific sharpening. Is that L-CEIL, L-THRESH, or something the taxonomy doesn't yet name (e.g., L-SPECIFIC)?
+6. **Temporal weights.** Keep 0.75x for >180d. Old data preserves structural trait evidence. See Layer 4 locked weights.
+
+7. **Michael's current limiter.** L-SPEC (new permanent category). Race-specific sharpening. Systems sufficient, not integrated at race intensity. Rule-based assignment via `active_fixed`. See Layer 1 limiter categories and Layer 2 LM-6.
+
+---
+
+## NEXT BUILD STEP
+
+Wire `limiter` and `primary_quality_emphasis` from `FingerprintParams` into `n1_engine.py` session scheduling logic. The bridge already computes these values. The engine currently consumes only `cutback_frequency` and `quality_spacing_min_hours`. The session mix decisions defined in Layer 2 (LM-1 through LM-7) need to be implemented in `_plan_quality_sessions` / `assemble_plan`.

@@ -182,10 +182,71 @@ class StripeService:
             "cancel_url": self.cfg.checkout_cancel_url,
             "line_items": [{"price": price_id, "quantity": 1}],
             "client_reference_id": str(athlete.id),
+            "automatic_tax": {"enabled": True},
             "metadata": {
                 "athlete_id": str(athlete.id),
                 "tier": canonical,
                 "billing_period": billing_period,
+            },
+        }
+        if customer_id:
+            params["customer"] = customer_id
+        elif athlete.email:
+            params["customer_email"] = athlete.email
+
+        session = stripe.checkout.Session.create(**params)
+        return str(session.url)
+
+    def create_trial_checkout_session(
+        self,
+        *,
+        athlete: Athlete,
+        billing_period: str = "monthly",
+        trial_days: int = 30,
+        success_url: Optional[str] = None,
+        cancel_url: Optional[str] = None,
+    ) -> str:
+        """Create a Stripe Checkout session with a free trial period.
+
+        Collects CC upfront. Stripe auto-bills after trial_days unless the
+        athlete cancels via the Customer Portal.
+
+        Args:
+            athlete: The athlete starting the trial.
+            billing_period: "monthly" or "annual". Defaults to "monthly".
+            trial_days: Length of free trial in days. Defaults to 30.
+            success_url: Override the default success redirect URL.
+            cancel_url: Override the default cancel redirect URL.
+
+        Raises:
+            RuntimeError: If the required price ID is not configured.
+            ValueError: If billing_period is invalid.
+        """
+        if billing_period not in ("monthly", "annual"):
+            raise ValueError(f"billing_period must be 'monthly' or 'annual', got: {billing_period!r}")
+
+        price_id = self._resolve_subscription_price("subscriber", billing_period)
+
+        customer_id = getattr(athlete, "stripe_customer_id", None)
+        params: dict[str, Any] = {
+            "mode": "subscription",
+            "success_url": success_url or self.cfg.checkout_success_url,
+            "cancel_url": cancel_url or self.cfg.checkout_cancel_url,
+            "line_items": [{"price": price_id, "quantity": 1}],
+            "client_reference_id": str(athlete.id),
+            "automatic_tax": {"enabled": True},
+            "subscription_data": {
+                "trial_period_days": trial_days,
+                "metadata": {
+                    "athlete_id": str(athlete.id),
+                    "trial_source": "onboarding",
+                },
+            },
+            "metadata": {
+                "athlete_id": str(athlete.id),
+                "tier": "subscriber",
+                "billing_period": billing_period,
+                "trial_days": str(trial_days),
             },
         }
         if customer_id:
@@ -230,6 +291,7 @@ class StripeService:
             "cancel_url": self.cfg.checkout_cancel_url,
             "line_items": [{"price": self.cfg.price_plan_onetime_id, "quantity": 1}],
             "client_reference_id": str(athlete.id),
+            "automatic_tax": {"enabled": True},
             "metadata": {
                 "athlete_id": str(athlete.id),
                 "plan_snapshot_id": plan_snapshot_id,
@@ -556,22 +618,49 @@ def process_stripe_event(db: Session, *, event: Any) -> dict[str, Any]:
             }
 
         # Subscription checkout: mirror tier using price→tier map.
+        # For trial checkouts, Stripe sets the subscription to "trialing" status.
         sub = _ensure_subscription_row(db, athlete_id=athlete.id)
         if customer_id:
             sub.stripe_customer_id = customer_id
         if subscription_id:
             sub.stripe_subscription_id = subscription_id
-        sub.status = "active"
+
+        # Retrieve the actual subscription to get trial status and period end
+        stripe_sub_status = "active"
+        trial_end_ts = None
+        if subscription_id:
+            try:
+                stripe_sub = stripe.Subscription.retrieve(subscription_id)
+                stripe_sub_status = str(getattr(stripe_sub, "status", "active") or "active")
+                trial_end_ts = getattr(stripe_sub, "trial_end", None)
+                period_end = _extract_current_period_end_ts(stripe_sub)
+                if period_end:
+                    sub.current_period_end = _maybe_parse_period_end(period_end)
+            except Exception:
+                pass
+
+        sub.status = stripe_sub_status
         sub.cancel_at_period_end = False
 
         # Derive tier from the price on the session (prefer metadata tier if present).
         price_id = metadata.get("price_id") or _extract_price_id_from_session(obj)
-        granted_tier = tier_for_price_and_status(price_id, "active", price_to_tier)
-        # Fallback: if metadata explicitly carries canonical tier, use it.
+        granted_tier = tier_for_price_and_status(price_id, stripe_sub_status, price_to_tier)
         if granted_tier == "free" and metadata.get("tier") in ("subscriber", "guided", "premium"):
             granted_tier = "subscriber"
 
         _apply_stripe_tier(athlete, granted_tier)
+
+        # Sync local trial fields with Stripe trial when a trial checkout completes
+        if stripe_sub_status == "trialing" and trial_end_ts:
+            try:
+                stripe_trial_end = datetime.fromtimestamp(int(trial_end_ts), tz=timezone.utc)
+                athlete.trial_ends_at = stripe_trial_end
+                if not athlete.trial_started_at:
+                    athlete.trial_started_at = datetime.now(timezone.utc)
+                athlete.trial_source = metadata.get("trial_source") or "stripe"
+            except Exception:
+                pass
+
         db.add(athlete)
         db.add(sub)
         db.commit()
@@ -581,7 +670,8 @@ def process_stripe_event(db: Session, *, event: Any) -> dict[str, Any]:
             "event_type": event_type,
             "mode": "subscription",
             "athlete_id": str(athlete.id),
-            "granted_tier": athlete.subscription_tier,  # effective tier (may differ if override active)
+            "granted_tier": athlete.subscription_tier,
+            "stripe_status": stripe_sub_status,
         }
 
     # ------------------------------------------------------------------

@@ -188,7 +188,7 @@ def get_3b_eligibility(
             evidence={"kill_switch": True},
         )
 
-    # Tier gate
+    # Tier gate — active trial counts as paid
     athlete = _get_athlete(athlete_id, db)
     if athlete is None:
         return EligibilityResult(
@@ -196,11 +196,14 @@ def get_3b_eligibility(
             reason="Athlete not found.",
             evidence={"athlete_id": str(athlete_id)},
         )
-    if athlete.subscription_tier not in TIERS_3B:
+    if not athlete.has_active_subscription:
         return EligibilityResult(
             eligible=False,
-            reason=f"Workout narratives require premium tier. Current: {athlete.subscription_tier}.",
-            evidence={"tier": athlete.subscription_tier, "required": sorted(TIERS_3B)},
+            reason=f"Workout narratives require a paid subscription or active trial. Current tier: {athlete.subscription_tier}.",
+            evidence={
+                "tier": athlete.subscription_tier,
+                "trial_ends_at": str(getattr(athlete, "trial_ends_at", None)),
+            },
         )
 
     # History sufficiency
@@ -284,7 +287,7 @@ def get_3c_eligibility(
             evidence={"kill_switch": True},
         )
 
-    # Tier gate
+    # Tier gate — active trial counts as paid
     athlete = _get_athlete(athlete_id, db)
     if athlete is None:
         return EligibilityResult(
@@ -292,11 +295,14 @@ def get_3c_eligibility(
             reason="Athlete not found.",
             evidence={"athlete_id": str(athlete_id)},
         )
-    if athlete.subscription_tier not in TIERS_3C:
+    if not athlete.has_active_subscription:
         return EligibilityResult(
             eligible=False,
-            reason=f"N=1 insights require guided, premium, elite, or pro tier. Current: {athlete.subscription_tier}.",
-            evidence={"tier": athlete.subscription_tier, "required": sorted(TIERS_3C)},
+            reason=f"N=1 insights require a paid subscription or active trial. Current tier: {athlete.subscription_tier}.",
+            evidence={
+                "tier": athlete.subscription_tier,
+                "trial_ends_at": str(getattr(athlete, "trial_ends_at", None)),
+            },
         )
 
     # History sufficiency (production time OR synced history)

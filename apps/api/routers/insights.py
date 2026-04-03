@@ -521,8 +521,14 @@ def founder_review_n1_insights(
     else:
         from models import Athlete as AthleteModel
         from services.phase3_eligibility import TIERS_3C
+        from sqlalchemy import or_
+        from datetime import timezone as _tz
+        now_utc = _dt.now(_tz.utc)
         athletes = db.query(AthleteModel).filter(
-            AthleteModel.subscription_tier.in_(TIERS_3C)
+            or_(
+                AthleteModel.subscription_tier.in_(TIERS_3C),
+                AthleteModel.trial_ends_at > now_utc,
+            )
         ).limit(50).all()
         target_ids = [a.id for a in athletes]
 

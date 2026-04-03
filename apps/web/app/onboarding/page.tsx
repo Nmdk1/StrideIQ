@@ -19,6 +19,7 @@ import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { ErrorMessage } from '@/components/ui/ErrorMessage';
 import { stravaService } from '@/lib/api/services/strava';
 import { garminService } from '@/lib/api/services/garmin';
+import { API_CONFIG } from '@/lib/api/config';
 import { useGarminStatus } from '@/lib/hooks/queries/garmin';
 import { onboardingService } from '@/lib/api/services/onboarding';
 import { useBootstrapOnboarding, useOnboardingStatus } from '@/lib/hooks/queries/onboarding';
@@ -48,41 +49,44 @@ export default function OnboardingPage() {
   const [data, setData] = useState<OnboardingData>({});
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<Error | null>(null);
+  const checkoutInFlight = useRef(false);
 
   useEffect(() => {
     if (user) {
-      if (user.onboarding_completed) {
+      if (user.onboarding_completed && !checkoutInFlight.current) {
         router.push('/dashboard');
         return;
       }
-      setCurrentStage((user.onboarding_stage as OnboardingStage) || 'initial');
+      if (!user.onboarding_completed) {
+        setCurrentStage((user.onboarding_stage as OnboardingStage) || 'initial');
+      }
     }
   }, [user, router]);
 
 
-  const handleNext = async (stageData: Partial<OnboardingData>, nextStage: OnboardingStage) => {
+  const handleNext = async (stageData: Partial<OnboardingData>, nextStage: OnboardingStage): Promise<boolean> => {
     const newData = { ...data, ...stageData };
     setData(newData);
 
     setSaving(true);
     setError(null);
     try {
-      // Update profile data if provided
       const profileUpdates: any = {};
       if (stageData.display_name !== undefined) profileUpdates.display_name = stageData.display_name || null;
       if (stageData.birthdate !== undefined) profileUpdates.birthdate = stageData.birthdate || null;
       if (stageData.sex !== undefined) profileUpdates.sex = stageData.sex || null;
       if (stageData.height_cm !== undefined) profileUpdates.height_cm = stageData.height_cm || null;
       
-      // Update onboarding stage
       profileUpdates.onboarding_stage = nextStage;
       profileUpdates.onboarding_completed = nextStage === 'complete';
 
       await authService.updateProfile(profileUpdates);
       await refreshUser();
       setCurrentStage(nextStage);
+      return true;
     } catch (err) {
       setError(err as Error);
+      return false;
     } finally {
       setSaving(false);
     }
@@ -93,7 +97,30 @@ export default function OnboardingPage() {
   };
 
   const handleComplete = async () => {
-    await handleNext({}, 'complete');
+    checkoutInFlight.current = true;
+    const saved = await handleNext({}, 'complete');
+
+    if (!saved) {
+      checkoutInFlight.current = false;
+      return;
+    }
+
+    try {
+      const token = localStorage.getItem('auth_token');
+      const resp = await fetch(`${API_CONFIG.baseURL}/v1/billing/checkout/trial`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ billing_period: 'monthly' }),
+      });
+      const data = await resp.json().catch(() => ({}));
+      if (resp.ok && data?.url) {
+        window.location.href = data.url;
+        return;
+      }
+    } catch {
+      // Stripe checkout creation failed — fall through to dashboard
+    }
+    checkoutInFlight.current = false;
     router.push('/dashboard');
   };
 

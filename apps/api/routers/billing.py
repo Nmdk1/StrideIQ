@@ -112,10 +112,77 @@ def create_checkout(
     return {"url": url, "tier": canonical_tier, "billing_period": billing_period}
 
 
+class TrialCheckoutRequest(BaseModel):
+    """Request body for a trial checkout (CC collection with 30-day free trial)."""
+    billing_period: str = Field(
+        default="monthly",
+        description="'annual' or 'monthly'",
+    )
+
+
+@router.post("/checkout/trial")
+def create_trial_checkout(
+    request: TrialCheckoutRequest = None,
+    current_user: Athlete = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    """Create a Stripe Checkout Session with a 30-day free trial.
+
+    Collects CC upfront. Stripe auto-bills at day 30 unless cancelled.
+    The athlete can cancel anytime via the Customer Portal.
+    """
+    billing_period = (request.billing_period if request else "monthly") or "monthly"
+    if billing_period not in ("annual", "monthly"):
+        raise HTTPException(status_code=400, detail="billing_period must be 'annual' or 'monthly'")
+
+    from core.tier_utils import tier_satisfies
+    if tier_satisfies(current_user.subscription_tier, "subscriber"):
+        raise HTTPException(
+            status_code=409,
+            detail="Already has a paid subscription. Use /v1/billing/portal to manage.",
+        )
+
+    from sqlalchemy import func
+    active_sub_exists = db.query(func.count(Subscription.id)).filter(
+        Subscription.athlete_id == current_user.id,
+        func.lower(Subscription.status).in_(["active", "trialing"]),
+    ).scalar() > 0
+    if active_sub_exists:
+        raise HTTPException(
+            status_code=409,
+            detail="Already has an active Stripe subscription. Use /v1/billing/portal to manage.",
+        )
+
+    try:
+        from core.config import settings as _settings
+        base = getattr(_settings, "WEB_APP_BASE_URL", "https://strideiq.run").rstrip("/")
+        url = StripeService().create_trial_checkout_session(
+            athlete=current_user,
+            billing_period=billing_period,
+            success_url=f"{base}/dashboard?trial=started",
+            cancel_url=f"{base}/onboarding?trial=skipped",
+        )
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception:
+        raise HTTPException(status_code=500, detail="Failed to create trial checkout session")
+
+    return {
+        "url": url,
+        "billing_period": billing_period,
+        "trial_days": 30,
+        "amount_due_today": "$0.00",
+    }
+
+
 class TrialStatusResponse(BaseModel):
     has_trial: bool
     trial_days_remaining: int
     trial_ends_at: Optional[datetime] = None
+    subscription_status: Optional[str] = None
+    subscription_tier: str = "free"
     facts_learned: int
     findings_discovered: int
     activities_analyzed: int
@@ -158,10 +225,17 @@ def get_trial_status(
         or 0
     )
 
+    sub = db.query(Subscription).filter(
+        Subscription.athlete_id == current_user.id,
+    ).order_by(Subscription.id.desc()).first()
+    subscription_status = (sub.status if sub else None)
+
     return TrialStatusResponse(
         has_trial=has_trial,
         trial_days_remaining=max(0, int(days_remaining)),
         trial_ends_at=trial_ends_at,
+        subscription_status=subscription_status,
+        subscription_tier=getattr(current_user, "subscription_tier", "free") or "free",
         facts_learned=max(0, int(facts_learned)),
         findings_discovered=max(0, int(findings_discovered)),
         activities_analyzed=max(0, int(activities_analyzed)),

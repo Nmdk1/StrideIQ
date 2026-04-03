@@ -639,36 +639,88 @@ def _base_quality(state, needs, week_ratio, weekly_vol):
 
 
 def _build_quality(state, needs, week_ratio, weekly_vol, lr_type):
-    """Build/Peak: select tools based on distance + athlete capacity."""
+    """Build/Peak: select tools based on distance + limiter + athlete capacity.
+
+    Limiter-driven overrides per LIMITER_TAXONOMY.md Layer 2:
+      LM-1 L-VOL:  Floor session only, shift emphasis to LR quality.
+      LM-2 L-CEIL: Interval-primary. Half marathon gets 10K-style.
+      LM-3 L-THRESH: Threshold-primary. Intervals at maintenance dose.
+      LM-4b L-REC (solvable): Recovery block. 1 session max, capped dose.
+      LM-6 L-SPEC: Distance default. Organize what exists, don't escalate.
+      LM-7 L-NONE: Distance default (unchanged).
+
+    Distance floor rule: at least one session of the floor type per week.
+      5K floor: intervals (DQ-1).  10K/half/marathon floor: threshold (DQ-3/5/6).
+    """
     dist = state.race_distance
     exp = state.experience
     paces = state.paces
+    limiter = state.fingerprint.limiter
     mq = []
 
+    if limiter == "recovery":
+        if week_ratio > 0.30:
+            mq.append(_make_threshold_scaled(
+                min(week_ratio, 0.5), weekly_vol, exp, paces, dist))
+        return mq
+
     if dist == "10k":
-        mq.append(_make_threshold_scaled(week_ratio, weekly_vol, exp, paces, dist))
-        lr_share = state.current_long_run_miles / max(weekly_vol, 1.0)
-        volume_allows_second = lr_share < 0.45
-        if volume_allows_second:
-            if exp in (ExperienceLevel.EXPERIENCED, ExperienceLevel.ELITE):
-                mq.append(_make_intervals_scaled(week_ratio, weekly_vol, exp, paces))
-            elif week_ratio > 0.50:
-                mq.append(_make_intervals_scaled(week_ratio, weekly_vol, exp, paces))
+        if limiter == "ceiling":
+            mq.append(_make_intervals_scaled(week_ratio, weekly_vol, exp, paces))
+            if week_ratio > 0.40:
+                mq.append(_make_threshold_scaled(
+                    min(week_ratio, 0.5), weekly_vol, exp, paces, dist))
+        elif limiter == "volume":
+            mq.append(_make_threshold_scaled(week_ratio, weekly_vol, exp, paces, dist))
+        else:
+            mq.append(_make_threshold_scaled(week_ratio, weekly_vol, exp, paces, dist))
+            lr_share = state.current_long_run_miles / max(weekly_vol, 1.0)
+            volume_allows_second = lr_share < 0.45
+            if volume_allows_second:
+                if exp in (ExperienceLevel.EXPERIENCED, ExperienceLevel.ELITE):
+                    mq.append(_make_intervals_scaled(week_ratio, weekly_vol, exp, paces))
+                elif week_ratio > 0.50:
+                    mq.append(_make_intervals_scaled(week_ratio, weekly_vol, exp, paces))
 
     elif dist == "5k":
-        mq.append(_make_intervals_scaled(week_ratio, weekly_vol, exp, paces))
-        if exp == ExperienceLevel.BEGINNER:
-            pass
-        elif week_ratio > 0.70 and AdaptationNeed.NEUROMUSCULAR in needs:
-            mq.append(_make_reps(exp, paces))
+        if limiter == "volume":
+            mq.append(_make_intervals_scaled(
+                min(week_ratio, 0.6), weekly_vol, exp, paces))
+        elif limiter == "threshold":
+            mq.append(_make_threshold_scaled(week_ratio, weekly_vol, exp, paces, dist))
+            if week_ratio > 0.40:
+                mq.append(_make_intervals_scaled(
+                    min(week_ratio, 0.6), weekly_vol, exp, paces))
         else:
-            mq.append(_make_threshold_scaled(min(week_ratio, 0.6), weekly_vol, exp, paces, dist))
+            mq.append(_make_intervals_scaled(week_ratio, weekly_vol, exp, paces))
+            if exp == ExperienceLevel.BEGINNER:
+                pass
+            elif week_ratio > 0.70 and AdaptationNeed.NEUROMUSCULAR in needs:
+                mq.append(_make_reps(exp, paces))
+            else:
+                mq.append(_make_threshold_scaled(
+                    min(week_ratio, 0.6), weekly_vol, exp, paces, dist))
 
     elif dist == "half_marathon":
-        mq.append(_make_threshold_scaled(week_ratio, weekly_vol, exp, paces, dist))
+        if limiter == "ceiling":
+            mq.append(_make_intervals_scaled(week_ratio, weekly_vol, exp, paces))
+            if week_ratio > 0.30:
+                mq.append(_make_threshold_scaled(
+                    min(week_ratio, 0.6), weekly_vol, exp, paces, dist))
+        elif limiter == "volume":
+            mq.append(_make_threshold_scaled(week_ratio, weekly_vol, exp, paces, dist))
+        else:
+            mq.append(_make_threshold_scaled(week_ratio, weekly_vol, exp, paces, dist))
 
     elif dist == "marathon":
-        mq.append(_make_threshold_scaled(week_ratio, weekly_vol, exp, paces, dist))
+        if limiter == "ceiling":
+            mq.append(_make_intervals_scaled(week_ratio, weekly_vol, exp, paces))
+            mq.append(_make_threshold_scaled(
+                min(week_ratio, 0.6), weekly_vol, exp, paces, dist))
+        elif limiter == "volume":
+            mq.append(_make_threshold_scaled(week_ratio, weekly_vol, exp, paces, dist))
+        else:
+            mq.append(_make_threshold_scaled(week_ratio, weekly_vol, exp, paces, dist))
 
     return mq
 
@@ -681,11 +733,20 @@ def _select_long_run_tool(dist, exp, paces, ratio, week_idx, lr_miles, is_taper,
     if ratio < 0.20:
         return "long", None
 
+    limiter = state.fingerprint.limiter
+
+    if limiter in ("ceiling", "recovery"):
+        return "long", None
+
+    effective_ratio = ratio
+    if limiter == "volume":
+        effective_ratio = min(1.0, ratio + 0.15)
+
     if dist == "marathon":
-        return _marathon_lr_tool(ratio, week_idx, lr_miles, paces, state)
+        return _marathon_lr_tool(effective_ratio, week_idx, lr_miles, paces, state)
     if dist == "half_marathon":
-        return _half_lr_tool(ratio, week_idx, lr_miles, paces)
-    return _short_distance_lr_tool(ratio, week_idx, lr_miles, paces, exp, dist)
+        return _half_lr_tool(effective_ratio, week_idx, lr_miles, paces)
+    return _short_distance_lr_tool(effective_ratio, week_idx, lr_miles, paces, exp, dist)
 
 
 def _marathon_lr_tool(ratio, week_idx, lr_miles, paces, state):
