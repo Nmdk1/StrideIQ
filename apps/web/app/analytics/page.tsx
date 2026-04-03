@@ -483,7 +483,7 @@ function CorrelationExplorer({ days }: { days: number }) {
             Log check-ins and nutrition to discover what habits correlate with your best runs.
           </p>
           <div className="mt-3 flex flex-wrap gap-2">
-            <Link href="/checkin">
+            <Link href="/home">
               <Button variant="outline" size="sm">
                 Log Check-in
               </Button>

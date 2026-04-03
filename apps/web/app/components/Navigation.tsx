@@ -96,7 +96,6 @@ export default function Navigation() {
     { href: '/analytics', label: 'Analytics', icon: '📈' },
     { href: '/training-load', label: 'Load', icon: '📈' },
     { href: '/nutrition', label: 'Nutrition', icon: '🥗' },
-    { href: '/checkin', label: 'Check-in', icon: '✅' },
     { href: '/tools', label: 'Tools', icon: '🧮' },
     ...(user?.has_correlations ? [
       { href: '/fingerprint', label: 'Fingerprint', icon: '🧬' },

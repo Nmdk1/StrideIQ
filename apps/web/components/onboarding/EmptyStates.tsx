@@ -54,7 +54,7 @@ export function EmptyCheckinState({ className = '' }: EmptyStateProps) {
         Sleep, stress, soreness. Three sliders. Done.
       </p>
       <Link
-        href="/checkin"
+        href="/home"
         className="inline-block px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-lg text-sm font-medium transition-colors"
       >
         Do quick check-in

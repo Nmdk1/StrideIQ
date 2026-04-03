@@ -31,7 +31,6 @@ const TABS_WITH_MANUAL = [
 const BASE_MORE_ITEMS = [
   { href: "/activities", label: "Activities" },
   { href: "/nutrition", label: "Nutrition" },
-  { href: "/checkin", label: "Check-in" },
   { href: "/tools", label: "Tools" },
   { href: "/settings", label: "Settings" },
 ];

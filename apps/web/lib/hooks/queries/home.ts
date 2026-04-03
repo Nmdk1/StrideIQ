@@ -38,6 +38,8 @@ export interface QuickCheckinPayload {
   sleep_quality_1_5?: number;  // 1=poor, 5=great
   sleep_h?: number;            // actual hours (explicit input)
   soreness_1_5?: number;
+  enjoyment_1_5?: number;
+  confidence_1_5?: number;
 }
 
 // Label maps for optimistic cache update (match backend maps)

@@ -109,11 +109,26 @@ const SORENESS_OPTIONS = [
   { label: 'Yes',  value: 4, emoji: '🔥' },
 ];
 
+const ENJOYMENT_OPTIONS = [
+  { label: 'Dreading', value: 1, emoji: '😞' },
+  { label: 'Meh',      value: 3, emoji: '😐' },
+  { label: 'Loving it', value: 5, emoji: '😊' },
+];
+
+const CONFIDENCE_OPTIONS = [
+  { label: 'Doubtful', value: 1, emoji: '😰' },
+  { label: 'Steady',   value: 3, emoji: '😐' },
+  { label: 'Strong',   value: 5, emoji: '💪' },
+];
+
 function QuickCheckin() {
   const [feel, setFeel] = useState<number | null>(null);
   const [sleepQuality, setSleepQuality] = useState<number | null>(null);
   const [sleepHours, setSleepHours] = useState<number | null>(null);
   const [soreness, setSoreness] = useState<number | null>(null);
+  const [showMindset, setShowMindset] = useState(false);
+  const [enjoyment, setEnjoyment] = useState<number | null>(null);
+  const [confidence, setConfidence] = useState<number | null>(null);
   const checkin = useQuickCheckin();
 
   const handleSubmit = () => {
@@ -125,6 +140,8 @@ function QuickCheckin() {
       sleep_quality_1_5: sleepQuality,
       sleep_h: sleepHours ?? undefined,
       soreness_1_5: soreness,
+      enjoyment_1_5: enjoyment ?? undefined,
+      confidence_1_5: confidence ?? undefined,
     });
   };
 
@@ -224,6 +241,65 @@ function QuickCheckin() {
               </button>
             ))}
           </div>
+        </div>
+
+        {/* Mindset (optional, collapsible) */}
+        <div>
+          <button
+            type="button"
+            onClick={() => setShowMindset(!showMindset)}
+            className="flex items-center gap-1.5 text-xs text-slate-500 hover:text-slate-400 transition-colors"
+          >
+            <span>🧠</span>
+            <span>Mindset</span>
+            <span className="text-[10px]">{showMindset ? '▲' : '▼'}</span>
+          </button>
+
+          {showMindset && (
+            <div className="mt-3 space-y-3">
+              <div>
+                <p className="text-sm text-slate-300 mb-2">Enjoying training?</p>
+                <div className="flex gap-2">
+                  {ENJOYMENT_OPTIONS.map((opt) => (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      onClick={() => setEnjoyment(enjoyment === opt.value ? null : opt.value)}
+                      className={`flex-1 py-2 rounded-lg text-xs font-medium transition-all ${
+                        enjoyment === opt.value
+                          ? 'bg-green-600/30 text-green-300 ring-1 ring-green-500/50'
+                          : 'bg-slate-700/50 text-slate-400 hover:bg-slate-700'
+                      }`}
+                    >
+                      <span className="block text-base mb-0.5">{opt.emoji}</span>
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <p className="text-sm text-slate-300 mb-2">Confidence?</p>
+                <div className="flex gap-2">
+                  {CONFIDENCE_OPTIONS.map((opt) => (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      onClick={() => setConfidence(confidence === opt.value ? null : opt.value)}
+                      className={`flex-1 py-2 rounded-lg text-xs font-medium transition-all ${
+                        confidence === opt.value
+                          ? 'bg-purple-600/30 text-purple-300 ring-1 ring-purple-500/50'
+                          : 'bg-slate-700/50 text-slate-400 hover:bg-slate-700'
+                      }`}
+                    >
+                      <span className="block text-base mb-0.5">{opt.emoji}</span>
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Submit */}
