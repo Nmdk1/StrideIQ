@@ -357,16 +357,27 @@ def _format_pace(seconds_per_mile: float) -> str:
 # Headline rewriter — human language from structured fields
 # ---------------------------------------------------------------------------
 
-# Output-specific verbs: (positive_direction_verb, negative_direction_verb)
-# "positive direction" = correlation direction is beneficial for athlete
+# Output-specific verbs in infinitive: (positive_verb, negative_verb)
 _OUTPUT_VERBS: Dict[str, Tuple[str, str]] = {
-    "pace_easy": ("quickens", "slows down"),
-    "pace_threshold": ("gets faster", "slows down"),
-    "race_pace": ("gets faster", "slows down"),
-    "completion_rate": ("improves", "drops"),
-    "completion": ("improves", "drops"),
-    "pb_events": ("increases", "decreases"),
+    "pace_easy": ("quicken", "slow down"),
+    "pace_threshold": ("get faster", "slow down"),
+    "race_pace": ("get faster", "slow down"),
+    "completion_rate": ("improve", "drop"),
+    "completion": ("improve", "drop"),
+    "pb_events": ("increase", "decrease"),
 }
+
+
+def _conjugate_3p(verb: str) -> str:
+    """Conjugate an infinitive verb to third-person singular present."""
+    parts = verb.split(" ", 1)
+    base = parts[0]
+    rest = " " + parts[1] if len(parts) > 1 else ""
+    if base.endswith(("s", "sh", "ch", "x", "z")):
+        return base + "es" + rest
+    if base.endswith("y") and not base.endswith(("ay", "ey", "oy", "uy")):
+        return base[:-1] + "ies" + rest
+    return base + "s" + rest
 
 # Higher-input phrasing per input — what "higher" means in plain English.
 # Falls back to "is higher" / "is lower" for unlisted inputs.
@@ -444,8 +455,19 @@ def _rewrite_headline(finding) -> str:
     # Lag phrase
     lag_phrase = _LAG_PHRASES.get(lag, f" for about {lag} days")
 
-    # Strength-based confidence of language
-    hedge = "" if r >= 0.55 else "tends to " if r >= 0.35 else "may "
+    # Strength-based confidence: no hedge (strong), "tends to" (moderate), "may" (weak)
+    if r >= 0.55:
+        hedge = ""
+        conjugate = True
+    elif r >= 0.35:
+        hedge = "tends to "
+        conjugate = False
+    else:
+        hedge = "may "
+        conjugate = False
+
+    def _verb(infinitive: str) -> str:
+        return _conjugate_3p(infinitive) if conjugate else infinitive
 
     # Build the "when" clause — start with the athlete's controllable input
     conditions = _INPUT_CONDITIONS.get(input_name)
@@ -456,25 +478,18 @@ def _rewrite_headline(finding) -> str:
         when_high = f"your {human_input} is higher"
         when_low = f"your {human_input} is lower"
 
-    # Pick which condition to lead with based on direction + polarity
-    # We want the sentence to read: "When [condition], your [output] [verb]"
-    # Lead with the condition that makes the sentence most intuitive
     if beneficial is not None:
         verbs = _OUTPUT_VERBS.get(output_metric)
         if verbs:
-            good_verb, bad_verb = verbs
-            if beneficial:
-                return f"When {when_high}, your {human_output} {hedge}{good_verb}{lag_phrase}."
-            else:
-                return f"When {when_high}, your {human_output} {hedge}{bad_verb}{lag_phrase}."
+            good_inf, bad_inf = verbs
+            verb = _verb(good_inf) if beneficial else _verb(bad_inf)
+            return f"When {when_high}, your {human_output} {hedge}{verb}{lag_phrase}."
         else:
-            if beneficial:
-                return f"When {when_high}, your {human_output} {hedge}improves{lag_phrase}."
-            else:
-                return f"When {when_high}, your {human_output} {hedge}drops{lag_phrase}."
+            verb = _verb("improve") if beneficial else _verb("drop")
+            return f"When {when_high}, your {human_output} {hedge}{verb}{lag_phrase}."
 
     # Ambiguous output — neutral language, no directional claim
-    return f"When {when_high}, your {human_output} {hedge}shifts{lag_phrase}."
+    return f"When {when_high}, your {human_output} {hedge}{_verb('shift')}{lag_phrase}."
 
 
 # ---------------------------------------------------------------------------
@@ -716,15 +731,18 @@ def _build_race_counterevidence(
 ) -> List[Dict[str, Any]]:
     """Find training-day findings that race-day performance contradicts.
 
-    For each race where the athlete ran faster than training (gap_pct > 0),
-    pull their wellness data on race day and compare against threshold
-    findings from the correlation engine. If the athlete was on the "bad"
-    side of a threshold yet still outperformed, that's character.
+    For each race where the athlete performed well (positive gap vs training,
+    or a PB), pull their wellness data on race day and compare against
+    threshold findings. If the athlete was on the "bad" side of a threshold
+    yet still raced well, that's character — not luck.
     """
     from models import CorrelationFinding, DailyCheckin
 
-    races_with_gaps = [r for r in race_entries if (r.get("gap_pct") or 0) > 0]
-    if not races_with_gaps:
+    good_races = [
+        r for r in race_entries
+        if (r.get("gap_pct") or 0) > 0 or r.get("is_pb")
+    ]
+    if not good_races:
         return []
 
     threshold_findings = (
@@ -749,7 +767,7 @@ def _build_race_counterevidence(
 
     contradictions: List[Dict[str, Any]] = []
 
-    for race in races_with_gaps:
+    for race in good_races:
         race_date_str = race.get("date")
         if not race_date_str:
             continue
@@ -816,25 +834,30 @@ def _build_race_counterevidence(
                 val_str = f"{actual_value:.1f}"
                 thr_str = f"{threshold:.1f}"
 
-            if direction == "below_matters":
-                text = (
-                    f"During training, {human_input} below {thr_str} "
-                    f"precedes lower {human_output}. "
-                    f"On {race['date']}, your {human_input} was {val_str} "
-                    f"and you ran {race['gap_pct']}% faster than training."
+            preposition = "below" if direction == "below_matters" else "above"
+            outcome_parts = [
+                f"During training, {human_input} {preposition} {thr_str} "
+                f"precedes lower {human_output}.",
+                f"On {race['date']}, your {human_input} was {val_str}",
+            ]
+            gap = race.get("gap_pct")
+            if gap and gap > 0:
+                outcome_parts.append(f"and you ran {gap}% faster than training.")
+            elif race.get("is_pb"):
+                name = race.get("name")
+                dist = race.get("distance_mi")
+                outcome_parts.append(
+                    f"and you set a PB{f' at {name}' if name else ''}"
+                    f"{f' ({dist}mi)' if dist else ''}."
                 )
             else:
-                text = (
-                    f"During training, {human_input} above {thr_str} "
-                    f"precedes lower {human_output}. "
-                    f"On {race['date']}, your {human_input} was {val_str} "
-                    f"and you ran {race['gap_pct']}% faster than training."
-                )
+                outcome_parts.append("and you raced well.")
+            text = " ".join(outcome_parts)
 
             contradictions.append({
                 "race_date": race["date"],
                 "race_name": race.get("name", ""),
-                "gap_pct": race["gap_pct"],
+                "gap_pct": race.get("gap_pct"),
                 "finding_input": f.input_name,
                 "finding_output": f.output_metric,
                 "threshold": round(threshold, 1),
