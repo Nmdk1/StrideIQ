@@ -8,6 +8,7 @@ import {
   MessageSquare,
   CalendarDays,
   TrendingUp,
+  BookOpen,
   MoreHorizontal,
 } from "lucide-react";
 import { useAuth } from "@/lib/hooks/useAuth";
@@ -19,12 +20,19 @@ const TABS = [
   { href: "/progress", label: "Progress", icon: TrendingUp, accent: false },
 ] as const;
 
+const TABS_WITH_MANUAL = [
+  { href: "/home", label: "Home", icon: Home, accent: false },
+  { href: "/calendar", label: "Calendar", icon: CalendarDays, accent: false },
+  { href: "/coach", label: "Coach", icon: MessageSquare, accent: true },
+  { href: "/manual", label: "Manual", icon: BookOpen, accent: false },
+  { href: "/progress", label: "Progress", icon: TrendingUp, accent: false },
+] as const;
+
 const BASE_MORE_ITEMS = [
   { href: "/activities", label: "Activities" },
   { href: "/nutrition", label: "Nutrition" },
   { href: "/checkin", label: "Check-in" },
   { href: "/tools", label: "Tools" },
-  { href: "/insights", label: "Insights" },
   { href: "/settings", label: "Settings" },
 ];
 
@@ -47,11 +55,12 @@ export default function BottomTabs() {
   const sheetRef = useRef<HTMLDivElement>(null);
   const { user } = useAuth();
 
+  const activeTabs = user?.has_correlations ? TABS_WITH_MANUAL : TABS;
+
   const MORE_ITEMS = useMemo(() => {
     const items = [...BASE_MORE_ITEMS];
     if (user?.has_correlations) {
       items.push(
-        { href: "/manual", label: "My Manual" },
         { href: "/discovery", label: "Discovery" },
         { href: "/fingerprint", label: "Fingerprint" },
       );
@@ -134,7 +143,7 @@ export default function BottomTabs() {
         style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
       >
         <div className="flex items-center justify-around h-[60px]">
-          {TABS.map((tab) => {
+          {activeTabs.map((tab) => {
             const isActive = pathname === tab.href;
             const Icon = tab.icon;
             return (

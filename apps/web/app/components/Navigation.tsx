@@ -83,25 +83,22 @@ export default function Navigation() {
   ];
 
   // Authenticated navigation — matches bottom tab structure (ADR-17 V2)
-  // Primary: Home, Coach, Calendar, Progress (mirrors bottom tabs)
   const primaryNavItems = [
     { href: '/home', label: 'Home', icon: '🏠' },
     { href: '/coach', label: 'Coach', icon: '🤖' },
     { href: '/calendar', label: 'Calendar', icon: '📅' },
+    ...(user?.has_correlations ? [{ href: '/manual', label: 'Manual', icon: '📖' }] : []),
     { href: '/progress', label: 'Progress', icon: '📊' },
   ];
   
-  // Secondary: everything accessible via "More" (mirrors bottom tab More sheet)
   const secondaryNavItems = [
     { href: '/activities', label: 'Activities', icon: '🏃' },
     { href: '/analytics', label: 'Analytics', icon: '📈' },
-    { href: '/insights', label: 'Insights', icon: '🧠' },
     { href: '/training-load', label: 'Load', icon: '📈' },
     { href: '/nutrition', label: 'Nutrition', icon: '🥗' },
     { href: '/checkin', label: 'Check-in', icon: '✅' },
     { href: '/tools', label: 'Tools', icon: '🧮' },
     ...(user?.has_correlations ? [
-      { href: '/manual', label: 'My Manual', icon: '📖' },
       { href: '/discovery', label: 'Discovery', icon: '🔬' },
       { href: '/fingerprint', label: 'Fingerprint', icon: '🧬' },
     ] : []),

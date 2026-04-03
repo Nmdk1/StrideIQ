@@ -132,7 +132,7 @@ function ActionBar({
         {/* Quick actions */}
         <div className="flex items-center gap-1">
           <Button variant="ghost" size="sm" asChild className="text-slate-400 hover:text-white">
-            <a href="/insights">
+            <a href="/manual">
               <Lightbulb className="w-4 h-4 mr-1.5" />
               Insights
             </a>
