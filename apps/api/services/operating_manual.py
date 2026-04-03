@@ -94,15 +94,25 @@ _INVESTIGATION_DOMAIN_MAP: Dict[str, str] = {
     "detect_weekly_patterns": "training_pattern",
 }
 
-# Garmin raw fields that athletes don't understand or control.
-# Findings with these inputs are valid correlations but should not lead
-# the manual — they belong in the full record only.
-_GARMIN_INTERNAL_INPUTS = frozenset({
-    "garmin_steps", "garmin_active_time_s", "garmin_vigorous_intensity_s",
-    "garmin_moderate_intensity_s", "garmin_min_hr", "garmin_max_hr",
-    "garmin_avg_stress", "garmin_max_stress", "garmin_body_battery_end",
-    "garmin_sleep_score", "garmin_sleep_awake_s", "garmin_sleep_deep_s",
-    "garmin_sleep_light_s", "garmin_sleep_rem_s",
+# Garmin passive/behavioral metrics — noise, not physiology.
+# Steps inflate from driving, body battery is unreliable, active time
+# is passive accelerometer. These should not lead the manual.
+_GARMIN_NOISE_INPUTS = frozenset({
+    "garmin_steps",
+    "garmin_active_time_s",
+    "garmin_body_battery_end",
+})
+
+# Garmin physiological metrics — real signals, fine to use.
+# HRV, sleep architecture, resting HR, stress (HRV-derived),
+# intensity minutes (activity-based, requires elevated HR).
+_GARMIN_PHYSIO_INPUTS = frozenset({
+    "garmin_hrv_5min_high",
+    "garmin_sleep_score", "garmin_sleep_deep_s", "garmin_sleep_light_s",
+    "garmin_sleep_rem_s", "garmin_sleep_awake_s",
+    "garmin_min_hr", "garmin_max_hr",
+    "garmin_avg_stress", "garmin_max_stress",
+    "garmin_vigorous_intensity_s", "garmin_moderate_intensity_s",
 })
 
 # More human-friendly translations for the manual page (overrides COACHING_LANGUAGE
@@ -179,7 +189,7 @@ def _confidence_tier(times_confirmed: int) -> str:
 
 
 def _is_athlete_understandable(input_name: str) -> bool:
-    return input_name not in _GARMIN_INTERNAL_INPUTS
+    return input_name not in _GARMIN_NOISE_INPUTS
 
 
 _JARGON_REPLACEMENTS = [
@@ -251,7 +261,7 @@ def _format_threshold(finding) -> Optional[Dict[str, Any]]:
     input_name = finding.input_name
     if input_name in _THRESHOLD_SUPPRESS:
         return None
-    if _is_garmin_internal(input_name):
+    if _is_garmin_noise(input_name):
         return None
 
     human_input = _translate(input_name)
@@ -516,9 +526,9 @@ def _build_race_character(athlete_id: UUID, db: Session) -> Optional[Dict[str, A
 # Cascade Stories
 # ---------------------------------------------------------------------------
 
-def _is_garmin_internal(field_name: str) -> bool:
-    """Check if a field is a garmin internal metric (not athlete-controllable)."""
-    return field_name.startswith("garmin_") or field_name in _GARMIN_INTERNAL_INPUTS
+def _is_garmin_noise(field_name: str) -> bool:
+    """Check if a field is a garmin noise metric (passive/behavioral, not physiological)."""
+    return field_name in _GARMIN_NOISE_INPUTS
 
 
 def _build_cascade_stories(
@@ -526,12 +536,12 @@ def _build_cascade_stories(
 ) -> List[Dict[str, Any]]:
     """Group findings with cascade chains into connected stories.
 
-    Filters out stories where the input is a garmin internal metric.
-    Prioritizes non-garmin mediators in the chain visualization.
+    Filters out stories where the input is a garmin noise metric.
+    Prioritizes non-garmin-noise mediators in the chain visualization.
     """
     cascade_entries = [
         e for e in all_entries
-        if e.get("cascade") and not _is_garmin_internal(e.get("_input_name", ""))
+        if e.get("cascade") and not _is_garmin_noise(e.get("_input_name", ""))
     ]
     if not cascade_entries:
         return []
@@ -559,7 +569,7 @@ def _build_cascade_stories(
                 ratio = c.get("mediation_ratio")
                 if not med_name or ratio is None:
                     continue
-                if _is_garmin_internal(med_var):
+                if _is_garmin_noise(med_var):
                     existing = garmin_mediators.get(med_name, 0)
                     garmin_mediators[med_name] = max(existing, ratio)
                 else:
@@ -567,9 +577,8 @@ def _build_cascade_stories(
                     meaningful_mediators[med_name] = max(existing, ratio)
 
         # Only show stories where the mechanism is understandable.
-        # If the only mediators are garmin device metrics, the causal chain
-        # is likely noise (e.g., "readiness → garmin steps → efficiency"
-        # where steps are inflated by driving).
+        # If the only mediators are garmin noise metrics (steps, body battery),
+        # the causal chain is likely noise — skip it.
         if not meaningful_mediators:
             continue
         display_mediators = meaningful_mediators
@@ -644,7 +653,7 @@ def _build_highlighted_findings(
 
     Not sorted by confirmation count. Sorted by interestingness:
     cascade chains > counterintuitive > thresholds > asymmetry > timing.
-    Garmin internal metrics are excluded from highlights.
+    Garmin noise metrics (steps, body battery) are excluded from highlights.
     """
     scored = []
     for e in all_entries:
