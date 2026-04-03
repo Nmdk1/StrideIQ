@@ -189,7 +189,14 @@ _JARGON_REPLACEMENTS = [
     ("form (training stress balance)", "freshness"),
     ("fatigue (recent load)", "recent training load"),
     ("chronic training load", "fitness level"),
+    ("training session stress", "session stress"),
     ("session intensity", "session stress"),
+    ("your tsb ", "your freshness "),
+    ("your atl ", "your recent training load "),
+    ("your ctl ", "your fitness level "),
+    (" tsb is ", " freshness is "),
+    (" atl is ", " recent training load is "),
+    (" ctl is ", " fitness level is "),
 ]
 
 
