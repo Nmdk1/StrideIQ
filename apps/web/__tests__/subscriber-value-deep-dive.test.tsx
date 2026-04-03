@@ -3,14 +3,11 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
-// Mock scrollIntoView for JSDOM (not implemented)
 beforeAll(() => {
   Element.prototype.scrollIntoView = jest.fn();
   window.requestAnimationFrame = (cb) => { cb(0); return 0; };
 });
 
-// `react-markdown` is ESM-only; Jest in this repo runs in CJS mode.
-// For UI smoke, a simple passthrough renderer is sufficient.
 jest.mock('react-markdown', () => ({
   __esModule: true,
   default: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
@@ -24,35 +21,18 @@ jest.mock('@/components/auth/ProtectedRoute', () => ({
   ProtectedRoute: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));
 
+const mockReplace = jest.fn();
 jest.mock('next/navigation', () => ({
-  useRouter: () => ({ push: jest.fn(), replace: jest.fn() }),
+  useRouter: () => ({ push: jest.fn(), replace: mockReplace }),
   usePathname: () => '/insights',
   useSearchParams: () => new URLSearchParams(),
 }));
 
-// AuthContext is used by Insights (AthleteIntelligenceSection)
 const useAuthMock = jest.fn();
 jest.mock('@/lib/context/AuthContext', () => ({
   useAuth: () => useAuthMock(),
 }));
 
-// Insights hooks
-const useInsightFeedMock = jest.fn();
-const useActiveInsightsMock = jest.fn();
-const useBuildStatusMock = jest.fn();
-const useAthleteIntelligenceMock = jest.fn();
-
-jest.mock('@/lib/hooks/queries/insights', () => ({
-  useInsightFeed: (...args: any[]) => useInsightFeedMock(...args),
-  useActiveInsights: (...args: any[]) => useActiveInsightsMock(...args),
-  useBuildStatus: (...args: any[]) => useBuildStatusMock(...args),
-  useAthleteIntelligence: (...args: any[]) => useAthleteIntelligenceMock(...args),
-  useDismissInsight: () => ({ mutate: jest.fn(), isPending: false }),
-  useSaveInsight: () => ({ mutate: jest.fn(), isPending: false }),
-  useGenerateInsights: () => ({ mutate: jest.fn(), isPending: false }),
-}));
-
-// Personal Bests uses apiClient directly
 const apiGetMock = jest.fn();
 const apiPostMock = jest.fn();
 jest.mock('@/lib/api/client', () => ({
@@ -62,7 +42,6 @@ jest.mock('@/lib/api/client', () => ({
   },
 }));
 
-// Coach service (evidence/receipts)
 const coachGetHistoryMock = jest.fn();
 const coachGetSuggestionsMock = jest.fn();
 const coachChatMock = jest.fn();
@@ -77,55 +56,22 @@ jest.mock('@/lib/api/services/ai-coach', () => ({
   },
 }));
 
-describe('Subscriber value deep-dive (Insights + PBs + Coach evidence)', () => {
+describe('Subscriber value deep-dive (Manual redirect + PBs + Coach evidence)', () => {
   beforeEach(() => {
     useAuthMock.mockReset();
-    useInsightFeedMock.mockReset();
-    useActiveInsightsMock.mockReset();
-    useBuildStatusMock.mockReset();
-    useAthleteIntelligenceMock.mockReset();
-
+    mockReplace.mockReset();
     apiGetMock.mockReset();
     apiPostMock.mockReset();
-
     coachGetHistoryMock.mockReset();
     coachGetSuggestionsMock.mockReset();
     coachChatMock.mockReset();
     coachNewConversationMock.mockReset();
   });
 
-  it('renders Insights cards with evidence and Personal Bests table rows', async () => {
-    useAuthMock.mockReturnValue({ user: { subscription_tier: 'free' } });
-
-    useInsightFeedMock.mockReturnValue({
-      data: {
-        cards: [
-          {
-            key: 'card_1',
-            type: 'trend_alert',
-            title: 'Efficiency improved',
-            summary: 'Your efficiency improved vs baseline.',
-            confidence: { label: 'high' },
-            evidence: [{ label: 'CTL', value: '42' }],
-            actions: [{ href: '/analytics', label: 'Review' }],
-          },
-        ],
-      },
-      isLoading: false,
-      error: null,
-    });
-    useActiveInsightsMock.mockReturnValue({ data: { insights: [] }, isLoading: false, error: null });
-    useBuildStatusMock.mockReturnValue({ data: { has_active_plan: false }, isLoading: false });
-    useAthleteIntelligenceMock.mockReturnValue({ data: null, isLoading: false, error: new Error('locked') });
-
+  it('redirects /insights to /manual and renders Personal Bests table rows', async () => {
     render(<InsightsPage />);
-    expect(await screen.findByRole('heading', { name: '🧠 Insights' })).toBeInTheDocument();
-    expect(screen.getByText('Top Insights (Ranked)')).toBeInTheDocument();
-    expect(screen.getByText('Efficiency improved')).toBeInTheDocument();
-    expect(screen.getByText('CTL')).toBeInTheDocument();
-    expect(screen.getByText('42')).toBeInTheDocument();
+    expect(mockReplace).toHaveBeenCalledWith('/manual');
 
-    // Personal Bests table uses react-query + apiClient; render with QueryClientProvider.
     apiGetMock.mockImplementation((path: string) => {
       if (path === '/v1/athletes/me') {
         return Promise.resolve({ id: 'athlete-1', display_name: 'Test' });
@@ -173,12 +119,10 @@ describe('Subscriber value deep-dive (Insights + PBs + Coach evidence)', () => {
     expect(await screen.findByText('Personal Bests')).toBeInTheDocument();
     expect(await screen.findByText('5K')).toBeInTheDocument();
     expect(await screen.findByText('20:00')).toBeInTheDocument();
-    // Race badge indicates this is a race-derived PB.
     expect(await screen.findByText('Race')).toBeInTheDocument();
   });
 
   it('renders Coach evidence/receipts as an expandable section', async () => {
-    // Provide a history message containing an Evidence section so receipts parsing is exercised.
     coachGetHistoryMock.mockResolvedValue({
       messages: [
         {
@@ -199,7 +143,6 @@ describe('Subscriber value deep-dive (Insights + PBs + Coach evidence)', () => {
 
     expect(await screen.findByText('Coach')).toBeInTheDocument();
 
-    // Evidence should be present as a collapsed <details>.
     const summary = await screen.findByText('Evidence (expand)');
     expect(summary).toBeInTheDocument();
 
@@ -210,4 +153,3 @@ describe('Subscriber value deep-dive (Insights + PBs + Coach evidence)', () => {
     });
   });
 });
-
