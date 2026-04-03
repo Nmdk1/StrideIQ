@@ -937,6 +937,47 @@ def validate_voice_output(text: str, field: str = "morning_voice") -> dict:
             "fallback": _VOICE_FALLBACK,
         }
 
+    # 3b. Specificity gate — morning_voice must reference athlete-specific
+    # content, not generic template filler. Catches LLM outputs like
+    # "Your training data is ready" that pass numeric grounding (if a
+    # stray number exists) but contain zero personalization.
+    if field == "morning_voice":
+        _TEMPLATE_PHRASES = [
+            "training data is ready",
+            "check your workout below",
+            "check below for today",
+            "data is ready for review",
+            "your data has been updated",
+            "briefing is refreshed",
+            "your plan is ready",
+            "training is on track",
+            "everything looks good",
+            "keep up the good work",
+            "stay consistent",
+        ]
+        if any(tp in lower for tp in _TEMPLATE_PHRASES):
+            return {
+                "valid": False,
+                "reason": "specificity:template_phrase_detected",
+                "fallback": _VOICE_FALLBACK,
+            }
+
+        _SPECIFICITY_MARKERS = [
+            r"\d+\.?\d*\s*(mi|km|miles|k\b)",
+            r"\d+:\d{2}",
+            r"\d+\s*bpm",
+            r"yesterday|today|monday|tuesday|wednesday|thursday|friday|saturday|sunday",
+            r"your (last|latest|recent) (run|workout|session|effort)",
+            r"(easy|tempo|threshold|interval|long run|recovery|quality)",
+            r"\d+x\d+",
+        ]
+        if not any(re.search(pat, lower) for pat in _SPECIFICITY_MARKERS):
+            return {
+                "valid": False,
+                "reason": "specificity:no_athlete_specific_content",
+                "fallback": _VOICE_FALLBACK,
+            }
+
     # 4. Length check — minimum only; no upper cap.
     if field in ("morning_voice", "workout_why"):
         if len(text) < 40:
@@ -951,7 +992,6 @@ def validate_voice_output(text: str, field: str = "morning_voice") -> dict:
     if field == "morning_voice":
         stripped = text.strip()
         if "\n" in stripped:
-            import re
             paragraphs = [p.strip() for p in re.split(r"\n+", stripped) if p.strip()]
             if len(paragraphs) > 1:
                 first_para = paragraphs[0]

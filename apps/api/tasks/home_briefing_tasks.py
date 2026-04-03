@@ -406,6 +406,51 @@ def _build_deterministic_briefing(athlete_id: str, db: Session) -> Dict[str, str
     }
 
 
+def _write_fallback_or_preserve(
+    athlete_id: str,
+    fallback_payload: Dict,
+    fingerprint: str,
+    cached_meta: Dict,
+    cached_payload: Optional[Dict],
+) -> Dict:
+    """Write deterministic fallback ONLY if no LLM briefing exists.
+
+    If the currently cached briefing was LLM-generated, preserve it by
+    refreshing its TTL instead of overwriting with deterministic garbage.
+    A stale excellent briefing is always better than a fresh empty one.
+    """
+    existing_is_llm = (
+        cached_payload
+        and cached_meta.get("briefing_source") == "llm"
+        and not cached_meta.get("briefing_is_interim")
+    )
+    if existing_is_llm:
+        logger.info(
+            "Preserving existing LLM briefing for %s instead of overwriting with deterministic fallback",
+            athlete_id,
+        )
+        cached_source_model = cached_meta.get("source_model") or "preserved-llm"
+        write_briefing_cache(
+            athlete_id=athlete_id,
+            payload=cached_payload,
+            source_model=str(cached_source_model),
+            data_fingerprint=fingerprint,
+            briefing_source="llm",
+            briefing_is_interim=False,
+        )
+        return {"status": "preserved", "reason": "existing_llm_kept"}
+
+    write_briefing_cache(
+        athlete_id=athlete_id,
+        payload=fallback_payload,
+        source_model="deterministic-fallback",
+        data_fingerprint=fingerprint,
+        briefing_source="deterministic_fallback",
+        briefing_is_interim=True,
+    )
+    return {"status": "degraded", "model": "deterministic-fallback"}
+
+
 @celery_app.task(
     name="tasks.generate_home_briefing",
     bind=True,
@@ -495,36 +540,14 @@ def generate_home_briefing_task(self: Task, athlete_id: str) -> Dict:
         if prompt_result is False:
             logger.error(f"Prompt build failed for {athlete_id}; writing deterministic fallback")
             fallback_payload = _build_deterministic_briefing(athlete_id, db)
-            write_briefing_cache(
-                athlete_id=athlete_id,
-                payload=fallback_payload,
-                source_model="deterministic-fallback",
-                data_fingerprint=fingerprint,
-                briefing_source="deterministic_fallback",
-                briefing_is_interim=True,
+            fb_result = _write_fallback_or_preserve(
+                athlete_id, fallback_payload, fingerprint, cached_meta, cached_payload,
             )
             reset_circuit(athlete_id)
-            return {"status": "degraded", "reason": "prompt_build_failed", "model": "deterministic-fallback"}
+            fb_result["reason"] = "prompt_build_failed"
+            return fb_result
 
         prompt, schema_fields, required_fields, checkin_data, race_data, garmin_sleep_h = prompt_result
-
-        use_opus = bool(os.getenv("ANTHROPIC_API_KEY"))
-        source_model = "claude-sonnet-4-6" if use_opus else "gemini-2.5-flash"
-        result = _call_llm_for_briefing(prompt, schema_fields, required_fields, athlete_id=athlete_id)
-
-        if result is None:
-            logger.warning("All LLM providers failed for %s; writing deterministic fallback", athlete_id)
-            fallback_payload = _build_deterministic_briefing(athlete_id, db)
-            write_briefing_cache(
-                athlete_id=athlete_id,
-                payload=fallback_payload,
-                source_model="deterministic-fallback",
-                data_fingerprint=fingerprint,
-                briefing_source="deterministic_fallback",
-                briefing_is_interim=True,
-            )
-            reset_circuit(athlete_id)
-            return {"status": "degraded", "reason": "llm_unavailable", "model": "deterministic-fallback"}
 
         from routers.home import (
             _valid_home_briefing_contract,
@@ -533,20 +556,59 @@ def generate_home_briefing_task(self: Task, athlete_id: str) -> Dict:
             _strip_ungrounded_sleep_sentences,
             _VOICE_FALLBACK,
         )
+        from core.llm_client import is_canary_athlete
+
+        use_opus = bool(os.getenv("ANTHROPIC_API_KEY"))
+        source_model = "claude-sonnet-4-6" if use_opus else "gemini-2.5-flash"
+        is_canary = is_canary_athlete(athlete_id)
+        result = _call_llm_for_briefing(prompt, schema_fields, required_fields, athlete_id=athlete_id)
+
+        if result is not None and is_canary:
+            canary_failed = False
+            if not _valid_home_briefing_contract(result, checkin_data=checkin_data, race_data=race_data):
+                canary_failed = True
+                logger.warning(
+                    "Canary model failed A->I->A contract for %s; retrying with primary",
+                    athlete_id,
+                )
+            else:
+                raw_voice = result.get("morning_voice")
+                if raw_voice:
+                    voice_check = validate_voice_output(raw_voice, field="morning_voice")
+                    if not voice_check["valid"]:
+                        canary_failed = True
+                        logger.warning(
+                            "Canary model morning_voice failed validation (%s) for %s; retrying with primary",
+                            voice_check.get("reason"), athlete_id,
+                        )
+
+            if canary_failed:
+                result = _call_opus_briefing(prompt, schema_fields, required_fields, athlete_id=None)
+                if result is None:
+                    result = _call_gemini_briefing(prompt, schema_fields, required_fields)
+                if result is not None:
+                    source_model = "claude-sonnet-4-6" if use_opus else "gemini-2.5-flash"
+                    logger.info("Primary model retry succeeded for %s", athlete_id)
+
+        if result is None:
+            logger.warning("All LLM providers failed for %s; writing deterministic fallback", athlete_id)
+            fallback_payload = _build_deterministic_briefing(athlete_id, db)
+            fb_result = _write_fallback_or_preserve(
+                athlete_id, fallback_payload, fingerprint, cached_meta, cached_payload,
+            )
+            reset_circuit(athlete_id)
+            fb_result["reason"] = "llm_unavailable"
+            return fb_result
 
         if not _valid_home_briefing_contract(result, checkin_data=checkin_data, race_data=race_data):
             logger.warning(f"Home briefing failed A->I->A contract for {athlete_id}")
             fallback_payload = _build_deterministic_briefing(athlete_id, db)
-            write_briefing_cache(
-                athlete_id=athlete_id,
-                payload=fallback_payload,
-                source_model="deterministic-fallback",
-                data_fingerprint=fingerprint,
-                briefing_source="deterministic_fallback",
-                briefing_is_interim=True,
+            fb_result = _write_fallback_or_preserve(
+                athlete_id, fallback_payload, fingerprint, cached_meta, cached_payload,
             )
             reset_circuit(athlete_id)
-            return {"status": "degraded", "reason": "contract_validation_failed", "model": "deterministic-fallback"}
+            fb_result["reason"] = "contract_validation_failed"
+            return fb_result
 
         raw_voice = result.get("morning_voice")
         if raw_voice:

@@ -25,18 +25,19 @@ router = APIRouter(prefix="/v1/daily-checkin", tags=["Daily Check-in"])
 
 def _trigger_briefing_refresh(athlete_id: str) -> None:
     """
-    Non-blocking: mark cached briefing dirty and enqueue a refresh task.
+    Non-blocking: enqueue a briefing refresh task after check-in.
     Called after any successful check-in save. Never raises.
+
+    The check-in changes the data fingerprint (checkin ID is a fingerprint
+    component), so the refresh task will detect the mismatch and regenerate.
+    We intentionally do NOT call mark_briefing_dirty here — evicting the
+    cached briefing before the replacement is ready leaves the athlete
+    staring at an empty/degraded home page if the LLM call is slow or
+    fails. The old briefing stays visible as stale until the new one lands.
     """
     try:
-        from services.home_briefing_cache import mark_briefing_dirty
-        mark_briefing_dirty(athlete_id)
-    except Exception as e:
-        logger.warning("mark_briefing_dirty failed (non-blocking): %s", e)
-
-    try:
         from tasks.home_briefing_tasks import enqueue_briefing_refresh
-        enqueue_briefing_refresh(athlete_id, force=True)
+        enqueue_briefing_refresh(athlete_id, force=True, allow_circuit_probe=True)
     except Exception as e:
         logger.warning("enqueue_briefing_refresh failed (non-blocking): %s", e)
 

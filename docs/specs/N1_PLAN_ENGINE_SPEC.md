@@ -1,6 +1,6 @@
 # N=1 Plan Engine — Scope
 
-**Date:** 2026-03-28
+**Date:** 2026-03-28 (updated 2026-04-01: goal-time derivation, volume regression fix)
 **Status:** DRAFT — Founder review required before build
 **Replaces:** All existing plan generators (archetype, semi-custom, constraint-aware, principle, starter)
 
@@ -56,13 +56,23 @@ data source (fitness bank, questionnaire, or hybrid).
 current_weekly_miles: float      # trailing 4-week avg (bank) or stated
 current_long_run_miles: float    # L30 non-race max (bank) or stated
 peak_weekly_miles: float         # historical peak (bank) or stated target
-best_rpi: Optional[float]       # from race history or absent
+best_rpi: Optional[float]       # from race history or 0.0 (never fabricated)
+goal_time_seconds: Optional[int] # athlete-specified target race time
 experience_level: enum           # BEGINNER / RECREATIONAL / INTERMEDIATE / ADVANCED / ELITE
 days_per_week: int               # athlete-specified, respected absolutely
 injury_constraints: list         # from athlete facts
 training_recency: enum           # BUILDING / MAINTAINING / REBUILDING / NEW
 easy_pace_per_mile: float        # from RPI or stated (for time-based floors)
 ```
+
+**RPI resolution order (no fabrication):**
+1. Race history → `_find_best_race` returns actual RPI (>0)
+2. Athlete goal time → `calculate_rpi_from_race_time(distance_m, goal_time_seconds)`
+3. No data → `best_rpi = 0.0`, paces omitted (athlete runs by feel)
+
+No default RPI is ever fabricated. The old 45.0 default has been removed.
+`_estimate_rpi_from_training` has been deleted — training data cannot reliably
+estimate race fitness.
 
 Data-rich athletes: fitness bank → load context → correlation findings.
 Cold-start athletes: questionnaire → stated values → conservative defaults.
@@ -110,13 +120,17 @@ Tune-up races: inserted as fixed points; taper wraps around them.
 Two separate curves computed from athlete state.
 
 **Volume curve:**
-- Start: current_weekly_miles (not a population default)
-- Peak: athlete-specified
+- Start: `max(current_weekly_miles, recent_8w_median, last_complete_week_miles)` — always meets the athlete where they are
+- Peak: athlete-specified or `starting_vol + days_per_week` for abbreviated plans (1 mi per running session build room)
+- Abbreviated plan peak is capped at historical `peak_weekly_miles` — never exceeds proven capability. If returning to established peaks, no cap applies.
 - Ramp: linear steps, tier-based ceiling (6-8 mi/week for HIGH/ELITE)
 - If athlete is already at peak: hold, don't force a ramp
 - Cutback: -25%
 - Taper: -30% first week, -50% second, race week minimal
 - No percentage-based weekly caps. The 10% rule is rejected.
+- No distance-specific volume caps. No distance should override an athlete's proven mileage.
+- Undershoot handler: when assembled days fall below target weekly volume, shortfall is distributed to easy runs (capped per run at `min(14mi, target_vol/days * 1.6)`).
+- **Future (N=1 recovery ceiling):** Use athlete's actual tau1/tau2/HRV signature to set how aggressively they can absorb volume increases. The 1mi/session is a floor; the ceiling should be individualized.
 
 **Long run curve:**
 - Start: L30_non_race_max + 1 mile

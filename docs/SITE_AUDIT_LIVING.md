@@ -1,8 +1,24 @@
 # StrideIQ — Living Site Audit
 
 **Purpose:** Canonical full-product audit. This is the always-current inventory of what exists on the site, what is shipped, and what operational tools are available.
-**Last updated:** March 29, 2026
-**Last updated by:** Cadence (advisor)
+**Last updated:** April 1, 2026 (plan volume/pace regression fix)
+**Last updated by:** Agent (advisor + builder)
+
+---
+
+## 0. Delta Since Last Audit (Apr 1)
+
+Shipped and now live in product/system behavior:
+
+- **Plan Volume Regression Fix + Goal-Time Pace Derivation (Apr 1, 2026)**: Three-commit fix for plan generation regression affecting athletes without race history. **(1) Volume ramp fix** — The 10K volume contract cap (`min(applied_peak, max(band_max, band_center))`) was arbitrarily crushing `applied_peak` to `band_max` (~26mi) for 10K plans, making abbreviated plans flat when `starting_vol` was ~25mi. Removed the 10K-specific cap entirely (no distance should arbitrarily cap an athlete's mileage below their proven capability). Abbreviated plan peak now guarantees at least `starting_vol + days_per_week` (1 mile per running session build room), capped at historical peak for safety. Day builder gained undershoot handler: when assembled days fall below target volume, shortfall is distributed to easy runs (up to their caps). Larry Shaffer's 10K plan now ramps 27.2→29.2→32.0mi (was flat at ~26). **(2) Goal-time pace derivation** — `_find_best_race` default changed from 45.0 RPI to 0.0 (no fabricated data). `_estimate_rpi_from_training` removed entirely. When `best_rpi` is 0 and athlete provides a goal time, RPI is derived via `calculate_rpi_from_race_time`. Frontend gained "Goal Time (optional)" input field on the constraint-aware plan form with `parseTimeToSeconds` conversion. Backend parsers (`_parse_goal_seconds`, `_parse_goal_time`) updated to handle both H:MM:SS and raw integer-as-string seconds. **(3) Race prediction fix** — `_predict_race` treated `best_rpi=0.0` as valid (not `None`), producing 5-hour 10K base predictions. Now derives RPI from goal time when available, falls back to volume-based estimate. **Test fixes included:** 3 fitness bank tests updated for 0.0 default. IndexError: 3 in 6 test files fixed (robust repo root finder for Docker/CI path depth). Fingerprint intelligence test assertions updated for Phase 4 lifecycle labels. tasks/__init__.py lint errors fixed. CI #804 and #805 both GREEN. Commits: `f258cd4`, `6aa149e`, `f0cbb21`.
+
+---
+
+## 0. Delta Since Last Audit (Mar 29 → Apr 1)
+
+Shipped and now live in product/system behavior:
+
+- **Cross-Training Activity Storage — Workstream 1: Data Infrastructure (Apr 1, 2026)**: Four-commit workstream making the platform multi-sport safe. **(Commit 1) Downstream consumer audit** — 76 `Activity.sport == "run"` filters added across 16 files. Every running-specific consumer (training load, correlation engine, run analysis, readiness score, recovery metrics, home dashboard, briefing, contextual comparison, race predictor, pre-race fingerprinting, anchor finder, experience guardrail, insight aggregator, model cache, daily intelligence, self-regulation) now explicitly filters by sport. Intentionally unfiltered: by-ID lookups, `has_any_activities` gate, briefing refresh triggers. New `test_cross_training_sport_filter.py` with mixed-sport and cycling-only fixtures proving falsifiable assertions. **(Commit 2) Adapter expansion + ingest filter** — `_ACTIVITY_TYPE_MAP` expanded from 5 run types to 21 types across 6 sports: run (9 Garmin types including TRACK_RUNNING, ULTRA_RUN, OBSTACLE_RUN), cycling (CYCLING, INDOOR_CYCLING, MOUNTAIN_BIKING, ELLIPTICAL, STAIR_CLIMBING), walking, hiking, strength, flexibility (YOGA, PILATES). Three new columns on Activity: `garmin_activity_type` (preserves raw Garmin type for audit), `cadence_unit` (spm/rpm/null by sport), `session_detail` (JSONB for non-run detail payloads). Ingest filter changed from `sport != "run"` to `sport not in _ACCEPTED_SPORTS`. Detail webhook guard: non-run activity details stored in `session_detail` instead of creating stream/split rows. Migration: `cross_training_001`. **(Commit 3) Sport-aware TSS routing** — `TrainingLoadCalculator.calculate_workout_tss()` now routes non-run activities to `_calculate_cross_training_tss()`: hrTSS when HR available, sport-specific duration-based estimates otherwise (cycling IF=0.70, hiking 0.60, strength 0.65, flexibility 0.20). `compute_training_state_history` and `get_load_history` include all accepted sports in EMA computation. Running TSS path unchanged. **(Commit 4) Partial index** — `ix_activity_athlete_start_run` on `(athlete_id, start_time) WHERE sport = 'run'` keeps the dominant query pattern fast as cross-training rows grow. Migration: `cross_training_002`. CI migration heads updated. Commits: `ca47d6e` through `dd3291b`. All CI green.
 
 ---
 
@@ -149,7 +165,7 @@ Migration runs automatically on API container startup. Manual migration: `docker
 
 ---
 
-## 2. Codebase Scale (as of 2026-03-29)
+## 2. Codebase Scale (as of 2026-04-01)
 
 | Metric | Count |
 |--------|-------|
@@ -158,10 +174,10 @@ Migration runs automatically on API container startup. Manual migration: `docker
 | Python services | ~120 |
 | Celery task modules | 14 |
 | Test files | 175+ |
-| Passing tests | 3,575+ (nightly full suite) |
+| Passing tests | 4,036+ (nightly full suite) |
 | KB rule evaluator | 445 PASS / 0 FAIL / 17 WAIVED (33 rules × 14 archetypes) |
 | Legacy BC evaluator | 143 PASS / 0 FAIL (12 BCs × 14 archetypes, secondary gate) |
-| Alembic migrations | 91 |
+| Alembic migrations | 93 |
 | Correlation engine inputs | 70 |
 | React pages | 63 |
 | React components | 70 |
@@ -178,7 +194,7 @@ Migration runs automatically on API container startup. Manual migration: `docker
 - `Subscription`, `StripeEvent`, `Purchase`, `RacePromoCode` — payments/entitlements
 
 ### Activity & Performance
-- `Activity` — ingested runs from Strava/Garmin
+- `Activity` — ingested activities from Strava/Garmin (run, cycling, walking, hiking, strength, flexibility). New columns: `garmin_activity_type`, `cadence_unit`, `session_detail` (JSONB)
 - `ActivitySplit` — per-split metrics
 - `ActivityStream` — raw stream data (HR, pace, altitude, cadence)
 - `PersonalBest`, `BestEffort` — PR tracking across distances
@@ -400,11 +416,12 @@ Legacy plan generators were deleted and replaced. The new engine (`n1_engine.py`
 
 **Build priority order (current):**
 1. ~~Limiter Engine Phase 4: Coach layer integration~~ — ✅ COMPLETE (Mar 31). Emerging surfacing + fact-driven promotion verified in production.
-2. Limiter Engine Phase 5: Transition detection — `active` → `resolving` → `closed` triggers next-frontier scan
-3. N1 Engine Phase 4: Adaptive Re-Plan — "Coach noticed..." trigger, diff engine, athlete approval flow
-4. Phase 4 (50K Ultra) — new user segment + differentiation (37 xfail contract tests waiting)
-5. Phase 3B (when narration quality gate clears — >90% for 4 weeks)
-6. Phase 3C (when per-athlete synced history + significant correlations exist)
+2. ~~Cross-Training Activity Storage — Workstream 1: Data Infrastructure~~ — ✅ COMPLETE (Apr 1). 76 sport filters + adapter expansion + sport-aware TSS + partial index.
+3. Limiter Engine Phase 5: Transition detection — `active` → `resolving` → `closed` triggers next-frontier scan
+4. N1 Engine Phase 4: Adaptive Re-Plan — "Coach noticed..." trigger, diff engine, athlete approval flow
+5. Phase 4 (50K Ultra) — new user segment + differentiation (37 xfail contract tests waiting)
+6. Phase 3B (when narration quality gate clears — >90% for 4 weeks)
+7. Phase 3C (when per-athlete synced history + significant correlations exist)
 
 **Open gates:**
 - 3B: narration accuracy > 90% for 4 weeks (`/v1/intelligence/narration/quality`)
@@ -430,6 +447,7 @@ Legacy plan generators were deleted and replaced. The new engine (`n1_engine.py`
 - 8 services with local efficiency polarity assumptions — migrate to `OutputMetricMeta` registry
 - Timezone-aware vs naive datetime comparisons in `ensure_fresh_token` (observed during Danny's Strava debug)
 - Sleep weight = 0.00 in readiness score — excluded until correlation engine proves individual relationship
+- Recovery-modulated ramp ceiling: use the athlete's actual tau1/tau2/HRV signature to determine how aggressively they can absorb volume increases, instead of a blanket 1mi/session floor for everyone. Floor is session-based, ceiling should be N=1.
 
 ### Resolved Issues
 - **Garmin production-access process (Mar 3, 2026):** Marc Lussi (Partner Services) approved StrideIQ for production environment. Health API approved for commercial/study use. Rate limits lifted. Historical Data Export approved.
@@ -547,12 +565,14 @@ Legacy plan generators were deleted and replaced. The new engine (`n1_engine.py`
 
 ## 12. Alembic Migration Chain
 
-Current head: `athlete_fact_001` (chains off the main migration chain)
+Two active heads (both valid, separate chains):
+- `cross_training_002` — main chain (cross-training columns + partial index)
+- `athlete_override_001` — override chain
 
-CI enforces single-head integrity via `.github/scripts/ci_alembic_heads_check.py`.
-`EXPECTED_HEADS = {"athlete_fact_001"}`.
+CI enforces head integrity via `.github/scripts/ci_alembic_heads_check.py`.
+`EXPECTED_HEADS = {"cross_training_002", "athlete_override_001"}`.
 
-When adding a new migration: **must chain off the current head** — update `down_revision` and `EXPECTED_HEADS` in the CI script.
+When adding a new migration: **must chain off one of the current heads** — update `down_revision` and `EXPECTED_HEADS` in the CI script.
 
 ---
 
@@ -592,7 +612,7 @@ Non-negotiable operating rules:
 
 ### Backend/API Inventory
 
-Current code scan snapshot (Mar 29, 2026):
+Current code scan snapshot (Apr 1, 2026):
 - SQLAlchemy model classes in `apps/api/models.py`: **53**
 - Router modules in `apps/api/routers/`: **55** files
 - Service modules in `apps/api/services/`: **~120** files
@@ -631,7 +651,7 @@ Supporting public API surface:
 ### Integrations
 
 - Strava: OAuth + webhook + sync + background ingest
-- Garmin Connect: OAuth + webhook ingest + GarminDay health storage + ingestion coverage monitoring
+- Garmin Connect: OAuth + webhook ingest (6 sports: run, cycling, walking, hiking, strength, flexibility) + GarminDay health storage + ingestion coverage monitoring
 - Stripe: hosted checkout + portal + webhook entitlements for 4-tier monetization model
 
 ### Founder/Ops Tooling (live)
@@ -703,7 +723,8 @@ apps/api/services/plan_framework/           ← Plan generation framework (suppo
 apps/api/routers/strava.py                  ← OAuth + API endpoints
 apps/api/services/strava_service.py         ← Strava API wrapper
 apps/api/tasks/strava_tasks.py              ← Background sync
-apps/api/tasks/garmin_webhook_tasks.py      ← Garmin webhook ingest workers
+apps/api/tasks/garmin_webhook_tasks.py      ← Garmin webhook ingest workers (6-sport filter)
+apps/api/services/garmin_adapter.py         ← Garmin → internal field translation (21 activity types → 6 sports)
 apps/api/services/garmin_ingestion_health.py ← GarminDay coverage computation
 
 # Progress Knowledge (v2 — current)

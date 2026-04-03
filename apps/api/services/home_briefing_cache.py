@@ -117,6 +117,7 @@ def read_briefing_cache_with_meta(
         "briefing_is_interim": bool(entry.get("briefing_is_interim", source == "deterministic_fallback")),
         "briefing_last_updated_at": generated_at_str,
         "briefing_source": source,
+        "source_model": source_model,
     }
 
     if age_s < FRESH_THRESHOLD_S:
