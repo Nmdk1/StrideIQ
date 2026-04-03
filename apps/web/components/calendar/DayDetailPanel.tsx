@@ -420,18 +420,53 @@ export function DayDetailPanel({ date, isOpen, onClose }: DayDetailPanelProps) {
                   )}
                 </div>
 
-                {/* Day-level plan editor */}
+                {/* Day-level plan editor — swap first, details second */}
                 {isEditingPlan && canEditPlannedWorkout && (
-                  <div className="mt-4 bg-slate-900/50 border border-slate-700/50 rounded-lg p-3 space-y-3">
-                    {workoutTypesData?.can_modify === false && (
-                      <div className="text-xs text-slate-300 bg-slate-800/60 border border-slate-700/50 rounded p-2">
-                        Full plan edits require a paid tier. You can still swap and adjust load from “Manage Plan.”
+                  <div className="mt-4 space-y-3">
+                    {editError && (
+                      <div className="text-sm text-red-300 bg-red-900/20 border border-red-700/40 rounded-lg p-2">
+                        {editError}
                       </div>
                     )}
 
-                    {editError && (
-                      <div className="text-sm text-red-300 bg-red-900/20 border border-red-700/40 rounded p-2">
-                        {editError}
+                    {/* Swap section — primary quick action, shown first */}
+                    <div className="bg-purple-950/30 border border-purple-700/40 rounded-lg p-3">
+                      <div className="text-sm font-semibold text-purple-300 mb-2">Swap with another day</div>
+                      {weekLoading ? (
+                        <div className="text-sm text-slate-500">Loading week…</div>
+                      ) : swapOptions.length === 0 ? (
+                        <div className="text-sm text-slate-500">No swappable workouts this week</div>
+                      ) : (
+                        <div className="flex gap-2">
+                          <select
+                            value={swapTargetId}
+                            onChange={(e) => setSwapTargetId(e.target.value)}
+                            className="flex-1 bg-slate-900 border border-purple-700/40 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-purple-500"
+                          >
+                            <option value="">Select day…</option>
+                            {swapOptions.map((w) => (
+                              <option key={w.id} value={w.id}>
+                                {w.day_name} — {w.title}
+                              </option>
+                            ))}
+                          </select>
+                          <button
+                            onClick={() => swapDaysMutation.mutate()}
+                            disabled={swapDaysMutation.isPending || !swapTargetId}
+                            className="px-4 py-2 bg-purple-600 hover:bg-purple-700 disabled:bg-slate-700 rounded-lg text-sm font-semibold transition-colors whitespace-nowrap"
+                          >
+                            {swapDaysMutation.isPending ? 'Swapping…' : 'Swap Days'}
+                          </button>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Edit details section */}
+                    <div className="bg-slate-900/50 border border-slate-700/50 rounded-lg p-3 space-y-3">
+                      <div className="text-sm font-semibold text-slate-400">Edit workout details</div>
+                    {workoutTypesData?.can_modify === false && (
+                      <div className="text-xs text-slate-300 bg-slate-800/60 border border-slate-700/50 rounded p-2">
+                        Full plan edits require a paid tier. You can still swap days above.
                       </div>
                     )}
 
@@ -517,38 +552,10 @@ export function DayDetailPanel({ date, isOpen, onClose }: DayDetailPanelProps) {
                           disabled={updateWorkoutMutation.isPending || workoutTypesData?.can_modify === false}
                           className="w-full px-3 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-700 rounded-lg text-sm font-semibold transition-colors"
                         >
-                          {updateWorkoutMutation.isPending ? 'Saving…' : 'Save'}
+                          {updateWorkoutMutation.isPending ? 'Saving…' : 'Save Details'}
                         </button>
                       </div>
                     </div>
-
-                    <div className="border-t border-slate-700/50 pt-3">
-                      <div className="text-xs text-slate-400 mb-2">Swap with another day (this week)</div>
-                      {weekLoading ? (
-                        <div className="text-sm text-slate-500">Loading week…</div>
-                      ) : (
-                        <div className="flex gap-2">
-                          <select
-                            value={swapTargetId}
-                            onChange={(e) => setSwapTargetId(e.target.value)}
-                            className="flex-1 bg-slate-900 border border-slate-700/50 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-purple-500"
-                          >
-                            <option value="">Select day…</option>
-                            {swapOptions.map((w) => (
-                              <option key={w.id} value={w.id}>
-                                {w.day_name} — {w.title}
-                              </option>
-                            ))}
-                          </select>
-                          <button
-                            onClick={() => swapDaysMutation.mutate()}
-                            disabled={swapDaysMutation.isPending || !swapTargetId}
-                            className="px-3 py-2 bg-purple-600 hover:bg-purple-700 disabled:bg-slate-700 rounded-lg text-sm font-semibold transition-colors"
-                          >
-                            {swapDaysMutation.isPending ? 'Swapping…' : 'Swap'}
-                          </button>
-                        </div>
-                      )}
                     </div>
                   </div>
                 )}
