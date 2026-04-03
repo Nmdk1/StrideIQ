@@ -254,6 +254,24 @@ _THRESHOLD_SUPPRESS = frozenset({
 })
 
 
+def _is_baseline_threshold(finding) -> bool:
+    """True when the athlete is on one side of the threshold 85%+ of the time.
+
+    A threshold like "sleep > 7h → better efficiency" is useless to someone
+    who sleeps under 7h on 95% of nights — it describes their baseline, not
+    a lever they can pull.
+    """
+    n_below = getattr(finding, "n_below_threshold", None)
+    n_above = getattr(finding, "n_above_threshold", None)
+    if n_below is None or n_above is None:
+        return False
+    total = n_below + n_above
+    if total < 10:
+        return False
+    dominant_pct = max(n_below, n_above) / total
+    return dominant_pct >= 0.85
+
+
 def _format_threshold(finding) -> Optional[Dict[str, Any]]:
     if finding.threshold_value is None:
         return None
@@ -262,6 +280,8 @@ def _format_threshold(finding) -> Optional[Dict[str, Any]]:
     if input_name in _THRESHOLD_SUPPRESS:
         return None
     if _is_garmin_noise(input_name):
+        return None
+    if _is_baseline_threshold(finding):
         return None
 
     human_input = _translate(input_name)
@@ -353,12 +373,17 @@ def _score_interestingness(entry: Dict[str, Any]) -> float:
     is_counterintuitive = entry.get("direction_counterintuitive", False)
     input_name = entry.get("_input_name", "")
 
+    is_baseline = entry.get("_is_baseline", False)
+
     if has_cascade:
         score += 30
     if is_counterintuitive:
         score += 25
     if has_threshold and _is_athlete_understandable(input_name):
-        score += 20
+        if is_baseline:
+            score -= 10
+        else:
+            score += 20
     if has_asymmetry:
         asym = entry.get("asymmetry", {})
         ratio = asym.get("ratio", 1.0)
@@ -793,6 +818,7 @@ def assemble_manual(athlete_id: UUID, db: Session) -> Dict[str, Any]:
             "_input_name": f.input_name,
             "_output_metric": f.output_metric,
             "_domain": domain,
+            "_is_baseline": _is_baseline_threshold(f),
         }
         all_entries.append(entry)
 
