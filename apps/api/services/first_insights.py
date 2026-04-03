@@ -110,9 +110,9 @@ def get_first_insights(athlete_id: UUID, db: Session) -> Optional[Dict[str, Any]
             break
 
     first_activity = (
-        db.query(Activity.start_date)
+        db.query(Activity.start_time)
         .filter(Activity.athlete_id == athlete_id)
-        .order_by(Activity.start_date.asc())
+        .order_by(Activity.start_time.asc())
         .first()
     )
 
