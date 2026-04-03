@@ -16,6 +16,8 @@ import { useHomeData, useQuickCheckin, useInvalidateHome } from '@/lib/hooks/que
 import { LastRunHero } from '@/components/home/LastRunHero';
 import { CompactPMC } from '@/components/home/CompactPMC';
 import FindingCard from '@/components/findings/FindingCard';
+import { TrialBanner } from '@/components/home/TrialBanner';
+import { FirstInsightsBanner } from '@/components/home/FirstInsightsBanner';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -483,6 +485,10 @@ export default function HomePage() {
               <MessageSquare className="w-3.5 h-3.5" /> Coach
             </Link>
           </div>
+
+          {/* Trial / subscription status banner */}
+          <TrialBanner />
+          <FirstInsightsBanner />
 
           {/* ═══ ABOVE THE FOLD: Three things ═══ */}
 

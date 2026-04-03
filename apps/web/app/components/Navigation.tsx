@@ -101,6 +101,7 @@ export default function Navigation() {
     { href: '/checkin', label: 'Check-in', icon: '✅' },
     { href: '/tools', label: 'Tools', icon: '🧮' },
     ...(user?.has_correlations ? [
+      { href: '/manual', label: 'My Manual', icon: '📖' },
       { href: '/discovery', label: 'Discovery', icon: '🔬' },
       { href: '/fingerprint', label: 'Fingerprint', icon: '🧬' },
     ] : []),

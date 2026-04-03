@@ -2336,3 +2336,71 @@ def get_training_story(
     _set_cache(cache_key, result, ttl=3600)
 
     return result
+
+
+# ═══════════════════════════════════════════════════════
+#  Personal Operating Manual
+# ═══════════════════════════════════════════════════════
+
+
+@router.get("/manual")
+def get_operating_manual(
+    db: Session = Depends(get_db),
+    current_user: Athlete = Depends(get_current_user),
+):
+    """Personal Operating Manual — everything the system has learned about this athlete.
+
+    Assembles all confirmed correlation findings (with L1-L4 enrichment),
+    investigation findings, and cascade chains into a domain-organized
+    document. Deterministic — no LLM calls.
+
+    Cached for 30 minutes (1800s). The manual is deterministic and only
+    changes after daily sweep or post-sync processing.
+    """
+    from services.operating_manual import assemble_manual
+
+    athlete_id = current_user.id
+    cache_key = f"operating_manual:{athlete_id}"
+
+    cached = get_cache(cache_key)
+    if cached is not None:
+        return cached
+
+    result = assemble_manual(athlete_id, db)
+
+    _set_cache(cache_key, result, ttl=1800)
+
+    return result
+
+
+@router.get("/first-insights")
+def get_first_insights_endpoint(
+    db: Session = Depends(get_db),
+    current_user: Athlete = Depends(get_current_user),
+):
+    """First-session insights — the aha moment.
+
+    Returns the top findings from the athlete's imported history.
+    Returns {"ready": false} if insufficient data exists yet.
+
+    Cache strategy: ready=false caches for 15s (matches frontend poll
+    interval so we don't block the reveal), ready=true caches for 30min
+    (stable once populated).
+    """
+    from services.first_insights import get_first_insights
+
+    athlete_id = current_user.id
+    cache_key = f"first_insights:{athlete_id}"
+
+    cached = get_cache(cache_key)
+    if cached is not None:
+        return cached
+
+    result = get_first_insights(athlete_id, db)
+    if result is None:
+        result = {"ready": False}
+
+    ttl = 1800 if result.get("ready") else 15
+    _set_cache(cache_key, result, ttl=ttl)
+
+    return result

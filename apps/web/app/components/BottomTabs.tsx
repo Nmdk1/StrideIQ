@@ -51,6 +51,7 @@ export default function BottomTabs() {
     const items = [...BASE_MORE_ITEMS];
     if (user?.has_correlations) {
       items.push(
+        { href: "/manual", label: "My Manual" },
         { href: "/discovery", label: "Discovery" },
         { href: "/fingerprint", label: "Fingerprint" },
       );

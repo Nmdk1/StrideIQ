@@ -248,6 +248,17 @@ export default function ProgressPage() {
             </Link>
           </div>
 
+          {data_coverage.confirmed_findings > 0 && (
+            <div className="text-center pt-1">
+              <Link
+                href="/manual"
+                className="text-xs text-slate-500 hover:text-slate-300 transition-colors"
+              >
+                View your full Operating Manual →
+              </Link>
+            </div>
+          )}
+
           <div className="rounded-xl border border-slate-700/40 bg-slate-900/35 px-4 py-2.5 flex justify-center gap-4 text-[11px] text-slate-500">
             <span>{data_coverage.total_findings} patterns</span>
             <span>{data_coverage.confirmed_findings} confirmed</span>
