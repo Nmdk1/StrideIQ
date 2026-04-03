@@ -566,10 +566,13 @@ def _build_cascade_stories(
                     existing = meaningful_mediators.get(med_name, 0)
                     meaningful_mediators[med_name] = max(existing, ratio)
 
-        # Prefer meaningful mediators; fall back to garmin if nothing else
-        display_mediators = meaningful_mediators if meaningful_mediators else garmin_mediators
-        if not display_mediators:
+        # Only show stories where the mechanism is understandable.
+        # If the only mediators are garmin device metrics, the causal chain
+        # is likely noise (e.g., "readiness → garmin steps → efficiency"
+        # where steps are inflated by driving).
+        if not meaningful_mediators:
             continue
+        display_mediators = meaningful_mediators
 
         human_input = _translate(input_name)
         human_outputs = sorted(all_outputs)
