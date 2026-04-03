@@ -89,6 +89,19 @@ export interface RaceEntry {
   training_runs_compared?: number;
 }
 
+export interface RaceCounterevidence {
+  race_date: string;
+  race_name: string;
+  gap_pct: number;
+  finding_input: string;
+  finding_output: string;
+  threshold: number;
+  threshold_direction: string;
+  actual_value: number;
+  times_confirmed: number;
+  text: string;
+}
+
 export interface RaceCharacter {
   races: RaceEntry[];
   race_count: number;
@@ -97,6 +110,7 @@ export interface RaceCharacter {
   pb_count?: number;
   all_pbs?: boolean;
   narrative?: string;
+  counterevidence?: RaceCounterevidence[];
 }
 
 export interface CascadeMediator {
@@ -106,6 +120,7 @@ export interface CascadeMediator {
 
 export interface CascadeStory {
   id: string;
+  title?: string;
   input: string;
   input_name: string;
   outputs: string[];

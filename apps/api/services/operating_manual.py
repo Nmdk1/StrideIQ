@@ -354,6 +354,130 @@ def _format_pace(seconds_per_mile: float) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Headline rewriter — human language from structured fields
+# ---------------------------------------------------------------------------
+
+# Output-specific verbs: (positive_direction_verb, negative_direction_verb)
+# "positive direction" = correlation direction is beneficial for athlete
+_OUTPUT_VERBS: Dict[str, Tuple[str, str]] = {
+    "pace_easy": ("quickens", "slows down"),
+    "pace_threshold": ("gets faster", "slows down"),
+    "race_pace": ("gets faster", "slows down"),
+    "completion_rate": ("improves", "drops"),
+    "completion": ("improves", "drops"),
+    "pb_events": ("increases", "decreases"),
+}
+
+# Higher-input phrasing per input — what "higher" means in plain English.
+# Falls back to "is higher" / "is lower" for unlisted inputs.
+_INPUT_CONDITIONS: Dict[str, Tuple[str, str]] = {
+    "sleep_hours": ("you sleep more", "you sleep less"),
+    "sleep_quality_1_5": ("you sleep well", "your sleep is poor"),
+    "soreness_1_5": ("you're sore", "soreness is low"),
+    "readiness_1_5": ("you feel ready", "your readiness is low"),
+    "motivation_1_5": ("your motivation is high", "motivation drops"),
+    "stress_1_5": ("your stress is high", "your stress is low"),
+    "confidence_1_5": ("you're feeling confident", "confidence is low"),
+    "consecutive_run_days": ("you run consecutive days", "you take days off"),
+    "days_since_rest": ("it's been a while since rest", "you've rested recently"),
+    "days_since_quality": ("it's been a while since a quality session",
+                           "you've done quality work recently"),
+    "tsb": ("you're fresh", "you're fatigued"),
+    "atl": ("your recent training load is high", "your recent load is low"),
+    "ctl": ("your fitness level is high", "your fitness level is low"),
+    "daily_session_stress": ("the session is hard", "the session is easy"),
+    "elevation_gain": ("there's more climbing", "the route is flat"),
+    "elevation_gain_m": ("there's more climbing", "the route is flat"),
+    "weekly_volume_km": ("your weekly mileage is high", "your mileage is low"),
+    "long_run_ratio": ("your long run is a big chunk of weekly volume",
+                       "your long run ratio is small"),
+    "run_start_hour": ("you run later in the day", "you run early"),
+    "garmin_hrv_5min_high": ("your HRV is higher", "your HRV drops"),
+    "garmin_sleep_score": ("your sleep score is high", "your sleep score is low"),
+    "garmin_sleep_deep_s": ("you get more deep sleep", "deep sleep is short"),
+    "garmin_min_hr": ("your resting HR is higher", "your resting HR is lower"),
+    "garmin_avg_stress": ("your stress level is high", "your stress is low"),
+    "garmin_vigorous_intensity_s": ("you log more vigorous activity",
+                                    "vigorous activity is low"),
+    "garmin_moderate_intensity_s": ("you log more moderate activity",
+                                    "moderate activity is low"),
+}
+
+_LAG_PHRASES = {
+    0: "",
+    1: " for about a day",
+    2: " over the next couple of days",
+    3: " for about 3 days",
+    4: " for about 4 days",
+    5: " for about 5 days",
+    7: " for about a week",
+}
+
+
+def _rewrite_headline(finding) -> str:
+    """Build a human-readable headline from structured correlation fields.
+
+    Ignores the stored insight_text template. Reads the structured data
+    (input_name, output_metric, direction, r, time_lag_days) and writes
+    a sentence that sounds like a person, not a database.
+    """
+    from services.n1_insight_generator import get_metric_meta
+
+    input_name = finding.input_name
+    output_metric = finding.output_metric
+    direction = finding.direction
+    r = abs(finding.correlation_coefficient)
+    lag = finding.time_lag_days or 0
+
+    human_output = _translate(output_metric)
+    meta = get_metric_meta(output_metric)
+
+    # Determine if this direction is good or bad for the athlete
+    is_unambiguous = not meta.polarity_ambiguous and meta.higher_is_better is not None
+    raw_positive = direction == "positive"
+
+    if is_unambiguous:
+        beneficial = raw_positive == meta.higher_is_better
+    else:
+        beneficial = None
+
+    # Lag phrase
+    lag_phrase = _LAG_PHRASES.get(lag, f" for about {lag} days")
+
+    # Strength-based confidence of language
+    hedge = "" if r >= 0.55 else "tends to " if r >= 0.35 else "may "
+
+    # Build the "when" clause — start with the athlete's controllable input
+    conditions = _INPUT_CONDITIONS.get(input_name)
+    if conditions:
+        when_high, when_low = conditions
+    else:
+        human_input = _translate(input_name)
+        when_high = f"your {human_input} is higher"
+        when_low = f"your {human_input} is lower"
+
+    # Pick which condition to lead with based on direction + polarity
+    # We want the sentence to read: "When [condition], your [output] [verb]"
+    # Lead with the condition that makes the sentence most intuitive
+    if beneficial is not None:
+        verbs = _OUTPUT_VERBS.get(output_metric)
+        if verbs:
+            good_verb, bad_verb = verbs
+            if beneficial:
+                return f"When {when_high}, your {human_output} {hedge}{good_verb}{lag_phrase}."
+            else:
+                return f"When {when_high}, your {human_output} {hedge}{bad_verb}{lag_phrase}."
+        else:
+            if beneficial:
+                return f"When {when_high}, your {human_output} {hedge}improves{lag_phrase}."
+            else:
+                return f"When {when_high}, your {human_output} {hedge}drops{lag_phrase}."
+
+    # Ambiguous output — neutral language, no directional claim
+    return f"When {when_high}, your {human_output} {hedge}shifts{lag_phrase}."
+
+
+# ---------------------------------------------------------------------------
 # Interestingness scoring
 # ---------------------------------------------------------------------------
 
@@ -536,7 +660,9 @@ def _build_race_character(athlete_id: UUID, db: Session) -> Optional[Dict[str, A
             "your race-day performance. Your body overrides those signals when it counts."
         )
 
-    return {
+    counterevidence = _build_race_counterevidence(athlete_id, race_entries, db)
+
+    result = {
         "races": race_entries,
         "race_count": len(race_entries),
         "has_gap_data": True,
@@ -545,6 +671,181 @@ def _build_race_character(athlete_id: UUID, db: Session) -> Optional[Dict[str, A
         "all_pbs": all_pbs,
         "narrative": " ".join(narrative_parts),
     }
+    if counterevidence:
+        result["counterevidence"] = counterevidence
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Race-Day Counterevidence
+# ---------------------------------------------------------------------------
+
+# Maps CorrelationFinding.input_name to (model, field) for race-day lookup.
+# DailyCheckin fields:
+_CHECKIN_FIELD_MAP: Dict[str, str] = {
+    "sleep_hours": "sleep_h",
+    "sleep_quality_1_5": "sleep_quality_1_5",
+    "readiness_1_5": "readiness_1_5",
+    "soreness_1_5": "soreness_1_5",
+    "motivation_1_5": "motivation_1_5",
+    "stress_1_5": "stress_1_5",
+    "confidence_1_5": "confidence_1_5",
+}
+
+# GarminDay fields:
+_GARMIN_FIELD_MAP: Dict[str, str] = {
+    "garmin_hrv_5min_high": "hrv_5min_high",
+    "garmin_sleep_score": "sleep_score",
+    "garmin_sleep_deep_s": "sleep_deep_s",
+    "garmin_sleep_light_s": "sleep_light_s",
+    "garmin_sleep_rem_s": "sleep_rem_s",
+    "garmin_sleep_awake_s": "sleep_awake_s",
+    "garmin_min_hr": "min_hr",
+    "garmin_max_hr": "max_hr",
+    "garmin_avg_stress": "avg_stress",
+    "garmin_max_stress": "max_stress",
+    "garmin_vigorous_intensity_s": "vigorous_intensity_s",
+    "garmin_moderate_intensity_s": "moderate_intensity_s",
+}
+
+
+def _build_race_counterevidence(
+    athlete_id: UUID,
+    race_entries: List[Dict[str, Any]],
+    db: Session,
+) -> List[Dict[str, Any]]:
+    """Find training-day findings that race-day performance contradicts.
+
+    For each race where the athlete ran faster than training (gap_pct > 0),
+    pull their wellness data on race day and compare against threshold
+    findings from the correlation engine. If the athlete was on the "bad"
+    side of a threshold yet still outperformed, that's character.
+    """
+    from models import CorrelationFinding, DailyCheckin
+
+    races_with_gaps = [r for r in race_entries if (r.get("gap_pct") or 0) > 0]
+    if not races_with_gaps:
+        return []
+
+    threshold_findings = (
+        db.query(CorrelationFinding)
+        .filter(
+            CorrelationFinding.athlete_id == athlete_id,
+            CorrelationFinding.is_active.is_(True),
+            CorrelationFinding.threshold_value.isnot(None),
+            CorrelationFinding.threshold_direction.isnot(None),
+            CorrelationFinding.times_confirmed >= 3,
+        )
+        .all()
+    )
+    if not threshold_findings:
+        return []
+
+    try:
+        from models import GarminDay
+        has_garmin = True
+    except ImportError:
+        has_garmin = False
+
+    contradictions: List[Dict[str, Any]] = []
+
+    for race in races_with_gaps:
+        race_date_str = race.get("date")
+        if not race_date_str:
+            continue
+        race_date = datetime.strptime(race_date_str, "%Y-%m-%d").date()
+
+        checkin = (
+            db.query(DailyCheckin)
+            .filter(DailyCheckin.athlete_id == athlete_id, DailyCheckin.date == race_date)
+            .first()
+        )
+        garmin = None
+        if has_garmin:
+            garmin = (
+                db.query(GarminDay)
+                .filter(GarminDay.athlete_id == athlete_id, GarminDay.calendar_date == race_date)
+                .first()
+            )
+
+        if not checkin and not garmin:
+            continue
+
+        race_day_values: Dict[str, float] = {}
+        if checkin:
+            for input_name, field in _CHECKIN_FIELD_MAP.items():
+                val = getattr(checkin, field, None)
+                if val is not None:
+                    race_day_values[input_name] = float(val)
+        if garmin:
+            for input_name, field in _GARMIN_FIELD_MAP.items():
+                val = getattr(garmin, field, None)
+                if val is not None:
+                    race_day_values[input_name] = float(val)
+
+        if not race_day_values:
+            continue
+
+        for f in threshold_findings:
+            if f.input_name not in race_day_values:
+                continue
+            if _is_garmin_noise(f.input_name):
+                continue
+
+            actual_value = race_day_values[f.input_name]
+            threshold = f.threshold_value
+            direction = f.threshold_direction
+
+            on_bad_side = False
+            if direction == "below_matters" and actual_value < threshold:
+                on_bad_side = True
+            elif direction == "above_matters" and actual_value > threshold:
+                on_bad_side = True
+
+            if not on_bad_side:
+                continue
+
+            human_input = _translate(f.input_name)
+            human_output = _translate(f.output_metric)
+
+            unit = _THRESHOLD_UNITS.get(f.input_name, "")
+            if unit:
+                val_str = f"{actual_value:.1f} {unit}".strip()
+                thr_str = f"{threshold:.1f} {unit}".strip()
+            else:
+                val_str = f"{actual_value:.1f}"
+                thr_str = f"{threshold:.1f}"
+
+            if direction == "below_matters":
+                text = (
+                    f"During training, {human_input} below {thr_str} "
+                    f"precedes lower {human_output}. "
+                    f"On {race['date']}, your {human_input} was {val_str} "
+                    f"and you ran {race['gap_pct']}% faster than training."
+                )
+            else:
+                text = (
+                    f"During training, {human_input} above {thr_str} "
+                    f"precedes lower {human_output}. "
+                    f"On {race['date']}, your {human_input} was {val_str} "
+                    f"and you ran {race['gap_pct']}% faster than training."
+                )
+
+            contradictions.append({
+                "race_date": race["date"],
+                "race_name": race.get("name", ""),
+                "gap_pct": race["gap_pct"],
+                "finding_input": f.input_name,
+                "finding_output": f.output_metric,
+                "threshold": round(threshold, 1),
+                "threshold_direction": direction,
+                "actual_value": round(actual_value, 1),
+                "times_confirmed": f.times_confirmed,
+                "text": text,
+            })
+
+    contradictions.sort(key=lambda c: -c["times_confirmed"])
+    return contradictions
 
 
 # ---------------------------------------------------------------------------
@@ -646,8 +947,14 @@ def _build_cascade_stories(
                 f"About {med_pct}% of the effect is mediated through {top_med_name}."
             )
 
+        if len(human_outputs) == 1:
+            title = f"How {human_input} shapes your {human_outputs[0]}"
+        else:
+            title = f"How {human_input} drives {len(human_outputs)} outcomes through {top_med_name}"
+
         stories.append({
             "id": f"cascade_{input_name}",
+            "title": title,
             "input": human_input,
             "input_name": input_name,
             "outputs": human_outputs,
@@ -713,7 +1020,7 @@ def _build_full_record(
         domains.setdefault(domain, []).append(entry)
 
     for entries in domains.values():
-        entries.sort(key=lambda e: e.get("times_confirmed", 0), reverse=True)
+        entries.sort(key=lambda e: (-_score_interestingness(e), -e.get("times_confirmed", 0)))
 
     sections = []
     for domain_key in DOMAIN_ORDER:
@@ -792,14 +1099,13 @@ def assemble_manual(athlete_id: UUID, db: Session) -> Dict[str, Any]:
 
     for f in findings:
         domain = _classify_domain(f.input_name, f.output_metric)
-        raw_headline = f.insight_text or f"{_translate(f.input_name)} affects {_translate(f.output_metric)}"
 
         entry = {
             "id": str(f.id),
             "source": "correlation",
             "input": _translate(f.input_name),
             "output": _translate(f.output_metric),
-            "headline": _clean_headline(raw_headline),
+            "headline": _rewrite_headline(f),
             "direction": f.direction,
             "r": round(f.correlation_coefficient, 2),
             "strength": f.strength,

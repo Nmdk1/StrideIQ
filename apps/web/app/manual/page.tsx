@@ -167,6 +167,24 @@ function RaceCharacterSection({ data }: { data: RaceCharacter }) {
               ))}
             </div>
           )}
+
+          {data.counterevidence && data.counterevidence.length > 0 && (
+            <div className="mt-5 pt-5 border-t border-amber-500/10">
+              <p className="text-xs font-semibold uppercase tracking-wider text-amber-500/70 mb-3">
+                You override your own patterns
+              </p>
+              <div className="space-y-2">
+                {data.counterevidence.slice(0, 5).map((c, i) => (
+                  <div
+                    key={i}
+                    className="text-sm text-slate-200 leading-relaxed bg-[#0d1321]/40 rounded-lg px-4 py-3 border-l-2 border-amber-500/30"
+                  >
+                    {c.text}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </section>
@@ -212,7 +230,10 @@ function CascadeStoryCard({ story }: { story: CascadeStory }) {
           <GitBranch className="w-4 h-4 text-indigo-400" />
         </div>
         <div className="flex-1 min-w-0">
-          <p className="text-sm text-slate-200 leading-relaxed">{story.narrative}</p>
+          {story.title && (
+            <p className="text-sm font-medium text-slate-100 mb-1">{story.title}</p>
+          )}
+          <p className="text-sm text-slate-300 leading-relaxed">{story.narrative}</p>
           <div className="flex items-center gap-3 mt-2 text-xs text-slate-500">
             <span>{story.finding_count} connected findings</span>
             <span>confirmed {story.times_confirmed}x</span>
