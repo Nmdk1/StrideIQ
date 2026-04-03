@@ -105,6 +105,30 @@ _GARMIN_INTERNAL_INPUTS = frozenset({
     "garmin_sleep_light_s", "garmin_sleep_rem_s",
 })
 
+# More human-friendly translations for the manual page (overrides COACHING_LANGUAGE
+# where the coaching version includes unnecessary parenthetical jargon).
+_MANUAL_LANGUAGE: Dict[str, str] = {
+    "tsb": "freshness",
+    "ctl": "fitness level",
+    "atl": "recent training load",
+    "daily_session_stress": "session stress",
+    "garmin_body_battery_end": "body battery",
+    "garmin_sleep_score": "sleep score",
+    "garmin_hrv_5min_high": "HRV",
+    "garmin_avg_stress": "stress level",
+    "garmin_max_stress": "peak stress",
+    "garmin_min_hr": "resting heart rate",
+    "garmin_steps": "daily steps",
+    "garmin_active_time_s": "active time",
+    "garmin_sleep_deep_s": "deep sleep",
+    "garmin_sleep_light_s": "light sleep",
+    "garmin_sleep_rem_s": "REM sleep",
+    "garmin_sleep_awake_s": "time awake",
+    "garmin_vigorous_intensity_s": "vigorous activity time",
+    "garmin_moderate_intensity_s": "moderate activity time",
+    "garmin_max_hr": "max heart rate",
+}
+
 _M_PER_MI = 1609.344
 
 # ---------------------------------------------------------------------------
@@ -139,6 +163,8 @@ def _classify_investigation_domain(investigation_name: str, finding_type: str) -
 
 
 def _translate(field_name: str) -> str:
+    if field_name in _MANUAL_LANGUAGE:
+        return _MANUAL_LANGUAGE[field_name]
     if field_name in COACHING_LANGUAGE:
         return COACHING_LANGUAGE[field_name]
     return field_name.replace("_", " ")
@@ -156,8 +182,19 @@ def _is_athlete_understandable(input_name: str) -> bool:
     return input_name not in _GARMIN_INTERNAL_INPUTS
 
 
+_JARGON_REPLACEMENTS = [
+    ("freshness (training stress balance)", "freshness"),
+    ("freshness (training readiness)", "freshness"),
+    ("form (training readiness)", "freshness"),
+    ("form (training stress balance)", "freshness"),
+    ("fatigue (recent load)", "recent training load"),
+    ("chronic training load", "fitness level"),
+    ("session intensity", "session stress"),
+]
+
+
 def _clean_headline(headline: str) -> str:
-    """Strip the template prefix that makes every headline sound identical."""
+    """Strip the template prefix and jargon from stored insight text."""
     prefixes = [
         "Based on your data: YOUR ",
         "Based on your data: your ",
@@ -168,28 +205,75 @@ def _clean_headline(headline: str) -> str:
         if text.startswith(prefix):
             text = text[len(prefix):]
             break
+
+    for jargon, replacement in _JARGON_REPLACEMENTS:
+        text = text.replace(jargon, replacement)
+
     if text and text[0].islower():
         text = text[0].upper() + text[1:]
     return text
 
 
+_THRESHOLD_UNITS: Dict[str, str] = {
+    "sleep_hours": "hours",
+    "sleep_quality_1_5": "",
+    "readiness_1_5": "",
+    "soreness_1_5": "",
+    "motivation_1_5": "",
+    "stress_1_5": "",
+    "confidence_1_5": "",
+    "consecutive_run_days": "days",
+    "days_since_rest": "days",
+    "days_since_quality": "days",
+    "elevation_gain": "m",
+    "elevation_gain_m": "m",
+    "weekly_volume_km": "km",
+    "run_start_hour": "",
+    "long_run_ratio": "%",
+}
+
+_THRESHOLD_SUPPRESS = frozenset({
+    "daily_session_stress", "ctl", "atl", "tsb",
+})
+
+
 def _format_threshold(finding) -> Optional[Dict[str, Any]]:
     if finding.threshold_value is None:
         return None
-    human_input = _translate(finding.input_name)
+
+    input_name = finding.input_name
+    if input_name in _THRESHOLD_SUPPRESS:
+        return None
+    if _is_garmin_internal(input_name):
+        return None
+
+    human_input = _translate(input_name)
     value = finding.threshold_value
     direction = finding.threshold_direction
-    if direction == "below":
-        label = f"Below {value:.1f} {human_input}, performance drops"
-    elif direction == "above":
-        label = f"Above {value:.1f} {human_input}, performance drops"
+
+    # Format value with appropriate precision
+    if abs(value) >= 100:
+        formatted = f"{value:.0f}"
+    elif abs(value) >= 10:
+        formatted = f"{value:.1f}"
     else:
-        label = f"{human_input} cliff at {value:.1f}"
+        formatted = f"{value:.1f}"
+
+    unit = _THRESHOLD_UNITS.get(input_name, "")
+    value_str = f"{formatted} {unit}".strip() if unit else formatted
+
+    if direction == "below":
+        label = f"Below {value_str} {human_input}, performance drops"
+    elif direction == "above":
+        label = f"Above {value_str} {human_input}, performance drops"
+    else:
+        label = f"{human_input} threshold at {value_str}"
+
     return {
         "value": round(value, 1),
         "direction": direction,
         "label": label,
-        "input_name": finding.input_name,
+        "input_name": input_name,
         "human_input": human_input,
     }
 
@@ -425,19 +509,26 @@ def _build_race_character(athlete_id: UUID, db: Session) -> Optional[Dict[str, A
 # Cascade Stories
 # ---------------------------------------------------------------------------
 
+def _is_garmin_internal(field_name: str) -> bool:
+    """Check if a field is a garmin internal metric (not athlete-controllable)."""
+    return field_name.startswith("garmin_") or field_name in _GARMIN_INTERNAL_INPUTS
+
+
 def _build_cascade_stories(
     all_entries: List[Dict[str, Any]],
 ) -> List[Dict[str, Any]]:
     """Group findings with cascade chains into connected stories.
 
-    Two findings belong to the same story if they share the same input
-    AND share at least one mediator variable.
+    Filters out stories where the input is a garmin internal metric.
+    Prioritizes non-garmin mediators in the chain visualization.
     """
-    cascade_entries = [e for e in all_entries if e.get("cascade")]
+    cascade_entries = [
+        e for e in all_entries
+        if e.get("cascade") and not _is_garmin_internal(e.get("_input_name", ""))
+    ]
     if not cascade_entries:
         return []
 
-    # Group by input_name
     by_input: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
     for e in cascade_entries:
         by_input[e.get("_input_name", "unknown")].append(e)
@@ -445,63 +536,70 @@ def _build_cascade_stories(
     stories = []
 
     for input_name, entries in by_input.items():
-        all_mediators: Dict[str, float] = {}
+        meaningful_mediators: Dict[str, float] = {}
+        garmin_mediators: Dict[str, float] = {}
         all_outputs = set()
-        total_confirmed = 0
         max_confirmed = 0
         finding_ids = []
 
         for e in entries:
             all_outputs.add(e.get("output", ""))
-            total_confirmed += e.get("times_confirmed", 0)
             max_confirmed = max(max_confirmed, e.get("times_confirmed", 0))
             finding_ids.append(e.get("id"))
             for c in e.get("cascade", []):
-                med = c.get("mediator", "")
+                med_var = c.get("mediator_variable", "")
+                med_name = c.get("mediator", "")
                 ratio = c.get("mediation_ratio")
-                if med and ratio is not None:
-                    existing = all_mediators.get(med, 0)
-                    all_mediators[med] = max(existing, ratio)
+                if not med_name or ratio is None:
+                    continue
+                if _is_garmin_internal(med_var):
+                    existing = garmin_mediators.get(med_name, 0)
+                    garmin_mediators[med_name] = max(existing, ratio)
+                else:
+                    existing = meaningful_mediators.get(med_name, 0)
+                    meaningful_mediators[med_name] = max(existing, ratio)
 
-        if not all_mediators:
+        # Prefer meaningful mediators; fall back to garmin if nothing else
+        display_mediators = meaningful_mediators if meaningful_mediators else garmin_mediators
+        if not display_mediators:
             continue
 
         human_input = _translate(input_name)
         human_outputs = sorted(all_outputs)
-        sorted_mediators = sorted(all_mediators.items(), key=lambda x: -x[1])
-        top_mediator = sorted_mediators[0]
+        sorted_meds = sorted(display_mediators.items(), key=lambda x: -x[1])
+        top_med_name, top_med_ratio = sorted_meds[0]
 
-        chain = [human_input, top_mediator[0]]
+        chain = [human_input, top_med_name]
         if len(human_outputs) == 1:
             chain.append(human_outputs[0])
+        elif len(human_outputs) <= 3:
+            chain.append(", ".join(human_outputs))
         else:
             chain.append(f"{len(human_outputs)} outcomes")
 
-        # Build narrative
+        med_pct = round(top_med_ratio * 100)
         parts = []
-        med_name = top_mediator[0]
-        med_pct = round(top_mediator[1] * 100)
 
         if len(human_outputs) == 1:
             parts.append(
                 f"{human_input.capitalize()} affects your {human_outputs[0]} "
-                f"through {med_name}."
+                f"through {top_med_name}."
             )
         else:
             output_list = ", ".join(human_outputs[:3])
             parts.append(
-                f"{human_input.capitalize()} affects your running through {med_name} — "
-                f"impacting {output_list}."
+                f"{human_input.capitalize()} affects your running through "
+                f"{top_med_name} — impacting {output_list}."
             )
 
         if med_pct >= 70:
             parts.append(
-                f"{med_pct}% of the effect travels through {med_name}. "
+                f"{med_pct}% of the effect travels through {top_med_name}. "
                 f"The link is not direct — it's mediated."
             )
         elif med_pct >= 40:
             parts.append(
-                f"About {med_pct}% of the effect is mediated through {med_name}."
+                f"About {med_pct}% of the effect is mediated through {top_med_name}."
             )
 
         stories.append({
@@ -512,7 +610,7 @@ def _build_cascade_stories(
             "chain": chain,
             "mediators": [
                 {"name": m, "mediation_pct": round(r * 100)}
-                for m, r in sorted_mediators
+                for m, r in sorted_meds[:3]
             ],
             "narrative": " ".join(parts),
             "times_confirmed": max_confirmed,
