@@ -149,25 +149,24 @@ whole product feels wrong — even if everything else works.
 
 #### Home Page
 
-**Current state:** A vertical stack of six competing cards. Gradient
-ribbon nobody understands. Coach Noticed and morning_voice as two
-separate systems saying overlapping things. Workout wrapped in card
-chrome. Nothing dominates. Nothing commands the page.
+**Current state (Apr 4, 2026):** Gradient pace chart hero, morning voice
+briefing, wellness row (Recovery HRV, Overnight Avg HRV, Resting HR,
+Sleep — all with personal 30-day ranges), quick check-in with mindset
+fields (enjoyment + confidence), today's workout, race countdown, week
+strip. Coach Noticed and morning_voice merged into per-field lane
+injection. `/checkin` consolidated here — standalone page redirects to
+`/home`.
 
-**Target state:**
-- **Above the fold:** Gradient pace chart (full-bleed, the shape of
-  your last run, effort-colored pace line). Below it, one paragraph —
-  the morning voice, synthesizing ALL intelligence into the single thing
-  that matters today. Below that, today's workout in plain text (title,
-  why, paces, week context — no card chrome).
-- **Below the fold:** Week strip. Check-in (if not done). Race countdown
-  (if set). Recent Runs strip (3-5 compact cards, each with a mini
-  gradient pace chart so you recognize runs by their shape).
-- **Removed:** Separate Coach Noticed card (absorbed into morning voice).
-  Gradient ribbon (replaced by pace chart). Workout card chrome.
+**Shipped:**
+- **Wellness Row:** Recovery HRV and Overnight Avg HRV displayed
+  together with a hover tooltip explaining the difference. Both raw
+  numbers always shown. Personal 30-day range context. RHR with status.
+  Sleep hours + Garmin sleep score.
+- **Quick Check-in with Mindset:** `enjoyment_1_5` and `confidence_1_5`
+  added as optional collapsible section. No standalone check-in page.
 
 **Home page state machine (future):**
-- Post-run: Gradient pace chart hero (described above)
+- Post-run: Gradient pace chart hero
 - Pre-workout: Today's planned workout in hero position with pace
   guidance and coach context
 - Rest day: The system's single highest-priority intelligence signal
@@ -175,25 +174,52 @@ chrome. Nothing dominates. Nothing commands the page.
 
 #### Activity Detail Page
 
-**Current state:** Run Shape Canvas at top, then a disconnected scroll:
-moments (metric labels), reflection, metrics, plan comparison, workout
-type card, why this run, context analysis, compare button, old splits
-chart AND splits table. Two charts on the same page. Moments are
-unreadable. Ten sections competing for attention.
+**Current state (Apr 4, 2026):** Run Shape Canvas with gradient pace
+line (above the fold), Runtoon card, reflection prompt, metrics,
+weather context, finding annotations, splits table. **"Going In"
+wellness snapshot** shows pre-activity Recovery HRV, Overnight HRV,
+Resting HR, Sleep hours, Sleep score — stamped on every activity at
+ingestion time from the corresponding GarminDay data.
 
-**Target state:**
-- **Above the fold:** Run Shape Canvas with gradient pace line
-  (effort-colored, the visual differentiator). Coachable moments
-  below it as coaching sentences anchored to timestamps (LLM-generated,
-  not metric labels). Reflection prompt (harder / as expected / easier).
-  Metrics ribbon (compact horizontal strip).
-- **Below the fold:** Expandable "Details" section containing plan
-  comparison, why this run, context analysis, compare to similar, and
-  splits table.
-- **Removed:** Old Splits Chart (replaced by the canvas; table stays).
-- **Fixed:** Gradient pace line (currently flat blue). Moment narratives
-  (currently metric labels). Cadence in segment table (currently "--").
-  HR sanity check (prevents wrong classifications from sensor glitches).
+**Shipped:**
+- Run Shape Canvas gradient pace line (effort-colored)
+- Weather context with heat adjustment
+- Finding annotations (top 3 correlation findings)
+- **Pre-activity wellness stamps** (`pre_recovery_hrv`, `pre_overnight_hrv`,
+  `pre_resting_hr`, `pre_sleep_h`, `pre_sleep_score`) — enables
+  wellness-vs-performance research alongside HR, cadence, and pace
+- Runtoon above the fold
+
+**Remaining:**
+- Coachable moments still show raw metric labels in some cases
+- Cadence in segment table still "--" for some activities
+
+#### Personal Operating Manual (`/manual`) — PRIMARY NAV (Apr 4, 2026)
+
+**Current state:** V2 shipped. Four sections: Race Character (pace-gap
+analysis, PR detection, race-day counterevidence), Cascade Stories
+(multi-step mechanism chains with confound suppression), Highlighted
+Findings (interestingness-scored), Full Record (all findings). Human-
+language headline rewriter. `localStorage` delta tracking for "What
+Changed." Contextual coach links per finding.
+
+**Design decisions:**
+- **Race Character is the single most important insight.** "During
+  training, sleep below 7h precedes lower efficiency. On race day, you
+  override this" — that is character, not a correlation. This section
+  gets the most care.
+- **Interestingness over frequency.** Cascade chains first, race
+  character second, threshold findings third. Simple high-frequency
+  correlations belong in the Full Record, not the lead.
+- **Honest scoping.** Training-day findings must show race-day
+  counterevidence when it exists. The system compares explicitly, not
+  just lists separately.
+- **Never hide numbers.** Raw values are always shown alongside
+  interpretation and personal context. Athletes track trends, research,
+  and compare — the numbers are the foundation.
+
+**Backend:** `services/operating_manual.py`.
+**Frontend:** `app/manual/page.tsx`.
 
 ---
 
@@ -219,22 +245,11 @@ rectangles. Good intelligence, exhausting to read. No visual anchors.
 - Narrative interpretation below each visual section: what does this
   chart mean for your training this week?
 
-#### Insights Page
+#### Insights Page — DEPRECATED (Apr 4, 2026)
 
-**Current state:** Top section (ranked insights) is decent. Bottom
-section (active feed) is a repetitive log dump — five consecutive volume
-alerts, four consecutive "you ran 6 times" achievements.
-
-**Target state (principle, not spec):**
-- Ranked insights stay as-is (they work)
-- Active feed needs aggressive deduplication: if the same metric was
-  flagged in the last N entries, suppress duplicates
-- Quality floor: "you logged 6 runs this week" is not an achievement
-  worth alerting. Set a minimum significance threshold.
-- Consider a visual timeline (dots on a timeline, color-coded by type,
-  expandable on tap) instead of a card list
-- Narrative: the top insight should have a one-sentence "why this matters"
-  interpretation
+Permanently redirects to `/manual`. The Manual V2 interestingness filter
+replaced the insight feed: cascade chains first, race character second,
+threshold findings third, simple correlations in the full record.
 
 #### Calendar Page
 
@@ -275,13 +290,12 @@ metrics and correlation findings are useful.
 correlations, trend data) to become the single "deep analytics" surface.
 Narrative interpretation per chart section.
 
-#### Discovery / Trends Pages
+#### Discovery / Trends Pages — DEPRECATED (Apr 4, 2026)
 
-**Current state:** Overlapping with insights and analytics. The athlete
-doesn't know where to look for correlations vs trends vs patterns.
-
-**Target state:** Absorb into Analytics or Progress. These don't need to
-be standalone pages if their content lives in a more natural home.
+`/discovery` permanently redirects to `/manual`. The Manual's Race
+Character and Cascade Stories sections replace the standalone discovery
+surface. Correlation insights that were on Discovery now live in the
+Manual's Full Record with interestingness scoring.
 
 ---
 
@@ -343,11 +357,13 @@ call per activity, cached. If the LLM can't say something specific and
 true, it says nothing.
 
 ### Tab Navigation Restructuring
-**Deferred.** The current tabs (Home | Calendar | Coach | Progress | More)
-are fine. The verbs are right: See, Plan, Ask, Understand. The problem
-isn't the tabs — it's what's inside them. Activities being buried behind
-"More" is a friction problem solved by adding a Recent Runs strip on the
-home page rather than changing the tab structure.
+**PARTIALLY SHIPPED (Apr 4, 2026).** Primary nav is now:
+Home | Manual | Progress | Calendar | Coach. Manual was promoted to
+primary because the Personal Operating Manual is a standalone product
+differentiator — it teaches the athlete about themselves. Insights and
+Discovery were deprecated (redirected to Manual). Check-in consolidated
+onto the home page. The "More" dropdown contains: Analytics, Training
+Load, Tools, Nutrition, Settings.
 
 ### Coachable Moments on the Home Page Hero
 **Rejected.** "Data doesn't hallucinate" — the canvas is pure signal.
@@ -377,8 +393,31 @@ When evaluating any proposed change, ask:
    experience without explanation, it breaks trust.)
 5. Does this serve the daily habit loop? (If it doesn't connect to
    the trigger → reward → investment cycle, it's a nice-to-have.)
+6. **Are the raw numbers visible?** Hiding numbers is NEVER the right
+   answer. Athletes get accustomed to their trends, research on their
+   own, and compare themselves to others. The magic is making numbers
+   understandable to a 79-year-old father AND meaningful to an elite —
+   by layering interpretation on top of the data, not replacing it.
+   Every metric surface must show: the value, an interpretation (e.g.,
+   "low / normal / high"), and personal context (e.g., "your 30-day
+   range: 45-72").
 
-If a proposed change doesn't pass these five questions, it doesn't ship.
+If a proposed change doesn't pass these six questions, it doesn't ship.
+
+### HRV Display Standard (Apr 4, 2026)
+
+Two HRV values from Garmin require distinct labeling everywhere:
+
+| Internal name | Display label | What it is |
+|---------------|---------------|------------|
+| `hrv_5min_high` | **Recovery HRV** | Peak 5-min window during sleep. More predictive of next-day performance. Used by the correlation engine. |
+| `hrv_overnight_avg` | **Overnight Avg HRV** | Full-night average. Matches the value Garmin shows on the watch sleep screen. |
+
+Both values are always shown together (never just one). An info tooltip
+or hover explains the difference. This prevents silent trust erosion —
+athletes who see their Garmin watch say "36ms Avg Overnight HRV" and
+then see StrideIQ say "HRV below 78" will lose trust instantly unless
+the distinction is clear.
 
 ---
 
@@ -391,7 +430,7 @@ Any agent working on StrideIQ should read these documents in this order:
 3. `docs/DESIGN_PHILOSOPHY_AND_SITE_ROADMAP.md` — this document (how
    every screen should feel and what's been agreed)
 4. `docs/RUN_SHAPE_VISION.md` — the visual vision for run data
-5. `docs/SITE_AUDIT_2026-02-15.md` — honest assessment of current state
+5. `docs/SITE_AUDIT_LIVING.md` — honest assessment of current state
 6. `docs/BUILD_SPEC_HOME_AND_ACTIVITY.md` — the active build spec
 7. `docs/AGENT_WORKFLOW.md` — build loop mechanics
 

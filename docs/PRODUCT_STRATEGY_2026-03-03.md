@@ -110,7 +110,7 @@ keep hitting the same wall."
 **Why #4:** Acquisition, not retention. The hook that makes everything
 else possible from day one.
 
-### 5. Personal Operating Manual
+### 5. Personal Operating Manual — V2 SHIPPED (Apr 4, 2026)
 
 Not a dashboard. A document that grows. Every confirmed correlation,
 every proven pattern, every historical fingerprint match — a living
@@ -118,6 +118,12 @@ document that belongs to this athlete.
 
 After 6 months: 8 entries. After 2 years: 40. The most complete
 physiological self-knowledge document any amateur athlete has ever had.
+
+**V2 shipped:** Race Character (the most important insight — "during
+training, sleep below 7h precedes lower efficiency. On race day, you
+override this"), Cascade Stories (multi-step mechanism chains),
+interestingness-scored findings, human-language headlines, delta tracking.
+Promoted to primary navigation. `/manual` is now a top-level page.
 
 **Why #5:** Highest quality acquisition when it fires. "I know things
 about how my body works that my coach of 10 years didn't know." That
@@ -191,20 +197,28 @@ That's the product. Everything else is execution.
 
 ---
 
-## Connection to This Week's Build
+## Connection to Current Build (Updated Apr 4, 2026)
 
 The correlation engine is the foundation for everything above:
 
-- **Effort Classification** (shipping now) → unlocks 6 of 9 correlation
-  metrics, Recovery Fingerprint, accurate workout classification
-- **Engine Layers 1–4** (threshold detection, asymmetric response,
-  cascade detection, decay curves) → produces the specific, actionable
+- **Effort Classification** ✅ → unlocked 6 of 9 correlation metrics,
+  Recovery Fingerprint, accurate workout classification
+- **Engine Layers 1–4** ✅ (threshold detection, asymmetric response,
+  cascade detection, decay curves) → producing the specific, actionable
   findings that power the Pre-Race Fingerprint, Injury Fingerprint,
   and Personal Operating Manual
 - **Engine Layers 5–6** (confidence trajectory, momentum effects) →
   improves quality of every finding surfaced
 - **Engine Layers 7+** → the uncopyable moat that requires years of
   data to populate
+
+**Intelligence surfaces now live:**
+- Personal Operating Manual V2 (Race Character, Cascades, Interestingness)
+- Home wellness row (Recovery HRV, Overnight Avg, RHR, Sleep)
+- Pre-activity wellness stamps on every activity
+- Limiter Engine Phases 1-4 (fingerprint bridge → coach integration)
+- Cross-training multi-sport support (6 sports, sport-aware TSS)
+- N=1 plan engine V3 (diagnosis-first, KB-grounded, 14 archetypes)
 
 Every layer of the correlation engine roadmap
 (`docs/specs/CORRELATION_ENGINE_ROADMAP.md`) is a direct prerequisite

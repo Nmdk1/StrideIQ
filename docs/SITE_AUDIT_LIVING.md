@@ -1,8 +1,30 @@
 # StrideIQ — Living Site Audit
 
 **Purpose:** Canonical full-product audit. This is the always-current inventory of what exists on the site, what is shipped, and what operational tools are available.
-**Last updated:** April 1, 2026 (plan volume/pace regression fix)
+**Last updated:** April 4, 2026 (wellness surfaces, Manual V2, nav consolidation, repo cleanup)
 **Last updated by:** Agent (advisor + builder)
+
+---
+
+## 0. Delta Since Last Audit (Apr 4)
+
+Shipped and now live in product/system behavior:
+
+- **Personal Operating Manual V2 (Apr 4, 2026)**: The `/manual` page rebuilt from raw correlation list to insight-driven document. Four sections: **(1) Race Character** — pace-gap analysis comparing race vs training performance; PR detection; narrative summary of the athlete's racer-vs-trainer identity. Race-day counterevidence: identifies "good races" where the athlete performed well despite adverse wellness conditions (e.g., low sleep, poor HRV), producing specific contradiction narratives. **(2) Cascade Stories** — multi-step correlation chains (input → mediator → output) surfaced as mechanism narratives. Confound detection suppresses stories where input and mediator measure the same phenomenon. Garmin noise metrics filtered from mediator role. **(3) Highlighted Findings** — interestingness-scored findings prioritizing cascade chains, asymmetry, non-obvious patterns over raw frequency. Baseline threshold suppression hides non-actionable thresholds (>85% data on one side). **(4) Full Record** — complete finding list sorted by interestingness then confirmation count. Human-language headline rewriter replaces templated insight text with natural sentences. Manual-specific translation dictionary (`_MANUAL_LANGUAGE`) for jargon-free display. `localStorage` delta tracking for "What Changed" between visits. Contextual coach links for each finding. Backend: `services/operating_manual.py`. Frontend: `app/manual/page.tsx`.
+
+- **Manual Promoted to Primary Navigation (Apr 4, 2026)**: `/manual` added as primary nav item (left of Progress) on desktop (`Navigation.tsx`) and mobile (`BottomTabs.tsx`). `/insights` page replaced with permanent redirect to `/manual`. `/discovery` page replaced with permanent redirect to `/manual`. "Check-in" removed from secondary navigation.
+
+- **Daily Check-in Consolidated to Home (Apr 4, 2026)**: Standalone `/checkin` page replaced with redirect to `/home`. Mindset fields (`enjoyment_1_5`, `confidence_1_5`) added to `QuickCheckin` component on home page as optional collapsible section. `QuickCheckinPayload` type updated. All links to `/checkin` across the codebase updated to `/home`.
+
+- **Home Page Wellness Row (Apr 4, 2026)**: New `garmin_wellness` field on `/v1/home` API response. Backend `_build_garmin_wellness()` queries today's `GarminDay` + 30-day history to compute personal ranges. Frontend `WellnessRow` component shows: **(1)** Recovery HRV (5-min peak) with value, status (low/normal/high), personal range, plus Garmin overnight avg below it. **(2)** Resting HR with status and range. **(3)** Sleep hours with Garmin sleep score. `HrvTooltip` info icon explains the difference between Recovery HRV and Overnight Avg HRV ("Both are valid — they measure different things. Recovery HRV is more predictive of next-day performance."). Positioned between coach briefing and workout.
+
+- **HRV Labeling Standardized (Apr 4, 2026)**: `garmin_hrv_5min_high` renamed from "5-minute peak HRV" to "Recovery HRV" across the entire system: `operating_manual.py` (`_MANUAL_LANGUAGE`, `_INPUT_CONDITIONS`), `n1_insight_generator.py` (`COACHING_LANGUAGE`), home page wellness row, activity detail page. Prevents confusion with Garmin watch's "Avg Overnight HRV" display.
+
+- **Pre-Activity Wellness Stamps (Apr 4, 2026)**: Five new columns on `Activity`: `pre_sleep_h`, `pre_sleep_score`, `pre_resting_hr`, `pre_recovery_hrv`, `pre_overnight_hrv`. Migration: `wellness_stamp_001`. Stamped at ingestion time across all four paths (Strava sync, Strava index, Strava ingest, Garmin webhook). Retro-stamp on health data arrival: when GarminDay data arrives after an activity, unstamped activities from that date are automatically filled. Admin backfill endpoint: `POST /v1/admin/users/{id}/wellness-backfill`. Service: `services/wellness_stamp.py`. Activity detail API (`GET /v1/activities/{id}`) returns wellness snapshot. Frontend shows "Going In" section with Recovery HRV, RHR, and sleep context on each activity.
+
+- **Strength Exercise Sets (Apr 1-4, 2026)**: `StrengthExerciseSet` model and table for Garmin strength session detail. `strength_session_type` on Activity. Migration: `cross_training_003`. Garmin exercise set fetch task enqueued on strength activity ingestion.
+
+- **Repository Cleanup (Apr 4, 2026)**: ~145 untracked scratch files deleted (one-off diagnostics, hardcoded-token scripts, test output captures, completed builder instructions). `.gitignore` rules added for `/_*.py`, `/_*.sh`, `scripts/_check_*`, `scripts/_diag_*`, diagnostic `.txt` outputs, `apps/api/tmp_debug_*.py`. Reusable utilities tracked: `scripts/_get_token.py`, `scripts/_probe_exercise_sets_endpoint.py`, `scripts/generate_realistic_synthetic_population.py`. Active docs tracked: 6 specs, 3 references, 2 session handoffs, mockups. Cleanup policy: `docs/CLEANUP_POLICY.md`.
 
 ---
 
@@ -177,7 +199,7 @@ Migration runs automatically on API container startup. Manual migration: `docker
 | Passing tests | 4,036+ (nightly full suite) |
 | KB rule evaluator | 445 PASS / 0 FAIL / 17 WAIVED (33 rules × 14 archetypes) |
 | Legacy BC evaluator | 143 PASS / 0 FAIL (12 BCs × 14 archetypes, secondary gate) |
-| Alembic migrations | 93 |
+| Alembic migrations | 95 |
 | Correlation engine inputs | 70 |
 | React pages | 63 |
 | React components | 70 |
@@ -194,7 +216,7 @@ Migration runs automatically on API container startup. Manual migration: `docker
 - `Subscription`, `StripeEvent`, `Purchase`, `RacePromoCode` — payments/entitlements
 
 ### Activity & Performance
-- `Activity` — ingested activities from Strava/Garmin (run, cycling, walking, hiking, strength, flexibility). New columns: `garmin_activity_type`, `cadence_unit`, `session_detail` (JSONB)
+- `Activity` — ingested activities from Strava/Garmin (run, cycling, walking, hiking, strength, flexibility). Cross-training columns: `garmin_activity_type`, `cadence_unit`, `session_detail` (JSONB). Pre-activity wellness stamps: `pre_sleep_h`, `pre_sleep_score`, `pre_resting_hr`, `pre_recovery_hrv`, `pre_overnight_hrv` (migration `wellness_stamp_001`)
 - `ActivitySplit` — per-split metrics
 - `ActivityStream` — raw stream data (HR, pace, altitude, cadence)
 - `PersonalBest`, `BestEffort` — PR tracking across distances
@@ -333,7 +355,7 @@ Phase 2A. Composite score from efficiency trend, recovery balance, completion ra
 This is the full lifecycle of check-in data:
 
 ```
-Athlete → Home Page Quick Check-in (or /checkin page)
+Athlete → Home Page Quick Check-in (consolidated — /checkin now redirects to /home)
     ↓
 POST /v1/daily-checkin → DailyCheckin table
     ↓ (optimistic UI update — UI switches instantly, background refetch)
@@ -374,20 +396,26 @@ InsightLog → Adaptation Narrator → Narrated to athlete
 
 | Route | Purpose | Status |
 |-------|---------|--------|
-| `/home` | Morning command center: run shape + compact PMC (visual pair), coach briefing, workout, check-in, race countdown | Working — compact PMC added Mar 1, moved to pos 2 |
+| `/home` | Morning command center: run shape + compact PMC (visual pair), coach briefing, **wellness row** (Recovery HRV + overnight avg + RHR + sleep with personal ranges), **mindset check-in** (enjoyment + confidence), workout, race countdown | Working — wellness row + mindset fields shipped Apr 4 |
+| `/manual` | **Primary nav.** Personal Operating Manual: Race Character, Cascade Stories, Highlighted Findings, Full Record, What Changed delta tracking | Working — V2 shipped Apr 4 |
 | `/activities` | Activity list with mini charts | Working |
-| `/activities/[id]` | Activity detail: Run Shape Canvas, Runtoon (above the fold), splits, weather context, finding annotations, analysis | Working — weather context + finding annotations shipped Mar 9 |
+| `/activities/[id]` | Activity detail: Run Shape Canvas, Runtoon (above the fold), splits, weather context, finding annotations, **"Going In" wellness snapshot** (Recovery HRV, overnight HRV, RHR, sleep), analysis | Working — wellness stamps shipped Apr 4 |
 | `/calendar` | Training calendar with plan overlay | Working |
 | `/coach` | AI coach chat interface | Strongest surface — founder/VIP always Opus, standard users Gemini 3 Flash |
 | `/progress` | D3 force-directed correlation web, expandable proved facts, coach-voice hero — replaces old card grid | Working |
 | `/analytics` | Efficiency trends, correlations, load→response | Working |
 | `/training-load` | PMC chart, N=1 zones, daily stress | Working |
-| `/discovery` | What works / what doesn't (correlation insights) | Working |
-| `/checkin` | Full check-in form (sliders) | Working |
 | `/settings` | Strava/Garmin integration, preferences | Working |
 | `/tools` | Pace calculator, age grading, heat adjustment | Working |
 | `/nutrition` | Quick nutrition logging | Minimal/placeholder |
-| `/insights` | Insight feed + Today's Intelligence section (tier-gated) | Today's Intelligence shipped Mar 9; feed still needs deduplication |
+| `/insights` | **DEPRECATED** — permanent redirect to `/manual` | Redirect shipped Apr 4 |
+| `/discovery` | **DEPRECATED** — permanent redirect to `/manual` | Redirect shipped Apr 4 |
+| `/checkin` | **DEPRECATED** — permanent redirect to `/home` | Redirect shipped Apr 4; mindset fields on home |
+
+**Navigation structure (current):**
+- **Primary (desktop top bar / mobile bottom tabs):** Home | Manual | Progress | Calendar | Coach
+- **Secondary ("More" dropdown):** Analytics | Training Load | Tools | Nutrition | Settings
+- **Removed from nav:** Insights, Discovery, Check-in
 
 ### Data Fetching
 
@@ -436,7 +464,7 @@ Legacy plan generators were deleted and replaced. The new engine (`n1_engine.py`
 - ~~**Email deliverability wiring remains operationally sensitive**~~ — **RESOLVED (Feb 28, 2026).** Production email is live: `smtp.gmail.com:587`, sender `noreply@strideiq.run` via `michael@strideiq.run`. Password reset E2E verified by Codex. DNS hardening (SPF/DKIM/DMARC) still needed at Porkbun.
 - **Coach quality audit scoped (Mar 8, 2026):** Full audit of 11 failure patterns documented in `docs/COACH_QUALITY_AUDIT.md`. Covers: A-I-A template rigidity, reflexive conservatism, hallucinated external facts, math errors, sycophantic recovery, lecturing experienced athletes, not using tools, ignoring prior context. Fixes scoped: deterministic pre-checks (race day, recent activity, weather), system prompt rewrites, routing expansion for standard users. Queued behind current work.
 - **Campaign detection wired but post-sync path lacks behavioral test:** `services/campaign_detection.py` wired into `refresh_living_fingerprint` and `post_sync_processing_task`. Refresh path has behavioral CI guard. Post-sync path has best-effort `try/except` but only source-level test coverage. Builder instructions: `docs/BUILDER_INSTRUCTIONS_2026-03-09_CAMPAIGN_WIRING_AND_REGRESSION_TEST.md`.
-- **Insights feed noise:** `/insights` Active Insights section has duplicate volume alerts and low-quality achievement cards — needs deduplication and quality filter
+- ~~**Insights feed noise:**~~ RESOLVED (Apr 4). `/insights` now permanently redirects to `/manual`. The Manual V2 interestingness filter replaces the feed — cascade chains first, race character second, threshold findings third, simple correlations in full record.
 - **Activity detail moments:** some key moments still show raw metrics that need stronger narrative translation
 - **Home page dual voice:** RESOLVED (Mar 9). `morning_voice` now draws from fingerprint findings; `coach_noticed` draws from daily rules/wellness/signals. Per-field lane injection prevents overlap. Commit: `1df7eb6`.
 - **No findings regression test:** RESOLVED (Mar 9). `test_findings_regression.py` asserts mature findings survive sweeps, surfacing threshold, and campaign wiring. Commit: `e27e204`.
@@ -566,11 +594,11 @@ Legacy plan generators were deleted and replaced. The new engine (`n1_engine.py`
 ## 12. Alembic Migration Chain
 
 Two active heads (both valid, separate chains):
-- `cross_training_002` — main chain (cross-training columns + partial index)
+- `wellness_stamp_001` — main chain (pre-activity wellness snapshot, chains from `cross_training_003`)
 - `athlete_override_001` — override chain
 
 CI enforces head integrity via `.github/scripts/ci_alembic_heads_check.py`.
-`EXPECTED_HEADS = {"cross_training_002", "athlete_override_001"}`.
+`EXPECTED_HEADS = {"wellness_stamp_001", "athlete_override_001"}`.
 
 When adding a new migration: **must chain off one of the current heads** — update `down_revision` and `EXPECTED_HEADS` in the CI script.
 

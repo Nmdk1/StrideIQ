@@ -1,7 +1,7 @@
 # Build Spec: Home Page & Activity Detail Page
 ## February 15, 2026
 
-**Read first:** `docs/PRODUCT_MANIFESTO.md`, `docs/RUN_SHAPE_VISION.md`, `docs/SITE_AUDIT_2026-02-15.md`
+**Read first:** `docs/PRODUCT_MANIFESTO.md`, `docs/RUN_SHAPE_VISION.md`, `docs/SITE_AUDIT_LIVING.md`
 
 ---
 
@@ -95,10 +95,13 @@ it was instantly.
 
 ---
 
-### Change H2: Merge Intelligence Into One Voice
+### Change H2: Merge Intelligence Into One Voice — ✅ SHIPPED (Mar 9)
 
-**Replaces:** The separate `CoachNoticedCard` and `morning_voice` text on the
-home page. Currently these are two parallel systems with weak data sharing.
+**Status:** Per-field lane injection shipped. `morning_voice` draws from fingerprint findings; `coach_noticed` draws from daily rules/wellness/signals. Overlap eliminated.
+
+**Original spec (for reference):**
+**Replaced:** The separate `CoachNoticedCard` and `morning_voice` text on the
+home page. Were two parallel systems with weak data sharing.
 
 **The problem:**
 - `compute_coach_noticed` (file: `apps/api/routers/home.py`, lines ~993-1072)
@@ -426,12 +429,56 @@ Each layer is committed and verified green before moving to the next.
 
 ---
 
-## What This Does NOT Cover (Layer 2+ / future sessions)
+## Shipped After Original Spec (Apr 4, 2026)
 
-- Intelligence page consolidation or visual upgrades
+These surfaces were designed and built after the Feb 15 spec, extending
+the home and activity pages beyond the original scope:
+
+### Change H5: Wellness Row — ✅ SHIPPED (Apr 4)
+
+**What it is:** A horizontal strip between coach briefing and workout
+showing the athlete's Garmin wellness state: Recovery HRV (5-min peak),
+Overnight Avg HRV, Resting HR, Sleep hours + Garmin sleep score. Each
+metric shows value, status (low/normal/high), and personal 30-day range.
+
+**Design principle:** Raw numbers always shown. Interpretation layered on
+top ("low / normal / high"). An info tooltip explains the difference
+between Recovery HRV and Overnight Avg HRV.
+
+**Backend:** `_build_garmin_wellness()` in `routers/home.py`. Queries
+today's `GarminDay` + 30-day history for personal ranges.
+
+**Frontend:** `WellnessRow` and `HrvTooltip` components in `app/home/page.tsx`.
+
+### Change H6: Mindset Check-in — ✅ SHIPPED (Apr 4)
+
+`enjoyment_1_5` and `confidence_1_5` added to `QuickCheckin` as optional
+collapsible section. Standalone `/checkin` page deprecated (redirects to
+`/home`). All check-in now happens on the home page.
+
+### Change A7: Pre-Activity Wellness Stamps — ✅ SHIPPED (Apr 4)
+
+**What it is:** Every activity stamped with the athlete's wellness going
+into it: `pre_sleep_h`, `pre_sleep_score`, `pre_resting_hr`,
+`pre_recovery_hrv`, `pre_overnight_hrv`. Stamped at ingestion time from
+`GarminDay`. Retro-stamped when health data arrives after activity.
+
+**Backend:** `services/wellness_stamp.py`. Wired into all four ingestion
+paths + admin backfill endpoint. Migration: `wellness_stamp_001`.
+
+**Frontend:** "Going In" section on activity detail page showing
+wellness context before each run.
+
+**Purpose:** Enables wellness-vs-performance correlation research
+alongside HR, cadence, and pace.
+
+---
+
+## What This Does NOT Cover (future sessions)
+
+- ~~Intelligence page consolidation~~ — resolved: `/insights` and `/discovery` redirect to `/manual`
 - Progress page chart additions
-- Insights feed deduplication
-- Navigation changes (activities in primary nav)
+- ~~Navigation changes~~ — resolved: Manual in primary nav, three pages deprecated
 - Recent Runs strip on home page
 - Home page state machine (pre-workout / rest day states)
 - Morning voice prompt refinements beyond the merge
@@ -444,5 +491,6 @@ Each layer is committed and verified green before moving to the next.
 
 - `docs/PRODUCT_MANIFESTO.md` — the soul of the product
 - `docs/RUN_SHAPE_VISION.md` — the visual vision
-- `docs/SITE_AUDIT_2026-02-15.md` — what's working and what's not
+- `docs/SITE_AUDIT_LIVING.md` — current state of everything
+- `docs/DESIGN_PHILOSOPHY_AND_SITE_ROADMAP.md` — design decisions and HRV display standard
 - `docs/FOUNDER_OPERATING_CONTRACT.md` — how to work with this founder

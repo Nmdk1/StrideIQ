@@ -90,6 +90,27 @@ pro# Training Plan & Daily Adaptation — Phased Build Plan
 >   tau1/tau2/HRV signature for volume ramp ceiling (N=1), not blanket 1mi/session.
 >   The 1mi/session is a floor; the ceiling should be individualized.
 > - CI #804 and #805: GREEN. Commits: `f258cd4`, `6aa149e`, `f0cbb21`.
+>
+> **Operational Update — April 4, 2026 (Wellness surfaces + Manual V2 + nav consolidation)**
+> - **Pre-Activity Wellness Stamps:** Five new columns on Activity (`pre_sleep_h`,
+>   `pre_sleep_score`, `pre_resting_hr`, `pre_recovery_hrv`, `pre_overnight_hrv`).
+>   Migration `wellness_stamp_001`. Stamped at all ingestion paths (Strava sync/index/ingest,
+>   Garmin webhook). Retro-stamp on health data arrival. Admin backfill endpoint.
+>   Service: `services/wellness_stamp.py`. Enables wellness-vs-performance correlation
+>   research alongside HR, cadence, and pace — directly feeds correlation engine quality.
+> - **Personal Operating Manual V2:** `/manual` promoted to primary nav (left of Progress).
+>   Race Character (pace-gap analysis + counterevidence), Cascade Stories (confound-suppressed),
+>   Highlighted Findings (interestingness-scored), Full Record. Human-language headlines.
+>   `localStorage` delta tracking. Race character is the single most important finding type.
+> - **HRV Labeling Standardized:** `garmin_hrv_5min_high` → "Recovery HRV" system-wide
+>   (`operating_manual.py`, `n1_insight_generator.py`, home, activity detail). Prevents
+>   confusion with Garmin's "Avg Overnight HRV."
+> - **Home Page Wellness Row:** Recovery HRV + Overnight Avg HRV + RHR + Sleep with
+>   personal 30-day ranges and HRV explanation tooltip. Raw numbers always shown.
+> - **Navigation Consolidation:** `/insights` and `/discovery` redirect to `/manual`.
+>   `/checkin` redirects to `/home` (mindset fields on home page). Three fewer standalone pages.
+> - **Repository Cleanup:** ~145 scratch files deleted, `.gitignore` rules added,
+>   `docs/CLEANUP_POLICY.md` created. CI migration integrity updated for `wellness_stamp_001`.
 
 ---
 
