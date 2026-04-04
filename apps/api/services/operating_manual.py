@@ -124,7 +124,7 @@ _MANUAL_LANGUAGE: Dict[str, str] = {
     "daily_session_stress": "session stress",
     "garmin_body_battery_end": "body battery",
     "garmin_sleep_score": "sleep score",
-    "garmin_hrv_5min_high": "HRV",
+    "garmin_hrv_5min_high": "5-minute peak HRV",
     "garmin_avg_stress": "stress level",
     "garmin_max_stress": "peak stress",
     "garmin_min_hr": "resting heart rate",
@@ -247,7 +247,28 @@ _THRESHOLD_UNITS: Dict[str, str] = {
     "weekly_volume_km": "km",
     "run_start_hour": "",
     "long_run_ratio": "%",
+    "garmin_hrv_5min_high": "ms",
+    "garmin_min_hr": "bpm",
+    "garmin_max_hr": "bpm",
+    "garmin_avg_stress": "",
+    "garmin_max_stress": "",
+    "garmin_sleep_score": "",
 }
+
+# Garmin fields stored in seconds that should display as hours+minutes.
+_SECONDS_FIELDS = frozenset({
+    "garmin_sleep_deep_s", "garmin_sleep_light_s",
+    "garmin_sleep_rem_s", "garmin_sleep_awake_s",
+})
+
+
+def _format_seconds_human(seconds: float) -> str:
+    """Format a duration in seconds to a human-readable string."""
+    h = int(seconds // 3600)
+    m = int((seconds % 3600) // 60)
+    if h > 0:
+        return f"{h}h {m}m"
+    return f"{m}m"
 
 _THRESHOLD_SUPPRESS = frozenset({
     "daily_session_stress", "ctl", "atl", "tsb",
@@ -288,16 +309,18 @@ def _format_threshold(finding) -> Optional[Dict[str, Any]]:
     value = finding.threshold_value
     direction = finding.threshold_direction
 
-    # Format value with appropriate precision
-    if abs(value) >= 100:
-        formatted = f"{value:.0f}"
-    elif abs(value) >= 10:
-        formatted = f"{value:.1f}"
+    if input_name in _SECONDS_FIELDS:
+        value_str = _format_seconds_human(value)
     else:
-        formatted = f"{value:.1f}"
+        if abs(value) >= 100:
+            formatted = f"{value:.0f}"
+        elif abs(value) >= 10:
+            formatted = f"{value:.1f}"
+        else:
+            formatted = f"{value:.1f}"
 
-    unit = _THRESHOLD_UNITS.get(input_name, "")
-    value_str = f"{formatted} {unit}".strip() if unit else formatted
+        unit = _THRESHOLD_UNITS.get(input_name, "")
+        value_str = f"{formatted} {unit}".strip() if unit else formatted
 
     if direction == "below":
         label = f"Below {value_str} {human_input}, performance drops"
@@ -403,7 +426,7 @@ _INPUT_CONDITIONS: Dict[str, Tuple[str, str]] = {
     "long_run_ratio": ("your long run is a big chunk of weekly volume",
                        "your long run ratio is small"),
     "run_start_hour": ("you run later in the day", "you run early"),
-    "garmin_hrv_5min_high": ("your HRV is higher", "your HRV drops"),
+    "garmin_hrv_5min_high": ("your 5-minute peak HRV is higher", "your 5-minute peak HRV drops"),
     "garmin_sleep_score": ("your sleep score is high", "your sleep score is low"),
     "garmin_sleep_deep_s": ("you get more deep sleep", "deep sleep is short"),
     "garmin_min_hr": ("your resting HR is higher", "your resting HR is lower"),
@@ -707,7 +730,8 @@ _CHECKIN_FIELD_MAP: Dict[str, str] = {
     "confidence_1_5": "confidence_1_5",
 }
 
-# GarminDay fields:
+# GarminDay fields used for counterevidence (pre-race wellness state).
+# Intensity metrics are excluded — they measure activity output, not readiness.
 _GARMIN_FIELD_MAP: Dict[str, str] = {
     "garmin_hrv_5min_high": "hrv_5min_high",
     "garmin_sleep_score": "sleep_score",
@@ -719,9 +743,14 @@ _GARMIN_FIELD_MAP: Dict[str, str] = {
     "garmin_max_hr": "max_hr",
     "garmin_avg_stress": "avg_stress",
     "garmin_max_stress": "max_stress",
-    "garmin_vigorous_intensity_s": "vigorous_intensity_s",
-    "garmin_moderate_intensity_s": "moderate_intensity_s",
 }
+
+# Garmin metrics that measure what the athlete DID, not how they felt.
+# These should never appear in counterevidence (pre-race state comparison).
+_GARMIN_ACTIVITY_METRICS = frozenset({
+    "garmin_vigorous_intensity_s",
+    "garmin_moderate_intensity_s",
+})
 
 
 def _build_race_counterevidence(
@@ -809,6 +838,8 @@ def _build_race_counterevidence(
                 continue
             if _is_garmin_noise(f.input_name):
                 continue
+            if f.input_name in _GARMIN_ACTIVITY_METRICS:
+                continue
 
             actual_value = race_day_values[f.input_name]
             threshold = f.threshold_value
@@ -826,13 +857,17 @@ def _build_race_counterevidence(
             human_input = _translate(f.input_name)
             human_output = _translate(f.output_metric)
 
-            unit = _THRESHOLD_UNITS.get(f.input_name, "")
-            if unit:
-                val_str = f"{actual_value:.1f} {unit}".strip()
-                thr_str = f"{threshold:.1f} {unit}".strip()
+            if f.input_name in _SECONDS_FIELDS:
+                val_str = _format_seconds_human(actual_value)
+                thr_str = _format_seconds_human(threshold)
             else:
-                val_str = f"{actual_value:.1f}"
-                thr_str = f"{threshold:.1f}"
+                unit = _THRESHOLD_UNITS.get(f.input_name, "")
+                if unit:
+                    val_str = f"{actual_value:.0f} {unit}".strip()
+                    thr_str = f"{threshold:.0f} {unit}".strip()
+                else:
+                    val_str = f"{actual_value:.1f}"
+                    thr_str = f"{threshold:.1f}"
 
             preposition = "below" if direction == "below_matters" else "above"
             outcome_parts = [
