@@ -2190,6 +2190,7 @@ def _save_constraint_aware_plan(
                 title=day.name or f"{day.workout_type.replace('_', ' ').title()}",
                 description=day.description,
                 phase=phase,
+                phase_week=week_in_phase,
                 target_duration_minutes=int(day.tss_estimate / 0.8) if day.tss_estimate else None,
                 target_distance_km=round(day.target_miles * 1.609, 2) if day.target_miles else None,
                 coach_notes=coach_notes,

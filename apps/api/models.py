@@ -3176,6 +3176,41 @@ class AthleteInvestigationConfig(Base):
     )
 
 
+class PlanAdaptationProposal(Base):
+    """Proposed plan adjustment from the adaptive replanner.
+
+    Lifecycle: pending → accepted | rejected | expired.
+    The athlete sees a diff card on the home page and decides.
+    Silence = keep original (expires_at enforced by nightly task).
+    """
+    __tablename__ = "plan_adaptation_proposal"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    athlete_id = Column(UUID(as_uuid=True), ForeignKey("athlete.id"), nullable=False)
+    plan_id = Column(UUID(as_uuid=True), ForeignKey("training_plan.id"), nullable=False)
+
+    trigger_type = Column(Text, nullable=False)
+    trigger_detail = Column(JSONB, nullable=True)
+
+    proposed_changes = Column(JSONB, nullable=False)
+    original_snapshot = Column(JSONB, nullable=False)
+    affected_week_start = Column(Integer, nullable=False)
+    affected_week_end = Column(Integer, nullable=False)
+
+    status = Column(Text, nullable=False, server_default="pending")
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    responded_at = Column(DateTime(timezone=True), nullable=True)
+    expires_at = Column(DateTime(timezone=True), nullable=False)
+
+    adaptation_number = Column(Integer, nullable=False, server_default="1")
+
+    __table_args__ = (
+        Index("ix_pap_athlete_status", "athlete_id", "status"),
+        Index("ix_pap_plan_id", "plan_id"),
+        Index("ix_pap_expires_at", "expires_at"),
+    )
+
+
 class AutoDiscoveryScanCoverage(Base):
     """Tracks which (athlete, input, output, window) combinations have been
     tested, preventing redundant work and enabling progress reporting.
