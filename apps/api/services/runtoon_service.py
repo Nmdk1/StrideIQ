@@ -129,19 +129,15 @@ The expression should feel HONEST to the effort. Easy runs are easy. Hard runs a
 THE IMAGE MUST BE FUNNY — situational humor, visual gags, unexpected elements
 in the scene. The runner should look like THEMSELVES at that effort level.
 
-DO NOT USE speech bubbles, thought bubbles, or comic sound effects (no "PUFF", "HOFF", etc.).
-The humor should come from the scene composition and situational comedy — not from
-text overlays or unflattering expressions.
+DO NOT include any text, words, letters, numbers, signs, labels, speech bubbles,
+thought bubbles, comic sound effects, captions, watermarks, or any form of writing
+anywhere in the image. No text on clothing, no text on signs, no text on buildings,
+no text on objects. The image must be PURELY VISUAL — zero readable characters.
+The humor comes from the scene composition, expressions, and situational comedy only.
 
-IMAGE LAYOUT:
-- Top 65%: Caricature scene with humorous visual element
-- Bottom 35%: Dark banner with stats and witty caption
-- Bottom watermark: "strideiq.run"
+ASPECT RATIO: 1:1 square. Fill the entire frame with the caricature scene.
 
-ASPECT RATIO: 1:1 square
-
-Do not include any real brand logos, trademarked text, or copyrighted material
-in the image. The only text allowed is the stats line, caption, and strideiq.run watermark."""
+Do not include any real brand logos, trademarked imagery, or copyrighted material."""
 
 
 # ---------------------------------------------------------------------------
@@ -497,20 +493,13 @@ def generate_runtoon(
 RUN CONTEXT:
 {activity_context}
 
-STATS TO RENDER IN IMAGE:
-{stats_text}
-
-CAPTION TO RENDER IN IMAGE:
-"{caption_text}"
-
 VISUAL DIRECTION:
 {scene_direction}
 
-WATERMARK: strideiq.run
-
 Create a flattering, humorous caricature using the reference photos provided.
 Their expression MUST match the effort level described above.
-Make it funny. Make it theirs. Make it share-worthy."""
+Make it funny. Make it theirs. Make it share-worthy.
+Remember: absolutely NO text, words, or letters anywhere in the image."""
 
         result.prompt_hash = _hash_prompt(text_prompt)
 
@@ -618,37 +607,90 @@ def recompose_stories(
 
     CANVAS_W, CANVAS_H = 1080, 1920
     BG_COLOR = (30, 41, 59)      # #1e293b — slate-800 dark
+    TEXT_COLOR = (226, 232, 240)  # slate-200
+    MUTED_COLOR = (148, 163, 184) # slate-400
+    WATERMARK_COLOR = (100, 116, 139) # slate-500
 
-    # Load source image and scale to canvas width
     source = Image.open(io.BytesIO(source_image_bytes)).convert("RGBA")
     scale = CANVAS_W / source.width
     new_h = int(source.height * scale)
     source = source.resize((CANVAS_W, new_h), Image.LANCZOS)
 
-    # Create canvas and center the 1:1 image vertically.
-    # The 1:1 image already contains stats + caption baked in by the
-    # generative model, so we only add the watermark below.
     canvas = Image.new("RGBA", (CANVAS_W, CANVAS_H), BG_COLOR + (255,))
-    y_offset = (CANVAS_H - new_h) // 2
+
+    # Place the caricature in the upper portion, leaving room for text below
+    text_zone_h = 340
+    available_h = CANVAS_H - text_zone_h
+    y_offset = max(0, (available_h - new_h) // 2)
     canvas.paste(source, (0, y_offset), source)
 
     draw = ImageDraw.Draw(canvas)
 
-    try:
-        font_watermark = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 24)
-    except (IOError, OSError):
-        font_watermark = ImageFont.load_default()
+    def _load_font(size: int) -> ImageFont.FreeTypeFont:
+        for path in [
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        ]:
+            try:
+                return ImageFont.truetype(path, size)
+            except (IOError, OSError):
+                continue
+        return ImageFont.load_default()
 
-    # Watermark at bottom
+    font_stats = _load_font(32)
+    font_caption = _load_font(28)
+    font_watermark = _load_font(24)
+
+    text_y = CANVAS_H - text_zone_h + 40
+
+    # Stats line
+    if stats_text:
+        draw.text(
+            (CANVAS_W // 2, text_y),
+            stats_text,
+            fill=TEXT_COLOR,
+            font=font_stats,
+            anchor="mt",
+        )
+        text_y += 60
+
+    # Caption (word-wrap to fit canvas width with padding)
+    if caption_text:
+        max_text_w = CANVAS_W - 120
+        words = caption_text.split()
+        lines = []
+        current_line = ""
+        for word in words:
+            test = f"{current_line} {word}".strip()
+            bbox = draw.textbbox((0, 0), test, font=font_caption)
+            if bbox[2] - bbox[0] <= max_text_w:
+                current_line = test
+            else:
+                if current_line:
+                    lines.append(current_line)
+                current_line = word
+        if current_line:
+            lines.append(current_line)
+
+        for line in lines:
+            draw.text(
+                (CANVAS_W // 2, text_y),
+                line,
+                fill=MUTED_COLOR,
+                font=font_caption,
+                anchor="mt",
+            )
+            text_y += 42
+
+    # Watermark
     draw.text(
         (CANVAS_W // 2, CANVAS_H - 40),
         "── strideiq.run ──",
-        fill=(100, 116, 139),  # slate-500
+        fill=WATERMARK_COLOR,
         font=font_watermark,
         anchor="mm",
     )
 
-    # Export as PNG
     output = io.BytesIO()
     canvas.convert("RGB").save(output, format="PNG", optimize=True)
     return output.getvalue()

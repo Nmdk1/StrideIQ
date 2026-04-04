@@ -3611,6 +3611,52 @@ def build_athlete_brief(db: Session, athlete_id: UUID) -> str:
     except Exception as e:
         logger.debug(f"Brief: identity failed: {e}")
 
+    # ── 1b. ATHLETE EXPERIENCE CALIBRATION ──────────────────────────
+    try:
+        from services.fitness_bank import FitnessBankCalculator
+        from models import PerformanceEvent, CorrelationFinding
+
+        bank = FitnessBankCalculator(db).calculate(athlete_id)
+        if bank:
+            exp_lines = [f"Experience level: {bank.experience_level.value}"]
+            if bank.peak_weekly_miles:
+                exp_lines.append(f"Peak proven weekly volume: {bank.peak_weekly_miles:.0f} mi")
+            if bank.current_weekly_miles:
+                exp_lines.append(f"Current weekly volume: {bank.current_weekly_miles:.0f} mi")
+            if bank.current_long_run_miles:
+                exp_lines.append(f"Recent long run: {bank.current_long_run_miles:.1f} mi")
+            if bank.is_returning_from_break:
+                exp_lines.append("Status: returning from break")
+            else:
+                exp_lines.append("Status: active training (not returning from break)")
+
+            race_events = (
+                db.query(PerformanceEvent)
+                .filter(
+                    PerformanceEvent.athlete_id == athlete_id,
+                    PerformanceEvent.event_type == "race",
+                )
+                .count()
+            )
+            if race_events:
+                exp_lines.append(f"Races on record: {race_events}")
+
+            self_reg = (
+                db.query(CorrelationFinding)
+                .filter(
+                    CorrelationFinding.athlete_id == athlete_id,
+                    CorrelationFinding.is_active == True,  # noqa: E712
+                    CorrelationFinding.times_confirmed >= 3,
+                )
+                .count()
+            )
+            if self_reg:
+                exp_lines.append(f"Confirmed personal patterns: {self_reg}")
+
+            sections.append("## Athlete Experience Calibration\n" + "\n".join(exp_lines))
+    except Exception as e:
+        logger.debug(f"Brief: experience calibration failed: {e}")
+
     # ── 2. GOAL RACE ─────────────────────────────────────────────────
     try:
         plan = (
