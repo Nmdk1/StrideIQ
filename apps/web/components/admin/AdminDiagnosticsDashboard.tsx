@@ -128,10 +128,10 @@ export function AdminDiagnosticsDashboard() {
                   <ActionButton key={a.id} action={a} />
                 ))}
                 <Link
-                  href="/diagnostic/report"
+                  href="/admin/diagnostics"
                   className="inline-flex items-center justify-center px-4 py-2 rounded-lg text-sm font-medium transition-colors bg-slate-700 hover:bg-slate-600 text-white"
                 >
-                  View legacy report
+                  View full diagnostics
                 </Link>
               </div>
               {moreActions.length > 0 && (

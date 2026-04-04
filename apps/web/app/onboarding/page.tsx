@@ -54,7 +54,7 @@ export default function OnboardingPage() {
   useEffect(() => {
     if (user) {
       if (user.onboarding_completed && !checkoutInFlight.current) {
-        router.push('/dashboard');
+        router.push('/home');
         return;
       }
       if (!user.onboarding_completed) {
@@ -118,10 +118,10 @@ export default function OnboardingPage() {
         return;
       }
     } catch {
-      // Stripe checkout creation failed — fall through to dashboard
+      // Stripe checkout creation failed — fall through to home
     }
     checkoutInFlight.current = false;
-    router.push('/dashboard');
+    router.push('/home');
   };
 
   if (!user) {

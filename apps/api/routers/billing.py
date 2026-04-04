@@ -159,7 +159,7 @@ def create_trial_checkout(
         url = StripeService().create_trial_checkout_session(
             athlete=current_user,
             billing_period=billing_period,
-            success_url=f"{base}/dashboard?trial=started",
+            success_url=f"{base}/discover?trial=started",
             cancel_url=f"{base}/onboarding?trial=skipped",
         )
     except RuntimeError as e:

@@ -204,7 +204,7 @@ def build_insight_feed_cards(
         if "heart_rate" not in (dq.available or {}):
             actions.append({"label": "Use HR for more runs", "href": "/settings"})
         if not actions:
-            actions = [{"label": "View Diagnostics", "href": "/diagnostic"}]
+            actions = [{"label": "View Analytics", "href": "/analytics"}]
 
         cards.append(
             {

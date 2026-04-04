@@ -325,7 +325,7 @@ def get_diagnostics_summary(
             severity="optional",
             title="View full diagnostic report",
             detail="Deep narrative and detailed breakdown (long-form).",
-            href="/diagnostic/report",
+            href="/admin/diagnostics",
         )
     )
 

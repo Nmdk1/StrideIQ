@@ -25,7 +25,6 @@ const VALID_ROUTES = [
   '/insights',
   '/analytics',
   '/settings',
-  '/diagnostic',
   '/home',
   '/personal-bests',
   '/activities',

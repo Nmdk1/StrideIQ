@@ -255,10 +255,10 @@ export default function ActivityDetailPage() {
             <h2 className="text-xl font-bold text-red-400 mb-2">Activity Not Found</h2>
             <p className="text-slate-400">This activity could not be loaded.</p>
             <button
-              onClick={() => router.push('/dashboard')}
+              onClick={() => router.push('/home')}
               className="mt-4 px-4 py-2 bg-slate-800 text-white rounded hover:bg-slate-700 transition-colors"
             >
-              Back to Dashboard
+              Back to Home
             </button>
           </div>
         </div>

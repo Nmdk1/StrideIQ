@@ -155,7 +155,7 @@ describe('Onboarding full flow (skip Strava)', () => {
     // Persisted stage updates
     expect(mockUser.onboarding_stage).toBe('complete');
     expect(mockUser.onboarding_completed).toBe(true);
-    expect(push).toHaveBeenCalledWith('/dashboard');
+    expect(push).toHaveBeenCalledWith('/home');
 
     // Calls: we should have saved intake once
     expect(onboardingMod.__mocks.getIntake).toHaveBeenCalledWith('goals');
