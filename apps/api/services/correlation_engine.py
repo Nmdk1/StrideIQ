@@ -2003,6 +2003,101 @@ def aggregate_cross_training_inputs(
             (row.day, float(row.cnt)) for row in flex_weekly
         ]
 
+    # --- Per-run rolling 7-day cross-training load signals ---
+    # These are computed for each running activity: look back 7 days from
+    # each run and compute the cross-training load context surrounding it.
+
+    all_ct_activities = (
+        db.query(Activity)
+        .filter(
+            Activity.athlete_id == athlete_id,
+            Activity.sport.in_(["cycling", "walking", "hiking", "strength", "flexibility"]),
+            Activity.start_time >= start_date - timedelta(days=7),
+            Activity.start_time <= end_date,
+            Activity.is_duplicate == False,  # noqa: E712
+        )
+        .order_by(Activity.start_time)
+        .all()
+    )
+
+    run_activities_for_ct = (
+        db.query(Activity)
+        .filter(
+            Activity.athlete_id == athlete_id,
+            Activity.sport == "run",
+            Activity.start_time >= start_date,
+            Activity.start_time <= end_date,
+            Activity.is_duplicate == False,  # noqa: E712
+        )
+        .order_by(Activity.start_time)
+        .all()
+    )
+
+    if all_ct_activities and run_activities_for_ct:
+        from services.training_load import TrainingLoadCalculator
+        _tss_calc = TrainingLoadCalculator(db)
+        _athlete_obj = db.query(Athlete).filter(Athlete.id == athlete_id).first()
+
+        ct_tss_cache: Dict = {}
+        for ct_act in all_ct_activities:
+            try:
+                stress = _tss_calc.calculate_workout_tss(ct_act, _athlete_obj)
+                ct_tss_cache[ct_act.id] = stress.tss
+            except Exception:
+                ct_tss_cache[ct_act.id] = 0.0
+
+        strength_7d_sessions = []
+        strength_7d_tss = []
+        cycling_7d_tss = []
+        all_ct_7d_tss = []
+        hours_since_any_ct = []
+
+        for run_act in run_activities_for_ct:
+            run_time = run_act.start_time
+            run_date = run_time.date()
+            window_start = run_time - timedelta(days=7)
+
+            str_count = 0
+            str_tss = 0.0
+            cyc_tss = 0.0
+            total_ct_tss = 0.0
+            most_recent_ct_time = None
+
+            for ct_act in all_ct_activities:
+                if ct_act.start_time >= run_time:
+                    break
+                if ct_act.start_time < window_start:
+                    continue
+                tss_val = ct_tss_cache.get(ct_act.id, 0.0)
+                total_ct_tss += tss_val
+                if ct_act.sport == "strength":
+                    str_count += 1
+                    str_tss += tss_val
+                elif ct_act.sport == "cycling":
+                    cyc_tss += tss_val
+                if most_recent_ct_time is None or ct_act.start_time > most_recent_ct_time:
+                    most_recent_ct_time = ct_act.start_time
+
+            strength_7d_sessions.append((run_date, float(str_count)))
+            strength_7d_tss.append((run_date, round(str_tss, 1)))
+            cycling_7d_tss.append((run_date, round(cyc_tss, 1)))
+            all_ct_7d_tss.append((run_date, round(total_ct_tss, 1)))
+
+            if most_recent_ct_time:
+                gap_h = (run_time - most_recent_ct_time).total_seconds() / 3600
+                hours_since_any_ct.append((run_date, round(gap_h, 1)))
+
+        if any(v > 0 for _, v in strength_7d_sessions):
+            inputs["ct_strength_sessions_7d"] = strength_7d_sessions
+        if any(v > 0 for _, v in strength_7d_tss):
+            inputs["ct_strength_tss_7d"] = strength_7d_tss
+        if any(v > 0 for _, v in cycling_7d_tss):
+            inputs["ct_cycling_tss_7d"] = cycling_7d_tss
+        if any(v > 0 for _, v in all_ct_7d_tss):
+            inputs["ct_cross_training_tss_7d"] = all_ct_7d_tss
+        if hours_since_any_ct:
+            inputs["ct_hours_since_cross_training"] = hours_since_any_ct
+
     return inputs
 
 

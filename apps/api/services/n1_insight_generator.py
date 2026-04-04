@@ -210,6 +210,11 @@ FRIENDLY_NAMES: Dict[str, str] = {
     "ct_cycling_duration_min": "cycling duration",
     "ct_cycling_tss": "cycling training stress",
     "ct_flexibility_sessions_7d": "flexibility sessions per week",
+    "ct_strength_sessions_7d": "strength sessions (7-day)",
+    "ct_strength_tss_7d": "strength training stress (7-day)",
+    "ct_cycling_tss_7d": "cycling training stress (7-day)",
+    "ct_cross_training_tss_7d": "cross-training load (7-day)",
+    "ct_hours_since_cross_training": "hours since last cross-training",
 }
 
 
