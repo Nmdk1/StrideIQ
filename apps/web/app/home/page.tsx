@@ -18,6 +18,7 @@ import { CompactPMC } from '@/components/home/CompactPMC';
 import FindingCard from '@/components/findings/FindingCard';
 import { TrialBanner } from '@/components/home/TrialBanner';
 import { FirstInsightsBanner } from '@/components/home/FirstInsightsBanner';
+import { AdaptationProposalCard } from '@/components/home/AdaptationProposalCard';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -829,6 +830,9 @@ export default function HomePage() {
 
           {/* 2b. Daily wellness (Garmin HRV, RHR, sleep) */}
           {garmin_wellness && <WellnessRow wellness={garmin_wellness} />}
+
+          {/* 2c. Adaptation proposal (if pending) */}
+          <AdaptationProposalCard />
 
           {/* 3. Today's workout — plain text, no card chrome */}
           {today.has_workout ? (
