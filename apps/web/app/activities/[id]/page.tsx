@@ -36,6 +36,8 @@ import { WhyThisRun } from '@/components/activities/WhyThisRun';
 import { PerceptionPrompt } from '@/components/activities/PerceptionPrompt';
 import { GarminBadge } from '@/components/integrations/GarminBadge';
 import { RuntoonCard } from '@/components/activities/RuntoonCard';
+import { CyclingDetail, StrengthDetail, HikingDetail, FlexibilityDetail } from '@/components/activities/cross-training';
+import type { CrossTrainingActivity } from '@/components/activities/cross-training';
 
 interface Activity {
   id: string;
@@ -83,6 +85,27 @@ interface Activity {
   pre_resting_hr: number | null;
   pre_recovery_hrv: number | null;
   pre_overnight_hrv: number | null;
+
+  // Cross-training fields (non-run only)
+  strength_session_type?: string | null;
+  session_detail?: Record<string, unknown> | null;
+  tss?: number | null;
+  tss_method?: string | null;
+  intensity_factor?: number | null;
+  weekly_context?: { running_activities: number; cross_training_activities: number } | null;
+  exercise_sets?: Array<{
+    set_order: number;
+    exercise_name: string;
+    exercise_category: string;
+    movement_pattern: string;
+    muscle_group: string | null;
+    is_unilateral: boolean;
+    set_type: string;
+    reps: number | null;
+    weight_kg: number | null;
+    duration_s: number | null;
+    estimated_1rm_kg: number | null;
+  }>;
 }
 
 import type { Split } from '@/lib/types/splits';
@@ -380,6 +403,16 @@ export default function ActivityDetailPage() {
           )}
         </div>
 
+        {/* ── Sport branching: non-run activities get dedicated layouts ── */}
+        {activity.sport_type && activity.sport_type !== 'run' ? (
+          <div className="mb-6">
+            {activity.sport_type === 'cycling' && <CyclingDetail activity={activity as unknown as CrossTrainingActivity} />}
+            {activity.sport_type === 'strength' && <StrengthDetail activity={activity as unknown as CrossTrainingActivity} />}
+            {(activity.sport_type === 'hiking' || activity.sport_type === 'walking') && <HikingDetail activity={activity as unknown as CrossTrainingActivity} />}
+            {activity.sport_type === 'flexibility' && <FlexibilityDetail activity={activity as unknown as CrossTrainingActivity} />}
+          </div>
+        ) : (
+        <>
         {/* ── 2. Run Shape Canvas (Hero) ── */}
         <div className="mb-6">
           <RunShapeCanvas
@@ -620,6 +653,8 @@ export default function ActivityDetailPage() {
               </div>
             )}
           </>
+        )}
+        </>
         )}
       </div>
     </div>
