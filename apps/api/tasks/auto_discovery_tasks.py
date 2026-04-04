@@ -101,5 +101,8 @@ def run_auto_discovery_nightly(self, athlete_ids: Optional[List[str]] = None):
                 )
                 db.rollback()
 
+        from tasks.beat_startup_dispatch import record_task_run
+        record_task_run("beat:last_run:auto_discovery_nightly")
+
     finally:
         db.close()

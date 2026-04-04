@@ -116,6 +116,7 @@ def _run_intelligence_for_athlete(
         target_date=target_date,
         db=db,
     )
+    readiness_calc.persist(readiness_result, db)
 
     # Step 2: Intelligence
     engine = DailyIntelligenceEngine()
@@ -726,6 +727,9 @@ def refresh_living_fingerprint(self: Task) -> Dict:
                     'athlete_id': str(aid),
                     'error': str(e),
                 })
+
+        from tasks.beat_startup_dispatch import record_task_run
+        record_task_run("beat:last_run:refresh_living_fingerprint")
 
         return {'refreshed': len(results), 'results': results}
     finally:

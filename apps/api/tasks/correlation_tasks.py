@@ -244,6 +244,9 @@ def run_daily_correlation_sweep(self, athlete_ids: List[str] | None = None):
                 db.rollback()
 
         logger.info("Correlation sweep complete for %d athletes", len(ids))
+
+        from tasks.beat_startup_dispatch import record_task_run
+        record_task_run("beat:last_run:daily_correlation_sweep")
     finally:
         db.close()
 

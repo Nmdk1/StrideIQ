@@ -48,7 +48,12 @@ def complete_expired_plans() -> int:
     """
     db = get_db_sync()
     try:
-        return _complete_expired_plans_in_db(db)
+        result = _complete_expired_plans_in_db(db)
+
+        from tasks.beat_startup_dispatch import record_task_run
+        record_task_run("beat:last_run:complete_expired_plans")
+
+        return result
     except Exception:
         db.rollback()
         raise

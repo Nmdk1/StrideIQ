@@ -54,6 +54,9 @@ def check_garmin_ingestion_health(self) -> dict:
             total,
             underfed,
         )
+        from tasks.beat_startup_dispatch import record_task_run
+        record_task_run("beat:last_run:garmin_ingestion_health")
+
         return {"status": "ok", "total": total, "underfed": underfed}
 
     except Exception as exc:

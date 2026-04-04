@@ -55,6 +55,9 @@ def backfill_athlete_timezones(self):
             "Timezone backfill complete: %d/%d resolved, %d no GPS data",
             resolved, total, failed,
         )
+        from tasks.beat_startup_dispatch import record_task_run
+        record_task_run("beat:last_run:backfill_athlete_timezones")
+
         return {"total": total, "resolved": resolved, "no_gps": failed}
     finally:
         db.close()

@@ -82,6 +82,7 @@ from . import experience_guardrail_task  # noqa: E402  # daily experience audit
 from . import fact_extraction_task  # noqa: E402  # coach memory layer 1
 from . import timezone_tasks  # noqa: E402  # GPS-based timezone inference + backfill
 from . import plan_lifecycle_tasks  # noqa: E402
+from . import beat_startup_dispatch  # noqa: E402  # deploy-proof daily task dispatch
 
 try:
     from . import runtoon_tasks  # noqa: E402
