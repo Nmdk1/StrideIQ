@@ -1,4 +1,4 @@
-"""Limiter Lifecycle Classifier (Phase 3 + Phase 4 coach integration)
+"""Limiter Lifecycle Classifier (Phases 3-5)
 
 Assigns lifecycle states to CorrelationFinding records:
   emerging            — correlation strengthening in L90, candidate frontier
@@ -17,13 +17,17 @@ Classification priority (from LIMITER_TAXONOMY_ANNOTATED.md):
   2. CG-10: CS-6/CS-7 interaction gate (fast recoverers)
   3. Fact-aware promotion (Phase 4): limiter_context facts promote emerging
   4. Standard lifecycle: active/emerging/resolving/closed
+  5. Transition detection (Phase 5): active→resolving→closed via L30 recomputation
 
 Resolution paths:
   active_fixed → closed: triggered by race date passing (not correlation fade)
   structural_monitored → active: if acute training cause identified
   emerging → active: athlete-confirmed via limiter_context fact (Phase 4)
   emerging → closed: athlete explains pattern as historical via fact
-  active → resolving: resolving_context captured for coach attribution
+  active → resolving: L30-weighted |r| < 0.30; resolving_context captured
+  resolving → closed: 4-week window elapsed without reassertion
+  resolving → active: pattern reasserts (|r| >= 0.30) during resolving window
+  closed → next frontier: scan emerging candidates when constraint resolves
 
 Notes:
   - ADVANCED_PEAK_MILES_FLOOR (30 mpw) is a conservative first-pass proxy
