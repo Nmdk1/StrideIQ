@@ -309,12 +309,13 @@ class TestPromptAndOutputHardening:
         coach.router = MagicMock()
         coach.router.classify = MagicMock(return_value=(None, False))
         coach.gemini_client = object()
-        coach.anthropic_client = None
-        coach.get_model_for_query = MagicMock(return_value=(AICoach.MODEL_DEFAULT, False))
+        coach.anthropic_client = object()
+        coach.get_model_for_query = MagicMock(return_value=(AICoach.MODEL_HIGH_STAKES, True))
         coach.check_budget = MagicMock(return_value=(True, "ok"))
         coach.get_or_create_thread_with_state = MagicMock(return_value=("thread-1", False))
         coach.get_thread_history = MagicMock(return_value={"messages": []})
-        coach.query_gemini = AsyncMock(return_value={"response": "Great work 🔥", "error": False})
+        coach._build_athlete_state_for_opus = MagicMock(return_value="state")
+        coach._query_kimi_with_fallback = AsyncMock(return_value={"response": "Great work 🔥", "error": False, "model": "kimi-k2.5"})
         coach._normalize_response_for_ui = MagicMock(side_effect=lambda user_message, assistant_message: assistant_message)
         coach._save_chat_messages = MagicMock()
         coach._maybe_update_units_preference = MagicMock()
@@ -359,15 +360,16 @@ class TestPromptAndOutputHardening:
         coach.router = MagicMock()
         coach.router.classify = MagicMock(return_value=(None, False))
         coach.gemini_client = object()
-        coach.anthropic_client = None
-        coach.get_model_for_query = MagicMock(return_value=(AICoach.MODEL_DEFAULT, False))
+        coach.anthropic_client = object()
+        coach.get_model_for_query = MagicMock(return_value=(AICoach.MODEL_HIGH_STAKES, True))
         coach.check_budget = MagicMock(return_value=(True, "ok"))
         coach.get_or_create_thread_with_state = MagicMock(return_value=("thread-1", False))
         coach.get_thread_history = MagicMock(return_value={"messages": []})
-        coach.query_gemini = AsyncMock(
+        coach._build_athlete_state_for_opus = MagicMock(return_value="state")
+        coach._query_kimi_with_fallback = AsyncMock(
             side_effect=[
-                {"response": "Your splits looked controlled across miles.", "error": False},
-                {"response": "Negative split pattern remains strong.", "error": False},
+                {"response": "Your splits looked controlled across miles.", "error": False, "model": "kimi-k2.5"},
+                {"response": "Negative split pattern remains strong.", "error": False, "model": "kimi-k2.5"},
             ]
         )
         coach._save_chat_messages = MagicMock()
@@ -380,7 +382,7 @@ class TestPromptAndOutputHardening:
         assert "Personal Information" in out["response"]
         assert "Birthdate" in out["response"]
         assert "split" not in out["response"].lower()
-        assert coach.query_gemini.await_count == 0
+        assert coach._query_kimi_with_fallback.await_count == 0
 
     def test_intent_band_catches_logistics_analysis_mismatch(self):
         from services.ai_coach import AICoach
@@ -400,15 +402,16 @@ class TestPromptAndOutputHardening:
         coach.router = MagicMock()
         coach.router.classify = MagicMock(return_value=(None, False))
         coach.gemini_client = object()
-        coach.anthropic_client = None
-        coach.get_model_for_query = MagicMock(return_value=(AICoach.MODEL_DEFAULT, False))
+        coach.anthropic_client = object()
+        coach.get_model_for_query = MagicMock(return_value=(AICoach.MODEL_HIGH_STAKES, True))
         coach.check_budget = MagicMock(return_value=(True, "ok"))
         coach.get_or_create_thread_with_state = MagicMock(return_value=("thread-1", False))
         coach.get_thread_history = MagicMock(return_value={"messages": []})
-        coach.query_gemini = AsyncMock(
+        coach._build_athlete_state_for_opus = MagicMock(return_value="state")
+        coach._query_kimi_with_fallback = AsyncMock(
             side_effect=[
-                {"response": "Your splits looked controlled across miles.", "error": False},
-                {"response": "Negative split pattern remains strong.", "error": False},
+                {"response": "Your splits looked controlled across miles.", "error": False, "model": "kimi-k2.5"},
+                {"response": "Negative split pattern remains strong.", "error": False, "model": "kimi-k2.5"},
             ]
         )
         coach._save_chat_messages = MagicMock()

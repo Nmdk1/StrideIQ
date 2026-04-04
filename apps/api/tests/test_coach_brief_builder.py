@@ -283,26 +283,41 @@ class TestBuildAthleteBrief:
         """A fully populated athlete should produce a brief with all sections."""
         from services.coach_tools import build_athlete_brief
 
-        # Mock athlete
+        from models import Athlete, TrainingPlan, DailyCheckin
+
         mock_athlete = MagicMock()
         mock_athlete.display_name = "Mike"
         mock_athlete.birthdate = date(1968, 6, 15)
         mock_athlete.sex = "male"
         mock_athlete.preferred_units = "imperial"
-        db.query.return_value.filter.return_value.first.side_effect = [
-            mock_athlete,  # athlete lookup
-            MagicMock(  # plan lookup
-                goal_race_name="Boston Marathon",
-                goal_race_date=date(2026, 3, 15),
-                goal_race_distance_m=42195,
-                goal_time_seconds=11400,
-                total_weeks=16,
-                name="Marathon Build",
-                status="active",
-            ),
-            mock_athlete,  # for get_training_paces athlete lookup
-        ]
-        db.query.return_value.filter.return_value.order_by.return_value.first.return_value = None  # checkin
+
+        mock_plan = MagicMock(
+            goal_race_name="Boston Marathon",
+            goal_race_date=date(2026, 3, 15),
+            goal_race_distance_m=42195,
+            goal_time_seconds=11400,
+            total_weeks=16,
+            name="Marathon Build",
+            status="active",
+        )
+
+        def _route_query(model_cls):
+            chain = MagicMock()
+            if model_cls is Athlete:
+                chain.filter.return_value.first.return_value = mock_athlete
+            elif model_cls is TrainingPlan:
+                chain.filter.return_value.first.return_value = mock_plan
+            elif model_cls is DailyCheckin:
+                chain.filter.return_value.order_by.return_value.first.return_value = None
+            else:
+                chain.filter.return_value.first.return_value = None
+                chain.filter.return_value.count.return_value = 0
+                chain.filter.return_value.order_by.return_value.first.return_value = None
+                chain.filter.return_value.order_by.return_value.limit.return_value.all.return_value = []
+                chain.filter.return_value.all.return_value = []
+            return chain
+
+        db.query.side_effect = _route_query
 
         # Mock tool returns
         mock_load.return_value = {"ok": True, "data": {

@@ -107,23 +107,23 @@ def _build_chat_coach() -> AICoach:
     coach._save_chat_messages = MagicMock()
     coach.get_or_create_thread_with_state = MagicMock(return_value=("thread-1", False))
     coach.get_thread_history = MagicMock(return_value={"messages": []})
-    coach.get_model_for_query = MagicMock(return_value=(AICoach.MODEL_DEFAULT, "low"))
+    coach.get_model_for_query = MagicMock(return_value=(AICoach.MODEL_HIGH_STAKES, True))
     coach.is_high_stakes_query = MagicMock(return_value=False)
+    coach._build_athlete_state_for_opus = MagicMock(return_value="state")
     # _user_explicitly_requested_ids is needed by _normalize_response_for_ui
     coach._user_explicitly_requested_ids = AICoach._user_explicitly_requested_ids.__get__(coach, AICoach)
     coach._normalize_response_for_ui = AICoach._normalize_response_for_ui.__get__(coach, AICoach)
     return coach
 
 
-def test_chat_gemini_success_normalizes_response():
-    """Gemini success path must run _normalize_response_for_ui before returning.
+def test_chat_kimi_success_normalizes_response():
+    """Kimi success path must run _normalize_response_for_ui before returning.
 
     This proves the Coach Output Contract v1 normalization is live for
     production chat responses (the critical gap fixed in this refactor).
     """
     coach = _build_chat_coach()
 
-    # Simulate Gemini returning a response with internal labels that should be stripped
     dirty_response = (
         "authoritative fact capsule\n"
         "response contract\n"
@@ -131,50 +131,42 @@ def test_chat_gemini_success_normalizes_response():
         "Recorded pace vs marathon pace: slower by 0:09/mi.\n"
         "You had a strong controlled session today. Keep tomorrow easy to protect recovery."
     )
-    gemini_future = AsyncMock(return_value={
+    coach._query_kimi_with_fallback = AsyncMock(return_value={
         "response": dirty_response,
         "error": False,
-        "is_high_stakes": False,
-        "input_tokens": 100,
-        "output_tokens": 50,
+        "model": "kimi-k2.5",
     })
-    coach.query_gemini = gemini_future
 
-    result = asyncio.get_event_loop().run_until_complete(
+    result = asyncio.run(
         coach.chat(athlete_id=uuid4(), message="How was my run today?")
     )
 
     assert not result.get("error"), f"Expected success, got error: {result}"
     response = result["response"]
 
-    # Internal labels must be stripped
     assert "authoritative fact capsule" not in response
     assert "response contract" not in response
     assert "Recorded pace vs marathon pace" not in response
 
-    # Coaching content must survive
     assert "strong controlled session" in response
     assert "recovery" in response
 
-    # Verify _save_chat_messages received the *normalized* text
     coach._save_chat_messages.assert_called_once()
     saved_text = coach._save_chat_messages.call_args[0][2]
     assert "authoritative fact capsule" not in saved_text
 
 
-def test_chat_gemini_failure_returns_fail_closed_when_no_opus_available():
-    """When Gemini fails and Anthropic is unavailable, chat() must fail closed."""
+def test_chat_kimi_failure_returns_error_without_saving_chat():
+    """When Kimi (and its Sonnet fallback) fails, chat() must fail closed."""
     coach = _build_chat_coach()
 
-    # Simulate Gemini returning an error
-    gemini_future = AsyncMock(return_value={
+    coach._query_kimi_with_fallback = AsyncMock(return_value={
         "response": "Coach is temporarily unavailable. Please try again in a moment.",
         "error": True,
-        "error_detail": "Gemini API quota exceeded",
+        "error_detail": "Kimi + Sonnet both failed",
     })
-    coach.query_gemini = gemini_future
 
-    result = asyncio.get_event_loop().run_until_complete(
+    result = asyncio.run(
         coach.chat(athlete_id=uuid4(), message="How is my training going?")
     )
 
@@ -183,68 +175,23 @@ def test_chat_gemini_failure_returns_fail_closed_when_no_opus_available():
     coach._save_chat_messages.assert_not_called()
 
 
-def test_chat_gemini_failure_falls_back_to_opus_when_available():
-    """When Gemini fails and Anthropic is configured, chat() should retry via Opus."""
+def test_chat_kimi_success_saves_model_name():
+    """Kimi success path must persist model name in _save_chat_messages call."""
     coach = _build_chat_coach()
-    coach.anthropic_client = MagicMock()  # enable Opus fallback branch
 
-    coach.query_gemini = AsyncMock(return_value={
-        "response": "Coach is temporarily unavailable. Please try again in a moment.",
-        "error": True,
-        "error_detail": "Gemini transient provider error",
-    })
-    coach.query_opus = AsyncMock(return_value={
-        "response": "You're carrying manageable fatigue but trend is stable. Keep tomorrow easy.",
+    coach._query_kimi_with_fallback = AsyncMock(return_value={
+        "response": "Manageable fatigue — keep tomorrow easy.",
         "error": False,
-        "model": AICoach.MODEL_HIGH_STAKES,
+        "model": "kimi-k2.5",
     })
-    coach._build_athlete_state_for_opus = MagicMock(return_value="mock-athlete-state")
 
-    result = asyncio.get_event_loop().run_until_complete(
+    result = asyncio.run(
         coach.chat(athlete_id=uuid4(), message="How is my training going?")
     )
 
     assert result.get("error") is False
-    assert "manageable fatigue" in result.get("response", "").lower()
-    coach.query_opus.assert_called_once()
     coach._save_chat_messages.assert_called_once()
-
-
-def test_chat_gemini_and_opus_failure_returns_error_without_saving_chat():
-    """If both providers fail, return error and do not persist assistant message."""
-    coach = _build_chat_coach()
-    coach.anthropic_client = MagicMock()  # enable Opus fallback branch
-
-    coach.query_gemini = AsyncMock(return_value={
-        "response": "Coach is temporarily unavailable. Please try again in a moment.",
-        "error": True,
-        "error_detail": "Gemini provider error",
-    })
-    coach.query_opus = AsyncMock(return_value={
-        "response": "I encountered an error processing your request. Please try again.",
-        "error": True,
-        "error_detail": "Opus provider error",
-    })
-    coach._build_athlete_state_for_opus = MagicMock(return_value="mock-athlete-state")
-
-    result = asyncio.get_event_loop().run_until_complete(
-        coach.chat(athlete_id=uuid4(), message="How is my training going?")
+    call_kwargs = coach._save_chat_messages.call_args
+    assert call_kwargs.kwargs.get("model") == "kimi-k2.5" or (
+        len(call_kwargs.args) > 3 and call_kwargs.args[3] == "kimi-k2.5"
     )
-
-    assert result.get("error") is True
-    coach.query_opus.assert_called_once()
-    coach._save_chat_messages.assert_not_called()
-
-
-def test_chat_no_gemini_client_returns_fail_closed():
-    """When gemini_client is None, chat() must fail closed immediately."""
-    coach = _build_chat_coach()
-    coach.gemini_client = None  # No Gemini available
-
-    result = asyncio.get_event_loop().run_until_complete(
-        coach.chat(athlete_id=uuid4(), message="How is my training going?")
-    )
-
-    assert result.get("error") is True
-    assert "not configured" in result["response"].lower() or "unavailable" in result["response"].lower()
-    assert "fallback_to_assistants" not in str(result)

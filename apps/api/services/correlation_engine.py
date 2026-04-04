@@ -25,7 +25,7 @@ import math
 from scipy.stats import t as t_dist
 
 from models import (
-    Activity, ActivitySplit, NutritionEntry, DailyCheckin, 
+    Activity, ActivitySplit, Athlete, NutritionEntry, DailyCheckin,
     WorkPattern, BodyComposition, ActivityFeedback,
     PlannedWorkout, TrainingPlan, PersonalBest,
     GarminDay, ActivityReflection, StrengthExerciseSet,

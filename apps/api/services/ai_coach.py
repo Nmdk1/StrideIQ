@@ -193,8 +193,11 @@ from services.coach_modules import (  # noqa: E402
 
 class AICoach:
     """
-    AI Coach powered by Gemini 3 Flash (standard) and Claude Opus (high-stakes).
-    
+    AI Coach powered by Kimi K2.5 (all queries) with Claude Sonnet silent fallback.
+
+    As of Apr 2026 every query routes to Kimi K2.5.  Gemini Flash is retired
+    from the coach path.  Sonnet remains as a reliability fallback only.
+
     Provides:
     - Persistent conversation sessions (PostgreSQL-backed)
     - Context-aware responses based on athlete data
@@ -1629,6 +1632,7 @@ If you need more data to answer well, call the tools. That's why they're there."
         athlete_state: str,
         conversation_context: Optional[List[Dict[str, str]]] = None,
     ) -> Dict[str, Any]:
+        """Primary coach query path: Kimi K2.5 with silent Sonnet fallback."""
         try:
             return await self.query_kimi_coach(
                 athlete_id=athlete_id,
@@ -2371,7 +2375,13 @@ ATHLETE BRIEF:
             logger.warning(f"Failed to read coach chat history: {e}")
             return {"thread_id": None, "messages": []}
 
-    def _save_chat_messages(self, athlete_id: UUID, user_message: str, assistant_response: str) -> None:
+    def _save_chat_messages(
+        self,
+        athlete_id: UUID,
+        user_message: str,
+        assistant_response: str,
+        model: Optional[str] = None,
+    ) -> None:
         """Save user message and assistant response to PostgreSQL CoachChat."""
         try:
             chat = (
@@ -2396,7 +2406,14 @@ ATHLETE BRIEF:
             now_iso = datetime.utcnow().replace(microsecond=0).isoformat()
             msgs = list(chat.messages or [])
             msgs.append({"role": "user", "content": user_message, "timestamp": now_iso})
-            msgs.append({"role": "assistant", "content": assistant_response, "timestamp": now_iso})
+            assistant_msg: Dict[str, Any] = {
+                "role": "assistant",
+                "content": assistant_response,
+                "timestamp": now_iso,
+            }
+            if model:
+                assistant_msg["model"] = model
+            msgs.append(assistant_msg)
             chat.messages = msgs
             # Force SQLAlchemy to detect the JSONB change
             from sqlalchemy.orm.attributes import flag_modified
@@ -2958,79 +2975,40 @@ ATHLETE BRIEF:
 
     def get_model_for_query(self, query_type: str, athlete_id: Optional[UUID] = None, message: str = "") -> Tuple[str, bool]:
         """
-        Select model based on query content and athlete tier (ADR-061: Hybrid architecture).
-        
-        Routing logic — Sonnet for queries that MATTER:
-        1. High-stakes queries (injury/pain/load) → Sonnet (liability risk)
-        2. High-complexity queries (causal + ambiguity) → Sonnet (needs real reasoning)
-        3. Everything else → Gemini 3 Flash
-        
-        VIP athletes get higher premium-lane caps but same routing rules.
-        
-        Args:
-            query_type: Legacy 'simple'/'standard' or new 'low'/'medium'/'high'
-            athlete_id: Optional athlete ID for VIP and budget check
-            message: Original message for classification
-            
-        Returns:
-            Tuple of (model_name, is_premium_anthropic)
-        """
-        # Check if high-stakes routing is enabled
-        if not self.high_stakes_routing_enabled:
-            return self.MODEL_DEFAULT, False
+        Select model for coach query.
 
-        # Founder and VIP bypass subscription check — they always get premium
+        As of Apr 2026 every query routes to Kimi K2.5 via the premium
+        tool-calling path (_query_kimi_with_fallback).  Sonnet remains as
+        a silent fallback if Kimi errors.  Gemini Flash is retired from
+        the coach path.
+
+        Budget checks still apply per athlete tier (founder uncapped,
+        VIP gets higher caps, standard gets default caps).
+
+        Returns:
+            Tuple of (model_name, is_premium) — is_premium is always True
+            now that Kimi is the universal model.
+        """
         if athlete_id and self._is_founder(athlete_id):
-            if self.anthropic_client:
-                logger.info("Routing to premium: founder_bypass")
-                return self.MODEL_HIGH_STAKES, True
-            return self.MODEL_DEFAULT, False
+            logger.info("Routing to Kimi: founder_bypass")
+            return self.MODEL_HIGH_STAKES, True
 
         if athlete_id and self.is_athlete_vip(athlete_id):
             allowed, reason = self.check_budget(athlete_id, is_opus=True, is_vip=True)
-            if allowed and self.anthropic_client:
-                logger.info(f"Routing to premium: vip_always, athlete={athlete_id}")
+            if allowed:
+                logger.info("Routing to Kimi: vip, athlete=%s", athlete_id)
                 return self.MODEL_HIGH_STAKES, True
-            else:
-                logger.info(f"VIP premium fallback: reason={reason}, has_anthropic={bool(self.anthropic_client)}")
-                return self.MODEL_DEFAULT, False
+            logger.info("Budget exceeded for VIP %s: %s", athlete_id, reason)
+            return self.MODEL_HIGH_STAKES, True
 
-        # Free users get default model (no premium for unpaid)
         if athlete_id:
-            athlete = self.db.query(Athlete).filter(Athlete.id == athlete_id).first()
-            if athlete and not getattr(athlete, "has_active_subscription", False):
-                return self.MODEL_DEFAULT, False
-
-        # Determine if query needs Sonnet (high-stakes OR high-complexity)
-        is_high_stakes = is_high_stakes_query(message)
-        complexity = self.classify_query_complexity(message)
-        is_high_complexity = complexity == "high"
-        
-        # Route to Sonnet if either condition is true
-        needs_premium = is_high_stakes or is_high_complexity
-        
-        if needs_premium and athlete_id:
-            # Check premium-lane budget (VIP uses higher hard caps via check_budget)
-            # NOTE: is_opus=True refers to the premium Anthropic lane counter,
-            # which now maps to Sonnet (not Opus). The CoachUsage schema retains
-            # opus_requests_today column name for compatibility — semantics are
-            # "premium Anthropic requests today".
             is_vip = self.is_athlete_vip(athlete_id)
             allowed, reason = self.check_budget(athlete_id, is_opus=True, is_vip=is_vip)
-            
-            if allowed and self.anthropic_client:
-                logger.info(
-                    f"Routing to Sonnet: is_high_stakes={is_high_stakes}, "
-                    f"is_high_complexity={is_high_complexity}, is_vip={is_vip}"
-                )
-                return self.MODEL_HIGH_STAKES, True
-            else:
-                # Fallback to Gemini when Sonnet unavailable/budget exhausted
-                logger.info(f"Sonnet fallback to Gemini: reason={reason}, has_anthropic={bool(self.anthropic_client)}")
-                return self.MODEL_DEFAULT, False
-        
-        # Default: Gemini 3 Flash
-        return self.MODEL_DEFAULT, False
+            if not allowed:
+                logger.info("Budget exceeded for %s: %s", athlete_id, reason)
+
+        logger.info("Routing to Kimi: universal")
+        return self.MODEL_HIGH_STAKES, True
     
     def get_model_for_query_legacy(self, query_type: str, athlete_id: Optional[UUID] = None, message: str = "") -> str:
         """
@@ -3125,7 +3103,7 @@ ATHLETE BRIEF:
                 is_synthetic_probe=detected_synthetic_probe,
                 is_organic=is_organic,
             )
-            self._save_chat_messages(athlete_id, message, response)
+            self._save_chat_messages(athlete_id, message, response, model="deterministic")
             return {
                 "response": response,
                 "thread_id": thread_id,
@@ -3436,13 +3414,6 @@ ATHLETE BRIEF:
                 f"is_vip={is_vip}, is_high_stakes={is_high_stakes}, is_high_complexity={is_high_complexity}"
             )
 
-            is_kimi_canary = False
-            try:
-                from core.llm_client import is_canary_athlete
-                is_kimi_canary = bool(is_canary_athlete(str(athlete_id)))
-            except Exception:
-                is_kimi_canary = False
-            
             # Check overall budget before proceeding
             budget_ok, budget_reason = self.check_budget(athlete_id, is_opus=is_opus, is_vip=is_vip)
             if not budget_ok:
@@ -3457,187 +3428,50 @@ ATHLETE BRIEF:
                     "budget_exceeded": True,
                     "budget_reason": budget_reason,
                 }
-            
-            # Premium-lane routing:
-            # - Kimi canary athletes: query_kimi_coach with silent Sonnet fallback
-            # - Others: existing Sonnet path
-            if is_opus and self.anthropic_client:
-                # Build athlete state for Sonnet context
-                athlete_state = self._build_athlete_state_for_opus(athlete_id)
-                
-                # Get recent conversation context
-                thread_id, _ = self.get_or_create_thread_with_state(athlete_id)
-                conversation_context = []
-                if thread_id:
-                    try:
-                        history_data = self.get_thread_history(athlete_id, limit=10)
-                        history = history_data.get("messages", [])
-                        conversation_context = [
-                            {"role": m.get("role"), "content": m.get("content")}
-                            for m in history if m.get("role") in ("user", "assistant")
-                        ]
-                    except Exception:
-                        pass
-                
-                if is_kimi_canary:
-                    premium_result = await self._query_kimi_with_fallback(
-                        athlete_id=athlete_id,
-                        message=message,
-                        athlete_state=athlete_state,
-                        conversation_context=conversation_context,
-                    )
-                else:
-                    premium_result = await self.query_opus(
-                        athlete_id=athlete_id,
-                        message=message,
-                        athlete_state=athlete_state,
-                        conversation_context=conversation_context,
-                    )
-                
-                # Save to PostgreSQL (CoachChat) for conversation continuity
-                if not premium_result.get("error"):
-                    guarded_response = await self._finalize_response_with_turn_guard(
-                        athlete_id=athlete_id,
-                        user_message=message,
-                        response_text=premium_result.get("response", ""),
-                        is_opus=True,
-                        conversation_context=conversation_context,
-                        turn_id=turn_id,
-                        is_synthetic_probe=detected_synthetic_probe,
-                        is_organic=is_organic,
-                    )
-                    premium_result["response"] = guarded_response
-                    self._save_chat_messages(athlete_id, message, guarded_response)
-                
-                premium_result["thread_id"] = thread_id
-                return premium_result
 
-            # Route default queries to Gemini 3 Flash (Mar 2026 upgrade)
-            if model == self.MODEL_DEFAULT and self.gemini_client:
-                # ADR-16: Brief is now built inside query_gemini() — no separate athlete_state needed
-                athlete_state = ""  # Legacy param, brief is injected in query_gemini
-                
-                # Get recent conversation context
-                thread_id, _ = self.get_or_create_thread_with_state(athlete_id)
-                conversation_context = []
-                if thread_id:
-                    try:
-                        history_data = self.get_thread_history(athlete_id, limit=10)
-                        history = history_data.get("messages", [])
-                        conversation_context = [
-                            {"role": m.get("role"), "content": m.get("content")}
-                            for m in history if m.get("role") in ("user", "assistant")
-                        ]
-                    except Exception:
-                        pass
-                
-                # Query Gemini
-                gemini_result = await self.query_gemini(
+            # Universal Kimi K2.5 routing (Apr 2026).
+            # Every query goes through Kimi with Sonnet as silent fallback.
+            athlete_state = self._build_athlete_state_for_opus(athlete_id)
+
+            thread_id, _ = self.get_or_create_thread_with_state(athlete_id)
+            conversation_context = []
+            if thread_id:
+                try:
+                    history_data = self.get_thread_history(athlete_id, limit=10)
+                    history = history_data.get("messages", [])
+                    conversation_context = [
+                        {"role": m.get("role"), "content": m.get("content")}
+                        for m in history if m.get("role") in ("user", "assistant")
+                    ]
+                except Exception:
+                    pass
+
+            result = await self._query_kimi_with_fallback(
+                athlete_id=athlete_id,
+                message=message,
+                athlete_state=athlete_state,
+                conversation_context=conversation_context,
+            )
+
+            if not result.get("error"):
+                guarded_response = await self._finalize_response_with_turn_guard(
                     athlete_id=athlete_id,
-                    message=message,
-                    athlete_state=athlete_state,
+                    user_message=message,
+                    response_text=result.get("response", ""),
+                    is_opus=True,
                     conversation_context=conversation_context,
+                    turn_id=turn_id,
+                    is_synthetic_probe=detected_synthetic_probe,
+                    is_organic=is_organic,
+                )
+                result["response"] = guarded_response
+                self._save_chat_messages(
+                    athlete_id, message, guarded_response,
+                    model=result.get("model", "unknown"),
                 )
 
-                # Gemini returned success.
-                if not gemini_result.get("error"):
-                    guarded_response = await self._finalize_response_with_turn_guard(
-                        athlete_id=athlete_id,
-                        user_message=message,
-                        response_text=gemini_result.get("response", ""),
-                        is_opus=False,
-                        conversation_context=conversation_context,
-                        turn_id=turn_id,
-                        is_synthetic_probe=detected_synthetic_probe,
-                        is_organic=is_organic,
-                    )
-                    gemini_result["response"] = guarded_response
-
-                    # Save to PostgreSQL (CoachChat) for conversation continuity
-                    self._save_chat_messages(athlete_id, message, guarded_response)
-
-                    gemini_result["thread_id"] = thread_id
-                    return gemini_result
-
-                # Reliability hardening:
-                # If Gemini fails but Anthropic is configured, attempt Sonnet fallback
-                # before surfacing "temporarily unavailable" to the athlete.
-                if self.anthropic_client:
-                    logger.warning(
-                        "Gemini query failed for %s; attempting Sonnet fallback. "
-                        "error_detail=%s",
-                        athlete_id,
-                        gemini_result.get("error_detail"),
-                    )
-                    opus_result = await self.query_opus(
-                        athlete_id=athlete_id,
-                        message=message,
-                        athlete_state=self._build_athlete_state_for_opus(athlete_id),
-                        conversation_context=conversation_context,
-                    )
-                    if not opus_result.get("error"):
-                        guarded_response = await self._finalize_response_with_turn_guard(
-                            athlete_id=athlete_id,
-                            user_message=message,
-                            response_text=opus_result.get("response", ""),
-                            is_opus=True,
-                            conversation_context=conversation_context,
-                            turn_id=turn_id,
-                            is_synthetic_probe=detected_synthetic_probe,
-                            is_organic=is_organic,
-                        )
-                        opus_result["response"] = guarded_response
-                        self._save_chat_messages(athlete_id, message, guarded_response)
-
-                    opus_result["thread_id"] = thread_id
-                    return opus_result
-
-                # No Anthropic fallback available; return Gemini failure as-is.
-                gemini_result["thread_id"] = thread_id
-                return gemini_result
-
-            # Safety net: any unhandled model routes to Gemini if available
-            if self.gemini_client:
-                logger.warning(f"Unhandled model '{model}' — routing to Gemini as safety net")
-                thread_id, _ = self.get_or_create_thread_with_state(athlete_id)
-                conversation_context = []
-                if thread_id:
-                    try:
-                        history_data = self.get_thread_history(athlete_id, limit=10)
-                        history = history_data.get("messages", [])
-                        conversation_context = [
-                            {"role": m.get("role"), "content": m.get("content")}
-                            for m in history if m.get("role") in ("user", "assistant")
-                        ]
-                    except Exception:
-                        pass
-                gemini_result = await self.query_gemini(
-                    athlete_id=athlete_id,
-                    message=message,
-                    athlete_state="",
-                    conversation_context=conversation_context,
-                )
-                if not gemini_result.get("error"):
-                    guarded_response = await self._finalize_response_with_turn_guard(
-                        athlete_id=athlete_id,
-                        user_message=message,
-                        response_text=gemini_result.get("response", ""),
-                        is_opus=False,
-                        conversation_context=conversation_context,
-                        turn_id=turn_id,
-                        is_synthetic_probe=detected_synthetic_probe,
-                        is_organic=is_organic,
-                    )
-                    gemini_result["response"] = guarded_response
-                    self._save_chat_messages(athlete_id, message, guarded_response)
-                gemini_result["thread_id"] = thread_id
-                return gemini_result
-
-            return {
-                "response": "Coach is temporarily unavailable. Please try again in a moment.",
-                "error": True,
-                "thread_id": None,
-            }
+            result["thread_id"] = thread_id
+            return result
             
         except Exception as e:
             logger.error(f"AI Coach error: {e}")

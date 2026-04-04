@@ -158,7 +158,8 @@ def test_kimi_path_omits_temperature():
 
 
 @pytest.mark.asyncio
-async def test_canary_routing_premium_lane_to_kimi(monkeypatch):
+async def test_universal_kimi_routing(monkeypatch):
+    """All queries now route to Kimi K2.5 — no canary gating."""
     coach = AICoach(db=MagicMock())
     coach.router = MagicMock()
     coach.router.classify = MagicMock(return_value=(None, False))
@@ -175,51 +176,15 @@ async def test_canary_routing_premium_lane_to_kimi(monkeypatch):
     coach.get_or_create_thread_with_state = MagicMock(return_value=("thread-1", False))
     coach.get_thread_history = MagicMock(return_value={"messages": []})
     coach._build_athlete_state_for_opus = MagicMock(return_value="state")
-    coach._query_kimi_with_fallback = AsyncMock(return_value={"response": "kimi", "error": False})
-    coach.query_opus = AsyncMock(return_value={"response": "sonnet", "error": False})
+    coach._query_kimi_with_fallback = AsyncMock(return_value={"response": "kimi", "error": False, "model": "kimi-k2.5"})
+    coach.query_opus = AsyncMock(return_value={"response": "sonnet", "error": False, "model": "claude-sonnet-4-6"})
     coach._finalize_response_with_turn_guard = AsyncMock(side_effect=lambda **kwargs: kwargs["response_text"])
     coach._save_chat_messages = MagicMock()
 
     import services.consent as consent_module
     monkeypatch.setattr(consent_module, "has_ai_consent", lambda athlete_id, db: True)
-    import core.llm_client as llm_module
-    monkeypatch.setattr(llm_module, "is_canary_athlete", lambda athlete_id: True)
 
     result = await coach.chat(uuid4(), "My knee hurts. Should I run?")
     assert result["error"] is False
     coach._query_kimi_with_fallback.assert_awaited_once()
     coach.query_opus.assert_not_awaited()
-
-
-@pytest.mark.asyncio
-async def test_non_canary_keeps_existing_premium_lane_behavior(monkeypatch):
-    coach = AICoach(db=MagicMock())
-    coach.router = MagicMock()
-    coach.router.classify = MagicMock(return_value=(None, False))
-    coach.gemini_client = object()
-    coach.anthropic_client = object()
-    coach.classify_query_complexity = MagicMock(return_value="high")
-    coach.get_model_for_query = MagicMock(return_value=(coach.MODEL_HIGH_STAKES, True))
-    coach.is_athlete_vip = MagicMock(return_value=False)
-    coach.check_budget = MagicMock(return_value=(True, "ok"))
-    coach._is_profile_edit_intent = MagicMock(return_value=False)
-    coach._maybe_update_units_preference = MagicMock()
-    coach._maybe_update_intent_snapshot = MagicMock()
-    coach._thin_history_and_baseline_flags = MagicMock(return_value=(False, {}, None, False))
-    coach.get_or_create_thread_with_state = MagicMock(return_value=("thread-1", False))
-    coach.get_thread_history = MagicMock(return_value={"messages": []})
-    coach._build_athlete_state_for_opus = MagicMock(return_value="state")
-    coach._query_kimi_with_fallback = AsyncMock(return_value={"response": "kimi", "error": False})
-    coach.query_opus = AsyncMock(return_value={"response": "sonnet", "error": False})
-    coach._finalize_response_with_turn_guard = AsyncMock(side_effect=lambda **kwargs: kwargs["response_text"])
-    coach._save_chat_messages = MagicMock()
-
-    import services.consent as consent_module
-    monkeypatch.setattr(consent_module, "has_ai_consent", lambda athlete_id, db: True)
-    import core.llm_client as llm_module
-    monkeypatch.setattr(llm_module, "is_canary_athlete", lambda athlete_id: False)
-
-    result = await coach.chat(uuid4(), "My knee hurts. Should I run?")
-    assert result["error"] is False
-    coach.query_opus.assert_awaited_once()
-    coach._query_kimi_with_fallback.assert_not_awaited()

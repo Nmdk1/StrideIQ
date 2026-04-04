@@ -77,13 +77,13 @@ class TestNoRuntimeOpus:
         assert coach_no_anthropic.MODEL_HIGH_STAKES == "claude-sonnet-4-6"
 
     def test_no_fallback_to_opus(self, coach_no_anthropic):
-        """Premium lane fallback (budget hit, no client) must return Gemini, not Opus."""
+        """All queries route to MODEL_HIGH_STAKES (Kimi path). Never Opus."""
         athlete_id = uuid4()
         model, is_premium = coach_no_anthropic.get_model_for_query(
             "high", athlete_id=athlete_id, message="should i skip my run, my knee hurts"
         )
         assert "opus" not in model.lower(), f"Fallback must not be Opus, got: {model}"
-        assert model == coach_no_anthropic.MODEL_DEFAULT
+        assert model == coach_no_anthropic.MODEL_HIGH_STAKES
 
     def test_home_briefing_model_string(self):
         """Home briefing default model must be claude-sonnet-4-6, never claude-opus-4-6.
@@ -229,8 +229,8 @@ class TestPremiumCapPreserved:
         assert allowed is True
         assert reason == "founder_bypass"
 
-    def test_cap_hit_fallback_is_gemini_not_opus(self, mock_db):
-        """When premium cap is exhausted, routing returns Gemini (not Opus)."""
+    def test_cap_hit_still_routes_to_kimi(self, mock_db):
+        """When premium cap is exhausted, routing still returns MODEL_HIGH_STAKES (Kimi path)."""
         athlete_id = uuid4()
         with patch.dict("os.environ", {
             "COACH_MODEL_ROUTING": "on",
@@ -240,19 +240,13 @@ class TestPremiumCapPreserved:
             coach = AICoach(mock_db)
             coach.anthropic_client = MagicMock()
 
-        # Simulate budget exhausted
-        with patch.object(coach, "check_budget", return_value=(False, "daily_opus_limit")), \
-             patch.object(coach, "_is_founder", return_value=False):
-            # Subscribed athlete
-            subscribed = MagicMock()
-            subscribed.has_active_subscription = True
-            mock_db.query.return_value.filter.return_value.first.return_value = subscribed
+        with patch.object(coach, "_is_founder", return_value=False):
             model, is_premium = coach.get_model_for_query(
                 "high", athlete_id=athlete_id, message="my knee hurts badly"
             )
-        assert "opus" not in model.lower(), f"Cap fallback must not be Opus, got: {model}"
-        assert model == coach.MODEL_DEFAULT
-        assert is_premium is False
+        assert "opus" not in model.lower(), f"Must not be Opus, got: {model}"
+        assert model == coach.MODEL_HIGH_STAKES
+        assert is_premium is True
 
 
 # ---------------------------------------------------------------------------
