@@ -19,17 +19,19 @@ import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
 import { useEfficiencyTrends } from '@/lib/hooks/queries/analytics';
 import { useCurrentPlan } from '@/lib/hooks/queries/training-plans';
 import { useHomeData } from '@/lib/hooks/queries/home';
+import { useAuth } from '@/lib/hooks/useAuth';
 import { EfficiencyChart } from '@/components/dashboard/EfficiencyChart';
 import { LoadResponseChart } from '@/components/dashboard/LoadResponseChart';
 import { AgeGradedChart } from '@/components/dashboard/AgeGradedChart';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { ErrorMessage } from '@/components/ui/ErrorMessage';
 import { correlationsService, type Correlation } from '@/lib/api/services/correlations';
+import { API_CONFIG } from '@/lib/api/config';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
-import { BarChart3, TrendingUp, TrendingDown, Minus, Target, Calendar, ArrowRight, Activity, Zap, AlertTriangle, Info } from 'lucide-react';
+import { BarChart3, TrendingUp, TrendingDown, Minus, Target, Calendar, ArrowRight, Activity, Zap, AlertTriangle, Info, Search } from 'lucide-react';
 import { WhyThisTrend } from '@/components/analytics/WhyThisTrend';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 
@@ -424,6 +426,9 @@ export default function DashboardPage() {
           {data.load_response && data.load_response.length > 0 && (
             <LoadResponseChart data={data.load_response} />
           )}
+
+          {/* Trends Summary (absorbed from /trends) */}
+          <TrendsSummary days={days} />
           
           {/* Correlation Explorer */}
           <CorrelationExplorer days={days} />
@@ -581,4 +586,193 @@ function CorrelationItem({ correlation, positive }: { correlation: Correlation; 
       </div>
     </div>
   );
+}
+
+interface TrendDataItem {
+  metric: string;
+  direction: string;
+  magnitude_percent: number | null;
+  confidence: number;
+  data_points: number;
+  period_days: number;
+  is_significant: boolean;
+  interpretation?: string;
+}
+
+interface RootCauseData {
+  status: string;
+  message?: string;
+  trend?: { direction: string; magnitude_percent: number | null; confidence: number };
+  hypotheses: Array<{
+    factor: string;
+    correlation: number;
+    direction: string;
+    confidence: number;
+    explanation: string;
+  }>;
+}
+
+function TrendsSummary({ days }: { days: number }) {
+  const { token } = useAuth();
+
+  const { data: efficiencyTrend, isLoading: effLoading } = useQuery<TrendDataItem>({
+    queryKey: ['efficiency-trend', days],
+    queryFn: async () => {
+      const res = await fetch(`${API_CONFIG.baseURL}/v1/run-analysis/trends/efficiency?days=${days}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) throw new Error('Failed to fetch');
+      return res.json();
+    },
+    enabled: !!token,
+    staleTime: 60000,
+  });
+
+  const { data: volumeTrend, isLoading: volLoading } = useQuery<TrendDataItem>({
+    queryKey: ['volume-trend', days],
+    queryFn: async () => {
+      const res = await fetch(`${API_CONFIG.baseURL}/v1/run-analysis/trends/volume?days=${days}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) throw new Error('Failed to fetch');
+      return res.json();
+    },
+    enabled: !!token,
+    staleTime: 60000,
+  });
+
+  const { data: rootCauses, isLoading: rcLoading } = useQuery<RootCauseData>({
+    queryKey: ['root-causes', days],
+    queryFn: async () => {
+      const res = await fetch(`${API_CONFIG.baseURL}/v1/run-analysis/root-causes?days=${days}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) throw new Error('Failed to fetch');
+      return res.json();
+    },
+    enabled: !!token,
+    staleTime: 60000,
+  });
+
+  const isLoading = effLoading || volLoading || rcLoading;
+
+  if (isLoading) {
+    return (
+      <Card className="mt-6 bg-slate-800 border-slate-700">
+        <CardContent className="py-8">
+          <div className="flex justify-center"><LoadingSpinner /></div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (!efficiencyTrend && !volumeTrend) return null;
+
+  return (
+    <div className="mt-6 space-y-4">
+      <h2 className="text-lg font-semibold text-slate-200 flex items-center gap-2">
+        <Search className="w-5 h-5 text-orange-500" />
+        Trends &amp; Root Causes
+      </h2>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <TrendCard title="Efficiency" subtitle="HR / Pace ratio (lower = better)" trend={efficiencyTrend} invertGood />
+        <TrendCard title="Volume" subtitle="Weekly mileage progression" trend={volumeTrend} />
+      </div>
+
+      {efficiencyTrend?.interpretation && (
+        <div className="bg-slate-800/50 rounded-lg p-5 border-l-4 border-orange-500">
+          <h3 className="text-sm font-medium text-white mb-1">What This Means</h3>
+          <p className="text-sm text-slate-300">{efficiencyTrend.interpretation}</p>
+        </div>
+      )}
+
+      {rootCauses && rootCauses.status !== 'no_significant_trend' && rootCauses.hypotheses.length > 0 && (
+        <Card className="bg-slate-800/30 border-slate-700">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base">Root Cause Analysis</CardTitle>
+          </CardHeader>
+          <CardContent className="pt-0">
+            <p className="text-slate-400 text-xs mb-3">
+              Factors potentially contributing to your{' '}
+              <span className={rootCauses.trend?.direction === 'declining' ? 'text-orange-400' : 'text-green-400'}>
+                {rootCauses.trend?.direction}
+              </span>{' '}efficiency trend:
+            </p>
+            <div className="space-y-3">
+              {rootCauses.hypotheses.map((h, i) => (
+                <div key={i} className="flex items-start gap-3 p-3 bg-slate-800/50 rounded-lg">
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2 mb-0.5">
+                      <span className="text-sm font-medium text-white capitalize">{h.factor}</span>
+                      <TrendCorrelationBadge correlation={h.correlation} />
+                    </div>
+                    <p className="text-xs text-slate-300">{h.explanation}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+    </div>
+  );
+}
+
+function TrendCard({ title, subtitle, trend, invertGood = false }: {
+  title: string;
+  subtitle: string;
+  trend: TrendDataItem | undefined;
+  invertGood?: boolean;
+}) {
+  if (!trend) return null;
+
+  const getColor = () => {
+    if (trend.direction === 'insufficient_data' || trend.direction === 'stable') return 'text-slate-400';
+    const isGood = invertGood ? trend.direction === 'declining' : trend.direction === 'improving';
+    return isGood ? 'text-green-400' : 'text-orange-400';
+  };
+
+  const arrow = trend.direction === 'improving' ? '↑' : trend.direction === 'declining' ? '↓' : trend.direction === 'stable' ? '→' : '—';
+
+  const getBg = () => {
+    if (trend.direction === 'insufficient_data' || !trend.is_significant) return 'from-slate-800/50 to-slate-800/30';
+    const isGood = invertGood ? trend.direction === 'declining' : trend.direction === 'improving';
+    return isGood ? 'from-green-900/30 to-slate-800/30' : 'from-orange-900/30 to-slate-800/30';
+  };
+
+  return (
+    <div className={`bg-gradient-to-br ${getBg()} rounded-lg p-5 border border-slate-700/50`}>
+      <div className="flex justify-between items-start mb-3">
+        <div>
+          <h3 className="text-base font-medium text-white mb-0.5">{title}</h3>
+          <p className="text-slate-500 text-xs">{subtitle}</p>
+        </div>
+        {trend.is_significant && (
+          <Badge variant="outline" className="text-orange-400 border-orange-500/30 text-[10px]">Significant</Badge>
+        )}
+      </div>
+      <div className="flex items-baseline gap-2 mb-3">
+        <span className={`text-3xl font-bold ${getColor()}`}>{arrow}</span>
+        <span className={`text-lg font-medium ${getColor()}`}>{trend.direction.replace('_', ' ')}</span>
+      </div>
+      {trend.direction !== 'insufficient_data' && trend.magnitude_percent !== null && (
+        <div className="space-y-1 text-xs">
+          <div className="flex justify-between"><span className="text-slate-400">Change</span><span className="text-white">{Math.abs(trend.magnitude_percent).toFixed(1)}%</span></div>
+          <div className="flex justify-between"><span className="text-slate-400">Confidence</span><span className="text-white">{Math.round(trend.confidence * 100)}%</span></div>
+          <div className="flex justify-between"><span className="text-slate-400">Based on</span><span className="text-white">{trend.data_points} data points</span></div>
+        </div>
+      )}
+      {trend.direction === 'insufficient_data' && (
+        <p className="text-slate-400 text-xs">Need at least 5 runs. Currently have {trend.data_points}.</p>
+      )}
+    </div>
+  );
+}
+
+function TrendCorrelationBadge({ correlation }: { correlation: number }) {
+  const abs = Math.abs(correlation);
+  const label = abs > 0.7 ? 'Strong' : abs > 0.4 ? 'Moderate' : 'Weak';
+  const color = abs > 0.7 ? 'bg-orange-600/20 text-orange-400' : abs > 0.4 ? 'bg-yellow-600/20 text-yellow-400' : 'bg-slate-600/20 text-slate-400';
+  return <span className={`px-1.5 py-0.5 rounded text-[10px] ${color}`}>{label} ({correlation > 0 ? '+' : ''}{(correlation * 100).toFixed(0)}%)</span>;
 }
