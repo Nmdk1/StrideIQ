@@ -13,7 +13,7 @@ from uuid import UUID
 from core.database import get_db
 from core.auth import get_current_user
 from core.feature_flags import is_feature_enabled
-from models import Activity, Athlete, ActivitySplit
+from models import Activity, Athlete, ActivitySplit, StrengthExerciseSet
 from services.n1_insight_generator import friendly_signal_name
 from schemas import ActivityResponse
 
@@ -456,8 +456,87 @@ def get_activity(
         "pre_resting_hr": activity.pre_resting_hr,
         "pre_recovery_hrv": activity.pre_recovery_hrv,
         "pre_overnight_hrv": activity.pre_overnight_hrv,
+
+        # Cross-training fields
+        "strength_session_type": activity.strength_session_type,
+        "session_detail": None,
     }
-    
+
+    # --- Cross-training enrichment (non-run only) ---
+    if activity.sport and activity.sport != "run":
+        result["session_detail"] = activity.session_detail
+
+        # TSS computation
+        try:
+            from services.training_load import TrainingLoadCalculator
+            calc = TrainingLoadCalculator(db)
+            stress = calc.calculate_workout_tss(activity, current_user)
+            result["tss"] = stress.tss
+            result["tss_method"] = stress.calculation_method
+            result["intensity_factor"] = stress.intensity_factor
+        except Exception:
+            result["tss"] = None
+            result["tss_method"] = None
+            result["intensity_factor"] = None
+
+        # Weekly TSS split (running vs cross-training for the 7-day window)
+        try:
+            from services.timezone_utils import get_athlete_timezone, local_day_bounds_utc
+            _ath_tz = get_athlete_timezone(current_user)
+            _today = datetime.now().date()
+            _week_start = _today - timedelta(days=6)
+            _w_start_utc = local_day_bounds_utc(_week_start, _ath_tz)[0]
+            _w_end_utc = local_day_bounds_utc(_today, _ath_tz)[1]
+
+            from sqlalchemy import func, case
+            tss_rows = (
+                db.query(
+                    case((Activity.sport == "run", "running"), else_="cross_training").label("bucket"),
+                    func.count(Activity.id).label("count"),
+                )
+                .filter(
+                    Activity.athlete_id == current_user.id,
+                    Activity.start_time >= _w_start_utc,
+                    Activity.start_time < _w_end_utc,
+                )
+                .group_by("bucket")
+                .all()
+            )
+            weekly = {"running_activities": 0, "cross_training_activities": 0}
+            for bucket, count in tss_rows:
+                if bucket == "running":
+                    weekly["running_activities"] = count
+                else:
+                    weekly["cross_training_activities"] = count
+            result["weekly_context"] = weekly
+        except Exception:
+            result["weekly_context"] = None
+
+        # Strength exercise sets
+        if activity.sport == "strength":
+            sets = (
+                db.query(StrengthExerciseSet)
+                .filter(StrengthExerciseSet.activity_id == activity.id)
+                .order_by(StrengthExerciseSet.set_order)
+                .all()
+            )
+            result["exercise_sets"] = [
+                {
+                    "set_order": s.set_order,
+                    "exercise_name": s.exercise_name_raw,
+                    "exercise_category": s.exercise_category,
+                    "movement_pattern": s.movement_pattern,
+                    "muscle_group": s.muscle_group,
+                    "is_unilateral": s.is_unilateral,
+                    "set_type": s.set_type,
+                    "reps": s.reps,
+                    "weight_kg": s.weight_kg,
+                    "duration_s": s.duration_s,
+                    "estimated_1rm_kg": s.estimated_1rm_kg,
+                }
+                for s in sets
+            ]
+
     return result
 
 
