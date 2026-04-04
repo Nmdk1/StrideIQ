@@ -443,6 +443,114 @@ async def skip_workout(
     return {"status": "skipped", "workout_id": str(workout_id)}
 
 
+# ============ Adaptive Re-Plan ============
+
+
+class AdaptationProposalResponse(BaseModel):
+    id: str
+    trigger_type: str
+    trigger_detail: Optional[dict] = None
+    proposed_changes: list
+    original_snapshot: list
+    affected_week_start: int
+    affected_week_end: int
+    status: str
+    created_at: datetime
+    expires_at: datetime
+    adaptation_number: int
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+@router.get("/adaptation-proposals/pending")
+def get_pending_proposal(
+    athlete: Athlete = Depends(get_current_athlete),
+    db: Session = Depends(get_db),
+):
+    from models import PlanAdaptationProposal
+
+    proposal = (
+        db.query(PlanAdaptationProposal)
+        .filter(
+            PlanAdaptationProposal.athlete_id == athlete.id,
+            PlanAdaptationProposal.status == "pending",
+        )
+        .order_by(PlanAdaptationProposal.created_at.desc())
+        .first()
+    )
+
+    if not proposal:
+        return None
+
+    now = datetime.utcnow()
+    if proposal.expires_at and now > proposal.expires_at:
+        proposal.status = "expired"
+        db.commit()
+        return None
+
+    return AdaptationProposalResponse(
+        id=str(proposal.id),
+        trigger_type=proposal.trigger_type,
+        trigger_detail=proposal.trigger_detail,
+        proposed_changes=proposal.proposed_changes,
+        original_snapshot=proposal.original_snapshot,
+        affected_week_start=proposal.affected_week_start,
+        affected_week_end=proposal.affected_week_end,
+        status=proposal.status,
+        created_at=proposal.created_at,
+        expires_at=proposal.expires_at,
+        adaptation_number=proposal.adaptation_number,
+    )
+
+
+@router.post("/adaptation-proposals/{proposal_id}/accept")
+def accept_adaptation_proposal(
+    proposal_id: UUID,
+    athlete: Athlete = Depends(get_current_athlete),
+    db: Session = Depends(get_db),
+):
+    from models import PlanAdaptationProposal
+    from services.plan_framework.adaptive_replanner import accept_proposal
+
+    proposal = db.query(PlanAdaptationProposal).filter(
+        PlanAdaptationProposal.id == proposal_id,
+        PlanAdaptationProposal.athlete_id == athlete.id,
+    ).first()
+    if not proposal:
+        raise HTTPException(status_code=404, detail="Proposal not found")
+
+    success = accept_proposal(proposal_id, db)
+    if not success:
+        raise HTTPException(status_code=400, detail="Proposal could not be accepted (expired or already responded)")
+
+    db.commit()
+    return {"status": "accepted", "proposal_id": str(proposal_id)}
+
+
+@router.post("/adaptation-proposals/{proposal_id}/reject")
+def reject_adaptation_proposal(
+    proposal_id: UUID,
+    athlete: Athlete = Depends(get_current_athlete),
+    db: Session = Depends(get_db),
+):
+    from models import PlanAdaptationProposal
+    from services.plan_framework.adaptive_replanner import reject_proposal
+
+    proposal = db.query(PlanAdaptationProposal).filter(
+        PlanAdaptationProposal.id == proposal_id,
+        PlanAdaptationProposal.athlete_id == athlete.id,
+    ).first()
+    if not proposal:
+        raise HTTPException(status_code=404, detail="Proposal not found")
+
+    success = reject_proposal(proposal_id, db)
+    if not success:
+        raise HTTPException(status_code=400, detail="Proposal could not be rejected (expired or already responded)")
+
+    db.commit()
+    return {"status": "rejected", "proposal_id": str(proposal_id)}
+
+
 # ============ Helper Functions ============
 
 def _calculate_current_week(plan: TrainingPlan) -> Optional[int]:

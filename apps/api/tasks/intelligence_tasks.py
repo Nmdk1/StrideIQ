@@ -142,6 +142,13 @@ def _run_intelligence_for_athlete(
         db=db,
     )
 
+    # Step 3C: Adaptive Re-Plan trigger check (N1 Phase 4)
+    _check_adaptive_replan(
+        athlete_id=athlete_id,
+        target_date=target_date,
+        db=db,
+    )
+
     # Step 4: Commit insights + narrations
     try:
         db.commit()
@@ -425,6 +432,58 @@ def _persist_workout_narrative(
         score=score if not result.suppressed else None,
     )
     db.add(log)
+
+
+def _check_adaptive_replan(
+    athlete_id: UUID,
+    target_date: date,
+    db: Session,
+) -> None:
+    """Check if an adaptation proposal should be created for this athlete."""
+    try:
+        from models import TrainingPlan, PlanAdaptationProposal
+        from services.plan_framework.adaptive_replanner import (
+            check_adaptation_triggers,
+            generate_adaptation_proposal,
+        )
+
+        plan = (
+            db.query(TrainingPlan)
+            .filter(
+                TrainingPlan.athlete_id == athlete_id,
+                TrainingPlan.status == "active",
+            )
+            .first()
+        )
+        if not plan:
+            return
+
+        trigger = check_adaptation_triggers(athlete_id, plan.id, target_date, db)
+        if not trigger:
+            return
+
+        proposal_data = generate_adaptation_proposal(
+            athlete_id, plan.id, trigger, target_date, db,
+        )
+        if not proposal_data:
+            return
+
+        import uuid as _uuid
+        db.add(PlanAdaptationProposal(
+            id=_uuid.uuid4(),
+            **proposal_data,
+        ))
+        db.flush()
+        logger.info(
+            "adaptive_replanner: created proposal for athlete %s (trigger=%s)",
+            athlete_id, trigger.trigger_type,
+        )
+
+    except Exception as exc:
+        logger.warning(
+            "Adaptive replan check failed for %s: %s", athlete_id, exc,
+            exc_info=True,
+        )
 
 
 def _get_gemini_client():
