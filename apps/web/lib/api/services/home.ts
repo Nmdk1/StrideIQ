@@ -173,6 +173,21 @@ export interface HomeData {
   // Path A surfaces
   finding?: HomeFinding | null;
   has_correlations?: boolean;
+  // Daily wellness
+  garmin_wellness?: {
+    date: string;
+    sleep_h?: number;
+    sleep_score?: number;
+    sleep_score_qualifier?: string;
+    recovery_hrv?: number;
+    recovery_hrv_status?: 'low' | 'normal' | 'high';
+    recovery_hrv_range?: { low: number; high: number };
+    overnight_hrv?: number;
+    resting_hr?: number;
+    resting_hr_status?: 'low' | 'normal' | 'high';
+    resting_hr_range?: { low: number; high: number };
+    avg_stress?: number;
+  } | null;
 }
 
 // --- API Functions ---
