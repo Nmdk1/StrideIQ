@@ -73,6 +73,7 @@ class WeekDay(BaseModel):
     date: str
     day_abbrev: str  # M, T, W, etc.
     workout_type: Optional[str] = None
+    sport: Optional[str] = None
     distance_mi: Optional[float] = None
     planned_distance_mi: Optional[float] = None  # Show both for comparison
     completed: bool
@@ -3179,7 +3180,6 @@ async def get_home_data(
 
     _week_actuals_raw = db.query(Activity).filter(
         Activity.athlete_id == current_user.id,
-        Activity.sport == "run",
         Activity.start_time >= local_day_bounds_utc(monday, _ath_tz)[0],
         Activity.start_time < local_day_bounds_utc(sunday, _ath_tz)[1],
     ).all()
@@ -3200,6 +3200,7 @@ async def get_home_data(
         actual = _week_actuals.get(day_date)
 
         workout_type = None
+        sport = None
         distance_mi = None
         planned_distance_mi = None
         completed = False
@@ -3225,6 +3226,7 @@ async def get_home_data(
         if actual:
             completed = True
             activity_id = str(actual.id)
+            sport = actual.sport
             if actual.distance_m:
                 actual_mi = actual.distance_m / 1609.344
                 completed_mi += actual_mi
@@ -3241,7 +3243,8 @@ async def get_home_data(
         week_days.append(WeekDay(
             date=day_date.isoformat(),
             day_abbrev=day_abbrev,
-            workout_type=workout_type if not is_missed else None,  # Don't show workout type for missed
+            workout_type=workout_type if not is_missed else None,
+            sport=sport,
             distance_mi=distance_mi,
             planned_distance_mi=planned_distance_mi,
             completed=completed,

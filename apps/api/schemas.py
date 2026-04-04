@@ -76,6 +76,7 @@ class ActivityResponse(BaseModel):
     id: str  # UUID as string
     strava_id: Optional[int] = None
     name: str
+    sport: str = "run"
     distance: float  # Distance in meters
     moving_time: int  # Moving time in seconds
     start_date: str  # ISO format datetime string

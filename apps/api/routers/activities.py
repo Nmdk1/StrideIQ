@@ -191,6 +191,7 @@ def list_activities(
             "id": str(activity.id),
             "strava_id": None,  # Add if needed
             "name": activity_name,
+            "sport": activity.sport or "run",
             "distance": float(activity.distance_m) if activity.distance_m else 0.0,
             "moving_time": activity.duration_s or 0,
             "start_date": activity.start_time.isoformat(),
