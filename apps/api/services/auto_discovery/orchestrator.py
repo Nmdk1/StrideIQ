@@ -566,11 +566,12 @@ def _write_change_log(
         reverted=False,
     )
     try:
+        nested = db.begin_nested()
         db.add(row)
         db.flush()
         return row_id
     except IntegrityError:
-        db.rollback()
+        nested.rollback()
         return None
 
 
@@ -1048,6 +1049,7 @@ def _upsert_candidates(
         ckey = _make_candidate_key(ctype, payload)
 
         try:
+            nested = db.begin_nested()
             existing = (
                 db.query(AutoDiscoveryCandidate)
                 .filter_by(
@@ -1077,7 +1079,6 @@ def _upsert_candidates(
                 )
                 db.add(candidate)
             else:
-                # Update mutable tracking fields; preserve review state.
                 existing.last_seen_run_id = run_id
                 existing.times_seen = (existing.times_seen or 0) + 1
                 existing.latest_summary = payload
@@ -1092,7 +1093,7 @@ def _upsert_candidates(
             db.flush()
 
         except IntegrityError:
-            db.rollback()
+            nested.rollback()
             logger.warning(
                 "AutoDiscovery candidate upsert: race condition on (%s, %s, %s); skipping",
                 athlete_id_uuid, ctype, ckey,
