@@ -8,6 +8,7 @@ jest.mock('@/components/auth/ProtectedRoute', () => ({
 jest.mock('@/components/home/CompactPMC', () => ({ CompactPMC: () => null }));
 jest.mock('@/components/home/TrialBanner', () => ({ TrialBanner: () => null }));
 jest.mock('@/components/home/FirstInsightsBanner', () => ({ FirstInsightsBanner: () => null }));
+jest.mock('@/components/home/AdaptationProposalCard', () => ({ AdaptationProposalCard: () => null }));
 
 jest.mock('@/lib/hooks/queries/insights', () => ({
   useInsightFeed: () => ({ data: { cards: [] }, isLoading: false, error: null }),

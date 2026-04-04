@@ -120,6 +120,7 @@ jest.mock('@/components/auth/ProtectedRoute', () => ({
 }));
 
 jest.mock('@/components/home/CompactPMC', () => ({ CompactPMC: () => null }));
+jest.mock('@/components/home/AdaptationProposalCard', () => ({ AdaptationProposalCard: () => null }));
 
 // Use real LastRunHero (not mocked — tests full-bleed rendering)
 // The component uses effortToColor which works in test env.
