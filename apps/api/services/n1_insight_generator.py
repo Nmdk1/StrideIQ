@@ -128,7 +128,7 @@ FRIENDLY_NAMES: Dict[str, str] = {
     "garmin_active_time_s": "daily active time",
     "garmin_moderate_intensity_s": "moderate intensity time",
     "garmin_vigorous_intensity_s": "vigorous intensity time",
-    "garmin_hrv_5min_high": "5-minute peak HRV",
+    "garmin_hrv_5min_high": "Recovery HRV",
     "garmin_min_hr": "lowest daily heart rate",
     "garmin_vo2max": "Garmin VO2max",
 

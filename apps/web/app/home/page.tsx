@@ -38,6 +38,9 @@ import {
   Flame,
   Sparkles,
   Loader2,
+  Heart,
+  Moon,
+  Info,
 } from 'lucide-react';
 
 // --- Workout styling ---
@@ -86,6 +89,190 @@ function getStatusBadge(status: string) {
   return <Badge className={`${s.cls} gap-1 text-xs`}>{s.icon} {s.label}</Badge>;
 }
 
+
+
+// ── HRV Tooltip ─────────────────────────────────────────────────────
+
+function HrvTooltip({ recoveryHrv, overnightHrv }: { recoveryHrv?: number; overnightHrv?: number }) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <span className="relative inline-flex">
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        onBlur={() => setTimeout(() => setOpen(false), 150)}
+        className="ml-1 text-slate-500 hover:text-slate-300 transition-colors"
+        aria-label="HRV explanation"
+      >
+        <Info className="w-3.5 h-3.5" />
+      </button>
+      {open && (
+        <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-72 rounded-lg bg-slate-700 border border-slate-600 shadow-xl p-3 z-50 text-left">
+          <p className="text-xs font-semibold text-white mb-2">Two HRV numbers — why?</p>
+          <div className="space-y-2 text-xs text-slate-300 leading-relaxed">
+            <div>
+              <span className="text-emerald-400 font-medium">Recovery HRV{recoveryHrv != null ? ` (${Math.round(recoveryHrv)} ms)` : ''}</span>
+              <p className="mt-0.5">
+                The highest 5-minute HRV window during sleep. Reflects your peak
+                parasympathetic recovery — when your nervous system was most relaxed.
+                This is what StrideIQ uses for correlations and your Operating Manual.
+              </p>
+            </div>
+            <div>
+              <span className="text-blue-400 font-medium">Overnight Avg HRV{overnightHrv != null ? ` (${Math.round(overnightHrv)} ms)` : ''}</span>
+              <p className="mt-0.5">
+                The average across your entire sleep. This is the number your
+                Garmin watch displays on the sleep screen. It&apos;s always lower because it
+                includes light sleep and brief awakenings that pull the average down.
+              </p>
+            </div>
+            <p className="text-slate-400 mt-1 pt-1 border-t border-slate-600">
+              Both are valid — they measure different things. Recovery HRV is more
+              predictive of next-day performance.
+            </p>
+          </div>
+          <div className="absolute bottom-0 left-1/2 -translate-x-1/2 translate-y-full w-0 h-0 border-l-[6px] border-r-[6px] border-t-[6px] border-l-transparent border-r-transparent border-t-slate-700" />
+        </div>
+      )}
+    </span>
+  );
+}
+
+
+// ── Wellness Row ────────────────────────────────────────────────────
+
+function WellnessRow({ wellness }: { wellness: any }) {
+  if (!wellness) return null;
+
+  const statusColor = (s?: string) => {
+    if (s === 'high') return 'text-emerald-400';
+    if (s === 'low') return 'text-amber-400';
+    return 'text-slate-300';
+  };
+
+  const statusLabel = (s?: string, metric?: string) => {
+    if (!s) return null;
+    if (metric === 'rhr') {
+      if (s === 'low') return 'Good';
+      if (s === 'high') return 'Elevated';
+    }
+    if (s === 'low') return 'Low for you';
+    if (s === 'high') return 'Strong';
+    return 'Normal';
+  };
+
+  const rangeText = (range?: { low: number; high: number }) => {
+    if (!range) return null;
+    return `${range.low}–${range.high}`;
+  };
+
+  const hasHrv = wellness.recovery_hrv != null;
+  const hasRhr = wellness.resting_hr != null;
+  const hasSleep = wellness.sleep_h != null;
+
+  if (!hasHrv && !hasRhr && !hasSleep) return null;
+
+  return (
+    <div className="flex items-stretch gap-3 px-1">
+      {/* Recovery HRV */}
+      {hasHrv && (
+        <div className="flex-1 rounded-lg bg-slate-800/60 border border-slate-700/50 px-3 py-2.5">
+          <div className="flex items-center gap-1.5 mb-1">
+            <Activity className="w-3.5 h-3.5 text-emerald-500" />
+            <span className="text-[11px] font-medium text-slate-400 uppercase tracking-wide">
+              Recovery HRV
+            </span>
+            <HrvTooltip
+              recoveryHrv={wellness.recovery_hrv}
+              overnightHrv={wellness.overnight_hrv}
+            />
+          </div>
+          <div className="flex items-baseline gap-1.5">
+            <span className={`text-xl font-bold ${statusColor(wellness.recovery_hrv_status)}`}>
+              {Math.round(wellness.recovery_hrv)}
+            </span>
+            <span className="text-xs text-slate-500">ms</span>
+          </div>
+          <div className="flex items-center gap-2 mt-0.5">
+            {statusLabel(wellness.recovery_hrv_status) && (
+              <span className={`text-[11px] font-medium ${statusColor(wellness.recovery_hrv_status)}`}>
+                {statusLabel(wellness.recovery_hrv_status)}
+              </span>
+            )}
+            {wellness.recovery_hrv_range && (
+              <span className="text-[10px] text-slate-500">
+                range: {rangeText(wellness.recovery_hrv_range)}
+              </span>
+            )}
+          </div>
+          {wellness.overnight_hrv != null && (
+            <div className="mt-1.5 pt-1.5 border-t border-slate-700/50">
+              <div className="flex items-baseline gap-1.5">
+                <span className="text-[11px] text-slate-500">Garmin overnight avg</span>
+                <span className="text-sm font-medium text-blue-400">
+                  {Math.round(wellness.overnight_hrv)}
+                </span>
+                <span className="text-[10px] text-slate-500">ms</span>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Right column: RHR + Sleep stacked */}
+      <div className="flex-1 flex flex-col gap-2">
+        {/* Resting HR */}
+        {hasRhr && (
+          <div className="flex-1 rounded-lg bg-slate-800/60 border border-slate-700/50 px-3 py-2">
+            <div className="flex items-center gap-1.5 mb-0.5">
+              <Heart className="w-3.5 h-3.5 text-red-400" />
+              <span className="text-[11px] font-medium text-slate-400 uppercase tracking-wide">Resting HR</span>
+            </div>
+            <div className="flex items-baseline gap-1.5">
+              <span className={`text-lg font-bold ${statusColor(wellness.resting_hr_status === 'low' ? 'high' : wellness.resting_hr_status === 'high' ? 'low' : wellness.resting_hr_status)}`}>
+                {wellness.resting_hr}
+              </span>
+              <span className="text-[10px] text-slate-500">bpm</span>
+              {statusLabel(wellness.resting_hr_status, 'rhr') && (
+                <span className={`text-[11px] font-medium ${statusColor(wellness.resting_hr_status === 'low' ? 'high' : wellness.resting_hr_status === 'high' ? 'low' : wellness.resting_hr_status)}`}>
+                  {statusLabel(wellness.resting_hr_status, 'rhr')}
+                </span>
+              )}
+              {wellness.resting_hr_range && (
+                <span className="text-[10px] text-slate-500">
+                  ({rangeText(wellness.resting_hr_range)})
+                </span>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Sleep */}
+        {hasSleep && (
+          <div className="flex-1 rounded-lg bg-slate-800/60 border border-slate-700/50 px-3 py-2">
+            <div className="flex items-center gap-1.5 mb-0.5">
+              <Moon className="w-3.5 h-3.5 text-indigo-400" />
+              <span className="text-[11px] font-medium text-slate-400 uppercase tracking-wide">Sleep</span>
+            </div>
+            <div className="flex items-baseline gap-1.5">
+              <span className="text-lg font-bold text-slate-300">
+                {wellness.sleep_h}
+              </span>
+              <span className="text-[10px] text-slate-500">hours</span>
+              {wellness.sleep_score != null && (
+                <span className="text-[11px] text-slate-400 ml-1">
+                  Score: {wellness.sleep_score}
+                  {wellness.sleep_score_qualifier ? ` (${wellness.sleep_score_qualifier})` : ''}
+                </span>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
 
 
 // ── Quick Check-in ──────────────────────────────────────────────────
@@ -532,6 +719,7 @@ export default function HomePage() {
     coach_briefing,
     last_run,
     briefing_last_updated_at,
+    garmin_wellness,
   } = data;
 
   const formattedBriefingUpdatedAt = briefing_last_updated_at
@@ -626,6 +814,9 @@ export default function HomePage() {
               timedOut={briefingTimedOut}
             />
           ) : null}
+
+          {/* 2b. Daily wellness (Garmin HRV, RHR, sleep) */}
+          {garmin_wellness && <WellnessRow wellness={garmin_wellness} />}
 
           {/* 3. Today's workout — plain text, no card chrome */}
           {today.has_workout ? (

@@ -222,6 +222,8 @@ class HomeResponse(BaseModel):
     # --- Path A surfaces ---
     finding: Optional[HomeFinding] = None
     has_correlations: bool = False
+    # --- Daily wellness ---
+    garmin_wellness: Optional[dict] = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -696,6 +698,115 @@ def _get_garmin_sleep_h_for_last_night(
     except Exception as e:
         logger.warning("_get_garmin_sleep_h_for_last_night failed (non-blocking): %s", e)
         return None, "unknown", False
+
+
+def _build_garmin_wellness(athlete_id: str, db) -> Optional[dict]:
+    """Build today's Garmin wellness snapshot with personal baseline ranges."""
+    from datetime import datetime, timedelta, timezone as _tz
+    from models import Athlete, GarminDay
+    from sqlalchemy import func
+
+    try:
+        try:
+            import zoneinfo
+        except ImportError:
+            import backports.zoneinfo as zoneinfo  # type: ignore
+
+        athlete = db.query(Athlete).filter(Athlete.id == athlete_id).first()
+        if not athlete or not getattr(athlete, "garmin_connected", False):
+            return None
+
+        tz_name = getattr(athlete, "timezone", None)
+        if tz_name:
+            try:
+                tz = zoneinfo.ZoneInfo(tz_name)
+                local_today = datetime.now(_tz.utc).astimezone(tz).date()
+            except Exception:
+                local_today = datetime.now(_tz.utc).date()
+        else:
+            local_today = datetime.now(_tz.utc).date()
+
+        today_row = None
+        for candidate in [local_today, local_today - timedelta(days=1)]:
+            row = (
+                db.query(GarminDay)
+                .filter(GarminDay.athlete_id == athlete_id, GarminDay.calendar_date == candidate)
+                .first()
+            )
+            if row and (row.sleep_total_s or row.hrv_5min_high or row.resting_hr):
+                today_row = row
+                break
+
+        if not today_row:
+            return None
+
+        range_start = local_today - timedelta(days=30)
+        history = (
+            db.query(GarminDay)
+            .filter(
+                GarminDay.athlete_id == athlete_id,
+                GarminDay.calendar_date >= range_start,
+                GarminDay.calendar_date <= local_today,
+            )
+            .all()
+        )
+
+        def _range_for(values):
+            if len(values) < 7:
+                return None
+            return {"low": round(min(values)), "high": round(max(values))}
+
+        def _status(val, range_dict):
+            if not range_dict or val is None:
+                return None
+            spread = range_dict["high"] - range_dict["low"]
+            if spread == 0:
+                return "normal"
+            low_third = range_dict["low"] + spread * 0.25
+            high_third = range_dict["high"] - spread * 0.25
+            if val <= low_third:
+                return "low"
+            if val >= high_third:
+                return "high"
+            return "normal"
+
+        hrv_peak_vals = [r.hrv_5min_high for r in history if r.hrv_5min_high]
+        hrv_avg_vals = [r.hrv_overnight_avg for r in history if r.hrv_overnight_avg]
+        rhr_vals = [r.resting_hr for r in history if r.resting_hr]
+
+        hrv_peak_range = _range_for(hrv_peak_vals)
+        rhr_range = _range_for(rhr_vals)
+
+        result: dict = {"date": str(today_row.calendar_date)}
+
+        if today_row.sleep_total_s:
+            result["sleep_h"] = round(today_row.sleep_total_s / 3600, 1)
+        if today_row.sleep_score:
+            result["sleep_score"] = today_row.sleep_score
+            result["sleep_score_qualifier"] = today_row.sleep_score_qualifier
+
+        if today_row.hrv_5min_high:
+            result["recovery_hrv"] = today_row.hrv_5min_high
+            result["recovery_hrv_status"] = _status(today_row.hrv_5min_high, hrv_peak_range)
+            if hrv_peak_range:
+                result["recovery_hrv_range"] = hrv_peak_range
+        if today_row.hrv_overnight_avg:
+            result["overnight_hrv"] = today_row.hrv_overnight_avg
+
+        if today_row.resting_hr:
+            result["resting_hr"] = today_row.resting_hr
+            result["resting_hr_status"] = _status(today_row.resting_hr, rhr_range)
+            if rhr_range:
+                result["resting_hr_range"] = rhr_range
+
+        if today_row.avg_stress and today_row.avg_stress >= 0:
+            result["avg_stress"] = today_row.avg_stress
+
+        return result
+
+    except Exception as e:
+        logger.warning("_build_garmin_wellness failed (non-blocking): %s", e)
+        return None
 
 
 def _build_sleep_baseline_guidance(
@@ -3524,6 +3635,8 @@ async def get_home_data(
     except Exception as e:
         logger.warning(f"Home finding computation failed: {type(e).__name__}: {e}")
 
+    garmin_wellness = _build_garmin_wellness(str(current_user.id), db)
+
     return HomeResponse(
         today=today_workout,
         yesterday=yesterday_insight,
@@ -3549,6 +3662,7 @@ async def get_home_data(
         last_run=last_run,
         finding=home_finding,
         has_correlations=has_correlations,
+        garmin_wellness=garmin_wellness,
     )
 
 
