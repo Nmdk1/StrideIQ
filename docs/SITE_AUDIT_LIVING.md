@@ -1,7 +1,7 @@
 # StrideIQ — Living Site Audit
 
 **Purpose:** Canonical full-product audit. This is the always-current inventory of what exists on the site, what is shipped, and what operational tools are available.
-**Last updated:** April 4, 2026 (wellness surfaces, Manual V2, nav consolidation, repo cleanup)
+**Last updated:** April 4, 2026 (route cleanup, page merges, wellness surfaces, Manual V2, nav consolidation, repo cleanup)
 **Last updated by:** Agent (advisor + builder)
 
 ---
@@ -9,6 +9,8 @@
 ## 0. Delta Since Last Audit (Apr 4)
 
 Shipped and now live in product/system behavior:
+
+- **Route Cleanup & Page Merges (Apr 4, 2026)**: Removed 4 dead routes, merged 3 orphaned pages. **(1) Deleted:** `/dashboard` (was redirect to `/home`), `/home-preview` (dev preview artifact), `/spike/rsi-rendering` (ADR-064 rendering spike — 7 files). **(2) `/diagnostic`** converted to server redirect → `/home`; `/diagnostic/report` redirects → `/admin/diagnostics`. **(3) `/profile` merged into `/settings`** — Personal Information section (name, email, birthdate, sex, height, age category) now top section of Settings page with inline edit/save. `/profile` route redirects → `/settings`. Coach tool routing updated (`/profile` → `/settings`). **(4) `/availability` redirects → `/plans/create`** — plan wizard already has scheduling step. **(5) `/trends` absorbed into `/analytics`** — TrendsSummary component added to Analytics page showing efficiency trend, volume trend, and root cause analysis with correlation badges. `/trends` route redirects → `/analytics`. All backend references updated (billing checkout URL, insight feed actions, diagnostics router, coach tools). `robots.ts` updated. All existing redirects preserved (`/checkin`, `/insights`, `/discovery`). Frontend builds clean (`tsc --noEmit`).
 
 - **Personal Operating Manual V2 (Apr 4, 2026)**: The `/manual` page rebuilt from raw correlation list to insight-driven document. Four sections: **(1) Race Character** — pace-gap analysis comparing race vs training performance; PR detection; narrative summary of the athlete's racer-vs-trainer identity. Race-day counterevidence: identifies "good races" where the athlete performed well despite adverse wellness conditions (e.g., low sleep, poor HRV), producing specific contradiction narratives. **(2) Cascade Stories** — multi-step correlation chains (input → mediator → output) surfaced as mechanism narratives. Confound detection suppresses stories where input and mediator measure the same phenomenon. Garmin noise metrics filtered from mediator role. **(3) Highlighted Findings** — interestingness-scored findings prioritizing cascade chains, asymmetry, non-obvious patterns over raw frequency. Baseline threshold suppression hides non-actionable thresholds (>85% data on one side). **(4) Full Record** — complete finding list sorted by interestingness then confirmation count. Human-language headline rewriter replaces templated insight text with natural sentences. Manual-specific translation dictionary (`_MANUAL_LANGUAGE`) for jargon-free display. `localStorage` delta tracking for "What Changed" between visits. Contextual coach links for each finding. Backend: `services/operating_manual.py`. Frontend: `app/manual/page.tsx`.
 
@@ -403,19 +405,27 @@ InsightLog → Adaptation Narrator → Narrated to athlete
 | `/calendar` | Training calendar with plan overlay | Working |
 | `/coach` | AI coach chat interface | Strongest surface — founder/VIP always Opus, standard users Gemini 3 Flash |
 | `/progress` | D3 force-directed correlation web, expandable proved facts, coach-voice hero — replaces old card grid | Working |
-| `/analytics` | Efficiency trends, correlations, load→response | Working |
+| `/analytics` | Efficiency trends, correlations, load→response, **trends summary** (efficiency/volume trends + root cause analysis, absorbed from `/trends`) | Working — trends absorbed Apr 4 |
 | `/training-load` | PMC chart, N=1 zones, daily stress | Working |
-| `/settings` | Strava/Garmin integration, preferences | Working |
+| `/settings` | **Personal Information** (name, email, birthdate, sex, height — absorbed from `/profile`), Strava/Garmin integration, preferences, membership, data/privacy | Working — profile section added Apr 4 |
 | `/tools` | Pace calculator, age grading, heat adjustment | Working |
 | `/nutrition` | Quick nutrition logging | Minimal/placeholder |
 | `/insights` | **DEPRECATED** — permanent redirect to `/manual` | Redirect shipped Apr 4 |
 | `/discovery` | **DEPRECATED** — permanent redirect to `/manual` | Redirect shipped Apr 4 |
 | `/checkin` | **DEPRECATED** — permanent redirect to `/home` | Redirect shipped Apr 4; mindset fields on home |
+| `/dashboard` | **DELETED** — was redirect to `/home` | Deleted Apr 4 |
+| `/home-preview` | **DELETED** — dev layout preview | Deleted Apr 4 |
+| `/spike/rsi-rendering` | **DELETED** — ADR-064 rendering spike | Deleted Apr 4 |
+| `/diagnostic` | **DEPRECATED** — server redirect to `/home` | Redirect Apr 4 |
+| `/diagnostic/report` | **DEPRECATED** — server redirect to `/admin/diagnostics` | Redirect Apr 4 |
+| `/profile` | **DEPRECATED** — redirect to `/settings` | Redirect Apr 4 (merged into Settings) |
+| `/availability` | **DEPRECATED** — redirect to `/plans/create` | Redirect Apr 4 |
+| `/trends` | **DEPRECATED** — redirect to `/analytics` | Redirect Apr 4 (absorbed into Analytics) |
 
 **Navigation structure (current):**
 - **Primary (desktop top bar / mobile bottom tabs):** Home | Manual | Progress | Calendar | Coach
 - **Secondary ("More" dropdown):** Analytics | Training Load | Tools | Nutrition | Settings
-- **Removed from nav:** Insights, Discovery, Check-in
+- **Removed from nav:** Insights, Discovery, Check-in, Profile, Availability, Trends, Dashboard
 
 ### Data Fetching
 
@@ -659,10 +669,11 @@ Current code scan snapshot:
 
 ### User-Facing Product Surfaces (live)
 
-- Core athlete app: `home`, `activities`, `activity detail`, `calendar`, `coach`, `progress`, `analytics`, `training-load`, `discovery`, `insights`, `settings`
-- Plan surfaces: `plans/create`, `plans/preview`, `plans/[id]`, `plans/checkout`
-- Auth/account: `register`, `login`, `forgot-password`, `reset-password`, `onboarding`, `profile`
-- Admin/diagnostic surfaces: `admin`, `admin/diagnostics`, `diagnostic`, `diagnostic/report`
+- Core athlete app: `home`, `activities`, `activity detail`, `calendar`, `coach`, `progress`, `analytics` (includes absorbed trends), `training-load`, `settings` (includes absorbed profile)
+- Plan surfaces: `plans/create` (includes availability scheduling), `plans/preview`, `plans/[id]`, `plans/checkout`
+- Auth/account: `register`, `login`, `forgot-password`, `reset-password`, `onboarding`
+- Admin surfaces: `admin`, `admin/diagnostics`
+- Redirects: `insights` → `manual`, `discovery` → `manual`, `checkin` → `home`, `diagnostic` → `home`, `diagnostic/report` → `admin/diagnostics`, `profile` → `settings`, `availability` → `plans/create`, `trends` → `analytics`
 - Marketing/site surfaces: `about`, `mission`, `stories`, `support`, `terms`, `privacy`
 
 ### Public Tool Surfaces (no-auth acquisition tools)
