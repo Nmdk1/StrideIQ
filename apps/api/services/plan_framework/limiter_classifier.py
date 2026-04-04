@@ -761,3 +761,284 @@ def _build_resolving_context(
     if not parts:
         return None
     return "; ".join(parts)
+
+
+# ---------------------------------------------------------------------------
+# Phase 5: Transition Detection
+# ---------------------------------------------------------------------------
+
+RESOLVING_WINDOW_WEEKS = 4
+MIN_CORRELATION_STRENGTH = 0.30
+SIGNIFICANCE_THRESHOLD = 0.05
+
+
+def check_transitions(
+    athlete_id: UUID,
+    db: Session,
+) -> Dict[str, list]:
+    """Evaluate all active/resolving findings for lifecycle transitions.
+
+    For each active finding, recomputes the L30-weighted correlation using
+    the same statistical pipeline as the correlation engine. If the recent
+    correlation has weakened below significance, transitions to resolving.
+
+    For resolving findings, checks whether the pattern reasserts (back to
+    active) or the resolving window has elapsed (transition to closed).
+
+    When a finding closes, triggers a next-frontier scan to identify what
+    the new constraint is now that the old one is resolved.
+
+    Returns a summary dict with lists of transitions that occurred.
+    """
+    from models import CorrelationFinding
+    from sqlalchemy import or_
+
+    now = datetime.now(timezone.utc)
+    transitions: Dict[str, list] = {
+        "active_to_resolving": [],
+        "resolving_to_closed": [],
+        "resolving_to_active": [],
+        "next_frontier": [],
+    }
+
+    findings = (
+        db.query(CorrelationFinding)
+        .filter(
+            CorrelationFinding.athlete_id == athlete_id,
+            CorrelationFinding.times_confirmed >= 3,
+            or_(
+                CorrelationFinding.lifecycle_state == "active",
+                CorrelationFinding.lifecycle_state == "resolving",
+            ),
+        )
+        .all()
+    )
+
+    if not findings:
+        return transitions
+
+    recent_r = _recompute_recent_correlations(athlete_id, findings, db)
+
+    for finding in findings:
+        old_state = finding.lifecycle_state
+        fkey = (finding.input_name, finding.output_metric, finding.time_lag_days)
+        r_recent = recent_r.get(fkey)
+
+        if old_state == "active":
+            if r_recent is not None and (
+                abs(r_recent) < MIN_CORRELATION_STRENGTH
+            ):
+                finding.lifecycle_state = "resolving"
+                finding.lifecycle_state_updated_at = now
+                if finding.resolving_context is None:
+                    limiter_facts = _load_limiter_context_facts(
+                        athlete_id, db, now,
+                    )
+                    finding.resolving_context = _build_resolving_context(
+                        finding, limiter_facts, db, athlete_id,
+                    )
+                transitions["active_to_resolving"].append({
+                    "finding_id": str(finding.id),
+                    "input": finding.input_name,
+                    "output": finding.output_metric,
+                    "original_r": round(finding.correlation_coefficient, 3),
+                    "recent_r": round(r_recent, 3) if r_recent else None,
+                })
+                logger.info(
+                    "transition_check: active → resolving for %s "
+                    "(%s→%s, r %.3f→%.3f)",
+                    finding.id, finding.input_name, finding.output_metric,
+                    finding.correlation_coefficient,
+                    r_recent if r_recent else 0,
+                )
+
+        elif old_state == "resolving":
+            if r_recent is not None and abs(r_recent) >= MIN_CORRELATION_STRENGTH:
+                finding.lifecycle_state = "active"
+                finding.lifecycle_state_updated_at = now
+                transitions["resolving_to_active"].append({
+                    "finding_id": str(finding.id),
+                    "input": finding.input_name,
+                    "output": finding.output_metric,
+                    "reasserted_r": round(r_recent, 3),
+                })
+                logger.info(
+                    "transition_check: resolving → active (reasserted) for %s "
+                    "(%s→%s, r=%.3f)",
+                    finding.id, finding.input_name, finding.output_metric,
+                    r_recent,
+                )
+            else:
+                resolving_since = finding.lifecycle_state_updated_at
+                if resolving_since and resolving_since.tzinfo is None:
+                    resolving_since = resolving_since.replace(tzinfo=timezone.utc)
+                if resolving_since and (now - resolving_since).days >= RESOLVING_WINDOW_WEEKS * 7:
+                    finding.lifecycle_state = "closed"
+                    finding.lifecycle_state_updated_at = now
+                    finding.is_active = False
+                    transitions["resolving_to_closed"].append({
+                        "finding_id": str(finding.id),
+                        "input": finding.input_name,
+                        "output": finding.output_metric,
+                        "resolving_days": (now - resolving_since).days,
+                    })
+                    logger.info(
+                        "transition_check: resolving → closed for %s "
+                        "(%s→%s, resolving for %d days)",
+                        finding.id, finding.input_name, finding.output_metric,
+                        (now - resolving_since).days,
+                    )
+
+    try:
+        db.flush()
+    except Exception as ex:
+        logger.warning("transition_check: flush failed: %s", ex)
+
+    closed_findings = transitions["resolving_to_closed"]
+    if closed_findings:
+        frontier = _scan_next_frontier(athlete_id, db)
+        if frontier:
+            transitions["next_frontier"] = frontier
+
+    return transitions
+
+
+def _recompute_recent_correlations(
+    athlete_id: UUID,
+    findings: list,
+    db: Session,
+) -> Dict[tuple, Optional[float]]:
+    """Recompute L30-weighted correlation for a set of findings.
+
+    Uses the same aggregation and correlation pipeline as the main engine.
+    Returns {(input_name, output_metric, lag): recent_r} for each finding.
+    """
+    from services.correlation_engine import (
+        aggregate_daily_inputs,
+        aggregate_training_load_inputs,
+        aggregate_activity_level_inputs,
+        aggregate_feedback_inputs,
+        aggregate_training_pattern_inputs,
+        aggregate_cross_training_inputs,
+        aggregate_efficiency_outputs,
+        aggregate_pace_at_effort,
+        aggregate_workout_completion,
+        aggregate_efficiency_by_effort_zone,
+        find_time_shifted_correlations,
+    )
+
+    end_date = datetime.now(timezone.utc)
+    start_date = end_date - timedelta(days=90)
+
+    output_metrics_needed = set()
+    for f in findings:
+        output_metrics_needed.add(f.output_metric)
+
+    inputs = aggregate_daily_inputs(str(athlete_id), start_date, end_date, db)
+    try:
+        inputs.update(aggregate_training_load_inputs(str(athlete_id), start_date, end_date, db))
+    except Exception:
+        pass
+    try:
+        inputs.update(aggregate_activity_level_inputs(str(athlete_id), start_date, end_date, db))
+    except Exception:
+        pass
+    try:
+        inputs.update(aggregate_feedback_inputs(str(athlete_id), start_date, end_date, db))
+    except Exception:
+        pass
+    try:
+        inputs.update(aggregate_training_pattern_inputs(str(athlete_id), start_date, end_date, db))
+    except Exception:
+        pass
+    try:
+        inputs.update(aggregate_cross_training_inputs(str(athlete_id), start_date, end_date, db))
+    except Exception:
+        pass
+
+    outputs_by_metric: Dict[str, list] = {}
+    for metric in output_metrics_needed:
+        try:
+            if metric == "efficiency":
+                outputs_by_metric[metric] = aggregate_efficiency_outputs(str(athlete_id), start_date, end_date, db)
+            elif metric == "pace_easy":
+                outputs_by_metric[metric] = aggregate_pace_at_effort(str(athlete_id), start_date, end_date, db, "easy")
+            elif metric == "pace_threshold":
+                outputs_by_metric[metric] = aggregate_pace_at_effort(str(athlete_id), start_date, end_date, db, "threshold")
+            elif metric == "completion":
+                outputs_by_metric[metric] = aggregate_workout_completion(str(athlete_id), start_date, end_date, db)
+            elif metric.startswith("efficiency_"):
+                zone = metric.replace("efficiency_", "")
+                outputs_by_metric[metric] = aggregate_efficiency_by_effort_zone(str(athlete_id), start_date, end_date, db, zone)
+        except Exception:
+            pass
+
+    results: Dict[tuple, Optional[float]] = {}
+    for finding in findings:
+        fkey = (finding.input_name, finding.output_metric, finding.time_lag_days)
+        input_data = inputs.get(finding.input_name)
+        output_data = outputs_by_metric.get(finding.output_metric)
+
+        if not input_data or not output_data or len(input_data) < 5 or len(output_data) < 5:
+            results[fkey] = None
+            continue
+
+        try:
+            lagged = find_time_shifted_correlations(
+                input_data, output_data,
+                max_lag_days=finding.time_lag_days + 1,
+                temporal_weighting=True,
+            )
+            match = None
+            for r in lagged:
+                if r.time_lag_days == finding.time_lag_days:
+                    match = r
+                    break
+            results[fkey] = match.correlation_coefficient if match else None
+        except Exception:
+            results[fkey] = None
+
+    return results
+
+
+def _scan_next_frontier(
+    athlete_id: UUID,
+    db: Session,
+) -> list:
+    """When a finding closes, identify the next-highest-priority limiter.
+
+    Scans emerging and recently-confirmed findings that could become
+    the new active frontier now that the previous constraint is resolved.
+    """
+    from models import CorrelationFinding
+
+    candidates = (
+        db.query(CorrelationFinding)
+        .filter(
+            CorrelationFinding.athlete_id == athlete_id,
+            CorrelationFinding.is_active == True,  # noqa: E712
+            CorrelationFinding.lifecycle_state.in_(["emerging", None]),
+            CorrelationFinding.times_confirmed >= 2,
+        )
+        .order_by(CorrelationFinding.times_confirmed.desc())
+        .limit(3)
+        .all()
+    )
+
+    frontier = []
+    for c in candidates:
+        frontier.append({
+            "finding_id": str(c.id),
+            "input": c.input_name,
+            "output": c.output_metric,
+            "r": round(c.correlation_coefficient, 3),
+            "times_confirmed": c.times_confirmed,
+            "state": c.lifecycle_state or "unclassified",
+        })
+        logger.info(
+            "transition_check: next frontier candidate %s (%s→%s, r=%.3f, confirmed=%d)",
+            c.id, c.input_name, c.output_metric,
+            c.correlation_coefficient, c.times_confirmed,
+        )
+
+    return frontier

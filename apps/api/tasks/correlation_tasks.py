@@ -213,6 +213,26 @@ def run_daily_correlation_sweep(self, athlete_ids: List[str] | None = None):
                 logger.warning("Lifecycle classification failed for %s: %s", athlete_id, exc)
                 db.rollback()
 
+            # Phase 5: Transition detection (active→resolving→closed)
+            try:
+                from services.plan_framework.limiter_classifier import check_transitions
+                tr = check_transitions(athlete_id, db)
+                any_transitions = sum(len(v) for v in tr.values())
+                if any_transitions > 0:
+                    db.commit()
+                    logger.info(
+                        "Transition check: %d transitions for %s "
+                        "(a→r=%d, r→c=%d, r→a=%d, frontier=%d)",
+                        any_transitions, athlete_id,
+                        len(tr["active_to_resolving"]),
+                        len(tr["resolving_to_closed"]),
+                        len(tr["resolving_to_active"]),
+                        len(tr["next_frontier"]),
+                    )
+            except Exception as exc:
+                logger.warning("Transition check failed for %s: %s", athlete_id, exc)
+                db.rollback()
+
             # Second pass: Layers 1–4 on confirmed findings
             try:
                 n = _run_layer_pass(athlete_id, db)
