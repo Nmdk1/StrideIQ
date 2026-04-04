@@ -57,10 +57,20 @@ class DailyLoadResponse(BaseModel):
     tsb: float
 
 
+class SportTSSResponse(BaseModel):
+    sport: str
+    tss: float
+    activity_count: int
+
+class WeeklyTSSSplitResponse(BaseModel):
+    total_tss: float
+    by_sport: List[SportTSSResponse]
+
 class LoadHistoryResponse(BaseModel):
     history: List[DailyLoadResponse]
     summary: LoadSummaryResponse
     personal_zones: Optional[PersonalZonesResponse] = None
+    weekly_tss_split: Optional[WeeklyTSSSplitResponse] = None
 
 
 # ============ Endpoints ============
@@ -131,6 +141,39 @@ async def get_load_history(
         zone_description=zone_info.description
     )
     
+    # 7-day TSS split by sport for transparency disclosure
+    weekly_split = None
+    try:
+        from datetime import date as _date_type, datetime as _dt, timedelta as _td
+        from models import Activity
+        _end = _date_type.today()
+        _start = _end - _td(days=6)
+        recent = db.query(Activity).filter(
+            Activity.athlete_id == athlete.id,
+            Activity.is_duplicate == False,  # noqa: E712
+            Activity.sport.in_(["run", "cycling", "walking", "hiking", "strength", "flexibility"]),
+            Activity.start_time >= _dt.combine(_start, _dt.min.time()),
+            Activity.start_time < _dt.combine(_end + _td(days=1), _dt.min.time()),
+        ).all()
+        sport_tss: dict[str, dict] = {}
+        for act in recent:
+            stress = calculator.calculate_workout_tss(act, athlete)
+            s = act.sport or "run"
+            if s not in sport_tss:
+                sport_tss[s] = {"tss": 0.0, "count": 0}
+            sport_tss[s]["tss"] += stress.tss
+            sport_tss[s]["count"] += 1
+        total = sum(v["tss"] for v in sport_tss.values())
+        weekly_split = WeeklyTSSSplitResponse(
+            total_tss=round(total, 1),
+            by_sport=[
+                SportTSSResponse(sport=k, tss=round(v["tss"], 1), activity_count=v["count"])
+                for k, v in sorted(sport_tss.items(), key=lambda x: -x[1]["tss"])
+            ],
+        )
+    except Exception:
+        pass
+
     return LoadHistoryResponse(
         history=[
             DailyLoadResponse(
@@ -152,7 +195,8 @@ async def get_load_history(
             training_phase=summary.training_phase,
             recommendation=summary.recommendation
         ),
-        personal_zones=personal_zones
+        personal_zones=personal_zones,
+        weekly_tss_split=weekly_split,
     )
 
 
