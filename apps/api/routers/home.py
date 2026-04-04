@@ -2232,6 +2232,60 @@ def generate_coach_home_briefing(
     except Exception:
         pass  # Non-blocking
 
+    # --- Recent cross-training context (last 48 hours) ---
+    try:
+        from models import Activity as _CTActivity
+        from services.training_load import TrainingLoadCalculator as _CTCalc
+        _ct_cutoff = datetime.now(timezone.utc) - timedelta(hours=48)
+        _ct_activities = (
+            db.query(_CTActivity)
+            .filter(
+                _CTActivity.athlete_id == athlete_id,
+                _CTActivity.sport.in_(["cycling", "walking", "hiking", "strength", "flexibility"]),
+                _CTActivity.start_time >= _ct_cutoff,
+                _CTActivity.is_duplicate == False,  # noqa: E712
+            )
+            .order_by(_CTActivity.start_time.desc())
+            .limit(5)
+            .all()
+        )
+        if _ct_activities:
+            _ct_calc = _CTCalc(db)
+            _athlete_obj = db.query(Athlete).filter(Athlete.id == athlete_id).first()
+            _ct_lines = ["=== RECENT CROSS-TRAINING (last 48 hours) ==="]
+            for _cta in _ct_activities:
+                _hours_ago = (datetime.now(timezone.utc) - _cta.start_time).total_seconds() / 3600
+                _dur_min = round((_cta.duration_s or 0) / 60)
+                _ct_tss = None
+                try:
+                    _stress = _ct_calc.calculate_workout_tss(_cta, _athlete_obj)
+                    _ct_tss = round(_stress.tss)
+                except Exception:
+                    pass
+                _ct_line = f"- {_cta.sport}: {_dur_min}min"
+                if _ct_tss:
+                    _ct_line += f" ({_ct_tss} TSS)"
+                if _cta.strength_session_type:
+                    _ct_line += f", {_cta.strength_session_type} session"
+                _ct_line += f", {round(_hours_ago)}h ago"
+                _ct_lines.append(_ct_line)
+            _ct_lines.extend([
+                "",
+                "CROSS-TRAINING MENTION RULES:",
+                "- When cross-training occurred in the last 48 hours and is relevant to "
+                "today's running context, acknowledge it briefly.",
+                "- A heavy strength session before a quality run day is relevant. "
+                "A yoga session before a rest day is not. Use judgment.",
+                "- When you do mention it, connect it to the running context: "
+                "'Yesterday's strength session adds to your total training load heading into today's threshold.'",
+                "- Do NOT always mention cross-training. Only when it matters to today's run.",
+                "- Do NOT make prescriptive claims about how the athlete will feel "
+                "('your legs will be fatigued'). State the load contribution, not the prediction.",
+            ])
+            parts.extend(_ct_lines)
+    except Exception as _ct_err:
+        logger.debug(f"Cross-training context query failed (non-blocking): {_ct_err}")
+
     parts.append(
         "\nONE-NEW-THING RULE: Your briefing should contain exactly ONE observation "
         "the athlete didn't know yesterday — one genuinely new piece of "
