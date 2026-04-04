@@ -1,12 +1,5 @@
-Universal Kimi K2.5 routing + model audit trail + test fixes
+Update SITE_AUDIT_LIVING.md with full Apr 4 session delta
 
-1. Route all athletes to Kimi K2.5 — retire Gemini Flash from coach,
-   remove canary gating. Sonnet stays as silent fallback on Kimi errors.
-
-2. Record model name in coach_chat JSONB messages for persistent audit trail.
-
-3. Fix pre-existing test failures:
-   - correlation_engine: missing Athlete import broke shadow cache tests
-   - test_coach_brief_builder: brittle side_effect mock replaced with routing fn
-   - test_coach_routing: assertions matched old conservative wording
-   - test_daily_checkin_briefing_refresh: tests asserted removed mark_dirty call
+Added: Universal Kimi K2.5 routing, model audit trail, Celery beat
+startup dispatch fix, AutoDiscovery savepoint fix, pre-existing test
+fixes. Updated coach prompt quality fix entry to reflect Kimi routing.
