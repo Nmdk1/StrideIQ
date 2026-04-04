@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Path A — Finding Visual Concepts</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #0f172a;
+  --card: #1e293b;
+  --border: #334155;
+  --text-primary: #f1f5f9;
+  --text-secondary: #94a3b8;
+  --text-dim: #64748b;
+  --orange: #f97316;
+  --orange-dim: rgba(249, 115, 22, 0.15);
+  --sleep: #818cf8;
+  --cardiac: #f87171;
+  --pace: #2dd4bf;
+  --weather: #fbbf24;
+  --volume: #60a5fa;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  background: var(--bg);
+  color: var(--text-primary);
+  font-family: 'DM Sans', sans-serif;
+  padding: 40px 20px;
+}
+
+.container { max-width: 480px; margin: 0 auto; }
+
+h1 {
+  font-size: 14px; font-weight: 600; color: var(--text-dim);
+  text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 32px;
+}
+
+.section-label {
+  font-size: 11px; font-weight: 600; color: var(--text-dim);
+  text-transform: uppercase; letter-spacing: 0.12em;
+  margin-bottom: 16px; margin-top: 40px;
+}
+
+.finding-card {
+  background: var(--card); border: 1px solid var(--border);
+  border-radius: 12px; padding: 20px; margin-bottom: 16px;
+  cursor: pointer; transition: border-color 0.3s ease;
+  position: relative; overflow: hidden;
+}
+.finding-card:hover { border-color: rgba(255,255,255,0.15); }
+
+.finding-card .domain-glow {
+  position: absolute; top: 0; left: 0;
+  width: 100%; height: 3px; border-radius: 12px 12px 0 0;
+}
+
+.finding-row { display: flex; align-items: center; gap: 16px; }
+
+.confidence-ring {
+  width: 52px; height: 52px; flex-shrink: 0; position: relative;
+}
+.confidence-ring svg {
+  width: 100%; height: 100%; transform: rotate(-90deg);
+}
+.confidence-ring .track {
+  fill: none; stroke: rgba(255,255,255,0.06); stroke-width: 3;
+}
+.confidence-ring .fill {
+  fill: none; stroke-width: 3; stroke-linecap: round;
+  transition: stroke-dashoffset 1.5s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.confidence-ring .domain-icon {
+  position: absolute; top: 50%; left: 50%;
+  transform: translate(-50%, -50%); font-size: 16px; opacity: 0.9;
+}
+
+.finding-content { flex: 1; min-width: 0; }
+
+.finding-text {
+  font-size: 14px; line-height: 1.5;
+  color: var(--text-primary); font-weight: 400;
+}
+
+.finding-meta { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
+
+.finding-domain {
+  font-size: 11px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.05em;
+}
+
+.finding-strength { font-size: 11px; color: var(--text-dim); }
+
+.cold-start .finding-text { color: var(--text-secondary); font-style: italic; }
+
+@keyframes pulse-ring {
+  0%, 100% { opacity: 0.3; }
+  50% { opacity: 0.7; }
+}
+.cold-start .track { animation: pulse-ring 3s ease-in-out infinite; }
+
+.evidence-panel {
+  margin-top: 14px; padding-top: 14px;
+  border-top: 1px solid rgba(255,255,255,0.06); display: none;
+}
+.finding-card.expanded .evidence-panel { display: block; }
+
+.evidence-text { font-size: 12px; color: var(--text-secondary); line-height: 1.5; }
+
+.ask-coach-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  margin-top: 10px; padding: 6px 12px; border-radius: 6px;
+  border: 1px solid var(--border); background: transparent;
+  color: var(--orange); font-size: 12px; font-weight: 500;
+  font-family: inherit; cursor: pointer; transition: all 0.2s;
+}
+.ask-coach-btn:hover {
+  background: var(--orange-dim); border-color: rgba(249, 115, 22, 0.3);
+}
+
+.current-card {
+  background: var(--card); border: 1px solid var(--border);
+  border-radius: 12px; padding: 16px; margin-bottom: 16px;
+}
+.current-card .emoji-row { display: flex; align-items: flex-start; gap: 10px; }
+.current-card .emoji { font-size: 18px; flex-shrink: 0; }
+.current-card .text { font-size: 14px; color: var(--text-secondary); line-height: 1.5; }
+.current-card .label { font-size: 12px; color: var(--text-dim); margin-top: 4px; }
+
+.vs-label {
+  text-align: center; font-size: 12px; color: var(--text-dim);
+  margin: 12px 0; font-weight: 500;
+}
+
+.timeline {
+  display: flex; align-items: flex-end; gap: 24px;
+  justify-content: center; padding: 20px 0;
+}
+.timeline-point {
+  display: flex; flex-direction: column; align-items: center; gap: 8px;
+}
+.timeline-label { font-size: 11px; color: var(--text-dim); }
+.timeline-sublabel { font-size: 10px; color: var(--text-dim); opacity: 0.6; }
+</style>
+</head>
+<body>
+<div class="container">
+
+<h1>Home Page Finding — Visual Concepts</h1>
+
+<p class="section-label">Current (what athletes see today)</p>
+
+<div class="current-card">
+  <div class="emoji-row">
+    <span class="emoji">🔬</span>
+    <div>
+      <div class="text">Your easy pace at 140bpm has improved 18 sec/mi over 9 weeks.</div>
+      <div class="label">Strong pattern · pace efficiency</div>
+    </div>
+  </div>
+</div>
+
+<p class="vs-label">▼ Proposed ▼</p>
+
+<p class="section-label">Strong finding — Pace efficiency domain</p>
+
+<div class="finding-card" onclick="this.classList.toggle('expanded')">
+  <div class="domain-glow" style="background: linear-gradient(90deg, var(--pace), transparent)"></div>
+  <div class="finding-row">
+    <div class="confidence-ring">
+      <svg viewBox="0 0 52 52">
+        <circle class="track" cx="26" cy="26" r="22" />
+        <circle class="fill" cx="26" cy="26" r="22"
+          style="stroke: var(--pace); stroke-dasharray: 110 138;" />
+      </svg>
+      <div class="domain-icon" style="color: var(--pace)">↗</div>
+    </div>
+    <div class="finding-content">
+      <div class="finding-text">Easy pace at 140bpm has improved 18 sec/mi over 9 weeks</div>
+      <div class="finding-meta">
+        <span class="finding-domain" style="color: var(--pace)">Pace efficiency</span>
+        <span class="finding-strength">· 47 confirmations</span>
+      </div>
+    </div>
+  </div>
+  <div class="evidence-panel">
+    <div class="evidence-text">
+      Detected across 47 runs from Jan 3 – Mar 12. Effect: 18 sec/mi improvement at constant 140bpm HR. Confidence: strong.
+    </div>
+    <button class="ask-coach-btn" type="button">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+      Ask Coach about this
+    </button>
+  </div>
+</div>
+
+<p class="section-label">Different domains — each has its own character</p>
+
+<div class="finding-card" onclick="this.classList.toggle('expanded')">
+  <div class="domain-glow" style="background: linear-gradient(90deg, var(--sleep), transparent)"></div>
+  <div class="finding-row">
+    <div class="confidence-ring">
+      <svg viewBox="0 0 52 52">
+        <circle class="track" cx="26" cy="26" r="22" />
+        <circle class="fill" cx="26" cy="26" r="22"
+          style="stroke: var(--sleep); stroke-dasharray: 83 138;" />
+      </svg>
+      <div class="domain-icon" style="color: var(--sleep)">☾</div>
+    </div>
+    <div class="finding-content">
+      <div class="finding-text">Below 6.2h sleep, your efficiency drops sharply the next day</div>
+      <div class="finding-meta">
+        <span class="finding-domain" style="color: var(--sleep)">Sleep</span>
+        <span class="finding-strength">· 23 confirmations</span>
+      </div>
+    </div>
+  </div>
+  <div class="evidence-panel">
+    <div class="evidence-text">Threshold at 6.2 hours. Below: efficiency drops 4.2%. Above: no change. Bad sleep hurts 3× more than good sleep helps.</div>
+    <button class="ask-coach-btn" type="button">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+      Ask Coach about this
+    </button>
+  </div>
+</div>
+
+<div class="finding-card" onclick="this.classList.toggle('expanded')">
+  <div class="domain-glow" style="background: linear-gradient(90deg, var(--cardiac), transparent)"></div>
+  <div class="finding-row">
+    <div class="confidence-ring">
+      <svg viewBox="0 0 52 52">
+        <circle class="track" cx="26" cy="26" r="22" />
+        <circle class="fill" cx="26" cy="26" r="22"
+          style="stroke: var(--cardiac); stroke-dasharray: 41 138;" />
+      </svg>
+      <div class="domain-icon" style="color: var(--cardiac)">♥</div>
+    </div>
+    <div class="finding-content">
+      <div class="finding-text">HR recovery after intervals has slowed over the last 3 sessions</div>
+      <div class="finding-meta">
+        <span class="finding-domain" style="color: var(--cardiac)">Cardiac</span>
+        <span class="finding-strength">· 8 confirmations</span>
+      </div>
+    </div>
+  </div>
+  <div class="evidence-panel">
+    <div class="evidence-text">Recovery HR at 2 min post-interval: was 118bpm average, now 127bpm. Emerging — monitoring.</div>
+    <button class="ask-coach-btn" type="button">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+      Ask Coach about this
+    </button>
+  </div>
+</div>
+
+<div class="finding-card" onclick="this.classList.toggle('expanded')">
+  <div class="domain-glow" style="background: linear-gradient(90deg, var(--weather), transparent)"></div>
+  <div class="finding-row">
+    <div class="confidence-ring">
+      <svg viewBox="0 0 52 52">
+        <circle class="track" cx="26" cy="26" r="22" />
+        <circle class="fill" cx="26" cy="26" r="22"
+          style="stroke: var(--weather); stroke-dasharray: 124 138;" />
+      </svg>
+      <div class="domain-icon" style="color: var(--weather)">☀</div>
+    </div>
+    <div class="finding-content">
+      <div class="finding-text">Above 68°F dew point, your pace suppression averages 12%</div>
+      <div class="finding-meta">
+        <span class="finding-domain" style="color: var(--weather)">Environmental</span>
+        <span class="finding-strength">· 62 confirmations</span>
+      </div>
+    </div>
+  </div>
+  <div class="evidence-panel">
+    <div class="evidence-text">Threshold: 68°F dew point. Below: minimal impact. Above: 12% average pace suppression across 62 runs over 3 summers.</div>
+    <button class="ask-coach-btn" type="button">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+      Ask Coach about this
+    </button>
+  </div>
+</div>
+
+<p class="section-label">Cold start — new athlete, no findings yet</p>
+
+<div class="finding-card cold-start">
+  <div class="domain-glow" style="background: linear-gradient(90deg, rgba(255,255,255,0.08), transparent)"></div>
+  <div class="finding-row">
+    <div class="confidence-ring">
+      <svg viewBox="0 0 52 52">
+        <circle class="track" cx="26" cy="26" r="22" />
+        <circle class="fill" cx="26" cy="26" r="22"
+          style="stroke: var(--text-dim); stroke-dasharray: 0 138;" />
+      </svg>
+      <div class="domain-icon" style="color: var(--text-dim); font-size: 14px;">◌</div>
+    </div>
+    <div class="finding-content">
+      <div class="finding-text">Learning your patterns...</div>
+      <div class="finding-meta">
+        <span class="finding-strength">The engine is analyzing your runs. Findings appear here as they're confirmed.</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<p class="section-label">The arc fills over time — growth IS the product</p>
+
+<div class="timeline">
+  <div class="timeline-point">
+    <div class="confidence-ring" style="width:40px;height:40px">
+      <svg viewBox="0 0 52 52">
+        <circle class="track" cx="26" cy="26" r="22" />
+      </svg>
+    </div>
+    <span class="timeline-label">Week 1</span>
+    <span class="timeline-sublabel">Learning</span>
+  </div>
+  <div class="timeline-point">
+    <div class="confidence-ring" style="width:40px;height:40px">
+      <svg viewBox="0 0 52 52">
+        <circle class="track" cx="26" cy="26" r="22" />
+        <circle class="fill" cx="26" cy="26" r="22" style="stroke:var(--pace);stroke-dasharray:21 138;stroke-width:3;stroke-linecap:round" />
+      </svg>
+    </div>
+    <span class="timeline-label">Week 3</span>
+    <span class="timeline-sublabel">3 seen</span>
+  </div>
+  <div class="timeline-point">
+    <div class="confidence-ring" style="width:40px;height:40px">
+      <svg viewBox="0 0 52 52">
+        <circle class="track" cx="26" cy="26" r="22" />
+        <circle class="fill" cx="26" cy="26" r="22" style="stroke:var(--pace);stroke-dasharray:55 138;stroke-width:3;stroke-linecap:round" />
+      </svg>
+    </div>
+    <span class="timeline-label">Month 2</span>
+    <span class="timeline-sublabel">15 seen</span>
+  </div>
+  <div class="timeline-point">
+    <div class="confidence-ring" style="width:40px;height:40px">
+      <svg viewBox="0 0 52 52">
+        <circle class="track" cx="26" cy="26" r="22" />
+        <circle class="fill" cx="26" cy="26" r="22" style="stroke:var(--pace);stroke-dasharray:110 138;stroke-width:3;stroke-linecap:round" />
+      </svg>
+    </div>
+    <span class="timeline-label">Month 6</span>
+    <span class="timeline-sublabel">47 seen</span>
+  </div>
+</div>
+
+<p style="font-size:12px;color:var(--text-dim);text-align:center;margin-top:8px">Click any finding card to expand evidence + Ask Coach</p>
+
+</div>
+</body>
+</html>
