@@ -2286,6 +2286,41 @@ def generate_coach_home_briefing(
     except Exception as _ct_err:
         logger.debug(f"Cross-training context query failed (non-blocking): {_ct_err}")
 
+    try:
+        from models import PlanAdaptationProposal
+        _pending_proposal = (
+            db.query(PlanAdaptationProposal)
+            .filter(
+                PlanAdaptationProposal.athlete_id == athlete_id,
+                PlanAdaptationProposal.status == "pending",
+            )
+            .first()
+        )
+        if _pending_proposal:
+            _trigger_labels = {
+                "missed_long_run": "a missed long run",
+                "consecutive_missed": "multiple missed training days",
+                "readiness_tank": "extended low readiness",
+            }
+            _trigger_desc = _trigger_labels.get(
+                _pending_proposal.trigger_type, _pending_proposal.trigger_type
+            )
+            _changed_count = sum(
+                1 for c in (_pending_proposal.proposed_changes or []) if c.get("changed")
+            )
+            parts.append(
+                f"\n=== PENDING PLAN ADJUSTMENT ===\n"
+                f"A plan adjustment has been proposed due to {_trigger_desc} "
+                f"({_changed_count} day{'s' if _changed_count != 1 else ''} adjusted, "
+                f"weeks {_pending_proposal.affected_week_start}-{_pending_proposal.affected_week_end}). "
+                f"The athlete has not yet responded. "
+                f"You may briefly acknowledge this: 'I've suggested a small adjustment to your "
+                f"upcoming week — check the home screen when you're ready.' "
+                f"Do NOT describe the specific changes. Do NOT pressure the athlete to accept."
+            )
+    except Exception:
+        pass
+
     parts.append(
         "\nONE-NEW-THING RULE: Your briefing should contain exactly ONE observation "
         "the athlete didn't know yesterday — one genuinely new piece of "
