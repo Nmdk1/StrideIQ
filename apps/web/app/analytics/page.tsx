@@ -12,7 +12,7 @@
 
 'use client';
 
-import { useState } from 'react';
+import React, { useState } from 'react';
 import Link from 'next/link';
 import { useQuery } from '@tanstack/react-query';
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
@@ -31,7 +31,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
-import { BarChart3, TrendingUp, TrendingDown, Minus, Target, Calendar, ArrowRight, Activity, Zap, AlertTriangle, Info, Search } from 'lucide-react';
+import { BarChart3, TrendingUp, TrendingDown, Minus, Target, Calendar, ArrowRight, Activity, Zap, AlertTriangle, Info, Search, Dumbbell, Bike, Mountain, Footprints, StretchHorizontal } from 'lucide-react';
 import { WhyThisTrend } from '@/components/analytics/WhyThisTrend';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 
@@ -44,6 +44,14 @@ const workoutTypeColors: Record<string, string> = {
   tempo: 'bg-orange-900/50 text-orange-400',
   intervals: 'bg-red-900/50 text-red-400',
   race: 'bg-yellow-900/50 text-yellow-400',
+};
+
+const SPORT_CHIP_ICONS: Record<string, { icon: React.ReactNode; label: string }> = {
+  strength:    { icon: <Dumbbell className="w-3.5 h-3.5" />, label: 'Strength' },
+  cycling:     { icon: <Bike className="w-3.5 h-3.5" />, label: 'Cycling' },
+  hiking:      { icon: <Mountain className="w-3.5 h-3.5" />, label: 'Hiking' },
+  walking:     { icon: <Footprints className="w-3.5 h-3.5" />, label: 'Walking' },
+  flexibility: { icon: <StretchHorizontal className="w-3.5 h-3.5" />, label: 'Flexibility' },
 };
 
 function InfoTooltip({ content }: { content: string }) {
@@ -224,15 +232,21 @@ export default function DashboardPage() {
                         ${linkHref ? 'cursor-pointer hover:scale-105 hover:opacity-80' : ''}
                       `;
                       
+                      const sportInfo = day.sport && day.sport !== 'run' ? SPORT_CHIP_ICONS[day.sport] : null;
+
                       const dayContent = (
                         <>
                           <div className={`text-[10px] uppercase mb-1 ${day.is_today ? 'text-orange-400 font-semibold' : 'text-slate-400'}`}>
                             {day.day_abbrev}
                           </div>
                           <div className="text-xs font-medium">
-                            {day.completed && day.distance_mi ? (
+                            {day.completed && sportInfo ? (
                               <span className="flex flex-col items-center gap-0.5 text-emerald-400">
-                                <span>✓</span>
+                                {sportInfo.icon}
+                              </span>
+                            ) : day.completed && day.distance_mi ? (
+                              <span className="flex flex-col items-center gap-0.5 text-emerald-400">
+                                <span>&#10003;</span>
                                 <span>{day.distance_mi}</span>
                               </span>
                             ) : day.workout_type === 'rest' ? (

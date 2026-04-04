@@ -29,6 +29,7 @@ export interface Activity {
   id: UUID;
   strava_id?: number;
   name: string;
+  sport?: string;
   distance: number; // meters
   moving_time: number; // seconds
   start_date: string; // ISO format

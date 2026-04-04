@@ -41,6 +41,10 @@ import {
   Heart,
   Moon,
   Info,
+  Dumbbell,
+  Bike,
+  Mountain,
+  StretchHorizontal,
 } from 'lucide-react';
 
 // --- Workout styling ---
@@ -62,6 +66,14 @@ const WORKOUT_CONFIG: Record<string, { color: string; bgColor: string; icon: Rea
 };
 
 const DEFAULT_WORKOUT = { color: 'text-slate-400', bgColor: 'bg-slate-500/20', icon: <Footprints className="w-6 h-6" /> };
+
+const SPORT_CHIP_ICONS: Record<string, { icon: React.ReactNode; label: string }> = {
+  strength:    { icon: <Dumbbell className="w-3.5 h-3.5" />, label: 'Strength' },
+  cycling:     { icon: <Bike className="w-3.5 h-3.5" />, label: 'Cycling' },
+  hiking:      { icon: <Mountain className="w-3.5 h-3.5" />, label: 'Hiking' },
+  walking:     { icon: <Footprints className="w-3.5 h-3.5" />, label: 'Walking' },
+  flexibility: { icon: <StretchHorizontal className="w-3.5 h-3.5" />, label: 'Flexibility' },
+};
 
 function getWorkoutConfig(type?: string) {
   return type ? (WORKOUT_CONFIG[type] ?? DEFAULT_WORKOUT) : DEFAULT_WORKOUT;
@@ -915,13 +927,19 @@ export default function HomePage() {
                       ? `/calendar?date=${day.date}`
                       : null;
 
+                  const sportInfo = day.sport && day.sport !== 'run' ? SPORT_CHIP_ICONS[day.sport] : null;
+
                   const chip = (
                     <>
                       <div className={`text-[10px] uppercase mb-1 ${day.is_today ? 'text-orange-400 font-semibold' : 'text-slate-500'}`}>
                         {day.day_abbrev}
                       </div>
                       <div className={`text-xs font-semibold ${day.completed ? 'text-emerald-400' : dayConfig.color}`}>
-                        {day.completed && day.distance_mi ? (
+                        {day.completed && sportInfo ? (
+                          <span className="flex flex-col items-center gap-0.5">
+                            {sportInfo.icon}
+                          </span>
+                        ) : day.completed && day.distance_mi ? (
                           <span className="flex flex-col items-center gap-0.5">
                             <CheckCircle2 className="w-3.5 h-3.5" />
                             <span className="text-[10px]">{day.distance_mi}</span>

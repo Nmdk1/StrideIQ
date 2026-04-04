@@ -41,6 +41,7 @@ export interface WeekDay {
   date: string;
   day_abbrev: string;
   workout_type?: string;
+  sport?: string;
   distance_mi?: number;
   planned_distance_mi?: number;  // Show both for comparison
   completed: boolean;
