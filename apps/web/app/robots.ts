@@ -12,6 +12,7 @@ export default function robots(): MetadataRoute.Robots {
         '/activities/',
         '/checkin/',
         '/settings/',
+        '/profile/',
         '/onboarding/',
         '/discovery/',
         '/nutrition/',

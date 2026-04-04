@@ -3051,7 +3051,7 @@ ATHLETE BRIEF:
             field = self._infer_profile_field_from_message(message)
             path = coach_tools.get_profile_edit_paths(self.db, athlete_id, field=field)
             data = path.get("data", {}) if isinstance(path, dict) else {}
-            route = data.get("route", "/profile")
+            route = data.get("route", "/settings")
             section = data.get("section", "Personal Information")
             field_name = data.get("field", "Birthdate")
             note = data.get("note", "")
@@ -5045,7 +5045,7 @@ ATHLETE BRIEF:
 
         # Profile edit questions must produce deterministic navigation guidance.
         if self._is_profile_edit_intent(user_message):
-            has_profile_path = ("/profile" in assistant_lower) or ("personal information" in assistant_lower)
+            has_profile_path = ("/settings" in assistant_lower) or ("personal information" in assistant_lower)
             return has_profile_path and self._intent_bands_compatible(user_band, assistant_band)
 
         # Correction/apology turns should not drift into unrelated workout analysis.
@@ -5059,7 +5059,7 @@ ATHLETE BRIEF:
             field = self._infer_profile_field_from_message(user_message)
             path = coach_tools.get_profile_edit_paths(self.db, athlete_id, field=field)
             data = path.get("data", {}) if isinstance(path, dict) else {}
-            route = data.get("route", "/profile")
+            route = data.get("route", "/settings")
             section = data.get("section", "Personal Information")
             field_name = data.get("field", "Birthdate")
             note = data.get("note", "")

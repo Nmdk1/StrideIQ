@@ -376,7 +376,7 @@ class TestPromptAndOutputHardening:
 
         out = asyncio.run(coach.chat(uuid4(), "Where do I fix my age in my profile?"))
         assert out["error"] is False
-        assert "/profile" in out["response"]
+        assert "/settings" in out["response"]
         assert "Personal Information" in out["response"]
         assert "Birthdate" in out["response"]
         assert "split" not in out["response"].lower()

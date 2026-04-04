@@ -15,11 +15,12 @@ import { GarminConnection } from '@/components/integrations/GarminConnection';
 import { useAuth } from '@/lib/hooks/useAuth';
 import { useUnits } from '@/lib/context/UnitsContext';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
+import { ErrorMessage } from '@/components/ui/ErrorMessage';
 import { API_CONFIG } from '@/lib/api/config';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Settings, Link2, Gauge, CreditCard, Download, Trash2, AlertTriangle, X, ArrowUpRight, BrainCircuit, ChevronUp, Sparkles } from 'lucide-react';
+import { Settings, Link2, Gauge, CreditCard, Download, Trash2, AlertTriangle, X, ArrowUpRight, BrainCircuit, ChevronUp, Sparkles, User } from 'lucide-react';
 import { RuntoonPhotoUpload } from '@/components/settings/RuntoonPhotoUpload';
 import { authService } from '@/lib/api/services/auth';
 import { useConsent } from '@/lib/context/ConsentContext';
@@ -37,6 +38,118 @@ const TIER_LABELS: Record<CanonicalTier, string> = {
 };
 
 const STRIDEIQ_PRICE = { monthly: '$24.99/mo', annual: '$199/yr', savingsNote: 'Save $100/yr on annual' };
+
+function ProfileSection() {
+  const { user, refreshUser } = useAuth();
+  const [editing, setEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<Error | null>(null);
+  const [formData, setFormData] = useState({
+    display_name: user?.display_name || '',
+    email: user?.email || '',
+    birthdate: user?.birthdate ? user.birthdate.split('T')[0] : '',
+    sex: user?.sex || '',
+    height_cm: user?.height_cm || '',
+  });
+
+  const handleSave = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSaving(true);
+    setError(null);
+    try {
+      const updates: any = {};
+      if (formData.display_name !== user?.display_name) updates.display_name = formData.display_name || null;
+      if (formData.email !== user?.email) updates.email = formData.email || null;
+      if (formData.birthdate !== (user?.birthdate ? user.birthdate.split('T')[0] : '')) updates.birthdate = formData.birthdate || null;
+      if (formData.sex !== user?.sex) updates.sex = formData.sex || null;
+      if (formData.height_cm !== (user?.height_cm || '')) updates.height_cm = formData.height_cm ? parseFloat(formData.height_cm.toString()) : null;
+      await authService.updateProfile(updates);
+      await refreshUser();
+      setEditing(false);
+    } catch (err) {
+      setError(err as Error);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (!user) return null;
+
+  const age = (() => {
+    if (!user.birthdate) return null;
+    const birth = new Date(user.birthdate);
+    const today = new Date();
+    let a = today.getFullYear() - birth.getFullYear();
+    const md = today.getMonth() - birth.getMonth();
+    if (md < 0 || (md === 0 && today.getDate() < birth.getDate())) a--;
+    return a;
+  })();
+
+  return (
+    <Card className="bg-slate-800 border-slate-700">
+      <CardHeader>
+        <div className="flex justify-between items-center">
+          <CardTitle className="flex items-center gap-2">
+            <User className="w-5 h-5 text-green-500" />
+            Personal Information
+          </CardTitle>
+          {!editing && (
+            <Button variant="ghost" size="sm" onClick={() => setEditing(true)} className="text-slate-400 hover:text-white">
+              Edit
+            </Button>
+          )}
+        </div>
+        <CardDescription>Name, email, and athlete details</CardDescription>
+      </CardHeader>
+      <CardContent>
+        {editing ? (
+          <form onSubmit={handleSave} className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium mb-1.5 text-slate-300">Display Name</label>
+              <input type="text" value={formData.display_name} onChange={(e) => setFormData({ ...formData, display_name: e.target.value })} className="w-full px-3 py-2 bg-slate-900 border border-slate-700/50 rounded text-white text-sm" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1.5 text-slate-300">Email</label>
+              <input type="email" value={formData.email} onChange={(e) => setFormData({ ...formData, email: e.target.value })} className="w-full px-3 py-2 bg-slate-900 border border-slate-700/50 rounded text-white text-sm" />
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div>
+                <label className="block text-sm font-medium mb-1.5 text-slate-300">Birthdate</label>
+                <input type="date" value={formData.birthdate} onChange={(e) => setFormData({ ...formData, birthdate: e.target.value })} className="w-full px-3 py-2 bg-slate-900 border border-slate-700/50 rounded text-white text-sm" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1.5 text-slate-300">Sex</label>
+                <select value={formData.sex} onChange={(e) => setFormData({ ...formData, sex: e.target.value })} className="w-full px-3 py-2 bg-slate-900 border border-slate-700/50 rounded text-white text-sm">
+                  <option value="">Select...</option>
+                  <option value="M">Male</option>
+                  <option value="F">Female</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1.5 text-slate-300">Height (cm)</label>
+                <input type="number" step="0.1" value={formData.height_cm} onChange={(e) => setFormData({ ...formData, height_cm: e.target.value })} className="w-full px-3 py-2 bg-slate-900 border border-slate-700/50 rounded text-white text-sm" placeholder="175.0" />
+              </div>
+            </div>
+            {error && <ErrorMessage error={error} />}
+            <div className="flex gap-2">
+              <Button type="submit" disabled={saving} size="sm">{saving ? <LoadingSpinner size="sm" /> : 'Save'}</Button>
+              <Button type="button" variant="ghost" size="sm" onClick={() => { setEditing(false); setFormData({ display_name: user.display_name || '', email: user.email || '', birthdate: user.birthdate ? user.birthdate.split('T')[0] : '', sex: user.sex || '', height_cm: user.height_cm || '' }); setError(null); }}>Cancel</Button>
+            </div>
+          </form>
+        ) : (
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+            <div><p className="text-xs text-slate-400">Name</p><p className="text-sm font-medium">{user.display_name || '--'}</p></div>
+            <div><p className="text-xs text-slate-400">Email</p><p className="text-sm font-medium">{user.email || '--'}</p></div>
+            <div><p className="text-xs text-slate-400">Birthdate</p><p className="text-sm font-medium">{user.birthdate ? new Date(user.birthdate).toLocaleDateString() : '--'}{age ? ` (${age})` : ''}</p></div>
+            <div><p className="text-xs text-slate-400">Sex</p><p className="text-sm font-medium">{user.sex || '--'}</p></div>
+            {user.height_cm && <div><p className="text-xs text-slate-400">Height</p><p className="text-sm font-medium">{user.height_cm} cm</p></div>}
+            {user.age_category && <div><p className="text-xs text-slate-400">Age Category</p><p className="text-sm font-medium">{user.age_category}</p></div>}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
 
 function SettingsPageContent() {
   const { user } = useAuth();
@@ -254,6 +367,8 @@ function SettingsPageContent() {
           </div>
 
           <div className="space-y-6">
+            <ProfileSection />
+
             {/* Integrations */}
             <Card className="bg-slate-800 border-slate-700">
               <CardHeader>

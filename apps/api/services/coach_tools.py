@@ -2647,31 +2647,31 @@ def get_profile_edit_paths(db: Session, athlete_id: UUID, field: str = "birthdat
     canonical_field = field_aliases.get(normalized_field, normalized_field)
     mapping = {
         "birthdate": {
-            "route": "/profile",
+            "route": "/settings",
             "section": "Personal Information",
             "field": "Birthdate",
             "note": "Set your correct birthdate here; age is calculated from this field.",
         },
         "sex": {
-            "route": "/profile",
+            "route": "/settings",
             "section": "Personal Information",
             "field": "Sex",
             "note": "Update sex under Personal Information.",
         },
         "display_name": {
-            "route": "/profile",
+            "route": "/settings",
             "section": "Personal Information",
             "field": "Display Name",
             "note": "This controls how your name appears in the app.",
         },
         "height_cm": {
-            "route": "/profile",
+            "route": "/settings",
             "section": "Personal Information",
             "field": "Height",
             "note": "Enter your current height.",
         },
         "email": {
-            "route": "/profile",
+            "route": "/settings",
             "section": "Personal Information",
             "field": "Email",
             "note": "Changing email may require a verification flow.",
@@ -2680,10 +2680,10 @@ def get_profile_edit_paths(db: Session, athlete_id: UUID, field: str = "birthdat
     resolved = mapping.get(canonical_field)
     if not resolved:
         resolved = {
-            "route": "/profile",
+            "route": "/settings",
             "section": "Personal Information",
             "field": "Personal Information",
-            "note": "Use Profile > Personal Information for account details.",
+            "note": "Use Settings > Personal Information for account details.",
         }
 
     return {
