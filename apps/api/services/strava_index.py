@@ -88,6 +88,12 @@ def upsert_strava_activity_summaries(athlete: Athlete, db: Session, summaries: L
             start_lng=latlng[1] if len(latlng) >= 2 else None,
         )
         db.add(act)
+        try:
+            from services.wellness_stamp import stamp_wellness
+            tz_name = getattr(athlete, "timezone", None)
+            stamp_wellness(act, db, athlete_timezone=tz_name)
+        except Exception:
+            pass
         created += 1
 
     return IndexUpsertResult(created=created, already_present=already, skipped_non_runs=skipped)

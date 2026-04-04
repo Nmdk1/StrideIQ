@@ -1055,6 +1055,14 @@ def sync_strava_activities_task(self: Task, athlete_id: str) -> Dict:
             except Exception as e:
                 print(f"Warning: Could not classify workout: {e}")
 
+            # Stamp pre-activity wellness from GarminDay
+            try:
+                from services.wellness_stamp import stamp_wellness
+                tz_name = getattr(athlete, "timezone", None)
+                stamp_wellness(activity, db, athlete_timezone=tz_name)
+            except Exception as e:
+                logger.warning("Wellness stamp failed for strava activity %s — non-fatal: %s", strava_activity_id, e)
+
             # Fetch stream data (ADR-063: integrated into sync flow)
             try:
                 _fetch_and_store_stream(activity.id, athlete, db)

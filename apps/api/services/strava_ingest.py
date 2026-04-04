@@ -92,6 +92,13 @@ def ingest_strava_activity_by_id(
         db.add(act)
         db.commit()
         db.refresh(act)
+        try:
+            from services.wellness_stamp import stamp_wellness
+            tz_name = getattr(athlete, "timezone", None)
+            if stamp_wellness(act, db, athlete_timezone=tz_name):
+                db.commit()
+        except Exception:
+            pass
         from core.cache import invalidate_athlete_cache
         invalidate_athlete_cache(str(athlete.id))
         created = True

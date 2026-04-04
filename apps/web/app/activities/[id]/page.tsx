@@ -76,6 +76,13 @@ interface Activity {
   shape_sentence: string | null;
   athlete_title: string | null;
   resolved_title: string | null;
+
+  // Pre-activity wellness
+  pre_sleep_h: number | null;
+  pre_sleep_score: number | null;
+  pre_resting_hr: number | null;
+  pre_recovery_hrv: number | null;
+  pre_overnight_hrv: number | null;
 }
 
 import type { Split } from '@/lib/types/splits';
@@ -466,6 +473,42 @@ export default function ActivityDetailPage() {
             </p>
           )}
         </div>
+
+        {/* ── Pre-activity wellness context ── */}
+        {(activity.pre_recovery_hrv != null || activity.pre_resting_hr != null || activity.pre_sleep_h != null) && (
+          <div className="rounded-lg border border-slate-700/30 bg-slate-800/30 px-4 py-3 mb-4">
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-2">Going In</p>
+            <div className="flex flex-wrap gap-x-6 gap-y-1">
+              {activity.pre_recovery_hrv != null && (
+                <span className="text-sm text-slate-300">
+                  <span className="text-slate-500">Recovery HRV</span>{' '}
+                  <span className="font-medium">{activity.pre_recovery_hrv}</span>
+                  <span className="text-slate-500 text-xs ml-0.5">ms</span>
+                  {activity.pre_overnight_hrv != null && (
+                    <span className="text-xs text-slate-500 ml-2">(overnight avg {activity.pre_overnight_hrv})</span>
+                  )}
+                </span>
+              )}
+              {activity.pre_resting_hr != null && (
+                <span className="text-sm text-slate-300">
+                  <span className="text-slate-500">RHR</span>{' '}
+                  <span className="font-medium">{activity.pre_resting_hr}</span>
+                  <span className="text-slate-500 text-xs ml-0.5">bpm</span>
+                </span>
+              )}
+              {activity.pre_sleep_h != null && (
+                <span className="text-sm text-slate-300">
+                  <span className="text-slate-500">Sleep</span>{' '}
+                  <span className="font-medium">{activity.pre_sleep_h.toFixed(1)}</span>
+                  <span className="text-slate-500 text-xs ml-0.5">h</span>
+                  {activity.pre_sleep_score != null && (
+                    <span className="text-xs text-slate-500 ml-1">({activity.pre_sleep_score})</span>
+                  )}
+                </span>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* ── 6. Runtoon (always visible — CTA drives discovery for new users) ── */}
         <div className="mb-6">

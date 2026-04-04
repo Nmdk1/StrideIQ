@@ -519,6 +519,13 @@ class Activity(Base):
     # --- GARMIN WELLNESS CROSSOVER ---
     garmin_body_battery_impact = Column(Integer, nullable=True)
 
+    # --- PRE-ACTIVITY WELLNESS SNAPSHOT ---
+    pre_sleep_h = Column(Float, nullable=True)
+    pre_sleep_score = Column(Integer, nullable=True)
+    pre_resting_hr = Column(Integer, nullable=True)
+    pre_recovery_hrv = Column(Integer, nullable=True)
+    pre_overnight_hrv = Column(Integer, nullable=True)
+
     # --- TIMING / ENERGY ---
     moving_time_s = Column(Integer, nullable=True)
     max_speed = Column(Float, nullable=True)

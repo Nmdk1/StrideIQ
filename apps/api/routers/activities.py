@@ -448,6 +448,13 @@ def get_activity(
         "shape_sentence": activity.shape_sentence,
         "athlete_title": activity.athlete_title,
         "resolved_title": resolve_activity_title(activity),
+
+        # Pre-activity wellness snapshot
+        "pre_sleep_h": activity.pre_sleep_h,
+        "pre_sleep_score": activity.pre_sleep_score,
+        "pre_resting_hr": activity.pre_resting_hr,
+        "pre_recovery_hrv": activity.pre_recovery_hrv,
+        "pre_overnight_hrv": activity.pre_overnight_hrv,
     }
     
     return result

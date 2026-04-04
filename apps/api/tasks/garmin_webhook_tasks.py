@@ -448,6 +448,28 @@ def _ingest_health_item(
         return False
 
     _upsert_garmin_day(athlete_id, calendar_date, adapted, db)
+
+    try:
+        from models import Activity, Athlete
+        from services.wellness_stamp import stamp_wellness
+        athlete = db.query(Athlete).filter(Athlete.id == athlete_id).first()
+        tz_name = getattr(athlete, "timezone", None) if athlete else None
+        unstamped = (
+            db.query(Activity)
+            .filter(
+                Activity.athlete_id == athlete_id,
+                Activity.pre_recovery_hrv.is_(None),
+                Activity.start_time.isnot(None),
+            )
+            .all()
+        )
+        for act in unstamped:
+            from services.wellness_stamp import _resolve_date
+            if _resolve_date(act.start_time, tz_name) == calendar_date:
+                stamp_wellness(act, db, athlete_timezone=tz_name)
+    except Exception:
+        logger.warning("Retro-stamp wellness on health ingest failed — non-fatal", exc_info=True)
+
     return True
 
 
@@ -530,6 +552,12 @@ def _ingest_activity_item(
                 candidate.id,
             )
             _apply_garmin_fields_to_activity(candidate, adapted)
+            try:
+                from services.wellness_stamp import stamp_wellness
+                tz_name = getattr(athlete, "timezone", None)
+                stamp_wellness(candidate, db, athlete_timezone=tz_name)
+            except Exception:
+                logger.warning("Wellness stamp failed on garmin-update for %s — non-fatal", external_id, exc_info=True)
             return "updated"
 
     # --- No match: create new Activity row ---
@@ -540,6 +568,13 @@ def _ingest_activity_item(
         backfill_hr_from_garmin(db, athlete.id, new_activity)
     except Exception:
         logger.warning("HR backfill failed for garmin activity %s — non-fatal", external_id, exc_info=True)
+
+    try:
+        from services.wellness_stamp import stamp_wellness
+        tz_name = getattr(athlete, "timezone", None)
+        stamp_wellness(new_activity, db, athlete_timezone=tz_name)
+    except Exception:
+        logger.warning("Wellness stamp failed for garmin activity %s — non-fatal", external_id, exc_info=True)
 
     # Race detection + workout classification — same logic as the Strava path.
     # Without this, Garmin activities are born with is_race_candidate=False and

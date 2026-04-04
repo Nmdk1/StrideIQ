@@ -1468,6 +1468,36 @@ def enqueue_garmin_deep_backfill(
     return {"success": True, "queued": True, "task_id": task.id}
 
 
+@router.post("/users/{user_id}/wellness-backfill")
+def backfill_wellness_stamps(
+    user_id: UUID,
+    http_request: Request,
+    _: None = Depends(deny_impersonation_mutation("wellness.backfill")),
+    current_user: Athlete = Depends(require_permission("ingestion.retry")),
+    db: Session = Depends(get_db),
+):
+    """Backfill pre-activity wellness stamps from GarminDay history."""
+    target = db.query(Athlete).filter(Athlete.id == user_id).first()
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    from services.wellness_stamp import backfill_wellness_for_athlete
+    from services.admin_audit import record_admin_audit_event
+
+    result = backfill_wellness_for_athlete(str(target.id), db)
+    record_admin_audit_event(
+        db,
+        request=http_request,
+        actor=current_user,
+        action="wellness.backfill",
+        target_athlete_id=str(target.id),
+        reason="backfill wellness stamps",
+        payload=result,
+    )
+    db.commit()
+    return {"success": True, **result}
+
+
 @router.post("/users/{user_id}/plans/starter/regenerate")
 def regenerate_starter_plan(
     user_id: UUID,
