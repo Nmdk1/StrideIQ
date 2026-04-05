@@ -15,6 +15,7 @@ import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
 import { useHomeData, useQuickCheckin, useInvalidateHome } from '@/lib/hooks/queries/home';
 import { LastRunHero } from '@/components/home/LastRunHero';
 import { CompactPMC } from '@/components/home/CompactPMC';
+import { RecentCrossTrainingCard } from '@/components/home/RecentCrossTrainingCard';
 import FindingCard from '@/components/findings/FindingCard';
 import { TrialBanner } from '@/components/home/TrialBanner';
 import { FirstInsightsBanner } from '@/components/home/FirstInsightsBanner';
@@ -734,6 +735,7 @@ export default function HomePage() {
     last_run,
     briefing_last_updated_at,
     garmin_wellness,
+    recent_cross_training,
   } = data;
 
   const formattedBriefingUpdatedAt = briefing_last_updated_at
@@ -772,6 +774,9 @@ export default function HomePage() {
 
           {/* 1. Full-bleed hero (last run canvas) */}
           {last_run && <LastRunHero lastRun={last_run} />}
+
+          {/* Cross-training acknowledgment — secondary to the run hero */}
+          {recent_cross_training && <RecentCrossTrainingCard data={recent_cross_training} />}
 
           {/* Training Load — compact PMC (paired visually with LastRunHero) */}
           <CompactPMC />

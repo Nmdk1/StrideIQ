@@ -190,6 +190,18 @@ export interface HomeData {
     resting_hr_range?: { low: number; high: number };
     avg_stress?: number;
   } | null;
+  recent_cross_training?: {
+    id: string;
+    sport: string;
+    name: string | null;
+    distance_m: number | null;
+    duration_s: number | null;
+    avg_hr: number | null;
+    steps: number | null;
+    active_kcal: number | null;
+    start_time: string;
+    additional_count: number;
+  } | null;
 }
 
 // --- API Functions ---

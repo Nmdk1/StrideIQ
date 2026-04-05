@@ -195,6 +195,20 @@ class HomeFinding(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class RecentCrossTraining(BaseModel):
+    """Most recent non-run activity in the last 24h for home page acknowledgment."""
+    id: str
+    sport: str
+    name: Optional[str] = None
+    distance_m: Optional[float] = None
+    duration_s: Optional[int] = None
+    avg_hr: Optional[int] = None
+    steps: Optional[int] = None
+    active_kcal: Optional[int] = None
+    start_time: str
+    additional_count: int = 0
+
+
 class HomeResponse(BaseModel):
     """Complete home page data."""
     today: TodayWorkout
@@ -226,6 +240,8 @@ class HomeResponse(BaseModel):
     has_correlations: bool = False
     # --- Daily wellness ---
     garmin_wellness: Optional[dict] = None
+    # --- Cross-training acknowledgment ---
+    recent_cross_training: Optional[RecentCrossTraining] = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -3782,6 +3798,38 @@ async def get_home_data(
 
     garmin_wellness = _build_garmin_wellness(str(current_user.id), db)
 
+    # Recent cross-training: most recent non-run activity in last 24h (athlete local)
+    recent_cross_training = None
+    try:
+        _ct_cutoff_utc = _today_start_utc - timedelta(hours=24)
+        _ct_activities = (
+            db.query(Activity)
+            .filter(
+                Activity.athlete_id == current_user.id,
+                Activity.sport != "run",
+                Activity.is_duplicate == False,  # noqa: E712
+                Activity.start_time >= _ct_cutoff_utc,
+            )
+            .order_by(desc(Activity.start_time))
+            .all()
+        )
+        if _ct_activities:
+            _latest_ct = _ct_activities[0]
+            recent_cross_training = RecentCrossTraining(
+                id=str(_latest_ct.id),
+                sport=_latest_ct.sport or "other",
+                name=_latest_ct.name,
+                distance_m=_latest_ct.distance_m,
+                duration_s=_latest_ct.duration_s or _latest_ct.moving_time_s,
+                avg_hr=_latest_ct.avg_hr,
+                steps=_latest_ct.steps,
+                active_kcal=_latest_ct.active_kcal,
+                start_time=_latest_ct.start_time.isoformat(),
+                additional_count=len(_ct_activities) - 1,
+            )
+    except Exception as e:
+        logger.warning(f"Recent cross-training query failed: {type(e).__name__}: {e}")
+
     return HomeResponse(
         today=today_workout,
         yesterday=yesterday_insight,
@@ -3808,6 +3856,7 @@ async def get_home_data(
         finding=home_finding,
         has_correlations=has_correlations,
         garmin_wellness=garmin_wellness,
+        recent_cross_training=recent_cross_training,
     )
 
 
