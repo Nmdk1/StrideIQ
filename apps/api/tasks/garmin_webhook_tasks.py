@@ -582,11 +582,17 @@ def _ingest_activity_item(
     # fitness bank's race performance tracking.
     try:
         from services.performance_engine import detect_race_candidate
-        dist_m = new_activity.distance_m or 0
+        dist_m = float(new_activity.distance_m or 0)
+        dur_s = new_activity.duration_s or new_activity.moving_time_s
         avg_hr = new_activity.avg_hr
         max_hr = new_activity.max_hr
+        pace = None
+        if dist_m > 0 and dur_s and dur_s > 0:
+            pace = (dur_s / 60.0) / (dist_m / 1609.344)
         is_candidate, confidence = detect_race_candidate(
+            activity_pace=pace,
             distance_meters=dist_m,
+            duration_seconds=dur_s,
             avg_hr=avg_hr,
             max_hr=max_hr,
             splits=[],
@@ -778,6 +784,39 @@ def _ingest_activity_detail_item(
             "Created %d splits for garmin_activity_id=%s",
             len(lap_splits), garmin_activity_id_int,
         )
+
+        # Re-run race detection now that splits are available.
+        # The summary webhook runs detection with splits=[] (they don't exist yet),
+        # so this is the first opportunity to score pace consistency and effort profile.
+        if not activity.is_race_candidate:
+            try:
+                from services.performance_engine import detect_race_candidate
+                _dist_m = float(activity.distance_m or 0)
+                _dur_s = activity.duration_s or activity.moving_time_s
+                _pace = None
+                if _dist_m > 0 and _dur_s and _dur_s > 0:
+                    _pace = (_dur_s / 60.0) / (_dist_m / 1609.344)
+                is_candidate, confidence = detect_race_candidate(
+                    activity_pace=_pace,
+                    distance_meters=_dist_m,
+                    duration_seconds=_dur_s,
+                    avg_hr=activity.avg_hr,
+                    max_hr=activity.max_hr,
+                    splits=lap_splits,
+                    activity_name=activity.name,
+                )
+                if is_candidate:
+                    activity.is_race_candidate = True
+                    activity.race_confidence = confidence
+                    logger.info(
+                        "Race re-detection with splits: garmin_activity_id=%s flagged (conf=%.2f)",
+                        garmin_activity_id_int, confidence,
+                    )
+            except Exception:
+                logger.warning(
+                    "Race re-detection failed for garmin_activity_id=%s — non-fatal",
+                    garmin_activity_id_int, exc_info=True,
+                )
 
     return True
 
