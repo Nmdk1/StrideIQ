@@ -257,7 +257,7 @@ export function RuntoonCard({ activityId }: RuntoonCardProps) {
   // ------------------------------------------------------------------
   // Render: Runtoon ready
   // ------------------------------------------------------------------
-  const canRegenerate = regenCount < 2; // 1 auto + 2 manual = 3 max; user sees 0 to 2
+  const canRegenerate = true; // Server enforces per-activity and daily caps; founder exempt
 
   return (
     <div className="rounded-lg border border-slate-700/50 bg-slate-800/30 overflow-hidden">

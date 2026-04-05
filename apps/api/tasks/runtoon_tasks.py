@@ -47,6 +47,8 @@ RUNTOON_DAILY_CAP = 5
 RUNTOON_PER_ACTIVITY_CAP = 3
 RUNTOON_MIN_PHOTOS = 3
 
+FOUNDER_ATHLETE_ID = "4368ec7f-c30d-45ff-a6ee-58db7716be24"
+
 
 def _today_utc_start() -> datetime:
     """Return midnight UTC for today as a timezone-aware datetime."""
@@ -178,7 +180,7 @@ def _run_generation(
         )
         .scalar()
     ) or 0
-    if today_count >= RUNTOON_DAILY_CAP:
+    if today_count >= RUNTOON_DAILY_CAP and str(athlete_id) != FOUNDER_ATHLETE_ID:
         logger.info("runtoon: daily cap (%d) reached for athlete %s", RUNTOON_DAILY_CAP, athlete_id)
         return
 
@@ -225,7 +227,7 @@ def _run_generation(
         .scalar()
     ) or 0
 
-    if activity_count >= RUNTOON_PER_ACTIVITY_CAP:
+    if activity_count >= RUNTOON_PER_ACTIVITY_CAP and str(athlete_id) != FOUNDER_ATHLETE_ID:
         logger.info("runtoon: per-activity cap (%d) reached for activity %s", RUNTOON_PER_ACTIVITY_CAP, activity.id)
         return
 

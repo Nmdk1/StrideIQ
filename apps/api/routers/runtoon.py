@@ -52,6 +52,8 @@ RUNTOON_PER_ACTIVITY_CAP = 3
 SIGNED_URL_TTL = 900  # 15 minutes
 DOWNLOAD_SIGNED_URL_TTL = 900
 
+FOUNDER_ATHLETE_ID = "4368ec7f-c30d-45ff-a6ee-58db7716be24"
+
 
 # ---------------------------------------------------------------------------
 # Response schemas
@@ -402,7 +404,8 @@ def trigger_regeneration(
         )
         .scalar()
     ) or 0
-    if existing_count >= RUNTOON_PER_ACTIVITY_CAP:
+    is_founder = str(current_user.id) == FOUNDER_ATHLETE_ID
+    if existing_count >= RUNTOON_PER_ACTIVITY_CAP and not is_founder:
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail=f"Maximum {RUNTOON_PER_ACTIVITY_CAP} Runtoons per activity reached.",
@@ -419,7 +422,7 @@ def trigger_regeneration(
         )
         .scalar()
     ) or 0
-    if today_count >= 5:
+    if today_count >= 5 and not is_founder:
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail="Daily Runtoon limit (5) reached. Try again tomorrow.",
