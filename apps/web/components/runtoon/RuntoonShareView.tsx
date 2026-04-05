@@ -316,12 +316,11 @@ export function RuntoonShareView({
   // ---------------------------------------------------------------------------
 
   const handleRegen = () => {
-    if (regenCount >= PER_ACTIVITY_CAP - 1) return;
     setRegenCount((c) => c + 1);
     genMutation.mutate();
   };
 
-  const canRegen = regenCount < PER_ACTIVITY_CAP - 1;
+  const canRegen = true; // Server enforces caps; founder exempt
 
   // ---------------------------------------------------------------------------
   // Touch swipe-down close
