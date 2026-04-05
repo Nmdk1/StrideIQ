@@ -558,6 +558,12 @@ def _ingest_activity_item(
                 stamp_wellness(candidate, db, athlete_timezone=tz_name)
             except Exception:
                 logger.warning("Wellness stamp failed on garmin-update for %s — non-fatal", external_id, exc_info=True)
+            if candidate.dew_point_f is None and candidate.start_lat is not None:
+                try:
+                    from services.weather_backfill import enrich_activity_weather
+                    enrich_activity_weather(candidate, db)
+                except Exception:
+                    logger.warning("Weather enrichment failed on garmin-update for %s — non-fatal", external_id, exc_info=True)
             return "updated"
 
     # --- No match: create new Activity row ---
@@ -575,6 +581,12 @@ def _ingest_activity_item(
         stamp_wellness(new_activity, db, athlete_timezone=tz_name)
     except Exception:
         logger.warning("Wellness stamp failed for garmin activity %s — non-fatal", external_id, exc_info=True)
+
+    try:
+        from services.weather_backfill import enrich_activity_weather
+        enrich_activity_weather(new_activity, db)
+    except Exception:
+        logger.warning("Weather enrichment failed for garmin activity %s — non-fatal", external_id, exc_info=True)
 
     # Race detection + workout classification — same logic as the Strava path.
     # Without this, Garmin activities are born with is_race_candidate=False and

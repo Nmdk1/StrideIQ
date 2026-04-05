@@ -1246,26 +1246,26 @@ def post_sync_processing_task(self: Task, athlete_id: str) -> Dict:
         except Exception as e:
             print(f"Warning [post-sync] Could not generate insights: {e}")
 
-        # 4. Living Fingerprint: compute heat adjustment for new activities
+        # 4. Weather enrichment: replace device-sensor temps with API weather.
+        # dew_point_f IS NULL catches both "no weather" and "device sensor only"
+        # (device sensor sets temperature_f but never humidity/dew_point).
         try:
-            from services.heat_adjustment import compute_activity_heat_fields
-            new_acts = db.query(Activity).filter(
+            from services.weather_backfill import enrich_activity_weather
+            needs_weather = db.query(Activity).filter(
                 Activity.athlete_id == athlete.id,
-                Activity.temperature_f.isnot(None),
-                Activity.humidity_pct.isnot(None),
                 Activity.dew_point_f.is_(None),
+                Activity.start_lat.isnot(None),
+                Activity.sport.notin_(["strength", "flexibility"]),
             ).all()
-            for act in new_acts:
-                fields = compute_activity_heat_fields(act.temperature_f, act.humidity_pct)
-                act.dew_point_f = fields['dew_point_f']
-                act.heat_adjustment_pct = fields['heat_adjustment_pct']
-                if act.run_shape and fields['heat_adjustment_pct'] and fields['heat_adjustment_pct'] > 0:
-                    _update_shape_heat_paces(act, fields['heat_adjustment_pct'])
-            if new_acts:
+            enriched_count = 0
+            for act in needs_weather:
+                if enrich_activity_weather(act, db):
+                    enriched_count += 1
+            if enriched_count:
                 db.flush()
-                print(f"DEBUG [post-sync] Computed heat adjustment for {len(new_acts)} activities")
+                print(f"DEBUG [post-sync] Weather enriched {enriched_count}/{len(needs_weather)} activities")
         except Exception as e:
-            print(f"Warning [post-sync] Heat adjustment failed: {e}")
+            print(f"Warning [post-sync] Weather enrichment failed: {e}")
 
         # 5. Living Fingerprint: extract shape + generate sentence
         try:

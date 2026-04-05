@@ -1,17 +1,30 @@
 """
-Weather backfill service using Open-Meteo Historical Weather API.
+Weather enrichment service using Open-Meteo APIs.
 
-Populates temperature_f, humidity_pct, and weather_condition on Activity
-records using GPS coordinates from the activity or the athlete's home location.
+Populates temperature_f, humidity_pct, dew_point_f, weather_condition,
+and heat_adjustment_pct on Activity records using GPS coordinates.
 
-Works for any athlete:
-  1. Uses activity's own lat/lng when available (exact location)
-  2. Falls back to athlete's most common training location (mode of lat/lng)
-  3. Falls back to explicit fallback coordinates if provided
+Two modes:
+  - Live enrichment: ``enrich_activity_weather()`` called during activity
+    ingestion (Garmin webhook, Strava post-sync). Fire-and-forget.
+  - Batch backfill: ``backfill_weather_for_athlete()`` for correcting
+    historical activities that have wrong device-sensor temps.
 
-Open-Meteo is free, requires no API key, and has historical data from 1940+.
-We batch requests by date to minimize API calls (one call per unique date
-per location covers all activities on that date).
+API strategy:
+  1. Historical Forecast API (``historical-forecast-api.open-meteo.com``)
+     — updated continuously, covers 2022-present including today.
+  2. Archive API (``archive-api.open-meteo.com``) — ERA5 reanalysis,
+     covers 1940-present with a 2-5 day delay on recent dates.
+
+Both APIs return the same response format; callers never need to know
+which served the data.
+
+Location resolution:
+  1. Activity's own lat/lng (exact GPS)
+  2. Athlete's home location (mode of all GPS coordinates)
+  3. Explicit fallback coordinates (caller-provided)
+
+Open-Meteo is free, requires no API key.
 """
 
 import logging
@@ -28,8 +41,20 @@ from models import Activity
 
 logger = logging.getLogger(__name__)
 
-OPEN_METEO_URL = "https://archive-api.open-meteo.com/v1/archive"
+HISTORICAL_FORECAST_URL = "https://historical-forecast-api.open-meteo.com/v1/forecast"
+ARCHIVE_URL = "https://archive-api.open-meteo.com/v1/archive"
 REQUEST_DELAY_S = 0.3  # be polite to free API
+
+_INDOOR_SPORTS = frozenset({"strength", "flexibility"})
+
+_HOURLY_PARAMS = ",".join([
+    "temperature_2m",
+    "relative_humidity_2m",
+    "dew_point_2m",
+    "wind_speed_10m",
+    "wind_direction_10m",
+    "weather_code",
+])
 
 
 def _celsius_to_fahrenheit(c: float) -> float:
@@ -50,6 +75,27 @@ def _wmo_to_condition(code: int) -> str:
     return mapping.get(code, 'unknown')
 
 
+def _try_api(url: str, lat: float, lng: float, target_date: date) -> Optional[Dict]:
+    """Call a single Open-Meteo endpoint. Returns parsed JSON or None."""
+    params = {
+        "latitude": round(lat, 4),
+        "longitude": round(lng, 4),
+        "start_date": target_date.isoformat(),
+        "end_date": target_date.isoformat(),
+        "hourly": _HOURLY_PARAMS,
+        "timezone": "auto",
+    }
+    try:
+        resp = httpx.get(url, params=params, timeout=15)
+        resp.raise_for_status()
+        data = resp.json()
+        if data.get("hourly", {}).get("temperature_2m"):
+            return data
+        return None
+    except Exception:
+        return None
+
+
 def fetch_weather_for_date(
     lat: float,
     lng: float,
@@ -57,32 +103,22 @@ def fetch_weather_for_date(
 ) -> Optional[Dict]:
     """
     Fetch hourly weather for a single date from Open-Meteo.
-    Returns dict with hourly arrays or None on failure.
-    """
-    params = {
-        'latitude': round(lat, 4),
-        'longitude': round(lng, 4),
-        'start_date': target_date.isoformat(),
-        'end_date': target_date.isoformat(),
-        'hourly': ','.join([
-            'temperature_2m',
-            'relative_humidity_2m',
-            'dew_point_2m',
-            'wind_speed_10m',
-            'wind_direction_10m',
-            'weather_code',
-        ]),
-        'timezone': 'auto',
-    }
 
-    try:
-        resp = httpx.get(OPEN_METEO_URL, params=params, timeout=15)
-        resp.raise_for_status()
-        return resp.json()
-    except Exception as e:
-        logger.warning("Open-Meteo request failed for %s at (%.4f, %.4f): %s",
-                       target_date, lat, lng, e)
-        return None
+    Tries the Historical Forecast API first (covers 2022-today, updated
+    continuously). Falls back to the Archive API (ERA5, 1940-present,
+    2-5 day delay on recent dates). Both return the same response format.
+    """
+    data = _try_api(HISTORICAL_FORECAST_URL, lat, lng, target_date)
+    if data is not None:
+        return data
+    data = _try_api(ARCHIVE_URL, lat, lng, target_date)
+    if data is not None:
+        return data
+    logger.warning(
+        "Open-Meteo: both APIs failed for %s at (%.4f, %.4f)",
+        target_date, lat, lng,
+    )
+    return None
 
 
 def extract_weather_at_hour(data: Dict, hour: int) -> Optional[Dict]:
@@ -111,6 +147,67 @@ def extract_weather_at_hour(data: Dict, hour: int) -> Optional[Dict]:
         'wind_direction': wind_dir[hour] if hour < len(wind_dir) else None,
         'weather_condition': _wmo_to_condition(weather_codes[hour]) if hour < len(weather_codes) and weather_codes[hour] is not None else None,
     }
+
+
+def enrich_activity_weather(activity: Activity, db: Session) -> bool:
+    """
+    Enrich a single activity with API weather data.
+
+    Sets temperature_f, humidity_pct, dew_point_f, weather_condition,
+    and heat_adjustment_pct from Open-Meteo based on the activity's GPS
+    coordinates and start time.
+
+    Designed for the live ingestion pipeline — fire-and-forget.
+    Never raises; returns False on skip or failure, True on success.
+    """
+    try:
+        sport = getattr(activity, "sport", None)
+        if sport in _INDOOR_SPORTS:
+            return False
+
+        lat = activity.start_lat
+        lng = activity.start_lng
+        if lat is None or lng is None:
+            return False
+
+        start = activity.start_time
+        if start is None:
+            return False
+
+        data = fetch_weather_for_date(lat, lng, start.date())
+        if data is None:
+            return False
+
+        weather = extract_weather_at_hour(data, start.hour)
+        if weather is None:
+            return False
+
+        activity.temperature_f = weather["temperature_f"]
+        activity.humidity_pct = weather["humidity_pct"]
+        activity.weather_condition = weather["weather_condition"]
+
+        if weather.get("dew_point_f") is not None:
+            activity.dew_point_f = weather["dew_point_f"]
+        elif weather["temperature_f"] is not None and weather["humidity_pct"] is not None:
+            from services.heat_adjustment import calculate_dew_point_f
+            activity.dew_point_f = round(
+                calculate_dew_point_f(weather["temperature_f"], weather["humidity_pct"]), 1
+            )
+
+        if activity.dew_point_f is not None and activity.temperature_f is not None:
+            from services.heat_adjustment import calculate_heat_adjustment_pct
+            activity.heat_adjustment_pct = round(
+                calculate_heat_adjustment_pct(activity.temperature_f, activity.dew_point_f), 4
+            )
+
+        logger.info(
+            "Weather enriched: activity %s → %.1f°F, %s",
+            activity.id, activity.temperature_f, activity.weather_condition,
+        )
+        return True
+    except Exception as exc:
+        logger.warning("Weather enrichment failed for activity %s: %s", getattr(activity, "id", "?"), exc)
+        return False
 
 
 def detect_home_location(
@@ -189,9 +286,7 @@ def backfill_weather_for_athlete(
     no_location = 0
 
     for act in activities:
-        elev = float(act.total_elevation_gain) if act.total_elevation_gain else 0
-        dist_km = (act.distance_m or 0) / 1000
-        if elev < 20 and dist_km > 5:
+        if getattr(act, "sport", None) in _INDOOR_SPORTS:
             skipped_indoor += 1
             continue
 
