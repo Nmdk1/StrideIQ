@@ -99,12 +99,14 @@ function createMileIcon(label: string): L.DivIcon {
 }
 
 function paceColor(t: number): string {
+  // t: 0 = fastest (red), 1 = slowest (blue)
   if (t < 0.5) {
-    const r = Math.round(255 * (t * 2));
-    return `rgb(${r}, 220, 60)`;
+    const g = Math.round(180 * (t * 2));
+    return `rgb(235, ${g}, 50)`;
   }
-  const g = Math.round(220 * (1 - (t - 0.5) * 2));
-  return `rgb(255, ${g}, 60)`;
+  const r = Math.round(235 * (1 - (t - 0.5) * 2));
+  const b = Math.round(180 * ((t - 0.5) * 2));
+  return `rgb(${r}, ${180 - b / 2}, ${50 + b})`;
 }
 
 function gradeAdjustedPace(paceSkm: number, gradePct: number): number {
@@ -124,15 +126,16 @@ function buildPaceSegments(
       ? gradeAdjustedPace(p.pace!, p.grade)
       : p.pace!
   );
-  const minPace = Math.min(...paces);
-  const maxPace = Math.max(...paces);
-  const range = maxPace - minPace || 1;
+  const sorted = [...paces].sort((a, b) => a - b);
+  const p5 = sorted[Math.floor(sorted.length * 0.05)];
+  const p95 = sorted[Math.floor(sorted.length * 0.95)];
+  const range = p95 - p5 || 1;
 
   const segments: PaceSegment[] = [];
   for (let i = 0; i < withGps.length - 1; i++) {
     const p = withGps[i];
     const next = withGps[i + 1];
-    const t = (paces[i] - minPace) / range;
+    const t = Math.max(0, Math.min(1, (paces[i] - p5) / range));
     segments.push({
       positions: [[p.lat!, p.lng!], [next.lat!, next.lng!]],
       color: paceColor(t),
@@ -210,8 +213,18 @@ export default function ActivityMapInner({
     return [[minLat - pad, minLng - pad], [maxLat + pad, maxLng + pad]] as LatLngBoundsExpression;
   }, [track, ghosts, startCoords]);
 
-  const mileMarkers = useMemo(() => computeMileMarkers(track, unitSystem), [track, unitSystem]);
+  const mileMarkersAll = useMemo(() => computeMileMarkers(track, unitSystem), [track, unitSystem]);
+  const mileMarkers = useMemo(() => {
+    const total = mileMarkersAll.length;
+    if (total <= 5) return mileMarkersAll;
+    const interval = total <= 15 ? 2 : 5;
+    return mileMarkersAll.filter((_, i) => {
+      const mile = i + 1;
+      return mile === 1 || mile === total || mile % interval === 0;
+    });
+  }, [mileMarkersAll]);
   const isPin = track.length === 0 && startCoords;
+  const isLoop = track.length > 1 && haversine(track[0], track[track.length - 1]) < 50;
 
   const hoveredCoord = useMemo(() => {
     if (hoveredIndex == null || !streamPoints) return null;
@@ -299,12 +312,12 @@ export default function ActivityMapInner({
             <FitBounds bounds={bounds} />
             <InvalidateOnResize />
 
-            {/* Ghost traces */}
+            {/* Ghost traces — barely visible whisper of history */}
             {ghosts.map((g) => (
               <Polyline
                 key={g.id}
                 positions={g.points}
-                pathOptions={{ color: '#94a3b8', weight: 2, opacity: g.opacity }}
+                pathOptions={{ color: '#94a3b8', weight: 1.5, opacity: g.opacity }}
               />
             ))}
 
@@ -339,22 +352,30 @@ export default function ActivityMapInner({
               <Marker key={m.label} position={m.position} icon={createMileIcon(m.label)} />
             ))}
 
-            {/* Start marker — green */}
-            {track.length > 0 && (
+            {/* Start/end markers — combined for loops, separate otherwise */}
+            {track.length > 0 && isLoop ? (
               <CircleMarker
                 center={track[0]}
-                radius={7}
+                radius={8}
                 pathOptions={{ color: '#fff', weight: 2, fillColor: '#22c55e', fillOpacity: 1 }}
               />
-            )}
-
-            {/* End marker — red */}
-            {track.length > 1 && (
-              <CircleMarker
-                center={track[track.length - 1]}
-                radius={7}
-                pathOptions={{ color: '#fff', weight: 2, fillColor: '#ef4444', fillOpacity: 1 }}
-              />
+            ) : (
+              <>
+                {track.length > 0 && (
+                  <CircleMarker
+                    center={track[0]}
+                    radius={7}
+                    pathOptions={{ color: '#fff', weight: 2, fillColor: '#22c55e', fillOpacity: 1 }}
+                  />
+                )}
+                {track.length > 1 && (
+                  <CircleMarker
+                    center={track[track.length - 1]}
+                    radius={7}
+                    pathOptions={{ color: '#fff', weight: 2, fillColor: '#ef4444', fillOpacity: 1 }}
+                  />
+                )}
+              </>
             )}
 
             {/* Hover marker from chart cross-reference */}
@@ -383,8 +404,8 @@ export default function ActivityMapInner({
         <div className="flex items-center gap-2 mt-1.5 px-1">
           <span className="text-[10px] text-slate-500">Slower</span>
           <div
-            className="flex-1 h-1.5 rounded-full"
-            style={{ background: 'linear-gradient(to right, #ef4444, #eab308, #22c55e)' }}
+            className="flex-1 h-1 rounded-full"
+            style={{ background: 'linear-gradient(to right, #3b82f6, #eab308, #ef4444)' }}
           />
           <span className="text-[10px] text-slate-500">Faster</span>
           {streamPoints && streamPoints.some(p => p.grade != null) && (

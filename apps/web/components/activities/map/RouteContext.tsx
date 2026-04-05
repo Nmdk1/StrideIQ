@@ -55,10 +55,10 @@ function computeGhostOpacity(siblingDate: string, currentDate: string): number {
   const sib = new Date(siblingDate).getTime();
   const cur = new Date(currentDate).getTime();
   const daysAgo = Math.max(0, (cur - sib) / (1000 * 60 * 60 * 24));
-  if (daysAgo <= 30) return 0.30;
-  if (daysAgo <= 60) return 0.20;
-  if (daysAgo <= 90) return 0.14;
-  return 0.08;
+  if (daysAgo <= 30) return 0.15;
+  if (daysAgo <= 60) return 0.10;
+  if (daysAgo <= 90) return 0.07;
+  return 0.05;
 }
 
 function sportVerb(sport: string): string {
