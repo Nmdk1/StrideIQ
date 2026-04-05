@@ -104,6 +104,7 @@ class CoachNoticed(BaseModel):
     text: str
     source: str  # "correlation" | "signal" | "insight_feed" | "narrative"
     ask_coach_query: str  # pre-filled query for /coach?q=...
+    finding_id: Optional[str] = None  # CorrelationFinding UUID for briefing→coach deep link
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -2517,6 +2518,7 @@ def compute_coach_noticed(
                         f"affects my {out_name}. "
                         f"What should I do about it?"
                     ),
+                    finding_id=str(f.id),
                 )
     except Exception as e:
         logger.debug("Fingerprint finding for coach_noticed failed: %s", e)

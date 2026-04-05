@@ -3024,6 +3024,7 @@ ATHLETE BRIEF:
         message: str,
         include_context: bool = True,
         is_synthetic_probe: bool = False,
+        finding_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Send a message to the AI coach and get a response.
@@ -3032,6 +3033,7 @@ ATHLETE BRIEF:
             athlete_id: The athlete's ID
             message: The user's message
             include_context: Whether to inject context from athlete data
+            finding_id: Optional CorrelationFinding ID for briefing→coach deep link
         
         Returns:
             Dict with response text and metadata
@@ -3432,6 +3434,13 @@ ATHLETE BRIEF:
             # Universal Kimi K2.5 routing (Apr 2026).
             # Every query goes through Kimi with Sonnet as silent fallback.
             athlete_state = self._build_athlete_state_for_opus(athlete_id)
+
+            if finding_id:
+                finding_context = self._build_finding_deep_link_context(
+                    athlete_id, finding_id
+                )
+                if finding_context:
+                    athlete_state += "\n\n" + finding_context
 
             thread_id, _ = self.get_or_create_thread_with_state(athlete_id)
             conversation_context = []
@@ -4579,6 +4588,120 @@ ATHLETE BRIEF:
         baseline_completed = bool(baseline_row and baseline_row.completed_at)
         baseline_needed = bool(history_thin and (not baseline_completed))
         return history_thin, history_snapshot, baseline, baseline_needed
+
+    def _build_finding_deep_link_context(
+        self, athlete_id: UUID, finding_id: str
+    ) -> Optional[str]:
+        """Build rich context for a briefing→coach deep link.
+
+        When the athlete taps an emerging pattern question in the morning
+        briefing, the coach session opens with pre-loaded context about the
+        specific finding — threshold, observation counts, and recent relevant
+        activity data.  The coach opens mid-conversation, never repeating
+        the question the athlete already read.
+        """
+        try:
+            from models import CorrelationFinding as CF, Activity
+            from services.fingerprint_context import (
+                _translate, _format_value_with_unit
+            )
+            from uuid import UUID as _UUID
+
+            fid = _UUID(finding_id)
+            finding = (
+                self.db.query(CF)
+                .filter(CF.id == fid, CF.athlete_id == athlete_id)
+                .first()
+            )
+            if not finding:
+                logger.debug("Finding %s not found for athlete %s", finding_id, athlete_id)
+                return None
+
+            inp = _translate(finding.input_name)
+            out = _translate(finding.output_metric)
+            direction = "improves" if finding.direction == "positive" else "worsens"
+
+            parts = [
+                "=== BRIEFING DEEP LINK — FINDING CONTEXT ===",
+                "The athlete just tapped on this pattern from their morning briefing.",
+                "They already read the question. Do NOT repeat it.",
+                "Open mid-conversation: present the specific evidence behind the",
+                "pattern, then invite their response naturally.",
+                "",
+                f"Finding: {inp} {direction} {out}",
+                f"Strength: {finding.strength}, observed {finding.times_confirmed}x, "
+                f"sample size {finding.sample_size}",
+            ]
+
+            if finding.threshold_value is not None:
+                thresh = _format_value_with_unit(
+                    finding.threshold_value, finding.input_name
+                )
+                parts.append(f"Threshold: {inp} cliff at {thresh}")
+                if finding.n_below_threshold and finding.n_above_threshold:
+                    parts.append(
+                        f"  {finding.n_below_threshold} observations below, "
+                        f"{finding.n_above_threshold} above"
+                    )
+
+            if finding.asymmetry_ratio and finding.asymmetry_ratio > 1.5:
+                parts.append(
+                    f"Asymmetry: {finding.asymmetry_ratio:.1f}x — "
+                    f"{'the downside hits harder' if 'negative' in (finding.asymmetry_direction or '') else 'the upside helps more'}"
+                )
+
+            if finding.time_lag_days and finding.time_lag_days > 0:
+                parts.append(f"Time lag: effect shows {finding.time_lag_days} day(s) later")
+
+            if finding.decay_half_life_days:
+                parts.append(f"Decay: peaks within {finding.decay_half_life_days:.0f} day(s)")
+
+            lifecycle = getattr(finding, "lifecycle_state", None) or "active"
+            parts.append(f"Lifecycle: {lifecycle}")
+
+            recent_runs = (
+                self.db.query(Activity)
+                .filter(
+                    Activity.athlete_id == athlete_id,
+                    Activity.sport == "run",
+                )
+                .order_by(Activity.start_time.desc())
+                .limit(10)
+                .all()
+            )
+
+            if recent_runs:
+                run_lines = []
+                for r in recent_runs:
+                    day = r.start_time.strftime("%a %b %d") if r.start_time else "?"
+                    hour = r.start_time.strftime("%I:%M %p") if r.start_time else "?"
+                    dist_mi = (r.distance_m or 0) / 1609.34
+                    dur_min = (r.moving_time_s or 0) / 60
+                    pace = ""
+                    if dist_mi > 0 and dur_min > 0:
+                        pace_val = dur_min / dist_mi
+                        pace = f"{int(pace_val)}:{int((pace_val % 1) * 60):02d}/mi"
+                    run_lines.append(
+                        f"  {day} {hour}: {dist_mi:.1f}mi, {pace}"
+                    )
+                parts.append("")
+                parts.append("Recent runs (for context in your response):")
+                parts.extend(run_lines)
+
+            parts.extend([
+                "",
+                "INSTRUCTION: Present the specific evidence in the athlete's",
+                "training units (pace as min/mi, sleep in hours, time as AM/PM,",
+                "counts as numbers). Then ask what they think is driving it.",
+                "Do NOT use statistical language (r-values, p-values, correlations).",
+                "=== END FINDING CONTEXT ===",
+            ])
+
+            return "\n".join(parts)
+
+        except Exception as e:
+            logger.debug("Finding deep link context failed: %s", e)
+            return None
 
     def _build_athlete_state_for_opus(self, athlete_id: UUID) -> str:
         """

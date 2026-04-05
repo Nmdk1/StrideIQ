@@ -8,6 +8,7 @@ import { API_CONFIG } from '../config';
 export interface ChatRequest {
   message: string;
   include_context?: boolean;
+  finding_id?: string;
 }
 
 export interface ChatResponse {

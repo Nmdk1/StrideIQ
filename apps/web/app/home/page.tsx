@@ -730,6 +730,7 @@ export default function HomePage() {
     checkin_needed,
     today_checkin,
     coach_briefing,
+    coach_noticed: coachNoticedStructured,
     last_run,
     briefing_last_updated_at,
     garmin_wellness,
@@ -801,14 +802,27 @@ export default function HomePage() {
                   {coach_briefing.morning_voice}
                 </p>
               ) : coach_briefing.coach_noticed ? (
-                <p
-                  className={`text-base leading-relaxed ${
-                    isInterimBriefing ? 'text-slate-400 italic' : 'text-slate-300'
-                  }`}
-                  data-testid="morning-voice-primary"
-                >
-                  {coach_briefing.coach_noticed}
-                </p>
+                coachNoticedStructured?.finding_id ? (
+                  <Link
+                    href={`/coach?finding_id=${coachNoticedStructured.finding_id}&q=${encodeURIComponent(coachNoticedStructured.ask_coach_query)}`}
+                    className={`block text-base leading-relaxed hover:text-orange-300 transition-colors cursor-pointer ${
+                      isInterimBriefing ? 'text-slate-400 italic' : 'text-orange-400/80'
+                    }`}
+                    data-testid="morning-voice-primary"
+                  >
+                    {coach_briefing.coach_noticed}
+                    <span className="ml-1.5 text-xs text-orange-500/60">&rarr; Ask coach</span>
+                  </Link>
+                ) : (
+                  <p
+                    className={`text-base leading-relaxed ${
+                      isInterimBriefing ? 'text-slate-400 italic' : 'text-slate-300'
+                    }`}
+                    data-testid="morning-voice-primary"
+                  >
+                    {coach_briefing.coach_noticed}
+                  </p>
+                )
               ) : null}
               {formattedBriefingUpdatedAt ? (
                 <p className="text-[11px] text-slate-500" data-testid="briefing-last-updated">
@@ -816,9 +830,20 @@ export default function HomePage() {
                 </p>
               ) : null}
               {coach_briefing.morning_voice && coach_briefing.coach_noticed ? (
-                <p className="text-sm text-slate-500 leading-relaxed" data-testid="coach-noticed-secondary">
-                  {coach_briefing.coach_noticed}
-                </p>
+                coachNoticedStructured?.finding_id ? (
+                  <Link
+                    href={`/coach?finding_id=${coachNoticedStructured.finding_id}&q=${encodeURIComponent(coachNoticedStructured.ask_coach_query)}`}
+                    className="block text-sm text-orange-400/80 leading-relaxed hover:text-orange-300 transition-colors cursor-pointer"
+                    data-testid="coach-noticed-secondary"
+                  >
+                    {coach_briefing.coach_noticed}
+                    <span className="ml-1.5 text-xs text-orange-500/60">&rarr; Ask coach</span>
+                  </Link>
+                ) : (
+                  <p className="text-sm text-slate-500 leading-relaxed" data-testid="coach-noticed-secondary">
+                    {coach_briefing.coach_noticed}
+                  </p>
+                )
               ) : null}
             </div>
           ) : isBriefingPending ? (

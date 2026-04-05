@@ -189,6 +189,7 @@ class TestCoachNoticedFingerprint:
         assert "threshold" in result.text.lower() or "6.2" in result.text
         assert "consistent across" in result.text
         assert "45" in result.text
+        assert result.finding_id is not None
 
     def test_fingerprint_requires_recent_confirmation(self):
         from routers.home import compute_coach_noticed

@@ -70,6 +70,7 @@ export interface CoachNoticed {
   text: string;
   source: 'correlation' | 'signal' | 'insight_feed' | 'narrative';
   ask_coach_query: string;
+  finding_id?: string;
 }
 
 export interface RaceCountdown {

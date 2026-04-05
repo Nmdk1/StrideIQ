@@ -25,6 +25,7 @@ class ChatRequest(BaseModel):
     message: str
     include_context: bool = True
     is_synthetic_probe: bool = False
+    finding_id: Optional[str] = None
 
 
 class ChatResponse(BaseModel):
@@ -77,6 +78,7 @@ async def chat_with_coach(
         message=request.message,
         include_context=request.include_context,
         is_synthetic_probe=bool(request.is_synthetic_probe),
+        finding_id=request.finding_id,
     )
     
     return ChatResponse(
@@ -121,6 +123,7 @@ async def chat_with_coach_stream(
                     message=request.message,
                     include_context=request.include_context,
                     is_synthetic_probe=bool(request.is_synthetic_probe),
+                    finding_id=request.finding_id,
                 )
             )
 

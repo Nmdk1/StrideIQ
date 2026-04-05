@@ -292,12 +292,19 @@ function CoachPageInner() {
     };
   }, []);
 
-  // Deep link: read ?q= parameter and pre-fill input
+  // Deep link: read ?q= and ?finding_id= parameters.
+  // When finding_id is present (briefing tap), auto-send the message.
+  // When only ?q= is present, prefill the input.
+  const deepLinkHandled = useRef(false);
   useEffect(() => {
+    if (deepLinkHandled.current) return;
     const q = searchParams?.get('q');
-    if (q && !input) {
+    const findingId = searchParams?.get('finding_id');
+    if (q && findingId && !isLoading && messages.length === 0) {
+      deepLinkHandled.current = true;
+      handleSend(q);
+    } else if (q && !input) {
       setInput(q);
-      // Focus the input so user can just hit send
       requestAnimationFrame(() => inputRef.current?.focus());
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -370,8 +377,9 @@ function CoachPageInner() {
 
       const controller = new AbortController();
 
+      const findingId = searchParams?.get('finding_id') || undefined;
       await aiCoachService.chatStream(
-        { message: text },
+        { message: text, ...(findingId && messages.length <= 1 ? { finding_id: findingId } : {}) },
         {
           signal: controller.signal,
           onDelta: (delta) => {
