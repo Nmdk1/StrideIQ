@@ -805,7 +805,7 @@ class TestAPILevelCoachPayload:
         assert "sleep duration" in emerging_block, (
             "Newest emerging (sleep_hours, updated 3 days ago) should be the one"
         )
-        assert 'Ask: "' in emerging_block, (
+        assert 'Suggested question' in emerging_block, (
             "Emerging block must contain a pre-generated question"
         )
 
