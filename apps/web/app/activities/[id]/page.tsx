@@ -431,7 +431,7 @@ export default function ActivityDetailPage() {
                     activity.sport_type === 'walking' ? '#2dd4bf' :
                     '#34d399'
                   }
-                  mapHeight={280}
+                  mapHeight={350}
                 />
               </div>
             )}
@@ -581,7 +581,7 @@ export default function ActivityDetailPage() {
               startCoords={activity.start_coords}
               sportType={activity.sport_type || 'run'}
               startTime={activity.start_time}
-              mapHeight={250}
+              mapHeight={300}
             />
           </div>
         )}

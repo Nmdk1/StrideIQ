@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { MapPin, Ghost } from 'lucide-react';
+import { useUnits } from '@/lib/context/UnitsContext';
 import ActivityMap from './ActivityMap';
 
 interface RouteSiblingMeta {
@@ -57,6 +58,7 @@ export default function RouteContext({
   accentColor = '#3b82f6',
   mapHeight = 300,
 }: Props) {
+  const { units } = useUnits();
   const [showGhosts, setShowGhosts] = useState(false);
   const [ghostTraces, setGhostTraces] = useState<GhostTrace[]>([]);
 
@@ -69,6 +71,7 @@ export default function RouteContext({
       if (!res.ok) return { count: 0, conditions_match_count: 0, siblings: [] };
       return res.json();
     },
+    // Siblings/ghosts are run-only for now — walking/cycling get the map but not route history
     enabled: sportType === 'run' && track.length > 0,
     staleTime: 5 * 60 * 1000,
   });
@@ -110,6 +113,7 @@ export default function RouteContext({
         ghosts={showGhosts ? ghostTraces : []}
         height={mapHeight}
         accentColor={accentColor}
+        unitSystem={units}
       />
 
       {siblingCount > 0 && sportType === 'run' && (

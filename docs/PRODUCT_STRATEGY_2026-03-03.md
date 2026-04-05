@@ -164,7 +164,83 @@ recorded history — is the proof of concept. That is a clinical result.
 A 79-year-old athlete setting state records coached by AI and a
 correlation engine is the most powerful demonstration of the product.
 
-### 10. Cohort Intelligence
+### 10. Athlete Hypothesis Testing — "I Have a Theory"
+
+The correlation engine discovers patterns autonomously. The athlete
+has no way to aim it. Serious athletes think in hypotheses constantly:
+"I think I run better when I do strides the day before intervals."
+
+The athlete states a theory. The system tracks it, shows a living
+evidence board ("4 of 6 support this — too early to confirm"), and
+graduates confirmed hypotheses into the Manual alongside engine-
+discovered findings. The athlete becomes a collaborator in their own
+science — their questions living next to the system's answers.
+
+The journey of watching evidence accumulate IS the stickiness. An
+athlete watching 4 out of 6 observations confirm their hypothesis is
+not leaving this product.
+
+**Why #10:** Retention through ownership. The athlete isn't consuming
+intelligence — they're contributing to it. Targets the data-literate
+serious runner who is exactly the founder's profile and the product's
+core market.
+
+**Spec:** `docs/specs/ATHLETE_HYPOTHESIS_TESTING_SPEC.md`
+
+### 11. Forward-Projection of Findings Against Today's Wellness
+
+The morning briefing has confirmed findings (sleep cliff at 6.2h) and
+today's wellness data (sleep 5.3h) on the same screen. They don't talk
+to each other. The gap: run confirmed findings FORWARD against today's
+numbers before the athlete walks out the door, using their personal
+decay curves for timing. The data, findings, and delivery surface all
+exist — the forward-projection connection doesn't yet.
+
+**Why #11:** Highest-impact prompt engineering change. No new
+infrastructure. Transforms the morning voice from reporting what
+happened to predicting what's coming.
+
+### 12. Intelligent Maps — The Correlation Engine on Geography
+
+The map is not decoration. It is the most natural way to render what
+the correlation engine knows about how the athlete moves through space.
+
+Current state: No maps in the product. GPS data exists on every
+outdoor activity. Route matching is a simple query (start location +
+distance clustering) — most runners run 3-5 routes all year.
+
+**Build sequence:**
+
+1. **Basic GPS trace** — get maps on screen for all outdoor activities
+2. **Ghost Map** — current run overlaid on previous runs of the same
+   route, weighted by recency and condition similarity. 6-8 runs gives
+   meaningful ghosts. The athlete sees exactly where they're gaining
+   on their history and where they're losing it.
+3. **Effort-Normalized Map** — grade-adjusted pace at every point.
+   Same math as heat adjustment but for elevation. A 7:30 uphill and
+   a 7:30 downhill are completely different events — this shows the truth.
+4. **Body State Narrative Map** — shape_extractor phases rendered as
+   labeled chapters on the route ("miles 3-5: optimal zone, seasonal best")
+5. **Physiological Terrain Map** — efficiency at each point vs personal
+   baseline. Where your body works harder than terrain justifies = a
+   finding rendered as a hot spot on the map.
+6. **Route Intelligence** — the route becomes an entity. Performance
+   trajectory on this route over time. Conditions that produce best/worst
+   efforts. Prediction for today given current conditions.
+
+Every one of these is impossible on Strava because Strava doesn't have
+the athlete's correlation data, personal baselines, or confirmed findings.
+Every one is possible on StrideIQ because the engine already computes
+the underlying relationships. The map just renders them spatially.
+
+**Why #12:** Highest screenshot value of any surface. A ghost map with
+effort-normalized coloring and narrative segments is the image that
+gets posted in running forums with "what app is that?"
+
+**Spec:** `docs/BUILDER_INSTRUCTIONS_2026-04-05_CROSS_TRAINING_POLISH.md`
+(Workstream 2, section 2B)
+
+### 13. Cohort Intelligence
 
 Zero acquisition value today. Highest long-term network effect. Design
 for it now, build at 500 users.
