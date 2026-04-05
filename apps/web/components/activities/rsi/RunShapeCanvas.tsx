@@ -831,26 +831,9 @@ export function RunShapeCanvas({
   const splitRowRefs = useRef<Map<number, HTMLTableRowElement>>(new Map());
   const prevHighlightedSplitRef = useRef<number | null>(null);
 
-  // Container sizing
+  // Container sizing (ref + state declared here; effect added after data prep)
   const chartContainerRef = useRef<HTMLDivElement>(null);
-  const [chartWidth, setChartWidth] = useState(800);
-
-  useEffect(() => {
-    const el = chartContainerRef.current;
-    if (!el) return;
-
-    const measure = () => {
-      const w = el.clientWidth;
-      if (w > 0) setChartWidth(w);
-    };
-
-    measure();
-    if (typeof ResizeObserver !== 'undefined') {
-      const observer = new ResizeObserver(measure);
-      observer.observe(el);
-      return () => observer.disconnect();
-    }
-  }, []);
+  const [chartWidth, setChartWidth] = useState(0);
 
   // --- Data preparation ---
   // The API returns a flat StreamAnalysisData (all analysis fields + stream array).
@@ -917,6 +900,28 @@ export function RunShapeCanvas({
 
     return raw;
   }, [rawStream, heatAdjustmentPct]);
+
+  // Container sizing effect — must run AFTER chart container is in the DOM.
+  // The container only renders when analysis+chartData are ready (after loading
+  // state early-returns), so we re-trigger when that transition happens.
+  const chartReady = !!analysis && chartData.length > 0;
+  useEffect(() => {
+    if (!chartReady) return;
+    const el = chartContainerRef.current;
+    if (!el) return;
+
+    const measure = () => {
+      const w = el.clientWidth;
+      if (w > 0) setChartWidth(w);
+    };
+
+    measure();
+    if (typeof ResizeObserver !== 'undefined') {
+      const observer = new ResizeObserver(measure);
+      observer.observe(el);
+      return () => observer.disconnect();
+    }
+  }, [chartReady]);
 
   // --- Derived values ---
   const maxTime = useMemo(() => {
@@ -1179,6 +1184,8 @@ export function RunShapeCanvas({
         ref={chartContainerRef}
         data-testid="chart-container"
       >
+        {/* Delay rendering layers until container width is measured */}
+        {chartWidth > 0 && (<>
         {/* Layer 0: Canvas effort gradient (AC-2, behind everything) */}
         <EffortGradientCanvas
           data={chartData}
@@ -1412,6 +1419,7 @@ export function RunShapeCanvas({
           showCadence={showCadence}
           showGrade={showGrade}
         />
+        </>)}
       </div>
       {showAdjustedOverlay && (
         <p className="mt-2 text-xs text-slate-400" data-testid="adjusted-pace-label">
