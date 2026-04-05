@@ -39,6 +39,7 @@ import { RuntoonCard } from '@/components/activities/RuntoonCard';
 import { CyclingDetail, StrengthDetail, HikingDetail, FlexibilityDetail } from '@/components/activities/cross-training';
 import type { CrossTrainingActivity } from '@/components/activities/cross-training';
 import RouteContext from '@/components/activities/map/RouteContext';
+import { StreamHoverProvider } from '@/lib/context/StreamHoverContext';
 
 interface Activity {
   id: string;
@@ -55,6 +56,8 @@ interface Activity {
   average_temp_c: number | null;
   temperature_f: number | null;
   dew_point_f: number | null;
+  humidity_pct: number | null;
+  weather_condition: string | null;
   heat_adjustment_pct: number | null;
   strava_activity_id: string | null;
   provider: string | null;
@@ -432,6 +435,14 @@ export default function ActivityDetailPage() {
                     '#34d399'
                   }
                   mapHeight={350}
+                  weather={{
+                    temperature_f: activity.temperature_f,
+                    weather_condition: activity.weather_condition,
+                    humidity_pct: activity.humidity_pct,
+                    heat_adjustment_pct: activity.heat_adjustment_pct,
+                  }}
+                  distanceM={activity.distance_m}
+                  durationS={activity.moving_time_s || activity.elapsed_time_s}
                 />
               </div>
             )}
@@ -441,7 +452,7 @@ export default function ActivityDetailPage() {
             {activity.sport_type === 'flexibility' && <FlexibilityDetail activity={activity as unknown as CrossTrainingActivity} />}
           </div>
         ) : (
-        <>
+        <StreamHoverProvider>
         {/* ── 2. Run Shape Canvas (Hero) ── */}
         <div className="mb-6">
           <RunShapeCanvas
@@ -582,6 +593,15 @@ export default function ActivityDetailPage() {
               sportType={activity.sport_type || 'run'}
               startTime={activity.start_time}
               mapHeight={300}
+              streamPoints={analysisData?.stream}
+              weather={{
+                temperature_f: activity.temperature_f,
+                weather_condition: activity.weather_condition,
+                humidity_pct: activity.humidity_pct,
+                heat_adjustment_pct: activity.heat_adjustment_pct,
+              }}
+              distanceM={activity.distance_m}
+              durationS={activity.moving_time_s || activity.elapsed_time_s}
             />
           </div>
         )}
@@ -697,7 +717,7 @@ export default function ActivityDetailPage() {
             )}
           </>
         )}
-        </>
+        </StreamHoverProvider>
         )}
       </div>
     </div>

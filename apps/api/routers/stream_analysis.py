@@ -50,7 +50,7 @@ def _prepare_stream_points(
         heartrate → hr, velocity_smooth → pace (s/km), grade_smooth → grade
 
     Applies LTTB downsampling if point count exceeds max_points.
-    Includes effort from the analysis result.
+    Includes effort from the analysis result and lat/lng for map linking.
     """
     time_arr = stream_data.get("time", [])
     n = len(time_arr)
@@ -62,6 +62,7 @@ def _prepare_stream_points(
     alt_arr = stream_data.get("altitude")
     cad_arr = stream_data.get("cadence")
     grade_arr = stream_data.get("grade_smooth")
+    latlng_arr = stream_data.get("latlng")
 
     points = []
     for i in range(n):
@@ -103,6 +104,14 @@ def _prepare_stream_points(
             pt["effort"] = round(effort_intensity[i], 4)
         else:
             pt["effort"] = 0.0
+
+        # GPS coordinates for pace-colored map rendering
+        if latlng_arr and i < len(latlng_arr) and latlng_arr[i] is not None:
+            pt["lat"] = round(latlng_arr[i][0], 6)
+            pt["lng"] = round(latlng_arr[i][1], 6)
+        else:
+            pt["lat"] = None
+            pt["lng"] = None
 
         points.append(pt)
 

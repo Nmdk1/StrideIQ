@@ -2,9 +2,14 @@
 
 import { useState } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
-import { MapPin, Ghost } from 'lucide-react';
+import { MapPin, Ghost, ChevronDown } from 'lucide-react';
 import { useUnits } from '@/lib/context/UnitsContext';
+import { useStreamHover } from '@/lib/context/StreamHoverContext';
 import ActivityMap from './ActivityMap';
+import ElevationProfile from './ElevationProfile';
+import RoutePerformancePanel from './RoutePerformancePanel';
+import type { StreamPoint } from '@/components/activities/rsi/hooks/useStreamAnalysis';
+import type { WeatherData } from './ActivityMapInner';
 
 interface RouteSiblingMeta {
   id: string;
@@ -14,6 +19,9 @@ interface RouteSiblingMeta {
   temperature_f: number | null;
   dew_point_f: number | null;
   workout_type: string | null;
+  avg_hr: number | null;
+  name: string | null;
+  total_elevation_gain: number | null;
 }
 
 interface SiblingsResponse {
@@ -37,6 +45,10 @@ interface Props {
   startTime: string;
   accentColor?: string;
   mapHeight?: number;
+  streamPoints?: StreamPoint[];
+  weather?: WeatherData | null;
+  distanceM?: number;
+  durationS?: number;
 }
 
 function computeGhostOpacity(siblingDate: string, currentDate: string): number {
@@ -49,6 +61,16 @@ function computeGhostOpacity(siblingDate: string, currentDate: string): number {
   return 0.08;
 }
 
+function sportVerb(sport: string): string {
+  switch (sport) {
+    case 'run': return 'run';
+    case 'walking': return 'walked';
+    case 'hiking': return 'hiked';
+    case 'cycling': return 'cycled';
+    default: return 'been';
+  }
+}
+
 export default function RouteContext({
   activityId,
   track,
@@ -57,10 +79,16 @@ export default function RouteContext({
   startTime,
   accentColor = '#3b82f6',
   mapHeight = 300,
+  streamPoints,
+  weather,
+  distanceM,
+  durationS,
 }: Props) {
   const { units } = useUnits();
+  const { hoveredIndex } = useStreamHover();
   const [showGhosts, setShowGhosts] = useState(false);
   const [ghostTraces, setGhostTraces] = useState<GhostTrace[]>([]);
+  const [showRouteHistory, setShowRouteHistory] = useState(false);
 
   const { data: siblings } = useQuery<SiblingsResponse>({
     queryKey: ['route-siblings', activityId],
@@ -71,8 +99,7 @@ export default function RouteContext({
       if (!res.ok) return { count: 0, conditions_match_count: 0, siblings: [] };
       return res.json();
     },
-    // Siblings/ghosts are run-only for now — walking/cycling get the map but not route history
-    enabled: sportType === 'run' && track.length > 0,
+    enabled: track.length > 0,
     staleTime: 5 * 60 * 1000,
   });
 
@@ -106,7 +133,7 @@ export default function RouteContext({
   const canShowGhosts = siblingCount >= 6;
 
   return (
-    <div className="space-y-2">
+    <div className="space-y-1">
       <ActivityMap
         track={track}
         startCoords={startCoords}
@@ -114,40 +141,72 @@ export default function RouteContext({
         height={mapHeight}
         accentColor={accentColor}
         unitSystem={units}
+        streamPoints={streamPoints}
+        weather={weather}
+        hoveredIndex={hoveredIndex}
       />
 
-      {siblingCount > 0 && sportType === 'run' && (
-        <div className="flex items-center justify-between px-1">
-          <div className="flex items-center gap-1.5 text-xs text-slate-400">
-            <MapPin className="w-3 h-3" />
-            <span>
-              You&apos;ve run from here {siblingCount} time{siblingCount !== 1 ? 's' : ''}
-              {conditionsMatch > 0 && (
-                <span className="text-slate-500">
-                  , {conditionsMatch} in similar conditions
-                </span>
+      {/* Elevation profile */}
+      {streamPoints && streamPoints.some(p => p.altitude != null) && (
+        <ElevationProfile
+          points={streamPoints}
+          accentColor={accentColor}
+          height={48}
+          unitSystem={units}
+        />
+      )}
+
+      {/* Route siblings / ghost controls */}
+      {siblingCount > 0 && (
+        <div className="px-1 space-y-1">
+          <div className="flex items-center justify-between">
+            <button
+              onClick={() => setShowRouteHistory(!showRouteHistory)}
+              className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-slate-200 transition-colors"
+            >
+              <MapPin className="w-3 h-3" />
+              <span>
+                You&apos;ve {sportVerb(sportType)} from here {siblingCount} time{siblingCount !== 1 ? 's' : ''}
+                {conditionsMatch > 0 && (
+                  <span className="text-slate-500">
+                    {' '}· {conditionsMatch} in similar conditions
+                  </span>
+                )}
+              </span>
+              <ChevronDown className={`w-3 h-3 transition-transform ${showRouteHistory ? 'rotate-180' : ''}`} />
+            </button>
+
+            <div className="flex items-center gap-2">
+              {canShowGhosts && !showGhosts && (
+                <button
+                  onClick={() => ghostMutation.mutate()}
+                  disabled={ghostMutation.isPending}
+                  className="flex items-center gap-1 text-xs text-blue-400 hover:text-blue-300 transition-colors disabled:opacity-50"
+                >
+                  <Ghost className="w-3 h-3" />
+                  {ghostMutation.isPending ? 'Loading...' : 'Show ghosts'}
+                </button>
               )}
-            </span>
+              {showGhosts && (
+                <button
+                  onClick={() => setShowGhosts(false)}
+                  className="text-xs text-slate-500 hover:text-slate-400 transition-colors"
+                >
+                  Hide ghosts
+                </button>
+              )}
+            </div>
           </div>
 
-          {canShowGhosts && !showGhosts && (
-            <button
-              onClick={() => ghostMutation.mutate()}
-              disabled={ghostMutation.isPending}
-              className="flex items-center gap-1 text-xs text-blue-400 hover:text-blue-300 transition-colors disabled:opacity-50"
-            >
-              <Ghost className="w-3 h-3" />
-              {ghostMutation.isPending ? 'Loading...' : 'Show ghost map'}
-            </button>
-          )}
-
-          {showGhosts && (
-            <button
-              onClick={() => setShowGhosts(false)}
-              className="text-xs text-slate-500 hover:text-slate-400 transition-colors"
-            >
-              Hide ghosts
-            </button>
+          {showRouteHistory && siblings && distanceM != null && durationS != null && (
+            <RoutePerformancePanel
+              siblings={siblings.siblings}
+              currentActivityId={activityId}
+              currentDistanceM={distanceM}
+              currentDurationS={durationS}
+              sportType={sportType}
+              unitSystem={units}
+            />
           )}
         </div>
       )}

@@ -625,7 +625,7 @@ def get_route_siblings(
         db.query(Activity)
         .filter(
             Activity.athlete_id == current_user.id,
-            Activity.sport == "run",
+            Activity.sport == activity.sport,
             Activity.id != activity_id,
             Activity.is_duplicate == False,  # noqa: E712
             Activity.start_lat.isnot(None),
@@ -662,6 +662,9 @@ def get_route_siblings(
             "temperature_f": s.temperature_f,
             "dew_point_f": s.dew_point_f,
             "workout_type": s.workout_type,
+            "avg_hr": s.avg_hr,
+            "name": s.name,
+            "total_elevation_gain": s.total_elevation_gain,
         }
         result_siblings.append(entry)
 

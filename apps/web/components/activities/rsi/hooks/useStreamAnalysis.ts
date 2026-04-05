@@ -73,6 +73,8 @@ export interface StreamPoint {
   grade: number | null;
   cadence: number | null;     // SPM (already doubled from Strava half-strides)
   effort: number;             // [0.0, 1.0]
+  lat: number | null;
+  lng: number | null;
 }
 
 export interface StreamAnalysisData {

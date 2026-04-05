@@ -58,6 +58,7 @@ import {
 } from '@/components/activities/rsi/hooks/useStreamAnalysis';
 import { lttbDownsample } from '@/components/activities/rsi/utils/lttb';
 import { effortToColor } from '@/components/activities/rsi/utils/effortColor';
+import { useStreamHover } from '@/lib/context/StreamHoverContext';
 import { useUnits } from '@/lib/context/UnitsContext';
 import type { Split } from '@/lib/types/splits';
 import { SplitsTable, normalizeCadenceToSpm } from '@/components/activities/SplitsTable';
@@ -823,7 +824,12 @@ export function RunShapeCanvas({
   const didInitHRDefault = useRef(false);
 
   // Crosshair state (AC-3): shared across Story/Lab views
-  const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
+  const [hoveredIndex, setHoveredIndexLocal] = useState<number | null>(null);
+  const { setHoveredIndex: setMapHoveredIndex } = useStreamHover();
+  const setHoveredIndex = useCallback((idx: number | null) => {
+    setHoveredIndexLocal(idx);
+    setMapHoveredIndex(idx);
+  }, [setMapHoveredIndex]);
 
   // Two-way hover: Row → Chart (state-driven, infrequent)
   const [highlightRange, setHighlightRange] = useState<{ startTime: number; endTime: number } | null>(null);
