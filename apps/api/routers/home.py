@@ -1997,11 +1997,12 @@ def generate_coach_home_briefing(
         "- Be direct and honest, not sycophantic. The athlete trusts data, not flattery.",
         "",
         "PERSONAL FINGERPRINT CONTRACT:",
-        "- Use threshold values to give specific advice ('your sleep cliff is at 6.2h — last night was 5.5').",
+        "- Use threshold values to give specific advice WITH UNITS: 'your sleep cliff is at 6.2 hours — last night was 5.5 hours'. Pace as min/mi, sleep in hours, time of day as AM/PM, distances in miles, counts as numbers.",
         "- Use asymmetry ratios to convey magnitude ('bad sleep hurts you 3x more than good sleep helps').",
         "- Use decay timing for forward-looking advice ('the effect peaks tomorrow based on your 2-day half-life').",
+        "- When describing a pattern, be SPECIFIC about what the data shows. 'I've noticed a pattern' is vague and useless. 'Your easy runs before 7 AM are consistently slower — that threshold has held across 18 observations' is specific and actionable.",
         "- If no confirmed patterns exist, do not mention the fingerprint — coach from the other data.",
-        "- ABSOLUTE BAN on athlete-facing stats: never say 'confirmed N times', 'r=', 'p-value', 'times_confirmed', 'correlation coefficient', 'observations'. Translate into coaching language.",
+        "- ABSOLUTE BAN on athlete-facing stats: never say 'confirmed N times', 'r=', 'p-value', 'times_confirmed', 'correlation coefficient', 'observations'. Use coaching language: 'I've seen this consistently' not 'confirmed 34 times'. 'Strong pattern' not 'r=0.62'.",
         "",
         "TRUST-SAFETY CONSTRAINTS (enforced by post-generation validator):",
         "- Do NOT use sycophantic words: incredible, amazing, phenomenal, extraordinary, fantastic, wonderful, awesome, brilliant, magnificent, outstanding, superb, stellar, remarkable, spectacular.",
@@ -2010,6 +2011,12 @@ def generate_coach_home_briefing(
         "- morning_voice must be ONE paragraph only. No sentence count limit — say what needs to be said.",
         "- workout_why must be a single sentence explaining why today's workout matters.",
         "- ABSOLUTE BAN on quoting these to the athlete: CTL, ATL, TSB, chronic load, acute load, form score, durability index, recovery half-life, injury risk score. These appear in the brief for YOUR reasoning only. If you quote them, the output will be rejected.",
+        "",
+        "SEASONAL COMPARISON DISCIPLINE:",
+        "- NEVER compare runs across different seasons without acknowledging temperature/humidity differences. A July run and an April run are NOT comparable without heat context.",
+        "- If you reference a past run from a different season, note the conditions: 'Your 8:15 pace in July heat (adjusted: ~7:50 in cool conditions) vs today's 7:55 in April.'",
+        "- If heat_adjustment_pct data is available on the activities, USE IT for fair comparisons.",
+        "- When no environmental data is available for a past run, do NOT compare paces across seasons. Compare within the same 4-week window or acknowledge the limitation.",
         "",
         "=== ATHLETE BRIEF ===",
         athlete_brief,
@@ -2405,7 +2412,7 @@ def generate_coach_home_briefing(
         return " YOUR DATA FOR THIS FIELD: Use the athlete brief and today context above."
 
     schema_fields = {
-        "coach_noticed": f"The single most important coaching observation the athlete doesn't already know. If a daily intelligence rule fired, lead with that. Otherwise draw from wellness trends, training load signals, or recent activity patterns. The athlete should read this and think 'I didn't know that.' 1-2 sentences. NEVER quote internal metrics (r=, confirmed, p-value, observations).{_lane(coach_noticed_source)}",
+        "coach_noticed": f"The single most important coaching observation the athlete doesn't already know. If a daily intelligence rule fired, lead with that. Otherwise draw from wellness trends, training load signals, or recent activity patterns. The athlete should read this and think 'I didn't know that.' 1-2 sentences. BE SPECIFIC: describe what you observed using the athlete's training units — pace in min/mi, distances in miles, sleep in hours, time as AM/PM, frequency as counts. Never be vague about the pattern. 'Your easy pace changes with time of day' is too vague. 'Your easy runs before 7 AM have been consistently slower across 18 observations — there's a threshold around 7 AM' is specific. BANNED: r-values, p-values, correlation coefficients, 'statistically significant', z-scores, any statistical language. Use coaching language, not statistics.{_lane(coach_noticed_source)}",
         "today_context": f"Action-focused context: if run completed, state the result then specify next steps; if not yet, describe what today should look like. Must include a concrete next action. 1-2 sentences.{_lane(today_summary)}",
         "week_assessment": f"Implication: explain what this week's trajectory means for near-term training direction, based on actual training not plan adherence. 1 sentence.{_lane('')}",
         "checkin_reaction": f"Acknowledge how they feel FIRST, then guide next steps. If they feel good despite high load, validate that and suggest recovery actions to maintain it. Never contradict their self-report. 1-2 sentences.{_lane(checkin_summary)}",
@@ -2443,6 +2450,7 @@ def compute_coach_noticed(
     try:
         from uuid import UUID as _UUID
         from models import CorrelationFinding as _CF
+        from services.fingerprint_context import _format_value_with_unit
         eligible = (
             db.query(_CF)
             .filter(
@@ -2459,17 +2467,25 @@ def compute_coach_noticed(
             idx = date.today().toordinal() % len(eligible)
             f = eligible[idx]
             if not _is_finding_in_cooldown(athlete_id, f.input_name, f.output_metric):
+                inp_name = friendly_signal_name(f.input_name)
+                out_name = friendly_signal_name(f.output_metric)
+                direction_verb = "improves" if f.direction == "positive" else "worsens"
+
                 finding_text = _sanitize_finding_text(
                     f.insight_text or (
-                    f"{friendly_signal_name(f.input_name).title()} {f.direction}ly "
-                    f"affects your {friendly_signal_name(f.output_metric)}"
+                    f"{inp_name.title()} {f.direction}ly "
+                    f"affects your {out_name}"
                     )
                 )
+
                 detail_parts = []
                 if f.threshold_value is not None:
+                    thresh_fmt = _format_value_with_unit(
+                        f.threshold_value, f.input_name
+                    )
+                    above_below = f.threshold_direction or "below"
                     detail_parts.append(
-                        f"your {friendly_signal_name(f.input_name)} cliff is around "
-                        f"{f.threshold_value:.1f}"
+                        f"your {inp_name} threshold is around {thresh_fmt}"
                     )
                 if f.asymmetry_ratio is not None and f.asymmetry_ratio > 1.5:
                     detail_parts.append(
@@ -2478,8 +2494,17 @@ def compute_coach_noticed(
                     )
                 if f.decay_half_life_days is not None:
                     detail_parts.append(
-                        f"effect peaks within {f.decay_half_life_days:.0f} day(s)"
+                        f"the effect peaks within {f.decay_half_life_days:.0f} day(s)"
                     )
+                if f.time_lag_days and f.time_lag_days > 0:
+                    detail_parts.append(
+                        f"shows up {f.time_lag_days} day(s) later"
+                    )
+
+                detail_parts.append(
+                    f"consistent across {f.sample_size} of your runs"
+                )
+
                 text = finding_text
                 if detail_parts:
                     text += " — " + ", ".join(detail_parts)
@@ -2488,8 +2513,9 @@ def compute_coach_noticed(
                     text=text,
                     source="fingerprint",
                     ask_coach_query=(
-                        f"Tell me more about how {friendly_signal_name(f.input_name)} "
-                        f"affects my {friendly_signal_name(f.output_metric)}"
+                        f"Tell me more about how {inp_name} "
+                        f"affects my {out_name}. "
+                        f"What should I do about it?"
                     ),
                 )
     except Exception as e:

@@ -339,7 +339,7 @@ class TestT1_3_SingleEmerging:
 
         assert result is not None
         assert "=== EMERGING PATTERN" in result
-        assert 'Ask: "' in result
+        assert 'Suggested question' in result
         assert "soreness" in result
         assert "running efficiency" in result
         assert "soreness_1_5" not in result

@@ -77,14 +77,14 @@ class TestFormatFindingLine:
     def test_verbose_includes_threshold(self):
         f = _make_finding()
         line = format_finding_line(f, verbose=True)
-        assert "cliff at 6.2" in line
-        assert "r=-0.71" in line
+        assert "cliff at 6.2 hours" in line
+        assert "Below: 18 observations" in line
 
     def test_verbose_includes_asymmetry(self):
         f = _make_finding()
         line = format_finding_line(f, verbose=True)
         assert "3.1x" in line
-        assert "negative_dominant" in line
+        assert "downside hits harder" in line
 
     def test_verbose_includes_decay(self):
         f = _make_finding()
@@ -95,7 +95,7 @@ class TestFormatFindingLine:
     def test_compact_single_line(self):
         f = _make_finding()
         line = format_finding_line(f, verbose=False)
-        assert "cliff at 6.2" in line
+        assert "cliff at 6.2 hours" in line
         assert "\n" not in line
 
     def test_no_layers_omits_details(self):
@@ -183,10 +183,12 @@ class TestCoachNoticedFingerprint:
 
         assert result is not None
         assert result.source == "fingerprint"
-        # No stats language — coach-speak only
-        assert "confirmed" not in result.text.lower()
         assert "r=" not in result.text
-        assert "cliff" in result.text or "sleep" in result.text.lower()
+        assert "p-value" not in result.text
+        assert "sleep" in result.text.lower()
+        assert "threshold" in result.text.lower() or "6.2" in result.text
+        assert "consistent across" in result.text
+        assert "45" in result.text
 
     def test_fingerprint_requires_recent_confirmation(self):
         from routers.home import compute_coach_noticed

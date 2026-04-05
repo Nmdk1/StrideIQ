@@ -22,6 +22,112 @@ from sqlalchemy.orm import Session
 logger = logging.getLogger(__name__)
 
 
+SIGNAL_UNITS: Dict[str, str] = {
+    "sleep_hours": "hours", "sleep_h": "hours",
+    "pace_easy": "min/mi", "pace_threshold": "min/mi",
+    "efficiency": "", "efficiency_threshold": "",
+    "avg_hr": "bpm", "max_hr": "bpm", "resting_hr": "bpm",
+    "heart_rate_avg": "bpm", "overnight_avg_hr": "bpm",
+    "garmin_min_hr": "bpm",
+    "hrv_rmssd": "ms", "hrv_sdnn": "ms", "garmin_hrv_5min_high": "ms",
+    "garmin_sleep_score": "/100", "garmin_body_battery_end": "/100",
+    "garmin_avg_stress": "/100", "garmin_max_stress": "/100",
+    "garmin_vo2max": "",
+    "soreness_1_5": "/5", "sleep_quality_1_5": "/5", "readiness_1_5": "/5",
+    "stress_1_5": "/5", "confidence_1_5": "/5", "enjoyment_1_5": "/5",
+    "motivation_1_5": "/5",
+    "feedback_perceived_effort": "/10", "feedback_energy_pre": "/10",
+    "feedback_energy_post": "/10", "feedback_leg_feel": "/5",
+    "rpe_1_10": "/10",
+    "run_start_hour": "hour",
+    "temperature_f": "°F", "dew_point_f": "°F",
+    "humidity_pct": "%", "heat_adjustment_pct": "%", "body_fat_pct": "%",
+    "elevation_gain_m": "ft", "weekly_elevation_m": "ft",
+    "weekly_volume_mi": "mi", "long_run_distance_mi": "mi",
+    "weekly_volume_km": "km", "long_run_distance_km": "km",
+    "distance_km": "km",
+    "duration_s": "min",
+    "days_since_quality": "days", "days_since_rest": "days",
+    "consecutive_run_days": "days", "recovery_days": "days",
+    "ct_hours_since_strength": "hours", "ct_hours_since_cross_training": "hours",
+    "ct_strength_sessions_7d": "sessions", "ct_strength_sessions": "sessions",
+    "ct_flexibility_sessions_7d": "sessions",
+    "intensity_score": "", "activity_intensity_score": "",
+    "daily_session_stress": "",
+    "avg_cadence": "spm", "avg_power_w": "W",
+    "avg_stride_length_m": "m", "avg_ground_contact_ms": "ms",
+    "avg_vertical_oscillation_cm": "cm", "avg_vertical_ratio_pct": "%",
+    "garmin_steps": "steps",
+    "garmin_sleep_deep_s": "min", "garmin_sleep_rem_s": "min",
+    "garmin_sleep_awake_s": "min",
+    "garmin_active_time_s": "min",
+    "garmin_moderate_intensity_s": "min", "garmin_vigorous_intensity_s": "min",
+    "garmin_aerobic_te": "", "garmin_anaerobic_te": "",
+    "garmin_perceived_effort": "/10", "garmin_body_battery_impact": "",
+    "active_kcal": "kcal",
+    "weight_kg": "lbs", "muscle_mass_kg": "lbs",
+    "daily_calories": "kcal", "daily_protein_g": "g", "daily_carbs_g": "g",
+    "daily_fat_g": "g", "daily_fiber_g": "g",
+    "long_run_ratio": "%",
+    "completion_rate": "%", "completion": "%",
+    "ct_strength_tss_7d": "TSS", "ct_cycling_tss_7d": "TSS",
+    "ct_cross_training_tss_7d": "TSS", "ct_cycling_tss": "TSS",
+    "ct_strength_duration_min": "min", "ct_cycling_duration_min": "min",
+    "ct_total_volume_kg": "kg",
+    "ct_lower_body_sets": "sets", "ct_upper_body_sets": "sets",
+    "ct_core_sets": "sets", "ct_plyometric_sets": "sets",
+    "ct_heavy_sets": "sets", "ct_unilateral_sets": "sets",
+    "work_hours": "hours",
+}
+
+
+def _format_value_with_unit(value: float, signal_name: str) -> str:
+    """Format a numeric value with the correct unit for athlete-facing display.
+
+    Special cases: pace (M:SS/mi), time of day (7 AM), durations in seconds
+    converted to minutes, elevation in meters converted to feet.
+    """
+    unit = SIGNAL_UNITS.get(signal_name, "")
+
+    if unit == "min/mi":
+        minutes = int(value)
+        seconds = int((value - minutes) * 60)
+        return f"{minutes}:{seconds:02d}/mi"
+
+    if unit == "hour":
+        hour = int(round(value))
+        if hour == 0:
+            return "midnight"
+        if hour == 12:
+            return "noon"
+        suffix = "AM" if hour < 12 else "PM"
+        display = hour if hour <= 12 else hour - 12
+        return f"{display} {suffix}"
+
+    if signal_name in ("elevation_gain_m", "weekly_elevation_m"):
+        feet = value * 3.281
+        return f"{feet:.0f} ft"
+
+    if signal_name in ("weight_kg", "muscle_mass_kg"):
+        lbs = value * 2.205
+        return f"{lbs:.0f} lbs"
+
+    if signal_name.endswith("_s") and unit == "min":
+        minutes = value / 60
+        return f"{minutes:.0f} min"
+
+    if unit == "%":
+        return f"{value:.0f}%"
+
+    if unit in ("/5", "/10", "/100"):
+        return f"{value:.1f}{unit}"
+
+    if unit:
+        return f"{value:.1f} {unit}"
+
+    return f"{value:.1f}"
+
+
 COACHING_LANGUAGE: Dict[str, str] = {
     "long_run_ratio": "long runs",
     "weekly_volume_km": "weekly mileage",
@@ -126,7 +232,7 @@ def format_finding_line(f, verbose: bool = False) -> str:
     entry = (
         f"[{tier} {f.times_confirmed}x] {inp} → {out}: "
         f"{f.insight_text or f.direction} "
-        f"(r={f.correlation_coefficient:.2f}, strength: {f.strength})"
+        f"(strength: {f.strength}, n={f.sample_size})"
     )
 
     if lifecycle == "resolving" and getattr(f, "resolving_context", None):
@@ -134,26 +240,33 @@ def format_finding_line(f, verbose: bool = False) -> str:
 
     details = []
     if f.threshold_value is not None:
+        thresh_fmt = _format_value_with_unit(f.threshold_value, f.input_name)
         if verbose:
+            n_below = f.n_below_threshold or 0
+            n_above = f.n_above_threshold or 0
             details.append(
                 f"Personal threshold: {inp} cliff at "
-                f"{f.threshold_value:.1f} ({f.threshold_direction}). "
-                f"Below: r={f.r_below_threshold:.2f} (n={f.n_below_threshold}), "
-                f"Above: r={f.r_above_threshold:.2f} (n={f.n_above_threshold})"
+                f"{thresh_fmt} ({f.threshold_direction}). "
+                f"Below: {n_below} observations, "
+                f"Above: {n_above} observations"
             )
         else:
-            details.append(f"Threshold: {inp} cliff at {f.threshold_value:.1f}")
+            details.append(f"Threshold: {inp} cliff at {thresh_fmt}")
 
     if f.asymmetry_ratio is not None:
+        asym_dir = f.asymmetry_direction or ""
+        if "negative" in asym_dir:
+            asym_plain = "the downside hits harder than the upside helps"
+        elif "positive" in asym_dir:
+            asym_plain = "the upside helps more than the downside hurts"
+        else:
+            asym_plain = f"asymmetric ({asym_dir})"
         if verbose:
             details.append(
-                f"Asymmetry: {f.asymmetry_ratio:.1f}x "
-                f"({f.asymmetry_direction}). "
-                f"Below baseline: effect={f.effect_below_baseline:.2f}, "
-                f"Above baseline: effect={f.effect_above_baseline:.2f}"
+                f"Asymmetry: {f.asymmetry_ratio:.1f}x — {asym_plain}"
             )
         else:
-            details.append(f"Asymmetry: {f.asymmetry_ratio:.1f}x ({f.asymmetry_direction})")
+            details.append(f"Asymmetry: {f.asymmetry_ratio:.1f}x — {asym_plain}")
 
     if f.decay_half_life_days is not None:
         details.append(
@@ -282,20 +395,49 @@ def build_fingerprint_prompt_section(
         else:
             age_days = None
         age_str = f"Forming over the last {age_days} days." if age_days else ""
+
+        evidence_parts = []
+        if ef.threshold_value is not None:
+            thresh_fmt = _format_value_with_unit(ef.threshold_value, ef.input_name)
+            above_below = ef.threshold_direction or "below"
+            evidence_parts.append(
+                f"There appears to be a threshold around {thresh_fmt} — "
+                f"your {out} responds differently {above_below} that point"
+            )
+            if ef.n_below_threshold and ef.n_above_threshold:
+                evidence_parts.append(
+                    f"{ef.n_below_threshold} observations below, "
+                    f"{ef.n_above_threshold} above"
+                )
+        if ef.time_lag_days and ef.time_lag_days > 0:
+            evidence_parts.append(
+                f"the effect appears {ef.time_lag_days} day(s) later"
+            )
+
+        evidence_block = ". ".join(evidence_parts) + "." if evidence_parts else ""
+
         question = (
-            f"I've noticed a new pattern in your data connecting "
-            f"{inp} and {out}. Has anything shifted recently in "
-            f"how your body feels or how you're training?"
+            f"Your data shows a pattern: your {out} {direction_word} "
+            f"based on {inp}. {ef.times_confirmed}x observed. "
+            f"{evidence_block} "
+            f"What do you think is driving this?"
         )
         sections.append(
             f"=== EMERGING PATTERN — ASK ABOUT THIS FIRST ===\n"
             f"Before discussing other training data, ask the athlete about "
-            f"this new pattern. One question, framed as curiosity.\n"
+            f"this pattern. Be SPECIFIC — include the threshold, observation "
+            f"count, and direction. Frame as curiosity, not statistics.\n"
             f"\n"
             f"Your data suggests {inp} {direction_word} your {out}. "
-            f"{age_str} Not yet confirmed — {ef.times_confirmed}x observed.\n"
+            f"{age_str} Observed {ef.times_confirmed}x so far — not yet "
+            f"confirmed as a durable pattern.\n"
+        )
+        if evidence_block:
+            sections[-1] += f"Evidence detail: {evidence_block}\n"
+        sections[-1] += (
             f"\n"
-            f'Ask: "{question}"\n'
+            f'Suggested question (rewrite in your coaching voice, keeping '
+            f'the specifics): "{question}"\n'
             f"=== END EMERGING ==="
         )
 
