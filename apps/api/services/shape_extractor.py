@@ -1447,16 +1447,24 @@ def _derive_classification(
     if len(tempo_phases) == 1:
         return 'tempo'
 
+    is_hilly_terrain = summary.elevation_profile in (
+        'hilly', 'net_uphill', 'net_downhill', 'out_and_back',
+    )
+
     # Threshold intervals: 2-5 threshold phases with recovery between
+    # Skip on hilly terrain where uphills push HR/pace into threshold
+    # zone mechanically — not structured work.
     threshold_work = [p for p in effort_phases
                       if p.pace_zone == 'threshold' and p.duration_s >= 180]
-    if 2 <= len(threshold_work) <= 5:
+    if 2 <= len(threshold_work) <= 5 and not is_hilly_terrain:
         return 'threshold_intervals'
 
     # Track intervals: 4+ interval/rep phases with similar duration
+    # Skip on hilly terrain where downhill segments artificially hit
+    # interval pace zones.
     interval_work = [p for p in effort_phases
                      if p.pace_zone in ('interval', 'repetition')]
-    if len(interval_work) >= 4:
+    if len(interval_work) >= 4 and not is_hilly_terrain:
         durations = [p.duration_s for p in interval_work]
         avg_dur = sum(durations) / len(durations)
         if avg_dur > 0:
@@ -1468,12 +1476,14 @@ def _derive_classification(
                 pass
 
     # Long run: duration >= 2× median, base effort is easy/gray
-    # Checked before fartlek to prevent hilly long runs from being fartlek
-    if is_long and all_easy_or_gray:
+    # Checked before fartlek to prevent hilly long runs from being fartlek.
+    # On hilly terrain, downhill segments can push phases into marathon/threshold
+    # zones mechanically — relax the all_easy_or_gray gate for hilly runs.
+    if is_long and (all_easy_or_gray or is_hilly_terrain):
         return 'long_run'
 
     # Medium-long run: 1.65× to 2× median
-    if is_medium_long and all_easy_or_gray:
+    if is_medium_long and (all_easy_or_gray or is_hilly_terrain):
         return 'medium_long_run'
 
     # Fartlek: 3+ scattered accelerations (but NOT if base effort is steady
@@ -1489,7 +1499,9 @@ def _derive_classification(
             return 'fartlek'
 
     # Over/under: alternating above/below marathon pace
-    if len(effort_phases) >= 4:
+    # Skip on hilly terrain — uphills and downhills naturally alternate
+    # above/below marathon pace without intentional structure.
+    if len(effort_phases) >= 4 and not is_hilly_terrain:
         above_below = []
         for p in effort_phases:
             if pace_profile.is_at_least_marathon(p.avg_pace_sec_per_mile):

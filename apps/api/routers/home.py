@@ -1714,8 +1714,12 @@ def _summarize_workout_structure(activity_id, db: Session) -> Optional[str]:
     - Warmup/cooldown must be slower than work pace (not just long splits)
     - Trailing GPS artifacts are skipped for cooldown detection
     - Time-based labeling when intervals cluster around round minutes
+    - Elevation gate: if pace variation is explained by terrain (GAP is
+      steady while actual pace varies), the run is hilly — not intervals
     """
     METERS_PER_MILE = 1609.344
+
+    activity = db.query(Activity).filter(Activity.id == activity_id).first()
 
     splits = (
         db.query(ActivitySplit)
@@ -1725,6 +1729,27 @@ def _summarize_workout_structure(activity_id, db: Session) -> Optional[str]:
     )
     if not splits or len(splits) < 4:
         return None
+
+    elev_gain_m = float(activity.total_elevation_gain or 0) if activity else 0
+    total_dist_m = sum(float(s.distance or 0) for s in splits)
+    total_dist_mi = total_dist_m / METERS_PER_MILE if total_dist_m > 0 else 0
+    elev_per_mile_m = elev_gain_m / total_dist_mi if total_dist_mi > 0 else 0
+    is_hilly = elev_per_mile_m > 15  # >~50 ft/mi of gain
+
+    if is_hilly:
+        gap_values = [
+            float(s.gap_seconds_per_mile)
+            for s in splits
+            if s.gap_seconds_per_mile is not None
+            and float(s.distance or 0) / METERS_PER_MILE > 0.05
+        ]
+        if len(gap_values) >= 4:
+            import statistics as _stats
+            gap_mean = _stats.mean(gap_values)
+            if gap_mean > 0:
+                gap_cv = _stats.stdev(gap_values) / gap_mean
+                if gap_cv < 0.08:
+                    return None
 
     parsed = []
     for s in splits:
