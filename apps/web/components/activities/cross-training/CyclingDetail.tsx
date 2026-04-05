@@ -49,6 +49,12 @@ export function CyclingDetail({ activity }: { activity: CrossTrainingActivity })
         {activity.max_hr != null && (
           <MetricCard label="Max HR" value={activity.max_hr.toString()} unit="bpm" />
         )}
+        {activity.active_kcal != null && (
+          <MetricCard label="Calories" value={activity.active_kcal.toLocaleString()} unit="kcal" />
+        )}
+        {activity.avg_cadence_device != null && (
+          <MetricCard label="Avg Cadence" value={activity.avg_cadence_device.toString()} unit="rpm" />
+        )}
       </div>
 
       {/* Wellness stamps */}

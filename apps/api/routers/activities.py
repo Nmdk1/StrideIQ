@@ -13,7 +13,7 @@ from uuid import UUID
 from core.database import get_db
 from core.auth import get_current_user
 from core.feature_flags import is_feature_enabled
-from models import Activity, Athlete, ActivitySplit, StrengthExerciseSet
+from models import Activity, Athlete, ActivitySplit, ActivityStream, StrengthExerciseSet
 from services.n1_insight_generator import friendly_signal_name
 from schemas import ActivityResponse
 
@@ -460,6 +460,12 @@ def get_activity(
         # Cross-training fields
         "strength_session_type": activity.strength_session_type,
         "session_detail": None,
+
+        # Missing metrics (device-level, not split-derived)
+        "steps": activity.steps,
+        "active_kcal": activity.active_kcal,
+        "avg_cadence_device": activity.avg_cadence,
+        "max_cadence": activity.max_cadence,
     }
 
     # --- Cross-training enrichment (non-run only) ---
@@ -537,7 +543,172 @@ def get_activity(
                 for s in sets
             ]
 
+    # --- GPS track for map rendering ---
+    gps_track = None
+    start_coords = None
+
+    if activity.start_lat is not None and activity.start_lng is not None:
+        start_coords = [activity.start_lat, activity.start_lng]
+
+    try:
+        if activity.sport == "run":
+            stream = db.query(ActivityStream).filter(
+                ActivityStream.activity_id == activity.id
+            ).first()
+            if stream and "latlng" in (stream.channels_available or []):
+                raw = stream.stream_data.get("latlng", [])
+                gps_track = [pt for pt in raw if pt is not None]
+        else:
+            sd = activity.session_detail or {}
+            samples = (sd.get("detail_webhook_raw") or {}).get("samples") or []
+            if samples:
+                gps_track = [
+                    [s["latitudeInDegree"], s["longitudeInDegree"]]
+                    for s in samples
+                    if s.get("latitudeInDegree") is not None
+                    and s.get("longitudeInDegree") is not None
+                ]
+
+        if gps_track and len(gps_track) > 50:
+            try:
+                from simplification.cutil import simplify_coords
+                dist_m = float(activity.distance_m or 0)
+                epsilon = max(dist_m / 5_000_000, 0.00002)
+                gps_track = simplify_coords(gps_track, epsilon)
+                if len(gps_track) > 2000:
+                    step = len(gps_track) // 2000
+                    gps_track = gps_track[::step]
+            except ImportError:
+                if len(gps_track) > 2000:
+                    step = len(gps_track) // 2000
+                    gps_track = gps_track[::step]
+
+        if gps_track is not None:
+            gps_track = [[round(pt[0], 6), round(pt[1], 6)] for pt in gps_track]
+    except Exception:
+        gps_track = None
+
+    result["gps_track"] = gps_track
+    result["start_coords"] = start_coords
+
     return result
+
+
+@router.get("/{activity_id}/route-siblings")
+def get_route_siblings(
+    activity_id: UUID,
+    include_tracks: bool = Query(default=False),
+    limit: int = Query(default=50, le=100),
+    current_user: Athlete = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Find activities from the same starting area at similar distance.
+
+    Default: metadata only (count, dates, workout types).
+    With ``include_tracks=true``: includes GPS polylines for ghost rendering.
+    """
+    from sqlalchemy import func
+
+    activity = db.query(Activity).filter(
+        Activity.id == activity_id,
+        Activity.athlete_id == current_user.id,
+    ).first()
+    if not activity or activity.start_lat is None or activity.start_lng is None:
+        return {"siblings": [], "count": 0, "conditions_match_count": 0}
+
+    dist_m = float(activity.distance_m or 0)
+    if dist_m <= 0:
+        return {"siblings": [], "count": 0, "conditions_match_count": 0}
+
+    siblings = (
+        db.query(Activity)
+        .filter(
+            Activity.athlete_id == current_user.id,
+            Activity.sport == "run",
+            Activity.id != activity_id,
+            Activity.is_duplicate == False,  # noqa: E712
+            Activity.start_lat.isnot(None),
+            func.abs(Activity.start_lat - activity.start_lat) < 0.005,
+            func.abs(Activity.start_lng - activity.start_lng) < 0.005,
+            func.abs(Activity.distance_m - dist_m) < dist_m * 0.15,
+        )
+        .order_by(Activity.start_time.desc())
+        .limit(limit)
+        .all()
+    )
+
+    conditions_match = 0
+    for s in siblings:
+        if s.start_time and activity.start_time:
+            days_ago = (activity.start_time - s.start_time).days
+            if days_ago <= 90:
+                temp_match = (
+                    s.dew_point_f is not None
+                    and activity.dew_point_f is not None
+                    and abs(s.dew_point_f - activity.dew_point_f) <= 10
+                )
+                type_match = s.workout_type == activity.workout_type
+                if temp_match and type_match:
+                    conditions_match += 1
+
+    result_siblings = []
+    for s in siblings:
+        entry = {
+            "id": str(s.id),
+            "start_time": s.start_time.isoformat() if s.start_time else None,
+            "distance_m": s.distance_m,
+            "duration_s": s.duration_s,
+            "temperature_f": s.temperature_f,
+            "dew_point_f": s.dew_point_f,
+            "workout_type": s.workout_type,
+        }
+        result_siblings.append(entry)
+
+    resp = {
+        "count": len(siblings),
+        "conditions_match_count": conditions_match,
+        "siblings": result_siblings,
+    }
+
+    if include_tracks:
+        tracks = {}
+        sibling_ids = [s.id for s in siblings[:30]]
+        if sibling_ids:
+            streams = (
+                db.query(ActivityStream)
+                .filter(ActivityStream.activity_id.in_(sibling_ids))
+                .all()
+            )
+            for stream in streams:
+                if "latlng" not in (stream.channels_available or []):
+                    continue
+                raw = stream.stream_data.get("latlng", [])
+                pts = [pt for pt in raw if pt is not None]
+                if not pts:
+                    continue
+                try:
+                    from simplification.cutil import simplify_coords
+                    dist = 0.0
+                    for sib in siblings:
+                        if sib.id == stream.activity_id:
+                            dist = float(sib.distance_m or 0)
+                            break
+                    epsilon = max(dist / 3_000_000, 0.00003)
+                    pts = simplify_coords(pts, epsilon)
+                    if len(pts) > 500:
+                        step = len(pts) // 500
+                        pts = pts[::step]
+                except ImportError:
+                    if len(pts) > 500:
+                        step = len(pts) // 500
+                        pts = pts[::step]
+                tracks[str(stream.activity_id)] = [
+                    [round(p[0], 6), round(p[1], 6)] for p in pts
+                ]
+        resp["tracks"] = tracks
+
+    return resp
 
 
 @router.put("/{activity_id}/title")

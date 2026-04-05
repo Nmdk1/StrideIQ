@@ -37,6 +37,16 @@ export interface CrossTrainingActivity {
     cross_training_activities: number;
   } | null;
   exercise_sets?: ExerciseSet[];
+
+  // Device-level metrics
+  steps: number | null;
+  active_kcal: number | null;
+  avg_cadence_device: number | null;
+  max_cadence: number | null;
+
+  // GPS / map
+  gps_track: [number, number][] | null;
+  start_coords: [number, number] | null;
 }
 
 export interface ExerciseSet {

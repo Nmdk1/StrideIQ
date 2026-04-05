@@ -38,6 +38,7 @@ import { GarminBadge } from '@/components/integrations/GarminBadge';
 import { RuntoonCard } from '@/components/activities/RuntoonCard';
 import { CyclingDetail, StrengthDetail, HikingDetail, FlexibilityDetail } from '@/components/activities/cross-training';
 import type { CrossTrainingActivity } from '@/components/activities/cross-training';
+import RouteContext from '@/components/activities/map/RouteContext';
 
 interface Activity {
   id: string;
@@ -106,6 +107,16 @@ interface Activity {
     duration_s: number | null;
     estimated_1rm_kg: number | null;
   }>;
+
+  // Device-level metrics
+  steps: number | null;
+  active_kcal: number | null;
+  avg_cadence_device: number | null;
+  max_cadence: number | null;
+
+  // GPS / map
+  gps_track: [number, number][] | null;
+  start_coords: [number, number] | null;
 }
 
 import type { Split } from '@/lib/types/splits';
@@ -406,6 +417,24 @@ export default function ActivityDetailPage() {
         {/* ── Sport branching: non-run activities get dedicated layouts ── */}
         {activity.sport_type && activity.sport_type !== 'run' ? (
           <div className="mb-6">
+            {/* Map as hero for outdoor non-run sports */}
+            {activity.gps_track && activity.gps_track.length > 1 && (
+              <div className="mb-4">
+                <RouteContext
+                  activityId={activityId}
+                  track={activity.gps_track}
+                  startCoords={activity.start_coords}
+                  sportType={activity.sport_type}
+                  startTime={activity.start_time}
+                  accentColor={
+                    activity.sport_type === 'cycling' ? '#60a5fa' :
+                    activity.sport_type === 'walking' ? '#2dd4bf' :
+                    '#34d399'
+                  }
+                  mapHeight={280}
+                />
+              </div>
+            )}
             {activity.sport_type === 'cycling' && <CyclingDetail activity={activity as unknown as CrossTrainingActivity} />}
             {activity.sport_type === 'strength' && <StrengthDetail activity={activity as unknown as CrossTrainingActivity} />}
             {(activity.sport_type === 'hiking' || activity.sport_type === 'walking') && <HikingDetail activity={activity as unknown as CrossTrainingActivity} />}
@@ -540,6 +569,20 @@ export default function ActivityDetailPage() {
                 </span>
               )}
             </div>
+          </div>
+        )}
+
+        {/* ── Route Map (secondary for runs — below metrics, above Runtoon) ── */}
+        {activity.gps_track && activity.gps_track.length > 1 && (
+          <div className="mb-6">
+            <RouteContext
+              activityId={activityId}
+              track={activity.gps_track}
+              startCoords={activity.start_coords}
+              sportType={activity.sport_type || 'run'}
+              startTime={activity.start_time}
+              mapHeight={250}
+            />
           </div>
         )}
 
