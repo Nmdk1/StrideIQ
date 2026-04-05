@@ -228,6 +228,7 @@ def _format_activity_context(activity, training_context: Optional[dict] = None) 
             time_label = "night"
         lines.append(f"Time of run: {time_label} ({dt.strftime('%H:%M') if hasattr(dt, 'strftime') else ''})")
 
+    miles = 0.0
     if activity.distance_meters:
         miles = activity.distance_meters / 1609.344
         lines.append(f"Distance: {miles:.1f} miles")
@@ -237,6 +238,18 @@ def _format_activity_context(activity, training_context: Optional[dict] = None) 
         pace_min = int(pace_spm // 60)
         pace_sec = int(pace_spm % 60)
         lines.append(f"Pace: {pace_min}:{pace_sec:02d}/mi")
+
+    elev_gain_m = getattr(activity, 'total_elevation_gain', None)
+    if elev_gain_m and float(elev_gain_m) > 30:
+        elev_ft = float(elev_gain_m) * 3.28084
+        lines.append(f"Elevation gain: {elev_ft:.0f} feet")
+        ft_per_mile = elev_ft / miles if miles > 0 else 0
+        if ft_per_mile > 100:
+            lines.append("Terrain: VERY HILLY — steep climbs and descents, mountain-style trails or roads")
+        elif ft_per_mile > 60:
+            lines.append("Terrain: HILLY — rolling hills with significant climbing")
+        elif ft_per_mile > 30:
+            lines.append("Terrain: MODERATE HILLS — undulating terrain with some climbs")
 
     if activity.workout_type:
         lines.append(f"Workout type: {activity.workout_type}")
@@ -474,17 +487,91 @@ def generate_runtoon(
         result.stats_text = stats_text
         result.caption_text = caption_text
 
-        # Assemble scene direction
+        # Assemble scene direction — the scene must reflect the actual run
         tc = training_context or {}
         is_race = getattr(activity, 'is_race_candidate', False)
+        miles = (activity.distance_meters / 1609.344) if activity.distance_meters else 0
+        elev_gain_m = float(getattr(activity, 'total_elevation_gain', 0) or 0)
+        elev_ft = elev_gain_m * 3.28084
+        ft_per_mile = elev_ft / miles if miles > 0 else 0
 
-        scene_direction_parts = [f"Scene: runner in {activity_context.split('Time of run:')[-1].split('(')[0].strip() if 'Time of run:' in activity_context else 'daylight'} conditions"]
+        # Time of day for lighting
+        time_part = "daylight"
+        if activity.start_time and hasattr(activity.start_time, 'hour'):
+            hour = activity.start_time.hour
+            if hour < 6:
+                time_part = "pre-dawn darkness, headlamp light, stars"
+            elif hour < 9:
+                time_part = "golden morning light, long shadows"
+            elif hour < 15:
+                time_part = "bright daylight"
+            elif hour < 18:
+                time_part = "warm afternoon light"
+            elif hour < 21:
+                time_part = "sunset/dusk light"
+            else:
+                time_part = "night running, street lights or headlamp"
+
+        scene_direction_parts = [f"Lighting: {time_part}"]
+
+        # Terrain — this is the critical missing piece
+        if ft_per_mile > 100:
+            scene_direction_parts.append(
+                "TERRAIN IS THE STORY: steep mountain trails or hilly back roads "
+                "with dramatic elevation. Show hills, climbs, switchbacks, or "
+                "ridgelines. The runner is conquering serious elevation."
+            )
+        elif ft_per_mile > 60:
+            scene_direction_parts.append(
+                "Terrain: rolling hills with visible climbs and descents. "
+                "Show the runner on a hilly road or trail with hills in the background."
+            )
+        elif ft_per_mile > 30:
+            scene_direction_parts.append("Terrain: gentle hills, undulating road or trail")
+        else:
+            scene_direction_parts.append("Terrain: flat road, track, or path")
+
+        # Distance character
+        if miles >= 18:
+            scene_direction_parts.append(
+                "This is an ULTRA-DISTANCE training run. Show epic scale, "
+                "the enormity of the distance, the runner deep into the effort."
+            )
+        elif miles >= 13:
+            scene_direction_parts.append(
+                "This is a LONG RUN. Show the runner well into a serious effort — "
+                "determined, grinding, earning every mile."
+            )
+        elif miles >= 8:
+            scene_direction_parts.append("Solid training run — show steady effort and focus")
+
+        # Race vs training
         if is_race:
             scene_direction_parts.append("This is a RACE — show triumph, celebration, finish line")
         else:
-            scene_direction_parts.append("This is a TRAINING RUN — show the runner on a road or trail, no race bibs, no finish lines, no race crowds")
+            scene_direction_parts.append(
+                "This is a TRAINING RUN — show the runner on a road or trail, "
+                "no race bibs, no finish lines, no race crowds"
+            )
             if tc.get("race_name") and tc.get("days_to_race") is not None:
-                scene_direction_parts.append(f"The runner is training for {tc['race_name']} in {tc['days_to_race']} days — show determination and preparation, NOT race day")
+                scene_direction_parts.append(
+                    f"Training for {tc['race_name']} in {tc['days_to_race']} days — "
+                    f"show determination and preparation, NOT race day"
+                )
+
+        # Effort level for expression
+        avg_hr = getattr(activity, 'average_hr', None)
+        if avg_hr:
+            hr = int(avg_hr)
+            if hr > 170:
+                scene_direction_parts.append("Expression: INTENSE suffering, all-out effort, grit")
+            elif hr > 155:
+                scene_direction_parts.append("Expression: focused and determined, working hard")
+            elif hr > 140:
+                scene_direction_parts.append("Expression: confident and strong, steady effort")
+            else:
+                scene_direction_parts.append("Expression: relaxed, comfortable, enjoying the run")
+
         scene_direction = ". ".join(scene_direction_parts)
 
         # Assemble full text prompt
@@ -567,6 +654,110 @@ Remember: absolutely NO text, words, or letters anywhere in the image."""
         logger.error("generate_runtoon: failed activity=%s error=%s", getattr(activity, 'id', '?'), e)
 
     return result
+
+
+# ---------------------------------------------------------------------------
+# 1:1 Pillow overlay (stats + caption + watermark on the square image)
+# ---------------------------------------------------------------------------
+
+def overlay_stats_1x1(
+    source_image_bytes: bytes,
+    stats_text: str,
+    caption_text: str,
+) -> bytes:
+    """
+    Overlay stats line, caption, and watermark onto the 1:1 Runtoon image.
+
+    Uses a semi-transparent dark gradient at the bottom of the image so
+    white text is readable over any background. This is the image the
+    athlete sees on the activity page and downloads as 1:1.
+
+    Args:
+        source_image_bytes: Raw bytes of the AI-generated 1:1 image
+        stats_text:         Formatted stats line
+        caption_text:       AI-generated caption
+
+    Returns:
+        PNG bytes of the overlaid 1:1 image.
+    """
+    try:
+        from PIL import Image, ImageDraw, ImageFont
+        import io
+    except ImportError:
+        raise ImportError("Pillow is not installed.")
+
+    source = Image.open(io.BytesIO(source_image_bytes)).convert("RGBA")
+    w, h = source.size
+
+    gradient = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+    grad_draw = ImageDraw.Draw(gradient)
+    grad_top = int(h * 0.65)
+    for y in range(grad_top, h):
+        alpha = int(180 * ((y - grad_top) / (h - grad_top)) ** 1.5)
+        grad_draw.line([(0, y), (w, y)], fill=(0, 0, 0, min(alpha, 200)))
+    source = Image.alpha_composite(source, gradient)
+
+    draw = ImageDraw.Draw(source)
+
+    def _load_font(size: int) -> ImageFont.FreeTypeFont:
+        for path in [
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        ]:
+            try:
+                return ImageFont.truetype(path, size)
+            except (IOError, OSError):
+                continue
+        return ImageFont.load_default()
+
+    scale = w / 1080.0
+    font_stats = _load_font(max(14, int(28 * scale)))
+    font_caption = _load_font(max(12, int(22 * scale)))
+    font_watermark = _load_font(max(10, int(18 * scale)))
+
+    TEXT_COLOR = (255, 255, 255, 255)
+    CAPTION_COLOR = (220, 220, 220, 230)
+    WATERMARK_COLOR = (180, 180, 180, 180)
+
+    padding = int(20 * scale)
+    text_y = h - padding
+
+    # Build from bottom up: watermark, then caption, then stats
+    # Watermark
+    wm_text = "strideiq.run"
+    draw.text((w // 2, text_y), wm_text, fill=WATERMARK_COLOR, font=font_watermark, anchor="mb")
+    text_y -= int(30 * scale)
+
+    # Caption (word-wrapped)
+    if caption_text:
+        max_text_w = w - int(60 * scale)
+        words = caption_text.split()
+        lines = []
+        current_line = ""
+        for word in words:
+            test = f"{current_line} {word}".strip()
+            bbox = draw.textbbox((0, 0), test, font=font_caption)
+            if bbox[2] - bbox[0] <= max_text_w:
+                current_line = test
+            else:
+                if current_line:
+                    lines.append(current_line)
+                current_line = word
+        if current_line:
+            lines.append(current_line)
+
+        for line in reversed(lines):
+            draw.text((w // 2, text_y), line, fill=CAPTION_COLOR, font=font_caption, anchor="mb")
+            text_y -= int(28 * scale)
+        text_y -= int(8 * scale)
+
+    # Stats line
+    if stats_text:
+        draw.text((w // 2, text_y), stats_text, fill=TEXT_COLOR, font=font_stats, anchor="mb")
+
+    output = io.BytesIO()
+    source.convert("RGB").save(output, format="PNG", optimize=True)
+    return output.getvalue()
 
 
 # ---------------------------------------------------------------------------

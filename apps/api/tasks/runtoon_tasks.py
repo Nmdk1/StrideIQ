@@ -347,6 +347,7 @@ def _run_generation(
         "average_hr": activity.avg_hr,
         "start_time": activity.start_time,
         "workout_type": activity.workout_type,
+        "total_elevation_gain": float(activity.total_elevation_gain) if activity.total_elevation_gain else 0,
         "name": getattr(activity, 'name', None),
         "shape_sentence": getattr(activity, 'shape_sentence', None),
         "athlete_title": getattr(activity, 'athlete_title', None),
@@ -424,6 +425,22 @@ def _run_generation(
             "attempt_number": attempt_number,
         })
         return
+
+    # -----------------------------------------------------------------------
+    # 13b. Overlay stats/caption/watermark onto the 1:1 image (Pillow)
+    # -----------------------------------------------------------------------
+    try:
+        final_bytes = runtoon_service.overlay_stats_1x1(
+            source_image_bytes=result.image_bytes,
+            stats_text=result.stats_text,
+            caption_text=result.caption_text,
+        )
+        result.image_bytes = final_bytes
+        logger.info("runtoon: 1:1 overlay applied for activity %s", act_snapshot["id"])
+    except Exception as overlay_err:
+        logger.warning(
+            "runtoon: 1:1 overlay failed (uploading raw image): %s", overlay_err
+        )
 
     # -----------------------------------------------------------------------
     # 14. Upload to R2
