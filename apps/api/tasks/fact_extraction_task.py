@@ -262,6 +262,29 @@ def extract_athlete_facts(self, athlete_id: str, chat_id: str):
         chat.last_extracted_msg_count = len(all_messages)
         db.commit()
 
+        has_limiter_facts = any(
+            f.get("fact_type") == "limiter_context" for f in extracted
+        )
+        if has_limiter_facts:
+            try:
+                from services.plan_framework.limiter_classifier import (
+                    classify_lifecycle_states,
+                )
+                classify_lifecycle_states(UUID(athlete_id), db)
+                db.commit()
+                logger.info(
+                    "Lifecycle reclassification triggered by limiter_context "
+                    "fact for athlete %s",
+                    athlete_id,
+                )
+            except Exception as lc_err:
+                db.rollback()
+                logger.warning(
+                    "Post-extraction lifecycle classify failed for %s: %s",
+                    athlete_id,
+                    lc_err,
+                )
+
     except ExtractionError:
         db.rollback()
         raise
