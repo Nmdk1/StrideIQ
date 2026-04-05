@@ -71,7 +71,7 @@ interface RuntoonShareViewProps {
 
 const POLL_INTERVAL = 5_000;
 const SLOW_GENERATION_THRESHOLD_MS = 120_000; // Show "slow" UX, keep polling in background
-const PER_ACTIVITY_CAP = 3;
+const _PER_ACTIVITY_CAP_UNUSED = 3; // Server enforces; kept for reference only
 
 async function authedFetch(url: string, token: string, opts: RequestInit = {}) {
   return fetch(url, {
@@ -107,6 +107,7 @@ export function RuntoonShareView({
   const [generationHint, setGenerationHint] = useState('Creating your Runtoon...');
   const pollStart = useRef(Date.now());
   const hintTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const regenTargetAttemptRef = useRef<number>(0);
 
   // Share / copy state
   const [copied, setCopied] = useState(false);
@@ -147,6 +148,9 @@ export function RuntoonShareView({
       return res.json();
     },
     onSuccess: () => {
+      if (regenTargetAttemptRef.current === 0) {
+        regenTargetAttemptRef.current = (runtoon?.attempt_number ?? 0) + 1;
+      }
       pollStart.current = Date.now();
       setGenerating(true);
       setGenTimedOut(false);
@@ -179,16 +183,31 @@ export function RuntoonShareView({
       return res.json();
     },
     refetchInterval: (query) => {
-      if (query.state.data) return false;
+      const data = query.state.data as RuntoonData | null;
+      if (regenTargetAttemptRef.current > 0) {
+        if (data && data.attempt_number >= regenTargetAttemptRef.current) {
+          regenTargetAttemptRef.current = 0;
+          return false;
+        }
+        return POLL_INTERVAL;
+      }
+      if (data) return false;
       return POLL_INTERVAL;
     },
     enabled: !!token,
     staleTime: 0,
   });
 
-  // When image arrives, stop generating spinner
+  // When NEW image arrives, stop generating spinner
   useEffect(() => {
-    if (runtoon) {
+    if (!runtoon) return;
+    if (regenTargetAttemptRef.current > 0) {
+      if (runtoon.attempt_number >= regenTargetAttemptRef.current) {
+        regenTargetAttemptRef.current = 0;
+        setGenerating(false);
+        setGenTimedOut(false);
+      }
+    } else {
       setGenerating(false);
       setGenTimedOut(false);
     }
@@ -316,11 +335,10 @@ export function RuntoonShareView({
   // ---------------------------------------------------------------------------
 
   const handleRegen = () => {
+    regenTargetAttemptRef.current = (runtoon?.attempt_number ?? 0) + 1;
     setRegenCount((c) => c + 1);
     genMutation.mutate();
   };
-
-  const canRegen = true; // Server enforces caps; founder exempt
 
   // ---------------------------------------------------------------------------
   // Touch swipe-down close
@@ -463,17 +481,15 @@ export function RuntoonShareView({
           {copied ? 'Caption copied!' : 'Copy caption'}
         </button>
 
-        {/* Try another look */}
-        {canRegen && (
-          <button
-            onClick={handleRegen}
-            disabled={genMutation.isPending}
-            className="flex items-center justify-center gap-2 rounded-xl border border-slate-700 py-3 text-sm text-slate-400 hover:text-slate-200 hover:border-slate-500 disabled:opacity-40 transition-all"
-          >
-            <RefreshCw size={14} className={genMutation.isPending ? 'animate-spin' : ''} />
-            {genMutation.isPending ? 'Generating...' : 'Try another look'}
-          </button>
-        )}
+        {/* Try another look — server enforces caps; founder exempt */}
+        <button
+          onClick={handleRegen}
+          disabled={genMutation.isPending}
+          className="flex items-center justify-center gap-2 rounded-xl border border-slate-700 py-3 text-sm text-slate-400 hover:text-slate-200 hover:border-slate-500 disabled:opacity-40 transition-all"
+        >
+          <RefreshCw size={14} className={genMutation.isPending ? 'animate-spin' : ''} />
+          {genMutation.isPending ? 'Generating...' : 'Try another look'}
+        </button>
       </div>
     </>
   );
@@ -510,7 +526,7 @@ export function RuntoonShareView({
       <div className="flex flex-col items-center flex-1 overflow-y-auto">
         {genTimedOut
           ? renderTimedOut()
-          : (generating && !runtoon)
+          : generating
           ? renderGenerating()
           : runtoon
           ? renderReady()
