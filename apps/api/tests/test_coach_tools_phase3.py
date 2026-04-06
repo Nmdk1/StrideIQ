@@ -249,8 +249,8 @@ class TestGetAthleteProfile:
         assert result["data"]["physiological"]["rpi"] == 52.5
         assert result["data"]["runner_typing"]["type"] == "balanced"
 
-    def test_calculates_hr_zones(self):
-        """Should calculate HR zones from max_hr."""
+    def test_no_hr_zones_in_profile(self):
+        """HR zones are retired — KB forbids zone-based coaching."""
         from services.coach_tools import get_athlete_profile
         
         mock_db = MagicMock()
@@ -281,10 +281,7 @@ class TestGetAthleteProfile:
         result = get_athlete_profile(mock_db, athlete_id)
         
         assert result["ok"] is True
-        zones = result["data"]["physiological"]["hr_zones"]
-        assert zones is not None
-        assert zones["zone_1_recovery"]["min"] == 100  # 50% of 200
-        assert zones["zone_5_max"]["max"] == 200
+        assert "hr_zones" not in result["data"]["physiological"]
 
     def test_handles_missing_athlete(self):
         """Should return error for missing athlete."""

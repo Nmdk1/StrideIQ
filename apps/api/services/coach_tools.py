@@ -37,7 +37,7 @@ from services.efficiency_analytics import (  # noqa: E402
 )
 from services.training_load import TrainingLoadCalculator  # noqa: E402
 from services.correlation_engine import analyze_correlations  # noqa: E402
-from services.race_predictor import RacePredictor  # noqa: E402
+# RacePredictor (Banister model) RETIRED — race predictions now use RPI only.
 from services.recovery_metrics import (  # noqa: E402
     calculate_recovery_half_life,
     calculate_durability_index,
@@ -917,10 +917,12 @@ def get_training_paces(db: Session, athlete_id: UUID) -> Dict[str, Any]:
         # --- Narrative ---
         narrative = (
             f"Training paces based on RPI {rpi:.1f}: "
-            f"Easy {format_display('easy')}, Marathon {format_display('marathon')}, "
+            f"Easy {format_display('easy')} (CEILING — do not run faster than this on easy days), "
+            f"Marathon {format_display('marathon')}, "
             f"Threshold {format_display('threshold')}, Interval {format_display('interval')}, "
             f"Repetition {format_display('repetition')}. "
-            f"These are THE authoritative paces — do not derive paces from other data."
+            f"These are THE authoritative paces from actual race data — do not derive paces from other sources. "
+            f"NEVER prescribe heart rate zones or HR-based targets."
         )
 
         return {
@@ -1018,27 +1020,19 @@ def get_correlations(db: Session, athlete_id: UUID, days: int = 30) -> Dict[str,
 
 def get_race_predictions(db: Session, athlete_id: UUID) -> Dict[str, Any]:
     """
-    Race time predictions for standard distances.
+    Race equivalent times from RPI — the only verified source.
+
+    Uses the athlete's RPI (derived from actual race performances) to calculate
+    equivalent times at standard distances. NO theoretical models, NO fitness
+    projections, NO population statistics. The athlete's race data is the truth.
+
+    Also surfaces actual race history so the coach can anchor on real performances.
     """
     now = datetime.utcnow()
     try:
-        predictor = RacePredictor(db)
         athlete = db.query(Athlete).filter(Athlete.id == athlete_id).first()
-
-        # Prefer the athlete's active plan goal race date (if present and in the future);
-        # otherwise, project a near-term race to avoid "race today" taper artifacts.
-        race_date = date.today() + timedelta(days=28)
-        try:
-            plan = (
-                db.query(TrainingPlan)
-                .filter(TrainingPlan.athlete_id == athlete_id, TrainingPlan.status == "active")
-                .first()
-            )
-            if plan and plan.goal_race_date and plan.goal_race_date >= date.today():
-                race_date = plan.goal_race_date
-        except Exception:
-            # If plan lookup fails for any reason, proceed with default race_date.
-            pass
+        if not athlete:
+            return {"ok": False, "tool": "get_race_predictions", "error": "Athlete not found"}
 
         distances: List[tuple[str, float]] = [
             ("5K", 5000.0),
@@ -1053,141 +1047,83 @@ def get_race_predictions(db: Session, athlete_id: UUID) -> Dict[str, Any]:
             s = seconds % 60
             return f"{h}:{m:02d}:{s:02d}" if h > 0 else f"{m}:{s:02d}"
 
+        rpi = float(athlete.rpi) if athlete.rpi else None
         predictions: Dict[str, Any] = {}
         evidence: List[Dict[str, Any]] = []
 
-        def _best_rpi_from_personal_bests() -> Optional[Dict[str, Any]]:
-            """
-            Derive a RPI estimate from the athlete's PersonalBest table.
+        if not rpi:
+            return {
+                "ok": True,
+                "tool": "get_race_predictions",
+                "generated_at": _iso(now),
+                "narrative": (
+                    "No RPI on file — the athlete needs to complete a race or time trial "
+                    "before equivalent times can be calculated. Do NOT estimate or guess "
+                    "race times without RPI."
+                ),
+                "data": {"rpi": None, "predictions": {}, "race_history": []},
+                "evidence": [],
+            }
 
-            Returns:
-                {"rpi": float, "pb": PersonalBest} or None
-            """
-            try:
-                from models import PersonalBest
-                from services.rpi_calculator import calculate_rpi_from_race_time
-
-                pbs = (
-                    db.query(PersonalBest)
-                    .filter(PersonalBest.athlete_id == athlete_id)
-                    .order_by(PersonalBest.achieved_at.desc())
-                    .limit(20)
-                    .all()
-                )
-                if not pbs:
-                    return None
-
-                # Prefer race PBs and standard race distances (better anchors).
-                candidates: List[tuple[float, Any]] = []
-                for pb in pbs:
-                    v = calculate_rpi_from_race_time(pb.distance_meters, pb.time_seconds)
-                    if not v:
-                        continue
-                    weight = 0.0
-                    if getattr(pb, "is_race", False):
-                        weight += 0.3
-                    if pb.distance_category in {"5k", "10k", "half_marathon", "marathon"}:
-                        weight += 0.2
-                    candidates.append((float(v) + weight, pb))
-
-                if not candidates:
-                    return None
-
-                candidates.sort(key=lambda t: t[0], reverse=True)
-                best_weighted, best_pb = candidates[0]
-
-                # Remove weight for reporting a clean RPI value.
-                base_rpi = float(best_weighted)
-                if getattr(best_pb, "is_race", False):
-                    base_rpi -= 0.3
-                if best_pb.distance_category in {"5k", "10k", "half_marathon", "marathon"}:
-                    base_rpi -= 0.2
-
-                return {"rpi": round(base_rpi, 1), "pb": best_pb}
-            except Exception:
-                return None
-
-        pb_rpi = _best_rpi_from_personal_bests()
         for label, dist_m in distances:
-            try:
-                pred = predictor.predict(athlete_id=athlete_id, race_date=race_date, distance_m=dist_m)
-                predictions[label] = pred.to_dict() if pred else None
-            except Exception as e:
-                # If this was a DB error, the transaction may now be aborted; rollback so
-                # subsequent tool calls (and other distances) can proceed.
-                try:
-                    db.rollback()
-                except Exception:
-                    pass
-                # Fallback: if the calibrated model table isn't present in this environment,
-                # use the athlete's stored RPI or derive one from PBs to provide a reasonable estimate.
-                msg = str(e)
-                fallback_rpi: Optional[float] = None
-                fallback_source: Optional[str] = None
-
-                if athlete and getattr(athlete, "rpi", None):
-                    fallback_rpi = float(athlete.rpi)
-                    fallback_source = "athlete_rpi"
-                elif pb_rpi and pb_rpi.get("rpi"):
-                    fallback_rpi = float(pb_rpi["rpi"])
-                    fallback_source = "pb_rpi"
-
-                if fallback_rpi and "athlete_calibrated_model" in msg:
-                    seconds = calculate_race_time_from_rpi(float(fallback_rpi), dist_m)
-                    if seconds:
-                        predictions[label] = {
-                            "prediction": {
-                                "time_seconds": int(seconds),
-                                "time_formatted": _fmt_time(int(seconds)),
-                                "confidence_interval_seconds": None,
-                                "confidence_interval_formatted": None,
-                                "confidence": "Estimate",
-                            },
-                            "projections": {"rpi": round(float(fallback_rpi), 1), "ctl": None, "tsb": None},
-                            "factors": [
-                                "Calibrated performance model unavailable; using RPI-derived equivalent times.",
-                                f"RPI source: {fallback_source or 'unknown'}",
-                            ],
-                            "notes": ["This estimate is less personalized than the calibrated model pipeline."],
-                        }
-                    else:
-                        predictions[label] = {"error": msg}
-                else:
-                    predictions[label] = {"error": msg}
-
-        # Evidence: cite the PB used for fallback (if any), plus a derived marker.
-        if pb_rpi and pb_rpi.get("pb"):
-            pb = pb_rpi["pb"]
-            pb_date = (
-                getattr(pb, "achieved_at", None).date().isoformat()
-                if getattr(pb, "achieved_at", None)
-                else date.today().isoformat()
-            )
-            evidence.append(
-                {
-                    "type": "personal_best",
-                    "id": str(getattr(pb, "id", "")) or f"pb:{pb_date}:{getattr(pb, 'distance_category', 'unknown')}",
-                    "date": pb_date,
-                    "value": (
-                        f"PB anchor for predictions: {getattr(pb, 'distance_category', 'pb')} "
-                        f"in {getattr(pb, 'time_seconds', '?')}s (activity {getattr(pb, 'activity_id', '')})"
-                    ),
+            seconds = calculate_race_time_from_rpi(rpi, dist_m)
+            if seconds:
+                pace_sec = seconds / (dist_m / _M_PER_MI)
+                pace_m = int(pace_sec // 60)
+                pace_s = int(round(pace_sec % 60))
+                predictions[label] = {
+                    "equivalent_time": _fmt_time(int(seconds)),
+                    "equivalent_pace": f"{pace_m}:{pace_s:02d}/mi",
+                    "time_seconds": int(seconds),
                 }
-            )
 
-        # --- Narrative ---
+        # Surface actual race history so the coach anchors on REALITY
+        race_history: List[Dict[str, Any]] = []
+        try:
+            from models import PersonalBest
+            pbs = (
+                db.query(PersonalBest)
+                .filter(PersonalBest.athlete_id == athlete_id)
+                .order_by(PersonalBest.achieved_at.desc())
+                .limit(10)
+                .all()
+            )
+            for pb in pbs:
+                pb_date = (
+                    getattr(pb, "achieved_at", None).date().isoformat()
+                    if getattr(pb, "achieved_at", None)
+                    else None
+                )
+                pb_time = _fmt_time(pb.time_seconds) if pb.time_seconds else None
+                race_history.append({
+                    "distance": pb.distance_category,
+                    "time": pb_time,
+                    "time_seconds": pb.time_seconds,
+                    "date": pb_date,
+                    "is_race": getattr(pb, "is_race", False),
+                })
+                if pb_date:
+                    evidence.append({
+                        "type": "personal_best",
+                        "id": str(getattr(pb, "id", "")),
+                        "date": pb_date,
+                        "value": f"{pb.distance_category}: {pb_time} ({pb_date})",
+                    })
+        except Exception:
+            pass
+
         pred_parts: List[str] = []
         for label_key in ["5K", "10K", "Half Marathon", "Marathon"]:
             p = predictions.get(label_key)
-            if isinstance(p, dict) and "prediction" in p:
-                t = p["prediction"].get("time_formatted")
-                if t:
-                    pred_parts.append(f"{label_key}: {t}")
+            if p:
+                pred_parts.append(f"{label_key}: {p['equivalent_time']}")
         pred_summary = ", ".join(pred_parts) if pred_parts else "No predictions available"
-        _race_rel = _relative_date(race_date)
+
         narrative = (
-            f"Race predictions (target date {race_date.isoformat()} {_race_rel}): {pred_summary}. "
-            f"These are model-derived estimates — use compute_running_math for exact pace/time calculations."
+            f"RPI-based equivalent race times (RPI {rpi:.1f}): {pred_summary}. "
+            f"These are calculated from the athlete's ACTUAL race performances, not "
+            f"theoretical models. The athlete's real race history is included below — "
+            f"always anchor predictions on what they have actually run."
         )
 
         return {
@@ -1196,18 +1132,11 @@ def get_race_predictions(db: Session, athlete_id: UUID) -> Dict[str, Any]:
             "generated_at": _iso(now),
             "narrative": narrative,
             "data": {
-                "race_date": race_date.isoformat(),
+                "rpi": rpi,
                 "predictions": predictions,
+                "race_history": race_history,
             },
-            "evidence": evidence
-            + [
-                {
-                    "type": "derived",
-                    "id": f"race_predictions:{str(athlete_id)}",
-                    "date": date.today().isoformat(),
-                    "value": f"Predictions for {len(predictions)} distances (race_date={race_date.isoformat()})",
-                }
-            ],
+            "evidence": evidence,
         }
     except Exception as e:
         try:
@@ -2522,30 +2451,12 @@ def get_athlete_profile(db: Session, athlete_id: UUID) -> Dict[str, Any]:
                 s = int(round(athlete.threshold_pace_per_km % 60))
                 threshold_pace_display = f"{m}:{s:02d}/km"
 
-        # Derive HR zones from N=1 effort thresholds
-        hr_zones = None
-        from services.effort_classification import get_effort_thresholds
-        et = get_effort_thresholds(str(athlete_id), db)
-        p80 = et.get("p80_hr")
-        p40 = et.get("p40_hr")
-        peak = et.get("observed_peak_hr")
-        if p80 and p40:
-            hr_zones = {
-                "zone_1_recovery": {"min": int(p40 * 0.85), "max": int(p40)},
-                "zone_2_easy": {"min": int(p40), "max": int((p40 + p80) / 2)},
-                "zone_3_moderate": {"min": int((p40 + p80) / 2), "max": int(p80)},
-                "zone_4_threshold": {"min": int(p80), "max": int(p80 * 1.05)},
-                "zone_5_max": {"min": int(p80 * 1.05), "max": int(peak) if peak else int(p80 * 1.10)},
-            }
-        elif athlete.max_hr:
-            max_hr = athlete.max_hr
-            hr_zones = {
-                "zone_1_recovery": {"min": int(max_hr * 0.50), "max": int(max_hr * 0.60)},
-                "zone_2_easy": {"min": int(max_hr * 0.60), "max": int(max_hr * 0.70)},
-                "zone_3_moderate": {"min": int(max_hr * 0.70), "max": int(max_hr * 0.80)},
-                "zone_4_threshold": {"min": int(max_hr * 0.80), "max": int(max_hr * 0.90)},
-                "zone_5_max": {"min": int(max_hr * 0.90), "max": max_hr},
-            }
+        # Effort-based coaching only — NO HR zones.
+        # KB: "What We Don't Do: Use zone numbers (Zone 1, Zone 2, etc.)"
+        # KB: "Easy pace is NOT derived from race performance. It is derived
+        #      from perceived effort: can you talk in complete sentences?"
+        # Training paces come from RPI via get_training_paces() — that is the
+        # authoritative source. This tool provides profile context only.
 
         # Build evidence
         evidence: List[Dict[str, Any]] = []
@@ -2598,8 +2509,7 @@ def get_athlete_profile(db: Session, athlete_id: UUID) -> Dict[str, Any]:
                     "threshold_hr": athlete.threshold_hr,
                     "threshold_pace": threshold_pace_display,
                     "threshold_pace_sec_per_km": float(athlete.threshold_pace_per_km) if athlete.threshold_pace_per_km else None,
-                    "rpi": float(athlete.rpi) if athlete.rpi else None,  # Keep for backward compatibility
-                    "hr_zones": hr_zones,
+                    "rpi": float(athlete.rpi) if athlete.rpi else None,
                 },
                 "runner_typing": {
                     "type": athlete.runner_type,
@@ -3852,8 +3762,13 @@ def build_athlete_brief(db: Session, athlete_id: UUID) -> str:
             d = paces["data"]
             pace_data = d.get("paces", {})
             rpi = d.get("rpi", "N/A")
-            lines = [f"RPI (Running Performance Index): {rpi}"]
-            for zone_name in ["easy", "marathon", "threshold", "interval", "repetition"]:
+            lines = [
+                f"RPI (Running Performance Index): {rpi}",
+                "(Paces from RPI — the ONLY authoritative source. NEVER prescribe HR zones.)",
+            ]
+            easy_val = pace_data.get("easy", "N/A")
+            lines.append(f"  Easy: {easy_val} (CEILING — athlete should not run faster than this on easy days)")
+            for zone_name in ["marathon", "threshold", "interval", "repetition"]:
                 val = pace_data.get(zone_name, "N/A")
                 lines.append(f"  {zone_name.capitalize()}: {val}")
             sections.append("## Training Paces\n" + "\n".join(lines))

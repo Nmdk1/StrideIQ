@@ -112,6 +112,36 @@ def _strip_emojis(text: str) -> str:
     return _EMOJI_RE.sub("", text)
 
 
+_KB_VIOLATION_PATTERNS: List[tuple[str, str]] = [
+    (r"\bzone\s*[1-5]\b", "HR_ZONE_NUMBER"),
+    (r"\bzone\s+(?:one|two|three|four|five)\b", "HR_ZONE_NAME"),
+    (r"keep\s+(?:your\s+)?(?:heart\s+rate|hr)\s+(?:below|under|above|at|around)\s+\d+", "HR_TARGET"),
+    (r"stay\s+in\s+(?:the\s+)?(?:zone|hr\s+zone)", "HR_ZONE_PRESCRIPTION"),
+    (r"\b(?:220|two\s*twenty)\s*[-–]\s*(?:age|your\s+age)", "POPULATION_FORMULA"),
+    (r"(?:max\s+hr|maximum\s+heart\s+rate)\s+(?:formula|calculation|is\s+\d{3})", "POPULATION_HR_CALC"),
+]
+
+
+def _check_kb_violations(response_text: str, model: str, athlete_id: str) -> Optional[str]:
+    """
+    Check coach response for KB philosophy violations.
+
+    Returns a violation tag if found (for logging/metrics), None if clean.
+    This is a safety net — architectural enforcement (removing HR zones from
+    tool outputs) is the primary defense. This catches LLM leakage.
+    """
+    text_lower = response_text.lower()
+    for pattern, tag in _KB_VIOLATION_PATTERNS:
+        match = re.search(pattern, text_lower)
+        if match:
+            logger.warning(
+                "KB VIOLATION [%s] in coach response [model=%s athlete=%s]: %s",
+                tag, model, athlete_id, match.group(0),
+            )
+            return tag
+    return None
+
+
 def _check_response_quality(response_text: str, model: str, athlete_id: str) -> None:
     """Log warnings for responses that violate format/length contracts. Never blocks."""
     warnings = []
@@ -129,6 +159,7 @@ def _check_response_quality(response_text: str, model: str, athlete_id: str) -> 
             "Coach response quality check [model=%s athlete=%s]: %s",
             model, athlete_id, "; ".join(warnings),
         )
+    _check_kb_violations(response_text, model, athlete_id)
 
 
 def is_high_stakes_query(message: str) -> bool:
@@ -292,7 +323,16 @@ Confirmed fatigue thresholds are real data but WHEN you cite them matters:
 
 ## CRITICAL: Tool Selection for Pace Questions
 
-When the athlete asks about training paces (threshold pace, easy pace, interval pace, marathon pace, etc.):
+COACHING PHILOSOPHY (from Knowledge Base — NON-NEGOTIABLE):
+1. EFFORT-BASED COACHING ONLY. NEVER prescribe training by heart rate zones, HR numbers, or zone numbers. NEVER say "keep your heart rate below X" or "stay in zone 2." This system coaches by PACE (from RPI) and EFFORT FEEL (conversational, comfortably hard, short phrases, can't talk). If the athlete asks about HR zones, explain that we coach by pace and perceived effort, not HR zones.
+2. N=1 ONLY. NEVER apply population statistics (220-age, HR zone percentages, generic formulas) to ANY athlete. Every recommendation must be grounded in THIS athlete's actual data. Age is a variable, not a limiter.
+3. TRAINING PACES COME FROM RPI ONLY. Call get_training_paces for paces. These are THE authoritative source, derived from the athlete's actual race performances. NEVER derive paces from recent runs, efficiency data, or theoretical models.
+4. EASY PACE IS A CEILING, NOT A RANGE. The easy pace from RPI is the MAXIMUM pace — do not run faster than this. The athlete can run as slow as they want on easy days. Easy running should feel conversational — if you can't speak in complete sentences, you're going too fast.
+5. RACE PREDICTIONS ARE RPI EQUIVALENTS. The get_race_predictions tool returns equivalent times calculated from the athlete's actual race data. They are NOT theoretical projections. Always anchor on the athlete's real race history included in the tool response. If the equivalent time contradicts a recent actual race, the actual race is the truth.
+6. TOOL OUTPUTS REQUIRE YOUR JUDGMENT. Tools provide data, not coaching decisions. Before presenting any number, ask: does this match what I know about this athlete's actual performances? If a tool number contradicts the athlete's race history or training data, say so.
+7. SUPPRESSION OVER HALLUCINATION. If you cannot provide a confident, data-backed answer, say "I don't have enough data to answer that reliably." NEVER guess a race time, pace, or recommendation.
+
+TRAINING PACES:
 - ALWAYS call get_training_paces FIRST - this is the ONLY authoritative source for training paces
 - These paces are calculated from the athlete's RPI (Running Performance Index, based on their race results)
 - NEVER derive paces from recent runs or efficiency data - that's what they RAN, not what they SHOULD run
@@ -770,7 +810,7 @@ Policy:
             },
             {
                 "name": "get_race_predictions",
-                "description": "Get race time predictions for 5K, 10K, Half Marathon, and Marathon.",
+                "description": "Get RPI-based equivalent race times for 5K, 10K, Half Marathon, and Marathon, plus the athlete's actual race history. These come from verified race data, not theoretical models.",
                 "input_schema": {
                     "type": "object",
                     "properties": {},
@@ -909,7 +949,7 @@ Policy:
             },
             {
                 "name": "get_athlete_profile",
-                "description": "Get athlete physiological profile: max HR, threshold paces, RPI, runner type, HR zones, and training metrics.",
+                "description": "Get athlete physiological profile: age, RPI, runner type, threshold pace, durability, and training metrics. Training paces come from get_training_paces, not from this tool.",
                 "input_schema": {
                     "type": "object",
                     "properties": {},
@@ -1762,7 +1802,7 @@ If you need more data to answer well, call the tools. That's why they're there."
             },
             {
                 "name": "get_race_predictions",
-                "description": "Get race time predictions for 5K, 10K, Half Marathon, and Marathon.",
+                "description": "Get RPI-based equivalent race times for 5K, 10K, Half Marathon, and Marathon, plus the athlete's actual race history. These come from verified race data, not theoretical models.",
                 "parameters": {"type": "object", "properties": {}}
             },
             {
@@ -1901,7 +1941,7 @@ If you need more data to answer well, call the tools. That's why they're there."
             },
             {
                 "name": "get_athlete_profile",
-                "description": "Get athlete physiological profile: max HR, threshold paces, RPI, runner type, HR zones, and training metrics.",
+                "description": "Get athlete physiological profile: age, RPI, runner type, threshold pace, durability, and training metrics. Training paces come from get_training_paces, not from this tool.",
                 "parameters": {"type": "object", "properties": {}}
             },
             {
@@ -2003,6 +2043,13 @@ Every activity has a date and a relative label like "(2 days ago)" or "(yesterda
 - If the marathon was "(2 days ago)", say "Sunday's marathon" or "your marathon two days ago" — NEVER "today's marathon".
 - When in doubt, use the actual date. Getting the date wrong destroys trust in everything else you say.
 
+COACHING PHILOSOPHY (from Knowledge Base — NON-NEGOTIABLE):
+1. EFFORT-BASED COACHING ONLY. NEVER prescribe training by heart rate zones, HR numbers, or zone numbers. NEVER say "keep your heart rate below X" or "stay in zone 2." Coach by PACE (from RPI) and EFFORT FEEL (conversational, comfortably hard, short phrases, can't talk).
+2. N=1 ONLY. NEVER apply population statistics (220-age, HR zone percentages, generic formulas). Every recommendation is grounded in THIS athlete's actual data.
+3. TRAINING PACES FROM RPI ONLY. Easy pace is a CEILING (do not run faster than this). Paces come from get_training_paces, derived from actual race performances.
+4. RACE PREDICTIONS ARE RPI EQUIVALENTS from actual race data, not theoretical models. Always anchor on the athlete's real race history.
+5. SUPPRESSION OVER HALLUCINATION. If you can't answer confidently from data, say so.
+
 COACHING APPROACH:
 - Lead with what matters. If you see something important in the brief, bring it up — don't wait to be asked.
 - Be direct and sparse. Athletes don't want essays.
@@ -2018,11 +2065,12 @@ YOU HAVE TOOLS — USE THEM PROACTIVELY:
 - Call get_training_load for current fitness/fatigue/form
 - Call get_training_load_history for load progression over time
 - Call get_recovery_status for injury risk assessment
-- Call get_race_predictions for time estimates
+- Call get_race_predictions for RPI-based equivalent times and actual race history
 - Call get_plan_week for the current training plan
 - Call get_calendar_day_context for specific day plan + actual
 - Call get_wellness_trends for sleep, stress, soreness patterns
 - Call compute_running_math for ANY pace/distance/time calculation
+- Call get_training_paces for authoritative RPI-based training paces
 - NEVER say "I don't have access" — call the tools instead
 - When in doubt, call a tool. A tool call is ALWAYS better than a guess.
 
