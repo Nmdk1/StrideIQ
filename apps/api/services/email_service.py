@@ -11,11 +11,32 @@ import smtplib
 import ssl
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-from typing import List, Optional
+from typing import List, Optional, Set
 from core.config import settings
+from services.n1_insight_generator import friendly_signal_name
 import logging
 
 logger = logging.getLogger(__name__)
+
+_HIGHER_IS_BETTER: Set[str] = {
+    "garmin_sleep_score", "garmin_sleep_deep_s", "garmin_hrv_5min_high",
+    "sleep_hours", "sleep_h", "sleep_quality_1_5", "feedback_leg_feel",
+    "feedback_energy_pre", "garmin_body_battery_end", "garmin_body_battery_start",
+    "activity_intensity_score", "garmin_hrv_weekly_avg", "garmin_hrv_status",
+}
+_LOWER_IS_BETTER: Set[str] = {
+    "dew_point_f", "temperature_f", "garmin_avg_stress", "garmin_max_stress",
+    "garmin_sleep_awake_s", "stress_1_5", "soreness_1_5",
+}
+
+
+def _direction_phrase(raw_key: str, positive_is_good: bool) -> str:
+    """Return 'More ', 'Less ', 'Higher ', 'Lower ', or '' for known metrics."""
+    if raw_key in _HIGHER_IS_BETTER:
+        return "More " if positive_is_good else "Too much "
+    if raw_key in _LOWER_IS_BETTER:
+        return "Lower " if positive_is_good else "Higher "
+    return ""
 
 
 class EmailService:
@@ -103,18 +124,21 @@ class EmailService:
         # Build HTML content
         html_parts = [
             f"<h2>Hey {athlete_name or 'there'},</h2>",
-            "<p>Here's what the data says about your performance over the last {analysis_period_days} days.</p>",
+            f"<p>Here's what the data says about your performance over the last {analysis_period_days} days.</p>",
         ]
         
         if what_works:
             html_parts.append("<h3>What's Working</h3>")
             html_parts.append("<ul>")
-            for correlation in what_works[:5]:  # Top 5
-                input_name = correlation['input_name'].replace('_', ' ').title()
-                percent = int(abs(correlation['correlation_coefficient']) * 100)
+            for correlation in what_works[:5]:
+                raw_key = correlation['input_name']
+                name = friendly_signal_name(raw_key)
+                sample = correlation['sample_size']
+                direction_word = _direction_phrase(raw_key, positive_is_good=True)
+                label = f"{direction_word}{name}" if direction_word else name.capitalize()
                 html_parts.append(
-                    f"<li><strong>{input_name}</strong> explains {percent}% of your efficiency gains. "
-                    f"Pattern holds over {correlation['sample_size']} runs.</li>"
+                    f"<li><strong>{label}</strong> is one of your strongest "
+                    f"efficiency drivers — confirmed over {sample} runs.</li>"
                 )
             html_parts.append("</ul>")
         else:
@@ -123,12 +147,15 @@ class EmailService:
         if what_doesnt_work:
             html_parts.append("<h3>What Doesn't Work</h3>")
             html_parts.append("<ul>")
-            for correlation in what_doesnt_work[:3]:  # Top 3
-                input_name = correlation['input_name'].replace('_', ' ').title()
-                percent = int(abs(correlation['correlation_coefficient']) * 100)
+            for correlation in what_doesnt_work[:3]:
+                raw_key = correlation['input_name']
+                name = friendly_signal_name(raw_key)
+                sample = correlation['sample_size']
+                direction_word = _direction_phrase(raw_key, positive_is_good=False)
+                label = f"{direction_word}{name}" if direction_word else name.capitalize()
                 html_parts.append(
-                    f"<li><strong>{input_name}</strong> correlates with {percent}% worse efficiency. "
-                    f"Statistically significant.</li>"
+                    f"<li><strong>{label}</strong> is dragging your efficiency "
+                    f"down — confirmed across {sample} runs.</li>"
                 )
             html_parts.append("</ul>")
         
@@ -146,11 +173,14 @@ class EmailService:
         if what_works:
             text_parts.append("WHAT'S WORKING:")
             for correlation in what_works[:5]:
-                input_name = correlation['input_name'].replace('_', ' ').title()
-                percent = int(abs(correlation['correlation_coefficient']) * 100)
+                raw_key = correlation['input_name']
+                name = friendly_signal_name(raw_key)
+                sample = correlation['sample_size']
+                direction_word = _direction_phrase(raw_key, positive_is_good=True)
+                label = f"{direction_word}{name}" if direction_word else name.capitalize()
                 text_parts.append(
-                    f"- {input_name} explains {percent}% of your efficiency gains. "
-                    f"Pattern holds over {correlation['sample_size']} runs."
+                    f"- {label} is one of your strongest "
+                    f"efficiency drivers — confirmed over {sample} runs."
                 )
         else:
             text_parts.append("Not enough data yet. Keep running.")
@@ -158,11 +188,14 @@ class EmailService:
         if what_doesnt_work:
             text_parts.append("\nWHAT DOESN'T WORK:")
             for correlation in what_doesnt_work[:3]:
-                input_name = correlation['input_name'].replace('_', ' ').title()
-                percent = int(abs(correlation['correlation_coefficient']) * 100)
+                raw_key = correlation['input_name']
+                name = friendly_signal_name(raw_key)
+                sample = correlation['sample_size']
+                direction_word = _direction_phrase(raw_key, positive_is_good=False)
+                label = f"{direction_word}{name}" if direction_word else name.capitalize()
                 text_parts.append(
-                    f"- {input_name} correlates with {percent}% worse efficiency. "
-                    f"Statistically significant."
+                    f"- {label} is dragging your efficiency "
+                    f"down — confirmed across {sample} runs."
                 )
         
         text_parts.append("\nKeep going.\n— StrideIQ")
