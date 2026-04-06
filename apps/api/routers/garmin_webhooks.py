@@ -60,6 +60,7 @@ from models import Athlete
 from services.garmin_webhook_auth import verify_garmin_webhook
 from tasks.garmin_webhook_tasks import (
     process_garmin_activity_detail_task,
+    process_garmin_activity_file_task,
     process_garmin_activity_task,
     process_garmin_deregistration_task,
     process_garmin_health_task,
@@ -278,6 +279,41 @@ async def webhook_activity_details(
         if not athlete:
             continue
         process_garmin_activity_detail_task.delay(str(athlete.id), record)
+    return {"status": "ok"}
+
+
+@router.post(
+    "/webhook/activity-files",
+    status_code=200,
+    summary="Garmin activity files push webhook (FIT file download)",
+)
+async def webhook_activity_files(
+    request: Request,
+    db: Session = Depends(get_db),
+    _: None = Depends(verify_garmin_webhook),
+) -> Dict[str, str]:
+    """
+    Receives Garmin Activity File PING notifications containing callbackURLs
+    for downloading FIT files.  FIT files contain per-set exercise data for
+    strength workouts (sets, reps, weights, exercise names).
+
+    Dispatch: process_garmin_activity_file_task
+    Delivery mode: push (PING with callback URL)
+    """
+    records = await _parse_and_validate_push_payload(
+        request, route="/webhook/activity-files", data_key="activityFiles",
+    )
+
+    logger.info(
+        "Activity files webhook: %d records received",
+        len(records),
+    )
+
+    for record in records:
+        athlete = _resolve_athlete(record, db, route="/webhook/activity-files")
+        if not athlete:
+            continue
+        process_garmin_activity_file_task.delay(str(athlete.id), record)
     return {"status": "ok"}
 
 
