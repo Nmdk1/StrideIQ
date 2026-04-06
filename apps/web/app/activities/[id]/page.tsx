@@ -452,7 +452,7 @@ export default function ActivityDetailPage() {
           </div>
         ) : (
         <StreamHoverProvider>
-        {/* ── 2. Run Shape Canvas (Hero) ── */}
+        {/* ── 2. Run Shape Canvas (Hero) + Route Map (inside, between chart and splits) ── */}
         <div className="mb-6">
           <RunShapeCanvas
             activityId={activityId}
@@ -461,31 +461,30 @@ export default function ActivityDetailPage() {
             deviceName={activity.device_name}
             heatAdjustmentPct={activity.heat_adjustment_pct}
             temperatureF={activity.temperature_f}
-          />
+          >
+            {activity.gps_track && activity.gps_track.length > 1 && (
+              <div className="mt-3">
+                <RouteContext
+                  activityId={activityId}
+                  track={activity.gps_track}
+                  startCoords={activity.start_coords}
+                  sportType={activity.sport_type || 'run'}
+                  startTime={activity.start_time}
+                  mapHeight={350}
+                  streamPoints={analysisData?.stream}
+                  weather={{
+                    temperature_f: activity.temperature_f,
+                    weather_condition: activity.weather_condition,
+                    humidity_pct: activity.humidity_pct,
+                    heat_adjustment_pct: activity.heat_adjustment_pct,
+                  }}
+                  distanceM={activity.distance_m}
+                  durationS={activity.moving_time_s || activity.elapsed_time_s}
+                />
+              </div>
+            )}
+          </RunShapeCanvas>
         </div>
-
-        {/* ── 3. Route Map (directly below canvas — connected via StreamHoverContext) ── */}
-        {activity.gps_track && activity.gps_track.length > 1 && (
-          <div className="mb-6">
-            <RouteContext
-              activityId={activityId}
-              track={activity.gps_track}
-              startCoords={activity.start_coords}
-              sportType={activity.sport_type || 'run'}
-              startTime={activity.start_time}
-              mapHeight={350}
-              streamPoints={analysisData?.stream}
-              weather={{
-                temperature_f: activity.temperature_f,
-                weather_condition: activity.weather_condition,
-                humidity_pct: activity.humidity_pct,
-                heat_adjustment_pct: activity.heat_adjustment_pct,
-              }}
-              distanceM={activity.distance_m}
-              durationS={activity.moving_time_s || activity.elapsed_time_s}
-            />
-          </div>
-        )}
 
         {/* ── 4. Reflection Prompt (quick 3-tap) ── */}
         <ReflectionPrompt activityId={activityId} className="mb-4" />

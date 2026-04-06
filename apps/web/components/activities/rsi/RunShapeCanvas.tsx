@@ -79,6 +79,8 @@ export interface RunShapeCanvasProps {
   heatAdjustmentPct?: number | null;
   /** Optional ambient temperature context for overlay label */
   temperatureF?: number | null;
+  /** Content rendered between drift metrics and splits (e.g. route map) */
+  children?: React.ReactNode;
 }
 
 interface ChartPoint {
@@ -811,6 +813,7 @@ export function RunShapeCanvas({
   deviceName,
   heatAdjustmentPct,
   temperatureF,
+  children,
 }: RunShapeCanvasProps) {
   const { data, isLoading, error, refetch } = useStreamAnalysis(activityId);
 
@@ -1450,6 +1453,9 @@ export function RunShapeCanvas({
       {(analysis.drift.cardiac_pct != null || analysis.drift.pace_pct != null || analysis.drift.cadence_trend_bpm_per_km != null) && (
         <DriftMetrics drift={analysis.drift} />
       )}
+
+      {/* Slot for content that should be visually adjacent to the chart (e.g. route map) */}
+      {children}
 
       {/* Splits — always visible when splits data exists */}
       {splits && (

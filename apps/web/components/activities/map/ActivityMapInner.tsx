@@ -170,7 +170,7 @@ function FitBounds({ bounds }: { bounds: LatLngBoundsExpression }) {
   const didFit = useRef(false);
   useEffect(() => {
     if (!didFit.current) {
-      map.fitBounds(bounds, { padding: [40, 40], maxZoom: 16 });
+      map.fitBounds(bounds, { padding: [15, 15], maxZoom: 17 });
       didFit.current = true;
     }
   }, [map, bounds]);
