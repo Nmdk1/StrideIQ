@@ -242,6 +242,19 @@ export default function ActivityMapInner({
 
   const usePaceColoring = paceSegments.length > 0;
 
+  // High-res coordinate array from stream data (for glow + bounds when available)
+  const hiResTrack = useMemo<[number, number][]>(() => {
+    if (!streamPoints) return [];
+    const pts: [number, number][] = [];
+    for (const p of streamPoints) {
+      if (p.lat != null && p.lng != null) pts.push([p.lat, p.lng]);
+    }
+    return pts;
+  }, [streamPoints]);
+
+  // Use hi-res track for glow when available, fallback to coarse gps_track
+  const glowTrack = hiResTrack.length > 1 ? hiResTrack : track;
+
   return (
     <div>
       <div
@@ -302,11 +315,11 @@ export default function ActivityMapInner({
             <FitBounds bounds={bounds} />
             <InvalidateOnResize />
 
-            {/* Route glow layer (always accent color for depth) */}
-            {track.length > 1 && (
+            {/* Route glow layer — uses hi-res stream coords to avoid angular artifacts */}
+            {glowTrack.length > 1 && (
               <Polyline
-                positions={track}
-                pathOptions={{ color: accentColor, weight: 8, opacity: 0.25, lineCap: 'round', lineJoin: 'round' }}
+                positions={glowTrack}
+                pathOptions={{ color: accentColor, weight: 8, opacity: 0.15, lineCap: 'round', lineJoin: 'round' }}
               />
             )}
 
