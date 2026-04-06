@@ -39,6 +39,47 @@ MAX_STREAM_POINTS = 500
 GARMIN_PENDING_STALE_MINUTES = 30
 
 
+def _compute_grade_from_altitude(
+    alt_arr: List, vel_arr: List, time_arr: List
+) -> List:
+    """Derive grade (%) from altitude and velocity when grade_smooth is absent.
+
+    Uses a 10-second smoothing window to avoid GPS noise spikes.
+    grade = (elevation_change / horizontal_distance) * 100
+    """
+    n = len(alt_arr)
+    raw_grade = [None] * n
+    for i in range(1, n):
+        a0 = alt_arr[i - 1]
+        a1 = alt_arr[i]
+        t0 = time_arr[i - 1] if i - 1 < len(time_arr) else None
+        t1 = time_arr[i] if i < len(time_arr) else None
+        v = vel_arr[i] if i < len(vel_arr) else None
+        if a0 is None or a1 is None or t0 is None or t1 is None or v is None:
+            continue
+        dt = t1 - t0
+        if dt <= 0 or v <= 0.3:
+            continue
+        horiz_dist = v * dt
+        if horiz_dist < 0.5:
+            continue
+        raw_grade[i] = ((a1 - a0) / horiz_dist) * 100
+
+    # Smooth with a 10-second sliding window
+    window = 10
+    smoothed = [None] * n
+    for i in range(n):
+        vals = []
+        half = window // 2
+        for j in range(max(0, i - half), min(n, i + half + 1)):
+            if raw_grade[j] is not None:
+                vals.append(raw_grade[j])
+        if vals:
+            smoothed[i] = sum(vals) / len(vals)
+
+    return smoothed
+
+
 def _prepare_stream_points(
     stream_data: Dict[str, List],
     effort_intensity: List[float],
@@ -63,6 +104,10 @@ def _prepare_stream_points(
     cad_arr = stream_data.get("cadence")
     grade_arr = stream_data.get("grade_smooth")
     latlng_arr = stream_data.get("latlng")
+
+    # Compute grade from altitude + velocity when grade_smooth is missing
+    if not grade_arr and alt_arr and vel_arr and len(alt_arr) == n:
+        grade_arr = _compute_grade_from_altitude(alt_arr, vel_arr, time_arr)
 
     points = []
     for i in range(n):
