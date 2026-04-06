@@ -20,7 +20,6 @@
  */
 
 import React, { useState, useRef, useEffect } from 'react';
-import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/lib/hooks/useAuth';
@@ -441,6 +440,7 @@ export default function ActivityDetailPage() {
                   }}
                   distanceM={activity.distance_m}
                   durationS={activity.moving_time_s || activity.elapsed_time_s}
+                  heatAdjustmentPct={activity.heat_adjustment_pct}
                 />
               </div>
             )}
@@ -478,6 +478,7 @@ export default function ActivityDetailPage() {
                   }}
                   distanceM={activity.distance_m}
                   durationS={activity.moving_time_s || activity.elapsed_time_s}
+                  heatAdjustmentPct={activity.heat_adjustment_pct}
                 />
               </div>
             )}
@@ -673,19 +674,6 @@ export default function ActivityDetailPage() {
             <div className="mb-6">
               <WhyThisRun activityId={activityId} className="mb-4" />
               <RunContextAnalysis activityId={activityId} />
-            </div>
-
-            {/* ── 9. "Compare to Similar" ── */}
-            <div className="mb-6">
-              <Link
-                href={`/compare/context/${activityId}`}
-                className="inline-flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-orange-600 to-amber-600 hover:from-orange-500 hover:to-amber-500 text-white font-semibold rounded-lg shadow-lg shadow-orange-500/25 transition-all hover:shadow-orange-500/40 hover:scale-[1.02]"
-              >
-                Compare to Similar Runs
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                </svg>
-              </Link>
             </div>
 
             {/* ── Narrative Context (secondary — canvas is now the hero) ── */}

@@ -10,12 +10,6 @@ import type { StreamPoint } from '@/components/activities/rsi/hooks/useStreamAna
 const CARTO_VOYAGER = 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png';
 const CARTO_ATTRIBUTION = '&copy; <a href="https://carto.com/">CARTO</a> &copy; <a href="https://www.openstreetmap.org/copyright">OSM</a>';
 
-export interface GhostTrace {
-  id: string;
-  points: [number, number][];
-  opacity: number;
-}
-
 interface MileMarker {
   position: [number, number];
   label: string;
@@ -36,14 +30,11 @@ export interface WeatherData {
 export interface Props {
   track: [number, number][];
   startCoords?: [number, number] | null;
-  ghosts?: GhostTrace[];
-  height?: number;
   accentColor?: string;
   unitSystem?: 'imperial' | 'metric';
   streamPoints?: StreamPoint[];
   weather?: WeatherData | null;
   hoveredIndex?: number | null;
-  onHoverIndex?: (index: number | null) => void;
 }
 
 function haversine([lat1, lon1]: [number, number], [lat2, lon2]: [number, number]): number {
@@ -180,8 +171,6 @@ function FitBounds({ bounds }: { bounds: LatLngBoundsExpression }) {
 export default function ActivityMapInner({
   track,
   startCoords,
-  ghosts = [],
-  height = 300,
   accentColor = '#3b82f6',
   unitSystem = 'imperial',
   streamPoints,
@@ -202,19 +191,17 @@ export default function ActivityMapInner({
   );
 
   const bounds = useMemo(() => {
-    const all = [...track];
-    ghosts.forEach((g) => all.push(...g.points));
-    if (all.length === 0 && startCoords) return [startCoords, startCoords] as LatLngBoundsExpression;
-    if (all.length === 0) return [[0, 0], [0, 0]] as LatLngBoundsExpression;
+    if (track.length === 0 && startCoords) return [startCoords, startCoords] as LatLngBoundsExpression;
+    if (track.length === 0) return [[0, 0], [0, 0]] as LatLngBoundsExpression;
     let minLat = Infinity, maxLat = -Infinity, minLng = Infinity, maxLng = -Infinity;
-    for (const [lat, lng] of all) {
+    for (const [lat, lng] of track) {
       if (lat < minLat) minLat = lat;
       if (lat > maxLat) maxLat = lat;
       if (lng < minLng) minLng = lng;
       if (lng > maxLng) maxLng = lng;
     }
     return [[minLat, minLng], [maxLat, maxLng]] as LatLngBoundsExpression;
-  }, [track, ghosts, startCoords]);
+  }, [track, startCoords]);
 
   const mileMarkersAll = useMemo(() => computeMileMarkers(track, unitSystem), [track, unitSystem]);
   const mileMarkers = useMemo(() => {
@@ -314,15 +301,6 @@ export default function ActivityMapInner({
             <TileLayer url={CARTO_VOYAGER} attribution={CARTO_ATTRIBUTION} />
             <FitBounds bounds={bounds} />
             <InvalidateOnResize />
-
-            {/* Ghost traces — barely visible whisper of history */}
-            {ghosts.map((g) => (
-              <Polyline
-                key={g.id}
-                positions={g.points}
-                pathOptions={{ color: '#94a3b8', weight: 1.5, opacity: g.opacity }}
-              />
-            ))}
 
             {/* Route glow layer (always accent color for depth) */}
             {track.length > 1 && (

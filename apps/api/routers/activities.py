@@ -661,6 +661,7 @@ def get_route_siblings(
             "duration_s": s.duration_s,
             "temperature_f": s.temperature_f,
             "dew_point_f": s.dew_point_f,
+            "heat_adjustment_pct": s.heat_adjustment_pct,
             "workout_type": s.workout_type,
             "avg_hr": s.avg_hr,
             "name": s.name,
@@ -712,6 +713,79 @@ def get_route_siblings(
         resp["tracks"] = tracks
 
     return resp
+
+
+@router.get("/{activity_id}/route-siblings/splits")
+def get_route_sibling_splits(
+    activity_id: UUID,
+    sibling_ids: str = Query(..., description="Comma-separated sibling activity IDs"),
+    current_user: Athlete = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Lazy-load per-mile splits for route siblings.
+    Called on expand of the route history panel to keep initial page load fast.
+    """
+    activity = db.query(Activity).filter(
+        Activity.id == activity_id,
+        Activity.athlete_id == current_user.id,
+    ).first()
+    if not activity:
+        raise HTTPException(status_code=404, detail="Activity not found")
+
+    ids = []
+    for sid in sibling_ids.split(","):
+        sid = sid.strip()
+        if sid:
+            try:
+                ids.append(UUID(sid))
+            except ValueError:
+                continue
+
+    ids = ids[:6]
+
+    splits_by_activity = {}
+    if ids:
+        rows = (
+            db.query(ActivitySplit)
+            .filter(
+                ActivitySplit.activity_id.in_(ids),
+            )
+            .order_by(ActivitySplit.activity_id, ActivitySplit.split_number)
+            .all()
+        )
+        for row in rows:
+            aid = str(row.activity_id)
+            if aid not in splits_by_activity:
+                splits_by_activity[aid] = []
+            splits_by_activity[aid].append({
+                "split_number": row.split_number,
+                "distance": float(row.distance) if row.distance else None,
+                "elapsed_time": row.elapsed_time,
+                "moving_time": row.moving_time,
+                "average_heartrate": row.average_heartrate,
+                "gap_seconds_per_mile": float(row.gap_seconds_per_mile) if row.gap_seconds_per_mile else None,
+            })
+
+    current_splits = (
+        db.query(ActivitySplit)
+        .filter(ActivitySplit.activity_id == activity_id)
+        .order_by(ActivitySplit.split_number)
+        .all()
+    )
+    splits_by_activity[str(activity_id)] = [
+        {
+            "split_number": row.split_number,
+            "distance": float(row.distance) if row.distance else None,
+            "elapsed_time": row.elapsed_time,
+            "moving_time": row.moving_time,
+            "average_heartrate": row.average_heartrate,
+            "gap_seconds_per_mile": float(row.gap_seconds_per_mile) if row.gap_seconds_per_mile else None,
+        }
+        for row in current_splits
+    ]
+
+    return {"splits_by_activity": splits_by_activity}
 
 
 @router.put("/{activity_id}/title")
