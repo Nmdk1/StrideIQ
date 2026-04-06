@@ -1,8 +1,13 @@
 """
 Scheduled Digest Tasks
 
-Weekly email digests with top correlations and insights.
+Weekly email digests with coached interpretation of correlation findings.
 Runs via Celery Beat scheduler.
+
+Architecture: raw correlation findings are passed through an LLM coaching
+prompt that filters for actionability, resolves contradictions, and
+translates to athlete language.  The templated for-loop is kept as a
+degraded fallback if the LLM call fails.
 """
 
 from datetime import datetime, timedelta
@@ -14,80 +19,89 @@ from tasks import celery_app
 from models import Athlete
 from services.correlation_engine import analyze_correlations
 from services.email_service import email_service
+from services.n1_insight_generator import friendly_signal_name
 import logging
 
 logger = logging.getLogger(__name__)
+
+
+def _build_findings_context(correlations: List[dict]) -> str:
+    """Render correlation findings as structured text for the LLM prompt."""
+    lines: List[str] = []
+    for c in correlations:
+        raw = c.get("input_name", "unknown")
+        friendly = friendly_signal_name(raw)
+        coeff = c.get("correlation_coefficient", 0)
+        direction = "positive" if coeff > 0 else "negative"
+        strength = abs(coeff)
+        sample = c.get("sample_size", 0)
+        lines.append(
+            f"- {friendly} (internal: {raw}): r={coeff:+.2f}, "
+            f"direction={direction}, strength={strength:.0%}, "
+            f"sample={sample} runs"
+        )
+    return "\n".join(lines) if lines else "(no significant correlations found)"
 
 
 @celery_app.task(name="tasks.send_weekly_digest", bind=True)
 def send_weekly_digest_task(self: Task, athlete_id: str) -> Dict:
     """
     Send weekly digest email to a single athlete.
-    
-    Fetches their top correlations and sends formatted email.
+
+    Fetches their top correlations, passes them through an LLM coaching
+    filter, and sends the result as an email.
     """
     db: Session = get_db_sync()
-    
+
     try:
         athlete = db.query(Athlete).filter(Athlete.id == athlete_id).first()
         if not athlete:
             return {"status": "error", "message": "Athlete not found"}
-        
+
         if not athlete.email:
             return {"status": "skipped", "message": "No email address"}
-        
-        # Get correlations for last 90 days
+
         try:
             correlation_result = analyze_correlations(
                 athlete_id=str(athlete.id),
                 days=90,
-                db=db
+                db=db,
             )
-            
+
             if "error" in correlation_result:
-                logger.info(f"Skipping digest for {athlete.email}: {correlation_result['error']}")
+                logger.info("Skipping digest for %s: %s", athlete.email, correlation_result["error"])
                 return {"status": "skipped", "message": correlation_result["error"]}
-            
-            # Filter correlations
-            what_works = [
-                c for c in correlation_result.get("correlations", [])
-                if c.get("direction") == "negative"  # Negative correlation = better efficiency
-            ]
-            what_doesnt_work = [
-                c for c in correlation_result.get("correlations", [])
-                if c.get("direction") == "positive"  # Positive correlation = worse efficiency
-            ]
-            
-            # Sort by correlation strength
-            what_works.sort(key=lambda x: abs(x.get("correlation_coefficient", 0)), reverse=True)
-            what_doesnt_work.sort(key=lambda x: abs(x.get("correlation_coefficient", 0)), reverse=True)
-            
-            # Send email
-            success = email_service.send_digest(
+
+            all_correlations = correlation_result.get("correlations", [])
+            all_correlations.sort(key=lambda x: abs(x.get("correlation_coefficient", 0)), reverse=True)
+
+            findings_context = _build_findings_context(all_correlations[:20])
+
+            success = email_service.send_coached_digest(
                 to_email=athlete.email,
                 athlete_name=athlete.display_name,
-                what_works=what_works,
-                what_doesnt_work=what_doesnt_work,
-                analysis_period_days=90
+                findings_context=findings_context,
+                analysis_period_days=90,
+                total_correlations=len(all_correlations),
+                all_correlations=all_correlations,
             )
-            
+
             if success:
                 return {
                     "status": "success",
                     "athlete_id": str(athlete.id),
                     "email": athlete.email,
-                    "what_works_count": len(what_works),
-                    "what_doesnt_work_count": len(what_doesnt_work)
+                    "correlations_analyzed": len(all_correlations),
                 }
             else:
                 return {"status": "error", "message": "Failed to send email"}
-                
+
         except Exception as e:
-            logger.error(f"Error generating correlations for {athlete.email}: {str(e)}")
+            logger.error("Error generating digest for %s: %s", athlete.email, e)
             return {"status": "error", "message": str(e)}
-            
+
     except Exception as e:
-        logger.error(f"Error in send_weekly_digest_task: {str(e)}")
+        logger.error("Error in send_weekly_digest_task: %s", e)
         return {"status": "error", "message": str(e)}
     finally:
         db.close()
