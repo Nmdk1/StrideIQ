@@ -199,7 +199,7 @@ class EmailService:
                 timeout_s=30,
                 disable_thinking=True,
             )
-            body = (result.get("content") or "").strip()
+            body = (result.get("text") or "").strip()
             if not body or len(body) < 20:
                 logger.warning("LLM returned empty or too-short digest body")
                 return None
