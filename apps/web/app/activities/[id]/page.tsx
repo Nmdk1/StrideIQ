@@ -433,7 +433,6 @@ export default function ActivityDetailPage() {
                     activity.sport_type === 'walking' ? '#2dd4bf' :
                     '#34d399'
                   }
-                  mapHeight={350}
                   weather={{
                     temperature_f: activity.temperature_f,
                     weather_condition: activity.weather_condition,
@@ -470,7 +469,6 @@ export default function ActivityDetailPage() {
                   startCoords={activity.start_coords}
                   sportType={activity.sport_type || 'run'}
                   startTime={activity.start_time}
-                  mapHeight={350}
                   streamPoints={analysisData?.stream}
                   weather={{
                     temperature_f: activity.temperature_f,

@@ -263,7 +263,7 @@ export default function ActivityMapInner({
             ? 'fixed inset-0 z-50 bg-slate-900'
             : 'relative rounded-lg overflow-hidden border border-slate-700/30'
         }
-        style={isFullscreen ? undefined : { height }}
+        style={isFullscreen ? undefined : { aspectRatio: '4 / 3' }}
       >
         {/* Fullscreen toggle */}
         <button
