@@ -3,7 +3,7 @@
 import { MapContainer, TileLayer, Polyline, CircleMarker, Marker, useMap } from 'react-leaflet';
 import L, { LatLngBoundsExpression } from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import { useEffect, useMemo, useState, useCallback } from 'react';
+import { useEffect, useMemo, useState, useCallback, useRef } from 'react';
 import { Maximize2, Minimize2, X } from 'lucide-react';
 import type { StreamPoint } from '@/components/activities/rsi/hooks/useStreamAnalysis';
 
@@ -167,8 +167,12 @@ function InvalidateOnResize() {
 
 function FitBounds({ bounds }: { bounds: LatLngBoundsExpression }) {
   const map = useMap();
+  const didFit = useRef(false);
   useEffect(() => {
-    map.fitBounds(bounds, { padding: [40, 40] });
+    if (!didFit.current) {
+      map.fitBounds(bounds, { padding: [40, 40], maxZoom: 16 });
+      didFit.current = true;
+    }
   }, [map, bounds]);
   return null;
 }
@@ -209,8 +213,7 @@ export default function ActivityMapInner({
       if (lng < minLng) minLng = lng;
       if (lng > maxLng) maxLng = lng;
     }
-    const pad = 0.002;
-    return [[minLat - pad, minLng - pad], [maxLat + pad, maxLng + pad]] as LatLngBoundsExpression;
+    return [[minLat, minLng], [maxLat, maxLng]] as LatLngBoundsExpression;
   }, [track, ghosts, startCoords]);
 
   const mileMarkersAll = useMemo(() => computeMileMarkers(track, unitSystem), [track, unitSystem]);

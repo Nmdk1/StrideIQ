@@ -817,7 +817,7 @@ export function RunShapeCanvas({
   // Toggle state (AC-4): survives resize by design (useState)
   const [showHR, setShowHR] = useState(true);
   const [showCadence, setShowCadence] = useState(false);
-  const [showGrade, setShowGrade] = useState(false);
+  const [showGrade, setShowGrade] = useState(true);
 
   // A2: Default HR off when unreliable — init once when first analysis arrives.
   // Uses ref to avoid clobbering user's manual toggle on refetch.
@@ -1282,8 +1282,8 @@ export function RunShapeCanvas({
               type="monotone"
               dataKey="altitude"
               baseValue="dataMin"
-              fill="rgba(16,185,129,0.2)"
-              stroke="rgba(16,185,129,0.4)"
+              fill="rgba(16,185,129,0.35)"
+              stroke="rgba(16,185,129,0.6)"
               isAnimationActive={false}
             />
 

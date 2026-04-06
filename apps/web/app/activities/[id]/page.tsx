@@ -28,7 +28,6 @@ import { useUnits } from '@/lib/context/UnitsContext';
 import { API_CONFIG } from '@/lib/api/config';
 import { RunShapeCanvas } from '@/components/activities/rsi/RunShapeCanvas';
 import { useStreamAnalysis, isAnalysisData } from '@/components/activities/rsi/hooks/useStreamAnalysis';
-import { CoachableMoments } from '@/components/activities/rsi/CoachableMoments';
 import { ReflectionPrompt } from '@/components/activities/ReflectionPrompt';
 import RunContextAnalysis from '@/components/activities/RunContextAnalysis';
 import { WorkoutTypeSelector } from '@/components/activities/WorkoutTypeSelector';
@@ -465,19 +464,27 @@ export default function ActivityDetailPage() {
           />
         </div>
 
-        {/* ── 3. Coachable Moments (gated: confidence >= 0.8 AND moments.length > 0) ── */}
-        {analysisData && (
-          <CoachableMoments
-            moments={analysisData.moments}
-            confidence={analysisData.confidence}
-            className="mb-6"
-          />
-        )}
-        {/* AI derived-data attribution — required by Garmin API Brand Guidelines v2 §Combined/Derived Data */}
-        {analysisData && activity.provider === 'garmin' && (
-          <p className="text-xs text-slate-500 mb-4">
-            Insights derived in part from Garmin device-sourced data.
-          </p>
+        {/* ── 3. Route Map (directly below canvas — connected via StreamHoverContext) ── */}
+        {activity.gps_track && activity.gps_track.length > 1 && (
+          <div className="mb-6">
+            <RouteContext
+              activityId={activityId}
+              track={activity.gps_track}
+              startCoords={activity.start_coords}
+              sportType={activity.sport_type || 'run'}
+              startTime={activity.start_time}
+              mapHeight={350}
+              streamPoints={analysisData?.stream}
+              weather={{
+                temperature_f: activity.temperature_f,
+                weather_condition: activity.weather_condition,
+                humidity_pct: activity.humidity_pct,
+                heat_adjustment_pct: activity.heat_adjustment_pct,
+              }}
+              distanceM={activity.distance_m}
+              durationS={activity.moving_time_s || activity.elapsed_time_s}
+            />
+          </div>
         )}
 
         {/* ── 4. Reflection Prompt (quick 3-tap) ── */}
@@ -580,29 +587,6 @@ export default function ActivityDetailPage() {
                 </span>
               )}
             </div>
-          </div>
-        )}
-
-        {/* ── Route Map (secondary for runs — below metrics, above Runtoon) ── */}
-        {activity.gps_track && activity.gps_track.length > 1 && (
-          <div className="mb-6">
-            <RouteContext
-              activityId={activityId}
-              track={activity.gps_track}
-              startCoords={activity.start_coords}
-              sportType={activity.sport_type || 'run'}
-              startTime={activity.start_time}
-              mapHeight={300}
-              streamPoints={analysisData?.stream}
-              weather={{
-                temperature_f: activity.temperature_f,
-                weather_condition: activity.weather_condition,
-                humidity_pct: activity.humidity_pct,
-                heat_adjustment_pct: activity.heat_adjustment_pct,
-              }}
-              distanceM={activity.distance_m}
-              durationS={activity.moving_time_s || activity.elapsed_time_s}
-            />
           </div>
         )}
 

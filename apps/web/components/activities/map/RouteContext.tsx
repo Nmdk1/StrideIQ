@@ -6,7 +6,6 @@ import { MapPin, Ghost, ChevronDown } from 'lucide-react';
 import { useUnits } from '@/lib/context/UnitsContext';
 import { useStreamHover } from '@/lib/context/StreamHoverContext';
 import ActivityMap from './ActivityMap';
-import ElevationProfile from './ElevationProfile';
 import RoutePerformancePanel from './RoutePerformancePanel';
 import type { StreamPoint } from '@/components/activities/rsi/hooks/useStreamAnalysis';
 import type { WeatherData } from './ActivityMapInner';
@@ -145,16 +144,6 @@ export default function RouteContext({
         weather={weather}
         hoveredIndex={hoveredIndex}
       />
-
-      {/* Elevation profile */}
-      {streamPoints && streamPoints.some(p => p.altitude != null) && (
-        <ElevationProfile
-          points={streamPoints}
-          accentColor={accentColor}
-          height={48}
-          unitSystem={units}
-        />
-      )}
 
       {/* Route siblings / ghost controls */}
       {siblingCount > 0 && (
