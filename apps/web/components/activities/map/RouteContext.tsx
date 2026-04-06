@@ -1,8 +1,8 @@
 'use client';
 
 import { useState } from 'react';
-import { useQuery, useMutation } from '@tanstack/react-query';
-import { MapPin, Ghost, ChevronDown } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
+import { MapPin, ChevronDown } from 'lucide-react';
 import { useUnits } from '@/lib/context/UnitsContext';
 import { useStreamHover } from '@/lib/context/StreamHoverContext';
 import ActivityMap from './ActivityMap';
@@ -27,13 +27,6 @@ interface SiblingsResponse {
   count: number;
   conditions_match_count: number;
   siblings: RouteSiblingMeta[];
-  tracks?: Record<string, [number, number][]>;
-}
-
-interface GhostTrace {
-  id: string;
-  points: [number, number][];
-  opacity: number;
 }
 
 interface Props {
@@ -43,21 +36,10 @@ interface Props {
   sportType: string;
   startTime: string;
   accentColor?: string;
-  mapHeight?: number;
   streamPoints?: StreamPoint[];
   weather?: WeatherData | null;
   distanceM?: number;
   durationS?: number;
-}
-
-function computeGhostOpacity(siblingDate: string, currentDate: string): number {
-  const sib = new Date(siblingDate).getTime();
-  const cur = new Date(currentDate).getTime();
-  const daysAgo = Math.max(0, (cur - sib) / (1000 * 60 * 60 * 24));
-  if (daysAgo <= 30) return 0.15;
-  if (daysAgo <= 60) return 0.10;
-  if (daysAgo <= 90) return 0.07;
-  return 0.05;
 }
 
 function sportVerb(sport: string): string {
@@ -77,7 +59,6 @@ export default function RouteContext({
   sportType,
   startTime,
   accentColor = '#3b82f6',
-  mapHeight = 300,
   streamPoints,
   weather,
   distanceM,
@@ -85,8 +66,6 @@ export default function RouteContext({
 }: Props) {
   const { units } = useUnits();
   const { hoveredIndex } = useStreamHover();
-  const [showGhosts, setShowGhosts] = useState(false);
-  const [ghostTraces, setGhostTraces] = useState<GhostTrace[]>([]);
   const [showRouteHistory, setShowRouteHistory] = useState(false);
 
   const { data: siblings } = useQuery<SiblingsResponse>({
@@ -102,42 +81,15 @@ export default function RouteContext({
     staleTime: 5 * 60 * 1000,
   });
 
-  const ghostMutation = useMutation({
-    mutationFn: async () => {
-      const res = await fetch(
-        `/v1/activities/${activityId}/route-siblings?include_tracks=true&limit=30`,
-        { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } },
-      );
-      if (!res.ok) throw new Error('Failed to load ghost tracks');
-      return res.json() as Promise<SiblingsResponse>;
-    },
-    onSuccess: (data) => {
-      const traces: GhostTrace[] = [];
-      for (const sib of data.siblings) {
-        const pts = data.tracks?.[sib.id];
-        if (!pts || pts.length < 2) continue;
-        traces.push({
-          id: sib.id,
-          points: pts,
-          opacity: computeGhostOpacity(sib.start_time, startTime),
-        });
-      }
-      setGhostTraces(traces);
-      setShowGhosts(true);
-    },
-  });
-
   const siblingCount = siblings?.count ?? 0;
   const conditionsMatch = siblings?.conditions_match_count ?? 0;
-  const canShowGhosts = siblingCount >= 6;
 
   return (
     <div className="space-y-1">
       <ActivityMap
         track={track}
         startCoords={startCoords}
-        ghosts={showGhosts ? ghostTraces : []}
-        height={mapHeight}
+        ghosts={[]}
         accentColor={accentColor}
         unitSystem={units}
         streamPoints={streamPoints}
@@ -145,47 +97,24 @@ export default function RouteContext({
         hoveredIndex={hoveredIndex}
       />
 
-      {/* Route siblings / ghost controls */}
+      {/* Route siblings summary */}
       {siblingCount > 0 && (
         <div className="px-1 space-y-1">
-          <div className="flex items-center justify-between">
-            <button
-              onClick={() => setShowRouteHistory(!showRouteHistory)}
-              className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-slate-200 transition-colors"
-            >
-              <MapPin className="w-3 h-3" />
-              <span>
-                You&apos;ve {sportVerb(sportType)} from here {siblingCount} time{siblingCount !== 1 ? 's' : ''}
-                {conditionsMatch > 0 && (
-                  <span className="text-slate-500">
-                    {' '}· {conditionsMatch} in similar conditions
-                  </span>
-                )}
-              </span>
-              <ChevronDown className={`w-3 h-3 transition-transform ${showRouteHistory ? 'rotate-180' : ''}`} />
-            </button>
-
-            <div className="flex items-center gap-2">
-              {canShowGhosts && !showGhosts && (
-                <button
-                  onClick={() => ghostMutation.mutate()}
-                  disabled={ghostMutation.isPending}
-                  className="flex items-center gap-1 text-xs text-blue-400 hover:text-blue-300 transition-colors disabled:opacity-50"
-                >
-                  <Ghost className="w-3 h-3" />
-                  {ghostMutation.isPending ? 'Loading...' : 'Show ghosts'}
-                </button>
+          <button
+            onClick={() => setShowRouteHistory(!showRouteHistory)}
+            className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-slate-200 transition-colors"
+          >
+            <MapPin className="w-3 h-3" />
+            <span>
+              You&apos;ve {sportVerb(sportType)} from here {siblingCount} time{siblingCount !== 1 ? 's' : ''}
+              {conditionsMatch > 0 && (
+                <span className="text-slate-500">
+                  {' '}· {conditionsMatch} in similar conditions
+                </span>
               )}
-              {showGhosts && (
-                <button
-                  onClick={() => setShowGhosts(false)}
-                  className="text-xs text-slate-500 hover:text-slate-400 transition-colors"
-                >
-                  Hide ghosts
-                </button>
-              )}
-            </div>
-          </div>
+            </span>
+            <ChevronDown className={`w-3 h-3 transition-transform ${showRouteHistory ? 'rotate-180' : ''}`} />
+          </button>
 
           {showRouteHistory && siblings && distanceM != null && durationS != null && (
             <RoutePerformancePanel
