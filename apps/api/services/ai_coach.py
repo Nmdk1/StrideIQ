@@ -75,17 +75,23 @@ HIGH_STAKES_PATTERNS = [
 
 # Cost cap constants (ADR-061)
 # Canonical cap reference + builder addendum block: docs/COACH_RUNTIME_CAP_CONFIG.md
+#
+# Apr 2026: Universal Kimi K2.5 routing means every request is "premium lane."
+# Caps recalibrated for Kimi pricing ($0.38/M input, $1.72/M output) which is
+# ~13x cheaper than the Sonnet pricing these caps were originally designed for.
+# Daily request cap raised to 20 (was 3 when only complex queries used premium).
+# Monthly token budget raised to 500K (was 50K for Sonnet).
 COACH_MAX_REQUESTS_PER_DAY = int(os.getenv("COACH_MAX_REQUESTS_PER_DAY", "50"))
-COACH_MAX_OPUS_REQUESTS_PER_DAY = int(os.getenv("COACH_MAX_OPUS_REQUESTS_PER_DAY", "3"))
+COACH_MAX_OPUS_REQUESTS_PER_DAY = int(os.getenv("COACH_MAX_OPUS_REQUESTS_PER_DAY", "20"))
 COACH_MONTHLY_TOKEN_BUDGET = int(os.getenv("COACH_MONTHLY_TOKEN_BUDGET", "1000000"))
-COACH_MONTHLY_OPUS_TOKEN_BUDGET = int(os.getenv("COACH_MONTHLY_OPUS_TOKEN_BUDGET", "50000"))
+COACH_MONTHLY_OPUS_TOKEN_BUDGET = int(os.getenv("COACH_MONTHLY_OPUS_TOKEN_BUDGET", "500000"))
 # VIP premium-lane caps (founder bypass still uncapped). These are hard caps,
 # not multipliers, so VIP experience stays strong while preventing abuse.
 COACH_MAX_OPUS_REQUESTS_PER_DAY_VIP = int(
-    os.getenv("COACH_MAX_OPUS_REQUESTS_PER_DAY_VIP", "15")
+    os.getenv("COACH_MAX_OPUS_REQUESTS_PER_DAY_VIP", "30")
 )
 COACH_MONTHLY_OPUS_TOKEN_BUDGET_VIP = int(
-    os.getenv("COACH_MONTHLY_OPUS_TOKEN_BUDGET_VIP", "1000000")
+    os.getenv("COACH_MONTHLY_OPUS_TOKEN_BUDGET_VIP", "2000000")
 )
 COACH_MAX_INPUT_TOKENS = int(os.getenv("COACH_MAX_INPUT_TOKENS", "4000"))
 # 500 tokens was causing every response to get cut off mid-sentence.
@@ -653,8 +659,8 @@ Policy:
                 usage.opus_requests_today += 1
                 usage.opus_tokens_today += total_tokens
                 usage.opus_tokens_this_month += total_tokens
-                # Opus: $5/1M input, $25/1M output
-                cost_cents = int((input_tokens * 0.5 + output_tokens * 2.5) / 100)
+                # Kimi K2.5: $0.383/1M input, $1.72/1M output
+                cost_cents = int((input_tokens * 0.0383 + output_tokens * 0.172) / 100)
             elif "gemini" in model.lower():
                 # Gemini 3 Flash: $0.50/1M input, $3.00/1M output (Mar 2026)
                 cost_cents = int((input_tokens * 0.05 + output_tokens * 0.30) / 100)

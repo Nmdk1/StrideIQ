@@ -1836,6 +1836,22 @@ def _summarize_workout_structure(activity_id, db: Session) -> Optional[str]:
     if len(work_candidates) < 3:
         return None
 
+    # Guard: intervals require an alternating work/rest pattern.
+    # If there are zero rest splits between work splits, this is
+    # just a steady or progressively-paced run, not intervals.
+    if len(rest_candidates) == 0:
+        return None
+
+    # Guard: the pace gap between avg work and avg rest must be
+    # meaningful (>30s/mi).  Small gaps indicate natural pacing
+    # variation, not structured intervals.
+    rest_paces = [r["pace_s_per_mi"] for r in rest_candidates if r["pace_s_per_mi"] < 50000]
+    if rest_paces:
+        avg_work = sum(w["pace_s_per_mi"] for w in work_candidates) / len(work_candidates)
+        avg_rest = sum(rest_paces) / len(rest_paces)
+        if avg_rest - avg_work < 30:
+            return None
+
     work_paces = [w["pace_s_per_mi"] for w in work_candidates]
     work_hrs = [w["hr"] for w in work_candidates if w["hr"]]
     work_dists = [w["dist_mi"] for w in work_candidates]
