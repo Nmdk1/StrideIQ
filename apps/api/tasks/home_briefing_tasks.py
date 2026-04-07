@@ -177,6 +177,10 @@ def _build_briefing_prompt(athlete_id: str, db: Session) -> Optional[tuple]:
                 ws = _summarize_workout_structure(today_actual.id, db)
                 if ws:
                     today_completed["workout_structure"] = ws
+                if today_actual.run_shape and isinstance(today_actual.run_shape, dict):
+                    sc = today_actual.run_shape.get('summary', {}).get('workout_classification', '')
+                    if sc:
+                        today_completed["shape_classification"] = sc
             except Exception as _ws_err:
                 logger.debug("Workout structure detection skipped: %s", _ws_err)
 

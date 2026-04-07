@@ -2270,6 +2270,15 @@ def generate_coach_home_briefing(
                     "Use judgment: if the run_shape classification and this structure disagree, "
                     "trust the run_shape and mention the structure only as secondary context."
                 )
+        else:
+            parts.append(
+                "NO WORKOUT STRUCTURE DETECTED — the analysis system examined the splits "
+                "and determined this was a CONTINUOUS run, NOT intervals or repeats. "
+                "Do NOT describe this run as intervals, reps, repeats, or any structured workout. "
+                "Do NOT invent split-level data (fastest rep, slowest rep, rep count). "
+                "Describe it as the continuous run it was, using only the overall distance, "
+                "pace, HR, and elevation data provided."
+            )
         if planned_workout and planned_workout.get("has_workout"):
             plan_mi = planned_workout.get("distance_mi")
             plan_type = planned_workout.get("title") or planned_workout.get("workout_type")
