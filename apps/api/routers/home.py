@@ -2807,12 +2807,14 @@ def _build_rich_intelligence_context(athlete_id: str, db: Session) -> str:
     except Exception as e:
         logger.debug(f"Training story failed for home briefing ({athlete_id}): {e}")
 
-    # 7. Recent activity shapes — what the athlete actually did this week
+    # 7. Recent activity shapes — last 10 days only
     try:
+        ten_days_ago = datetime.now(timezone.utc) - timedelta(days=10)
         recent = db.query(Activity).filter(
             Activity.athlete_id == athlete_uuid,
             Activity.sport == "run",
             Activity.shape_sentence.isnot(None),
+            Activity.start_time >= ten_days_ago,
         ).order_by(Activity.start_time.desc()).limit(5).all()
         if recent:
             from services.coach_tools import _relative_date as _rel
@@ -2824,7 +2826,7 @@ def _build_rich_intelligence_context(athlete_id: str, db: Session) -> str:
                 lines.append(f"- {day} {rel}: {a.shape_sentence}")
             if lines:
                 sections.append(
-                    "--- This Week's Training (auto-detected from stream data) ---\n"
+                    "--- Recent Runs (auto-detected from stream data) ---\n"
                     + "\n".join(lines)
                 )
     except Exception as e:
