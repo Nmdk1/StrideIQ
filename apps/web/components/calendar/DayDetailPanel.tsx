@@ -135,11 +135,20 @@ export function DayDetailPanel({ date, isOpen, onClose }: DayDetailPanelProps) {
     return workouts.filter(w => w.id !== currentId && !w.completed && !w.skipped && !!w.date);
   }, [weekData?.workouts, planned?.id]);
 
-  const updateWorkoutMutation = useMutation({
+  const saveAllChangesMutation = useMutation({
     mutationFn: async () => {
       if (!planId || !planned?.id) throw new Error('Missing plan/workout id');
       setEditError(null);
 
+      // Step 1: Execute swap if a target is selected
+      if (swapTargetId) {
+        await apiClient.post(`/v2/plans/${planId}/swap-days`, {
+          workout_id_1: planned.id,
+          workout_id_2: swapTargetId,
+        });
+      }
+
+      // Step 2: Save detail edits
       const distanceValue = editForm.distance.trim();
       const distanceKm =
         distanceValue === ''
@@ -167,27 +176,7 @@ export function DayDetailPanel({ date, isOpen, onClose }: DayDetailPanelProps) {
       setSwapTargetId('');
     },
     onError: (e: any) => {
-      setEditError(e?.message || 'Unable to update workout.');
-    },
-  });
-
-  const swapDaysMutation = useMutation({
-    mutationFn: async () => {
-      if (!planId || !planned?.id) throw new Error('Missing plan/workout id');
-      if (!swapTargetId) throw new Error('Select a workout to swap with');
-      setEditError(null);
-      return apiClient.post(`/v2/plans/${planId}/swap-days`, {
-        workout_id_1: planned.id,
-        workout_id_2: swapTargetId,
-      });
-    },
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ['calendar'] });
-      setIsEditingPlan(false);
-      setSwapTargetId('');
-    },
-    onError: (e: any) => {
-      setEditError(e?.message || 'Unable to swap workouts.');
+      setEditError(e?.message || 'Unable to save changes.');
     },
   });
   
@@ -429,39 +418,30 @@ export function DayDetailPanel({ date, isOpen, onClose }: DayDetailPanelProps) {
                       </div>
                     )}
 
-                    {/* Swap section — primary quick action, shown first */}
-                    <div className="bg-purple-950/30 border border-purple-700/40 rounded-lg p-3">
-                      <div className="text-sm font-semibold text-purple-300 mb-2">Swap with another day</div>
+                    {/* Swap with another day */}
+                    <div className="bg-slate-900/50 border border-slate-700/50 rounded-lg p-3 space-y-3">
+                      <div className="text-sm font-semibold text-slate-400">Swap with another day</div>
                       {weekLoading ? (
                         <div className="text-sm text-slate-500">Loading week…</div>
                       ) : swapOptions.length === 0 ? (
                         <div className="text-sm text-slate-500">No swappable workouts this week</div>
                       ) : (
-                        <div className="flex gap-2">
-                          <select
-                            value={swapTargetId}
-                            onChange={(e) => setSwapTargetId(e.target.value)}
-                            className="flex-1 bg-slate-900 border border-purple-700/40 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-purple-500"
-                          >
-                            <option value="">Select day…</option>
-                            {swapOptions.map((w) => (
-                              <option key={w.id} value={w.id}>
-                                {w.day_name} — {w.title}
-                              </option>
-                            ))}
-                          </select>
-                          <button
-                            onClick={() => swapDaysMutation.mutate()}
-                            disabled={swapDaysMutation.isPending || !swapTargetId}
-                            className="px-4 py-2 bg-purple-600 hover:bg-purple-700 disabled:bg-slate-700 rounded-lg text-sm font-semibold transition-colors whitespace-nowrap"
-                          >
-                            {swapDaysMutation.isPending ? 'Swapping…' : 'Swap Days'}
-                          </button>
-                        </div>
+                        <select
+                          value={swapTargetId}
+                          onChange={(e) => setSwapTargetId(e.target.value)}
+                          className="w-full bg-slate-900 border border-slate-700/50 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-purple-500"
+                        >
+                          <option value="">Keep current day</option>
+                          {swapOptions.map((w) => (
+                            <option key={w.id} value={w.id}>
+                              {w.day_name} — {w.title}
+                            </option>
+                          ))}
+                        </select>
                       )}
                     </div>
 
-                    {/* Edit details section */}
+                    {/* Edit details */}
                     <div className="bg-slate-900/50 border border-slate-700/50 rounded-lg p-3 space-y-3">
                       <div className="text-sm font-semibold text-slate-400">Edit workout details</div>
                     {workoutTypesData?.can_modify === false && (
@@ -545,18 +525,19 @@ export function DayDetailPanel({ date, isOpen, onClose }: DayDetailPanelProps) {
                           disabled={workoutTypesData?.can_modify === false}
                         />
                       </div>
+                    </div>
+                    </div>
 
-                      <div className="col-span-1 flex items-end">
-                        <button
-                          onClick={() => updateWorkoutMutation.mutate()}
-                          disabled={updateWorkoutMutation.isPending || workoutTypesData?.can_modify === false}
-                          className="w-full px-3 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-700 rounded-lg text-sm font-semibold transition-colors"
-                        >
-                          {updateWorkoutMutation.isPending ? 'Saving…' : 'Save Details'}
-                        </button>
-                      </div>
-                    </div>
-                    </div>
+                    {/* Single save button for everything */}
+                    <button
+                      onClick={() => saveAllChangesMutation.mutate()}
+                      disabled={saveAllChangesMutation.isPending || workoutTypesData?.can_modify === false}
+                      className="w-full px-4 py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-700 rounded-lg text-sm font-semibold transition-colors"
+                    >
+                      {saveAllChangesMutation.isPending
+                        ? (swapTargetId ? 'Swapping & saving…' : 'Saving…')
+                        : (swapTargetId ? 'Swap & Save' : 'Save')}
+                    </button>
                   </div>
                 )}
               </section>
