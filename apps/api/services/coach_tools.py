@@ -118,15 +118,23 @@ def _relative_date(target: date, reference: Optional[date] = None) -> str:
         return "(tomorrow)"
     elif delta < 0:
         future = abs(delta)
-        if future <= 13:
+        if future <= 30:
             return f"(in {future} days)"
         weeks = future // 7
-        return f"(in {weeks} week{'s' if weeks != 1 else ''})"
-    elif delta <= 13:
+        days_rem = future % 7
+        if days_rem == 0:
+            return f"(in {weeks} weeks)"
+        return f"(in {weeks}w {days_rem}d)"
+    elif delta <= 30:
         return f"({delta} days ago)"
-    else:
+    elif delta <= 90:
         weeks = delta // 7
-        return f"({weeks} week{'s' if weeks != 1 else ''} ago)"
+        days_rem = delta % 7
+        if days_rem == 0:
+            return f"({weeks} weeks ago)"
+        return f"({weeks}w {days_rem}d ago)"
+    else:
+        return f"({delta} days ago)"
 
 
 def _preferred_units(db: Session, athlete_id: UUID) -> str:
@@ -3503,7 +3511,7 @@ def build_athlete_brief(db: Session, athlete_id: UUID) -> str:
 
     today = date.today()
     sections: List[str] = [
-        f"## Date Context\nToday is {today.isoformat()} ({today.strftime('%A')}). All dates below are absolute — compute relative time from today when speaking to the athlete."
+        f"## Date Context\nToday is {today.isoformat()} ({today.strftime('%A')}). All dates below include pre-computed relative labels like '(2 days ago)' or '(yesterday)'. USE those labels verbatim — do NOT compute your own relative time. NEVER say 'X days ago' unless that exact label appears in the data."
     ]
 
     # ── 1. IDENTITY ──────────────────────────────────────────────────

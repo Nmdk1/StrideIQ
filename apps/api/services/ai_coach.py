@@ -76,22 +76,22 @@ HIGH_STAKES_PATTERNS = [
 # Cost cap constants (ADR-061)
 # Canonical cap reference + builder addendum block: docs/COACH_RUNTIME_CAP_CONFIG.md
 #
-# Apr 2026: Universal Kimi K2.5 routing means every request is "premium lane."
-# Caps recalibrated for Kimi pricing ($0.38/M input, $1.72/M output) which is
-# ~13x cheaper than the Sonnet pricing these caps were originally designed for.
-# Daily request cap raised to 20 (was 3 when only complex queries used premium).
-# Monthly token budget raised to 500K (was 50K for Sonnet).
-COACH_MAX_REQUESTS_PER_DAY = int(os.getenv("COACH_MAX_REQUESTS_PER_DAY", "50"))
-COACH_MAX_OPUS_REQUESTS_PER_DAY = int(os.getenv("COACH_MAX_OPUS_REQUESTS_PER_DAY", "20"))
-COACH_MONTHLY_TOKEN_BUDGET = int(os.getenv("COACH_MONTHLY_TOKEN_BUDGET", "1000000"))
-COACH_MONTHLY_OPUS_TOKEN_BUDGET = int(os.getenv("COACH_MONTHLY_OPUS_TOKEN_BUDGET", "500000"))
-# VIP premium-lane caps (founder bypass still uncapped). These are hard caps,
-# not multipliers, so VIP experience stays strong while preventing abuse.
+# Apr 2026: Universal Kimi K2.5 routing — every request is "premium lane."
+# Kimi pricing ($0.38/M input, $1.72/M output) is ~13x cheaper than Sonnet.
+# Caps set high enough that no athlete should ever hit them during normal use.
+# At Kimi rates, 2M tokens/month ≈ $2.10/user. 5M tokens ≈ $5.25/user.
+# Capping an engaged athlete is a product-killer — keep guardrails for abuse
+# only, not for normal conversation volume.
+COACH_MAX_REQUESTS_PER_DAY = int(os.getenv("COACH_MAX_REQUESTS_PER_DAY", "100"))
+COACH_MAX_OPUS_REQUESTS_PER_DAY = int(os.getenv("COACH_MAX_OPUS_REQUESTS_PER_DAY", "50"))
+COACH_MONTHLY_TOKEN_BUDGET = int(os.getenv("COACH_MONTHLY_TOKEN_BUDGET", "5000000"))
+COACH_MONTHLY_OPUS_TOKEN_BUDGET = int(os.getenv("COACH_MONTHLY_OPUS_TOKEN_BUDGET", "2000000"))
+# VIP premium-lane caps (founder bypass still uncapped).
 COACH_MAX_OPUS_REQUESTS_PER_DAY_VIP = int(
-    os.getenv("COACH_MAX_OPUS_REQUESTS_PER_DAY_VIP", "30")
+    os.getenv("COACH_MAX_OPUS_REQUESTS_PER_DAY_VIP", "100")
 )
 COACH_MONTHLY_OPUS_TOKEN_BUDGET_VIP = int(
-    os.getenv("COACH_MONTHLY_OPUS_TOKEN_BUDGET_VIP", "2000000")
+    os.getenv("COACH_MONTHLY_OPUS_TOKEN_BUDGET_VIP", "5000000")
 )
 COACH_MAX_INPUT_TOKENS = int(os.getenv("COACH_MAX_INPUT_TOKENS", "4000"))
 # 500 tokens was causing every response to get cut off mid-sentence.
@@ -2552,7 +2552,8 @@ ATHLETE BRIEF:
                 context_parts.append("\nThis week's plan:")
                 for w in workouts:
                     status = "✓" if w.completed else "○"
-                    context_parts.append(f"  {status} {w.scheduled_date.strftime('%a')}: {w.title}")
+                    _w_rel = coach_tools._relative_date(w.scheduled_date, today) if w.scheduled_date else ""
+                    context_parts.append(f"  {status} {w.scheduled_date.strftime('%a %b %d')} {_w_rel}: {w.title}")
         
         # --- Recent Activity Summary (7 days) ---
         seven_days_ago = today - timedelta(days=7)
@@ -2572,7 +2573,8 @@ ATHLETE BRIEF:
                 distance_mi = (a.distance_m or 0) / 1609.344
                 pace = self._format_pace(a.duration_s, a.distance_m) if a.distance_m else "N/A"
                 hr = f"{a.avg_hr} bpm" if a.avg_hr else ""
-                context_parts.append(f"  - {a.start_time.strftime('%a %m/%d')}: {distance_mi:.1f} mi @ {pace} {hr}")
+                _a_rel = coach_tools._relative_date(a.start_time.date(), today) if a.start_time else ""
+                context_parts.append(f"  - {a.start_time.strftime('%a %b %d')} {_a_rel}: {distance_mi:.1f} mi @ {pace} {hr}")
         
         # --- 30-Day Summary ---
         thirty_days_ago = today - timedelta(days=30)
@@ -2624,7 +2626,8 @@ ATHLETE BRIEF:
                 else:
                     parts.append("Soreness: not reported")
                 if parts:
-                    context_parts.append(f"  {c.date.strftime('%m/%d')}: {' | '.join(parts)}")
+                    _c_rel = coach_tools._relative_date(c.date, today) if c.date else ""
+                    context_parts.append(f"  {c.date.strftime('%b %d')} {_c_rel}: {' | '.join(parts)}")
 
         # --- Garmin Watch Data (Health API) — last 7 days ---
         # This is device-measured biometric data (not athlete self-report).
@@ -2658,8 +2661,9 @@ ATHLETE BRIEF:
                 if g.body_battery_end is not None:
                     row_parts.append(f"Body Battery EOD: {g.body_battery_end}")
                 if row_parts:
-                    date_str = g.calendar_date.strftime("%m/%d")
-                    context_parts.append(f"  {date_str}: {' | '.join(row_parts)}")
+                    _g_rel = coach_tools._relative_date(g.calendar_date, today) if g.calendar_date else ""
+                    date_str = g.calendar_date.strftime("%b %d")
+                    context_parts.append(f"  {date_str} {_g_rel}: {' | '.join(row_parts)}")
 
         return "\n".join(context_parts)
     
@@ -4819,12 +4823,26 @@ ATHLETE BRIEF:
             try:
                 recent = coach_tools.get_recent_runs(self.db, athlete_id, days=7)
                 if recent.get("ok"):
+                    evidence = recent.get("data", {}).get("evidence", [])
                     runs = recent.get("data", {}).get("runs", [])
-                    if runs:
+                    if evidence:
+                        state_lines.append(f"Last 7 days detail ({len(evidence)} runs):")
+                        for ev in evidence:
+                            state_lines.append(f"  - {ev.get('date', 'unknown')}: {ev.get('value', '')}")
+                    elif runs:
+                        from datetime import date as _date_cls
+                        _today = _date_cls.today()
                         state_lines.append(f"Last 7 days detail ({len(runs)} runs):")
                         for run in runs:
+                            _raw = run.get('start_time', '')[:10]
+                            _rel = ""
+                            try:
+                                _rd = _date_cls.fromisoformat(_raw)
+                                _rel = " " + coach_tools._relative_date(_rd, _today)
+                            except Exception:
+                                pass
                             state_lines.append(
-                                f"  - {run.get('start_time', '')[:10]}: {run.get('name', 'Run')} | "
+                                f"  - {_raw}{_rel}: {run.get('name', 'Run')} | "
                                 f"{run.get('distance_mi', 0):.1f} mi @ {run.get('pace_per_mile', 'N/A')} | "
                                 f"HR avg:{run.get('avg_hr', 'N/A')} max:{run.get('max_hr', 'N/A')}"
                             )

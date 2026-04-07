@@ -1726,16 +1726,35 @@ def _summarize_workout_structure(activity_id, db: Session) -> Optional[str]:
 
     Returns None if no splits, < 4 splits, or no interval pattern detected.
 
-    Uses pace-aware classification:
-    - Warmup/cooldown must be slower than work pace (not just long splits)
-    - Trailing GPS artifacts are skipped for cooldown detection
-    - Time-based labeling when intervals cluster around round minutes
-    - Elevation gate: if pace variation is explained by terrain (GAP is
-      steady while actual pace varies), the run is hilly — not intervals
+    Gating order (fastest rejections first):
+    1. Shape-extractor gate — if run_shape already classified this as an
+       easy/steady/long run, skip split analysis entirely
+    2. Elevation gate — if pace variation correlates with terrain, not structure
+    3. Alternating pattern gate — real intervals alternate work/rest
+    4. Work rep consistency gate — real intervals have consistent rep lengths
+    5. Pace gap gate — meaningful differential between work and rest
     """
+    import statistics as _stats
+
     METERS_PER_MILE = 1609.344
 
     activity = db.query(Activity).filter(Activity.id == activity_id).first()
+    if not activity:
+        return None
+
+    # ── Gate 1: Shape-extractor veto ──
+    # The shape_extractor's classification uses full stream data (not just
+    # mile splits) and is far more reliable for distinguishing steady runs
+    # from structured workouts. If it says easy/long/gray, trust it.
+    NON_INTERVAL_SHAPES = {
+        'easy_run', 'long_run', 'medium_long_run', 'gray_zone_run',
+    }
+    run_shape_data = activity.run_shape
+    if run_shape_data and isinstance(run_shape_data, dict):
+        summary_data = run_shape_data.get('summary', {})
+        shape_class = summary_data.get('workout_classification', '')
+        if shape_class in NON_INTERVAL_SHAPES:
+            return None
 
     splits = (
         db.query(ActivitySplit)
@@ -1746,11 +1765,12 @@ def _summarize_workout_structure(activity_id, db: Session) -> Optional[str]:
     if not splits or len(splits) < 4:
         return None
 
-    elev_gain_m = float(activity.total_elevation_gain or 0) if activity else 0
+    # ── Gate 2: Elevation gate ──
+    elev_gain_m = float(activity.total_elevation_gain or 0)
     total_dist_m = sum(float(s.distance or 0) for s in splits)
     total_dist_mi = total_dist_m / METERS_PER_MILE if total_dist_m > 0 else 0
     elev_per_mile_m = elev_gain_m / total_dist_mi if total_dist_mi > 0 else 0
-    is_hilly = elev_per_mile_m > 15  # >~50 ft/mi of gain
+    is_hilly = elev_per_mile_m > 15
 
     if is_hilly:
         gap_values = [
@@ -1760,7 +1780,6 @@ def _summarize_workout_structure(activity_id, db: Session) -> Optional[str]:
             and float(s.distance or 0) / METERS_PER_MILE > 0.05
         ]
         if len(gap_values) >= 4:
-            import statistics as _stats
             gap_mean = _stats.mean(gap_values)
             if gap_mean > 0:
                 gap_cv = _stats.stdev(gap_values) / gap_mean
@@ -1789,8 +1808,10 @@ def _summarize_workout_structure(activity_id, db: Session) -> Optional[str]:
     if len(real_paces) < 4:
         return None
 
-    q25_pace = real_paces[len(real_paces) // 4]
-    work_pace_cutoff = q25_pace * 1.15
+    # Threshold: median-based with a tighter cutoff than the old q25 * 1.15.
+    # Using median avoids skew from a single fast mile on an otherwise easy run.
+    median_pace = real_paces[len(real_paces) // 2]
+    work_pace_cutoff = median_pace * 0.92  # Splits must be >=8% faster than median to be "work"
 
     warmup_splits = []
     i = 0
@@ -1836,20 +1857,49 @@ def _summarize_workout_structure(activity_id, db: Session) -> Optional[str]:
     if len(work_candidates) < 3:
         return None
 
-    # Guard: intervals require an alternating work/rest pattern.
-    # If there are zero rest splits between work splits, this is
-    # just a steady or progressively-paced run, not intervals.
+    # ── Gate 3: Alternating work/rest pattern ──
+    # Real intervals alternate work and rest. If there are no rest splits
+    # between work splits, this is a steady or progressive run.
     if len(rest_candidates) == 0:
         return None
 
-    # Guard: the pace gap between avg work and avg rest must be
-    # meaningful (>30s/mi).  Small gaps indicate natural pacing
-    # variation, not structured intervals.
+    # Work:rest ratio — real intervals need recovery between reps.
+    # >=2 work per 1 rest is generous (e.g., 6x800 with 5 recovery jogs).
+    # If the ratio is much higher, the "rest" splits are noise.
+    if len(work_candidates) > len(rest_candidates) * 3:
+        return None
+
+    # Check actual alternation: label each middle split as W or R and
+    # verify the sequence has at least 2 W→R or R→W transitions.
+    labels = []
+    for sp in middle:
+        if sp in work_candidates:
+            labels.append('W')
+        else:
+            labels.append('R')
+    transitions = sum(1 for idx in range(len(labels) - 1) if labels[idx] != labels[idx + 1])
+    if transitions < 2:
+        return None
+
+    # ── Gate 4: Work rep consistency ──
+    # Real intervals have reasonably consistent rep lengths.
+    work_dists_m_check = [w["dist_m"] for w in work_candidates]
+    avg_work_dist_m = sum(work_dists_m_check) / len(work_dists_m_check)
+    if avg_work_dist_m > 0:
+        try:
+            dist_cv = _stats.stdev(work_dists_m_check) / avg_work_dist_m
+            if dist_cv > 0.50:
+                return None
+        except _stats.StatisticsError:
+            pass
+
+    # ── Gate 5: Pace gap ──
+    # The pace gap between avg work and avg rest must be meaningful (>=45s/mi).
     rest_paces = [r["pace_s_per_mi"] for r in rest_candidates if r["pace_s_per_mi"] < 50000]
     if rest_paces:
         avg_work = sum(w["pace_s_per_mi"] for w in work_candidates) / len(work_candidates)
         avg_rest = sum(rest_paces) / len(rest_paces)
-        if avg_rest - avg_work < 30:
+        if avg_rest - avg_work < 45:
             return None
 
     work_paces = [w["pace_s_per_mi"] for w in work_candidates]
@@ -2202,11 +2252,24 @@ def generate_coach_home_briefing(
         parts.append(today_line)
         workout_structure = c.get("workout_structure")
         if workout_structure:
-            parts.append(
-                f"WORKOUT STRUCTURE (from split data — use this instead of the average pace above):\n  {workout_structure}\n"
-                "NOTE: The average pace above is meaningless for structured workouts. "
-                "It blends warmup, work intervals, and rest jogs. Coach from the split breakdown, not the average."
+            shape_class = c.get("shape_classification", "")
+            structure_agrees = shape_class in (
+                'track_intervals', 'threshold_intervals', 'hill_repeats',
+                'fartlek', 'tempo', 'over_under', 'progression', 'strides', '',
             )
+            if structure_agrees:
+                parts.append(
+                    f"WORKOUT STRUCTURE (from split data — confirmed by stream analysis):\n  {workout_structure}\n"
+                    "The average pace blends warmup, work intervals, and rest jogs. "
+                    "Coach from the split breakdown for this structured workout."
+                )
+            else:
+                parts.append(
+                    f"POSSIBLE WORKOUT STRUCTURE (from split data — stream analysis classified this as '{shape_class}', "
+                    f"which may indicate natural pace variation rather than structured intervals):\n  {workout_structure}\n"
+                    "Use judgment: if the run_shape classification and this structure disagree, "
+                    "trust the run_shape and mention the structure only as secondary context."
+                )
         if planned_workout and planned_workout.get("has_workout"):
             plan_mi = planned_workout.get("distance_mi")
             plan_type = planned_workout.get("title") or planned_workout.get("workout_type")
@@ -2743,10 +2806,13 @@ def _build_rich_intelligence_context(athlete_id: str, db: Session) -> str:
             Activity.shape_sentence.isnot(None),
         ).order_by(Activity.start_time.desc()).limit(5).all()
         if recent:
+            from services.coach_tools import _relative_date as _rel
+            _today_d = date.today()
             lines = []
             for a in recent:
-                day = a.start_time.strftime("%a") if a.start_time else "?"
-                lines.append(f"- {day}: {a.shape_sentence}")
+                day = a.start_time.strftime("%a %b %d") if a.start_time else "?"
+                rel = _rel(a.start_time.date(), _today_d) if a.start_time else ""
+                lines.append(f"- {day} {rel}: {a.shape_sentence}")
             if lines:
                 sections.append(
                     "--- This Week's Training (auto-detected from stream data) ---\n"
@@ -3690,6 +3756,11 @@ async def get_home_data(
                         ws = _summarize_workout_structure(today_actual.id, db)
                         if ws:
                             today_completed["workout_structure"] = ws
+                        # Pass shape classification for prompt authority gating
+                        if today_actual.run_shape and isinstance(today_actual.run_shape, dict):
+                            sc = today_actual.run_shape.get('summary', {}).get('workout_classification', '')
+                            if sc:
+                                today_completed["shape_classification"] = sc
                     except Exception as _ws_err:
                         logger.debug("Workout structure detection skipped: %s", _ws_err)
 
