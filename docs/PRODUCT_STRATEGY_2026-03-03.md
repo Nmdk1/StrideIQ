@@ -308,11 +308,21 @@ load, producing findings like "your efficiency improves when protein
 exceeds 140g on the day before intervals." Without this connection,
 it's MyFitnessPal with fewer features.
 
-Two paths: integrate with an existing tracker (MyFitnessPal API,
-Cronometer) or build AI-powered food identification and tracking
-natively. The integration path is faster; the native path is stickier.
+**Architecture decided (Apr 8, 2026):** Build our own. LLM vision model
+(GPT-5.4 Mini or Kimi K2.5) identifies food and estimates portions from
+photos. USDA FoodData Central provides verified macro values. This
+separates identification error (manageable) from macro accuracy (solved
+by database lookup). Third-party APIs evaluated and rejected: Passio AI
+($1,800/mo at our scale), Edamam (cumulative licensing trap, smallest
+database), January AI ($1,499/mo). FatSecret deferred as fallback if
+USDA coverage proves insufficient.
 
-**Status:** Strategic priority. Requires scoping after coach tier.
+Athlete confirmation flow + meal template learning compound accuracy
+over time. Cost: ~$13.50/month at 30 athletes. Full CRUD API, correlation
+engine wiring, and nutrition model already exist.
+
+**Status:** Researched and scoped. See `docs/specs/NUTRITION_PHOTO_TRACKING_SPEC.md`.
+Estimated: 2 builder sessions.
 
 ## Connection to Current Build (Updated Apr 8, 2026)
 
