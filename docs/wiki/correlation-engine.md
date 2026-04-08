@@ -112,6 +112,7 @@ Currently only `cutback_frequency` and `quality_spacing_min_hours` are fully con
 
 ## What's Next
 
+- **HRV÷RHR compound signal** — derive `hrv_rhr_ratio` (HRV ÷ RHR) in the input builder as a compound recovery metric. ~10 lines in `correlation_engine.py`, no migration. Builder instructions at `docs/BUILDER_INSTRUCTIONS_2026-04-08_HRV_RHR_COMPOUND_SIGNAL.md`.
 - Wire `limiter` and `primary_quality_emphasis` from fingerprint bridge into `n1_engine.py` session scheduling
 - Athlete Hypothesis Testing — athlete-stated hypotheses tested against individual data
 - Cohort Intelligence (Layer 11) — matching confirmed individual patterns across athletes at ~500 users

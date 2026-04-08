@@ -1,5 +1,10 @@
 # Wiki Log
 
+## [2026-04-08] strategy-update | Strategy priorities 14-16 added
+
+- Added Compound Recovery Signals (14), Personal Coach Tier (15), AI Nutrition Intelligence (16) to product-vision.md
+- Added HRV÷RHR compound signal to correlation-engine.md What's Next
+
 ## [2026-04-08] review-fixes | Founder review — 5 corrections
 
 - **Fixed:** Ghost traces incorrectly stated as removed; they are live in production (`RouteContext.tsx`, `RouteHistory.tsx`, opacity tiers by recency)

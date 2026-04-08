@@ -73,6 +73,9 @@ From `docs/PRODUCT_STRATEGY_2026-03-03.md` (13 priorities, ranked):
 11. **Forward-Projection of Findings** — prompt-engineering leverage
 12. **Intelligent Maps** — screenshot virality (6-step build sequence)
 13. **Cohort Intelligence** — build at ~500 users
+14. **Compound Recovery Signals** — HRV÷RHR ratio as derived correlation input (scoped, 1 session)
+15. **Personal Coach Tier** — service model (founder coaches using StrideIQ) vs platform model (coaches bring athletes). Requires dedicated planning.
+16. **AI Nutrition Intelligence** — nutrition data into the correlation engine, not a standalone food logger. Integration (MFP/Cronometer) or native AI path.
 
 ## What's Built (Apr 2026)
 
