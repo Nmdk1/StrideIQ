@@ -21,6 +21,31 @@ from sqlalchemy.orm import Session
 
 logger = logging.getLogger(__name__)
 
+# ── Athlete-facing suppression gates ──────────────────────────────────
+# These signals produce statistically real correlations but are either
+# unreliable (passive sensor noise) or universally true (every runner is
+# slower in humidity). They stay in the correlation engine for internal
+# use but NEVER reach the athlete through any surface.
+
+_SUPPRESSED_SIGNALS: frozenset = frozenset({
+    "garmin_steps",         # counts driving, stairs, fidgeting — not reliable
+    "daily_step_count",     # alias
+    "garmin_active_time_s", # passive accelerometer, same noise source
+    "garmin_body_battery_end",  # unreliable per founder
+})
+
+_ENVIRONMENT_SIGNALS: frozenset = frozenset({
+    "dew_point_f",
+    "temperature_f",
+    "humidity_pct",
+    "heat_adjustment_pct",
+})
+
+
+def _is_suppressed_for_athlete(input_name: str) -> bool:
+    """True if this signal should never appear in athlete-facing surfaces."""
+    return input_name in _SUPPRESSED_SIGNALS or input_name in _ENVIRONMENT_SIGNALS
+
 
 SIGNAL_UNITS: Dict[str, str] = {
     "sleep_hours": "hours", "sleep_h": "hours",
@@ -183,8 +208,13 @@ def get_confirmed_findings(
 
     Includes both confirmed (3+) and emerging (1-2) findings so the LLM
     has the full picture the Progress page shows.
+
+    Suppressed signals (passive noise, universally-true environment) are
+    filtered out so they never reach athlete-facing surfaces.
     """
     from models import CorrelationFinding as CF
+
+    all_suppressed = _SUPPRESSED_SIGNALS | _ENVIRONMENT_SIGNALS
 
     return (
         db.query(CF)
@@ -192,6 +222,7 @@ def get_confirmed_findings(
             CF.athlete_id == athlete_id,
             CF.is_active == True,  # noqa: E712
             CF.times_confirmed >= min_confirmed,
+            ~CF.input_name.in_(all_suppressed),
         )
         .order_by(CF.times_confirmed.desc())
         .limit(limit)
@@ -350,6 +381,8 @@ def build_fingerprint_prompt_section(
         else:
             active.append(f)
 
+    all_suppressed = _SUPPRESSED_SIGNALS | _ENVIRONMENT_SIGNALS
+
     if not emerging:
         from models import CorrelationFinding as CF
 
@@ -359,6 +392,7 @@ def build_fingerprint_prompt_section(
                 CF.athlete_id == athlete_id,
                 CF.is_active == True,  # noqa: E712
                 CF.lifecycle_state == "emerging",
+                ~CF.input_name.in_(all_suppressed),
                 ~CF.id.in_(finding_ids) if finding_ids else True,
             )
             .order_by(CF.lifecycle_state_updated_at.desc().nullslast())
@@ -366,6 +400,8 @@ def build_fingerprint_prompt_section(
             .all()
         )
         emerging.extend(extra_emerging)
+    else:
+        emerging = [e for e in emerging if e.input_name not in all_suppressed]
 
     if emerging:
         emerging.sort(

@@ -1429,14 +1429,16 @@ def _assemble_patterns_data(
     forming: Optional[PatternsFormingResponse] = None
 
     try:
-        # Get all active findings regardless of cooldown for display
         from models import CorrelationFinding
+        from services.fingerprint_context import _SUPPRESSED_SIGNALS, _ENVIRONMENT_SIGNALS
+        _suppressed = _SUPPRESSED_SIGNALS | _ENVIRONMENT_SIGNALS
         findings = (
             db.query(CorrelationFinding)
             .filter(
                 CorrelationFinding.athlete_id == athlete_id,
                 CorrelationFinding.is_active == True,  # noqa: E712
                 CorrelationFinding.times_confirmed >= 1,
+                ~CorrelationFinding.input_name.in_(_suppressed),
             )
             .order_by((CorrelationFinding.times_confirmed * CorrelationFinding.confidence).desc())
             .limit(2)
@@ -2017,13 +2019,15 @@ def _assemble_knowledge(athlete_id, db: Session) -> KnowledgeResponse:
     """Deterministic assembly of all Phase 1 knowledge data."""
     from services.training_load import TrainingLoadCalculator
 
-    # 1. Query all active correlation findings
+    from services.fingerprint_context import _SUPPRESSED_SIGNALS, _ENVIRONMENT_SIGNALS
+    _suppressed = _SUPPRESSED_SIGNALS | _ENVIRONMENT_SIGNALS
     findings = (
         db.query(CorrelationFinding)
         .filter(
             CorrelationFinding.athlete_id == athlete_id,
             CorrelationFinding.is_active.is_(True),
             CorrelationFinding.times_confirmed >= 1,
+            ~CorrelationFinding.input_name.in_(_suppressed),
         )
         .order_by(
             (CorrelationFinding.times_confirmed * CorrelationFinding.confidence).desc()

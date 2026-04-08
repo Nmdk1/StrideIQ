@@ -189,7 +189,8 @@ def _confidence_tier(times_confirmed: int) -> str:
 
 
 def _is_athlete_understandable(input_name: str) -> bool:
-    return input_name not in _GARMIN_NOISE_INPUTS
+    from services.fingerprint_context import _is_suppressed_for_athlete
+    return not _is_suppressed_for_athlete(input_name)
 
 
 _JARGON_REPLACEMENTS = [
@@ -911,8 +912,9 @@ def _build_race_counterevidence(
 # ---------------------------------------------------------------------------
 
 def _is_garmin_noise(field_name: str) -> bool:
-    """Check if a field is a garmin noise metric (passive/behavioral, not physiological)."""
-    return field_name in _GARMIN_NOISE_INPUTS
+    """Check if a field is garmin noise or universally-true environment."""
+    from services.fingerprint_context import _is_suppressed_for_athlete
+    return _is_suppressed_for_athlete(field_name)
 
 
 # Subjective inputs and the Garmin metrics that measure the same phenomenon.

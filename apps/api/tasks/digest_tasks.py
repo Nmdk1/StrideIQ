@@ -19,6 +19,7 @@ from tasks import celery_app
 from models import Athlete
 from services.correlation_engine import analyze_correlations
 from services.email_service import email_service
+from services.fingerprint_context import _SUPPRESSED_SIGNALS, _ENVIRONMENT_SIGNALS
 from services.n1_insight_generator import friendly_signal_name
 import logging
 
@@ -72,7 +73,11 @@ def send_weekly_digest_task(self: Task, athlete_id: str) -> Dict:
                 logger.info("Skipping digest for %s: %s", athlete.email, correlation_result["error"])
                 return {"status": "skipped", "message": correlation_result["error"]}
 
-            all_correlations = correlation_result.get("correlations", [])
+            _suppressed = _SUPPRESSED_SIGNALS | _ENVIRONMENT_SIGNALS
+            all_correlations = [
+                c for c in correlation_result.get("correlations", [])
+                if c.get("input_name") not in _suppressed
+            ]
             all_correlations.sort(key=lambda x: abs(x.get("correlation_coefficient", 0)), reverse=True)
 
             findings_context = _build_findings_context(all_correlations[:20])

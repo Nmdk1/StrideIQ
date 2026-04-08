@@ -2580,13 +2580,19 @@ def compute_coach_noticed(
     try:
         from uuid import UUID as _UUID
         from models import CorrelationFinding as _CF
-        from services.fingerprint_context import _format_value_with_unit
+        from services.fingerprint_context import (
+            _format_value_with_unit,
+            _SUPPRESSED_SIGNALS,
+            _ENVIRONMENT_SIGNALS,
+        )
+        _suppressed = _SUPPRESSED_SIGNALS | _ENVIRONMENT_SIGNALS
         eligible = (
             db.query(_CF)
             .filter(
                 _CF.athlete_id == _UUID(athlete_id),
                 _CF.is_active == True,  # noqa: E712
                 _CF.times_confirmed >= 3,
+                ~_CF.input_name.in_(_suppressed),
             )
             .order_by(_CF.times_confirmed.desc(), _CF.last_confirmed_at.desc())
             .limit(5)

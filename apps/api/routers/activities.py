@@ -891,6 +891,7 @@ def get_activity_findings(
     Return up to 3 relevant active findings for this activity.
     """
     from models import CorrelationFinding as _CF
+    from services.fingerprint_context import _SUPPRESSED_SIGNALS, _ENVIRONMENT_SIGNALS
 
     activity = db.query(Activity).filter(
         Activity.id == activity_id,
@@ -900,12 +901,14 @@ def get_activity_findings(
     if not activity:
         raise HTTPException(status_code=404, detail="Activity not found")
 
+    _suppressed = _SUPPRESSED_SIGNALS | _ENVIRONMENT_SIGNALS
     findings = (
         db.query(_CF)
         .filter(
             _CF.athlete_id == current_user.id,
             _CF.is_active.is_(True),
             _CF.times_confirmed >= 3,
+            ~_CF.input_name.in_(_suppressed),
         )
         .order_by(_CF.times_confirmed.desc())
         .limit(3)
