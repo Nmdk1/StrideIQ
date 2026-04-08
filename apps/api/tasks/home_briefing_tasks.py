@@ -234,6 +234,29 @@ def _build_briefing_prompt(athlete_id: str, db: Session) -> Optional[tuple]:
             from routers.home import _build_checkin_data_dict
             checkin_data_dict = _build_checkin_data_dict(existing_checkin)
 
+        upcoming_plan_list = []
+        if active_plan:
+            _upcoming_days = (
+                db.query(PlannedWorkout)
+                .filter(
+                    PlannedWorkout.plan_id == active_plan.id,
+                    PlannedWorkout.scheduled_date > today,
+                    PlannedWorkout.scheduled_date <= today + timedelta(days=3),
+                )
+                .order_by(PlannedWorkout.scheduled_date)
+                .all()
+            )
+            for pw in _upcoming_days:
+                _pw_mi = round(pw.target_distance_km * 0.621371, 1) if pw.target_distance_km else None
+                upcoming_plan_list.append({
+                    "date": pw.scheduled_date.isoformat(),
+                    "day_name": pw.scheduled_date.strftime("%A"),
+                    "workout_type": pw.workout_type,
+                    "title": pw.title,
+                    "distance_mi": _pw_mi,
+                    "description": pw.description,
+                })
+
         from routers.home import generate_coach_home_briefing
 
         # skip_cache=True: bypass the legacy coach_home_briefing:{athlete_id}:{hash}
@@ -249,6 +272,7 @@ def _build_briefing_prompt(athlete_id: str, db: Session) -> Optional[tuple]:
             checkin_data=checkin_data_dict,
             race_data=race_data_dict,
             skip_cache=True,
+            upcoming_plan=upcoming_plan_list if upcoming_plan_list else None,
         )
 
         if len(prep) == 1:

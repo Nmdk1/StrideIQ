@@ -1993,6 +1993,7 @@ def generate_coach_home_briefing(
     checkin_data: Optional[dict] = None,
     race_data: Optional[dict] = None,
     skip_cache: bool = False,
+    upcoming_plan: Optional[list] = None,
 ) -> tuple:
     """
     Prepare everything the LLM needs (DB work on request thread), then
@@ -2022,6 +2023,7 @@ def generate_coach_home_briefing(
         "planned": planned_workout,
         "checkin": checkin_data,
         "race": race_data,
+        "upcoming": upcoming_plan,
     }, sort_keys=True, default=str)
     data_hash = hashlib.md5(cache_input.encode()).hexdigest()[:12]
     cache_key = f"coach_home_briefing:{athlete_id}:{data_hash}"
@@ -2291,6 +2293,29 @@ def generate_coach_home_briefing(
     else:
         parts.append("No planned workout and nothing completed yet today.")
 
+    if upcoming_plan:
+        _up_lines = ["=== UPCOMING PLAN (next 1-3 days) ==="]
+        for _up in upcoming_plan:
+            _up_type = _up.get("title") or _up.get("workout_type") or "workout"
+            _up_dist = f", {_up['distance_mi']}mi" if _up.get("distance_mi") else ""
+            _up_desc = f" — {_up['description']}" if _up.get("description") else ""
+            _up_lines.append(f"- {_up['day_name']}: {_up_type}{_up_dist}{_up_desc}")
+        _up_lines.extend([
+            "",
+            "PLAN-AWARENESS RULES (non-negotiable):",
+            "- NEVER suggest rest, easy days, or alternative sessions on days when a quality "
+            "workout (threshold, intervals, tempo, long run) is scheduled.",
+            "- Frame today's session in the context of what is COMING, not what you imagine "
+            "should come. 'Good setup for tomorrow's threshold' not 'take it easy tomorrow.'",
+            "- If the athlete ran easy today and has quality work tomorrow, frame the easy run "
+            "as preparation: fueling, hydration, sleep priority.",
+            "- If quality work is scheduled within 48 hours, forward-looking advice should "
+            "reference that specific session by name and type.",
+            "- You may note when the upcoming plan looks heavy relative to current fatigue, "
+            "but do NOT override the plan. The athlete and plan generator decide the schedule.",
+        ])
+        parts.extend(_up_lines)
+
     if checkin_data:
         soreness_label = checkin_data.get("soreness_label")
         soreness_str = soreness_label if soreness_label else "not reported today — do NOT claim any soreness"
@@ -2543,11 +2568,11 @@ def generate_coach_home_briefing(
 
     schema_fields = {
         "coach_noticed": f"The single most important coaching observation the athlete doesn't already know. If a daily intelligence rule fired, lead with that. Otherwise draw from wellness trends, training load signals, or recent activity patterns. The athlete should read this and think 'I didn't know that.' 1-2 sentences. BE SPECIFIC: describe what you observed using the athlete's training units — pace in min/mi, distances in miles, sleep in hours, time as AM/PM, frequency as counts. Never be vague about the pattern. 'Your easy pace changes with time of day' is too vague. 'Your easy runs before 7 AM have been consistently slower across 18 observations — there's a threshold around 7 AM' is specific. BANNED: r-values, p-values, correlation coefficients, 'statistically significant', z-scores, any statistical language. Use coaching language, not statistics.{_lane(coach_noticed_source)}",
-        "today_context": f"Action-focused context: if run completed, state the result then specify next steps; if not yet, describe what today should look like. Must include a concrete next action. 1-2 sentences.{_lane(today_summary)}",
+        "today_context": f"Action-focused context: if run completed, state the result then specify next steps referencing the UPCOMING PLAN if available; if not yet, describe what today should look like. Must include a concrete next action. If tomorrow has a quality session scheduled, next steps should prepare for it (fueling, sleep, hydration). 1-2 sentences.{_lane(today_summary)}",
         "week_assessment": f"Implication: explain what this week's trajectory means for near-term training direction, based on actual training not plan adherence. 1 sentence.{_lane('')}",
         "checkin_reaction": f"Acknowledge how they feel FIRST, then guide next steps. If they feel good despite high load, validate that and suggest recovery actions to maintain it. Never contradict their self-report. 1-2 sentences.{_lane(checkin_summary)}",
         "race_assessment": f"Honest readiness assessment for their race based on current fitness, not plan adherence. 1-2 sentences.{_lane(race_summary)}",
-        "morning_voice": f"The first thing the athlete reads. ONE paragraph, 2-3 sentences. Follow this structure exactly: Sentence 1: State what they did today with one specific number (distance, pace, or HR). Sentence 2: Connect it to their recent training pattern — volume trend this week, load block context, or a personal fingerprint pattern. Sentence 3 (optional): One concrete forward-looking action for TOMORROW only. CRITICAL RULES: If the athlete already ran today, NEVER tell them to rest TODAY or do zero running TODAY — their run is done; guidance is about tomorrow. NEVER reference the briefing itself, synced data, data refreshes, or system internals. NEVER say 'home briefing', 'synced activity', 'refreshed'. Must cite at least one specific number (pace, distance, HR — NOT internal metrics). ABSOLUTE BAN on CTL, ATL, TSB, chronic load, acute load, form score, durability index, recovery half-life, injury risk score, 'confirmed N times', 'r=', 'correlation'.{_lane(fingerprint_summary)}",
+        "morning_voice": f"The first thing the athlete reads. ONE paragraph, 2-3 sentences. Follow this structure exactly: Sentence 1: State what they did today with one specific number (distance, pace, or HR). Sentence 2: Connect it to their recent training pattern — volume trend this week, load block context, or a personal fingerprint pattern. Sentence 3 (optional): One concrete forward-looking action for TOMORROW only — if the UPCOMING PLAN section exists, reference the actual scheduled workout by name and type instead of guessing. CRITICAL RULES: If the athlete already ran today, NEVER tell them to rest TODAY or do zero running TODAY — their run is done; guidance is about tomorrow. If a quality session (threshold, intervals, tempo, long run) is scheduled tomorrow, NEVER suggest rest or easy movement — frame today as preparation for that session. NEVER reference the briefing itself, synced data, data refreshes, or system internals. NEVER say 'home briefing', 'synced activity', 'refreshed'. Must cite at least one specific number (pace, distance, HR — NOT internal metrics). ABSOLUTE BAN on CTL, ATL, TSB, chronic load, acute load, form score, durability index, recovery half-life, injury risk score, 'confirmed N times', 'r=', 'correlation'.{_lane(fingerprint_summary)}",
         "workout_why": f"One sentence explaining WHY today's workout matters in the context of their training. Example: 'Active recovery keeps blood flowing after yesterday's 10-mile effort.' No sycophantic language.{_lane(today_summary)}",
     }
     required_fields = ["coach_noticed", "today_context", "week_assessment", "morning_voice"]
@@ -3790,6 +3815,29 @@ async def get_home_data(
                         "distance_mi": today_workout.distance_mi,
                     }
 
+                upcoming_plan_list = []
+                if active_plan:
+                    _upcoming_days = (
+                        db.query(PlannedWorkout)
+                        .filter(
+                            PlannedWorkout.plan_id == active_plan.id,
+                            PlannedWorkout.scheduled_date > today,
+                            PlannedWorkout.scheduled_date <= today + timedelta(days=3),
+                        )
+                        .order_by(PlannedWorkout.scheduled_date)
+                        .all()
+                    )
+                    for pw in _upcoming_days:
+                        _pw_mi = round(pw.target_distance_km * 0.621371, 1) if pw.target_distance_km else None
+                        upcoming_plan_list.append({
+                            "date": pw.scheduled_date.isoformat(),
+                            "day_name": pw.scheduled_date.strftime("%A"),
+                            "workout_type": pw.workout_type,
+                            "title": pw.title,
+                            "distance_mi": _pw_mi,
+                            "description": pw.description,
+                        })
+
                 race_data_dict = None
                 if race_countdown:
                     race_data_dict = {
@@ -3818,6 +3866,7 @@ async def get_home_data(
                     planned_workout=planned_workout_dict,
                     checkin_data=checkin_data_dict,
                     race_data=race_data_dict,
+                    upcoming_plan=upcoming_plan_list if upcoming_plan_list else None,
                 )
 
                 if len(prep) == 1:
