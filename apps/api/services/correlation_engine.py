@@ -156,6 +156,10 @@ DIRECTION_EXPECTATIONS: Dict[Tuple[str, str], str] = {
     # Training patterns (more consecutive days / less rest = worse)
     ("consecutive_run_days", "efficiency"): "negative",
     ("days_since_rest", "efficiency"): "negative",
+
+    # Compound recovery (higher HRV÷RHR = better recovery state)
+    ("hrv_rhr_ratio", "efficiency"): "positive",
+    ("hrv_rhr_ratio", "pace_easy"): "positive",
 }
 
 
@@ -764,6 +768,14 @@ def aggregate_daily_inputs(
             if val is not None:
                 series.append((row.calendar_date, float(val)))
         inputs[input_key] = series
+
+    hrv_rhr_series = []
+    for row in _gd_rows:
+        hrv = getattr(row, "hrv_5min_high", None)
+        rhr = getattr(row, "min_hr", None)
+        if hrv is not None and rhr is not None and rhr > 0:
+            hrv_rhr_series.append((row.calendar_date, float(hrv) / float(rhr)))
+    inputs["hrv_rhr_ratio"] = hrv_rhr_series
 
     return inputs
 

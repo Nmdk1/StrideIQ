@@ -130,6 +130,7 @@ FRIENDLY_NAMES: Dict[str, str] = {
     "garmin_vigorous_intensity_s": "vigorous intensity time",
     "garmin_hrv_5min_high": "Recovery HRV",
     "garmin_min_hr": "lowest daily heart rate",
+    "hrv_rhr_ratio": "recovery ratio (HRV÷RHR)",
     "garmin_vo2max": "Garmin VO2max",
 
     # Activity-level

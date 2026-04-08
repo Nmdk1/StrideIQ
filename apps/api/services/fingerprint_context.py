@@ -87,6 +87,7 @@ SIGNAL_UNITS: Dict[str, str] = {
     "garmin_sleep_awake_s": "min",
     "garmin_active_time_s": "min",
     "garmin_moderate_intensity_s": "min", "garmin_vigorous_intensity_s": "min",
+    "hrv_rhr_ratio": "",
     "garmin_aerobic_te": "", "garmin_anaerobic_te": "",
     "garmin_perceived_effort": "/10", "garmin_body_battery_impact": "",
     "active_kcal": "kcal",
@@ -185,6 +186,7 @@ COACHING_LANGUAGE: Dict[str, str] = {
     "feedback_leg_feel": "leg freshness",
     "feedback_perceived_effort": "perceived effort",
     "run_start_hour": "time of day",
+    "hrv_rhr_ratio": "recovery ratio",
 }
 
 
