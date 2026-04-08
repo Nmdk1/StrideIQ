@@ -131,6 +131,8 @@ FRIENDLY_NAMES: Dict[str, str] = {
     "garmin_hrv_5min_high": "Recovery HRV",
     "garmin_min_hr": "lowest daily heart rate",
     "hrv_rhr_ratio": "recovery ratio (HRV÷RHR)",
+    "garmin_resting_hr": "resting heart rate",
+    "garmin_hrv_overnight_avg": "overnight HRV",
     "garmin_vo2max": "Garmin VO2max",
 
     # Activity-level
@@ -216,6 +218,32 @@ FRIENDLY_NAMES: Dict[str, str] = {
     "ct_cycling_tss_7d": "cycling training stress (7-day)",
     "ct_cross_training_tss_7d": "cross-training load (7-day)",
     "ct_hours_since_cross_training": "hours since last cross-training",
+
+    # V2 derived signals
+    "garmin_hrv_5min_high_trend_3d": "3-day HRV trend",
+    "garmin_hrv_5min_high_trend_5d": "5-day HRV trend",
+    "garmin_hrv_overnight_avg_trend_3d": "3-day overnight HRV trend",
+    "garmin_hrv_overnight_avg_trend_5d": "5-day overnight HRV trend",
+    "garmin_resting_hr_trend_5d": "5-day resting HR trend",
+    "garmin_resting_hr_trend_14d": "14-day resting HR trend",
+    "garmin_min_hr_trend_5d": "5-day minimum HR trend",
+    "garmin_min_hr_trend_14d": "14-day minimum HR trend",
+    "garmin_sleep_score_trend_3d": "3-day sleep trend",
+    "garmin_sleep_score_trend_5d": "5-day sleep trend",
+    "garmin_hrv_5min_high_deviation": "HRV deviation from baseline",
+    "garmin_hrv_overnight_avg_deviation": "overnight HRV deviation from baseline",
+    "garmin_resting_hr_deviation": "resting HR deviation from baseline",
+    "garmin_min_hr_deviation": "minimum HR deviation from baseline",
+    "tsb_trend_5d": "5-day freshness trend",
+    "tsb_trend_14d": "14-day freshness trend",
+    "tsb_state_days": "days above/below normal freshness",
+
+    # V2 interaction terms
+    "load_x_recovery": "training load × recovery interaction",
+    "sleep_quality_x_session_intensity": "sleep quality × session intensity",
+    "hrv_rhr_convergence": "HRV-RHR recovery convergence",
+    "heat_stress_index": "combined heat stress",
+    "hrv_rhr_divergence_flag": "HRV-RHR trend divergence",
 }
 
 
@@ -303,6 +331,20 @@ OUTPUT_METRIC_REGISTRY: Dict[str, OutputMetricMeta] = {
         higher_is_better=None,
         polarity_ambiguous=True,
         direction_interpretation="Zone-filtered efficiency ratio — still ambiguous.",
+    ),
+    "efficiency_hard": OutputMetricMeta(
+        metric_key="efficiency_hard",
+        metric_definition="pace(sec/km) / avg_hr for interval/VO2max sessions",
+        higher_is_better=None,
+        polarity_ambiguous=True,
+        direction_interpretation="Zone-filtered efficiency ratio — still ambiguous.",
+    ),
+    "recovery_rate": OutputMetricMeta(
+        metric_key="recovery_rate",
+        metric_definition="HRV rebound 48h after hard session (delta / pre-session HRV)",
+        higher_is_better=True,
+        polarity_ambiguous=False,
+        direction_interpretation="Higher = faster HRV recovery after hard sessions = better.",
     ),
     "efficiency_trend": OutputMetricMeta(
         metric_key="efficiency_trend",
@@ -414,6 +456,7 @@ DIRECTIONAL_SAFE_METRICS: frozenset = frozenset({
     "completion_rate",
     "completion",
     "pb_events",
+    "recovery_rate",
 })
 
 

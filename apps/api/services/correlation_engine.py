@@ -83,12 +83,6 @@ CONFOUNDER_MAP: Dict[Tuple[str, str], str] = {
     ("dew_point_f", "efficiency"): "daily_session_stress",
     ("heat_adjustment_pct", "efficiency"): "daily_session_stress",
 
-    # Garmin stress confounded by training load
-    ("garmin_avg_stress", "efficiency"): "daily_session_stress",
-
-    # Body battery confounded by training load
-    ("garmin_body_battery_end", "efficiency"): "daily_session_stress",
-
     # Feedback confounded by training load
     ("feedback_perceived_effort", "efficiency"): "daily_session_stress",
     ("feedback_leg_feel", "efficiency"): "daily_session_stress",
@@ -131,14 +125,13 @@ DIRECTION_EXPECTATIONS: Dict[Tuple[str, str], str] = {
     ("garmin_sleep_score", "efficiency"): "positive",
     ("garmin_sleep_deep_s", "efficiency"): "positive",
     ("garmin_sleep_rem_s", "efficiency"): "positive",
-    ("garmin_body_battery_end", "efficiency"): "positive",
     ("garmin_hrv_5min_high", "efficiency"): "positive",
+    ("garmin_hrv_overnight_avg", "efficiency"): "positive",
     ("garmin_sleep_score", "pace_easy"): "positive",
-    ("garmin_body_battery_end", "pace_easy"): "positive",
 
-    # GarminDay — stress signals (higher = worse)
-    ("garmin_avg_stress", "efficiency"): "negative",
-    ("garmin_max_stress", "efficiency"): "negative",
+    # GarminDay — resting HR (lower = better recovery)
+    ("garmin_resting_hr", "efficiency"): "negative",
+    ("garmin_resting_hr", "pace_easy"): "negative",
 
     # Heat (higher = worse performance)
     ("dew_point_f", "efficiency"): "negative",
@@ -414,6 +407,35 @@ def classify_correlation_strength(r: float) -> str:
         return "moderate"
     else:
         return "strong"
+
+
+def benjamini_hochberg_filter(
+    p_values: List[float],
+    fdr_level: float = 0.05,
+) -> List[bool]:
+    """Apply Benjamini-Hochberg FDR procedure.
+
+    Returns a list of booleans (same length as p_values) indicating
+    which tests are significant after FDR control.
+    """
+    m = len(p_values)
+    if m == 0:
+        return []
+
+    indexed = sorted(enumerate(p_values), key=lambda x: x[1])
+    significant = [False] * m
+
+    max_k = -1
+    for rank, (orig_idx, p) in enumerate(indexed, start=1):
+        if p <= (rank / m) * fdr_level:
+            max_k = rank
+
+    if max_k > 0:
+        for rank, (orig_idx, _) in enumerate(indexed, start=1):
+            if rank <= max_k:
+                significant[orig_idx] = True
+
+    return significant
 
 
 def aggregate_daily_inputs(
@@ -749,15 +771,14 @@ def aggregate_daily_inputs(
         ("garmin_sleep_deep_s", "sleep_deep_s"),
         ("garmin_sleep_rem_s", "sleep_rem_s"),
         ("garmin_sleep_awake_s", "sleep_awake_s"),
-        ("garmin_body_battery_end", "body_battery_end"),
-        ("garmin_avg_stress", "avg_stress"),
-        ("garmin_max_stress", "max_stress"),
         ("garmin_steps", "steps"),
         ("garmin_active_time_s", "active_time_s"),
         ("garmin_moderate_intensity_s", "moderate_intensity_s"),
         ("garmin_vigorous_intensity_s", "vigorous_intensity_s"),
         ("garmin_hrv_5min_high", "hrv_5min_high"),
+        ("garmin_hrv_overnight_avg", "hrv_overnight_avg"),
         ("garmin_min_hr", "min_hr"),
+        ("garmin_resting_hr", "resting_hr"),
         ("garmin_vo2max", "vo2max"),
     ]
 
@@ -2113,13 +2134,636 @@ def aggregate_cross_training_inputs(
     return inputs
 
 
+# ---------------------------------------------------------------------------
+# Layer 2: Derived Signals
+# ---------------------------------------------------------------------------
+
+DERIVATIVE_CONFIG: Dict[str, List[Tuple[str, int]]] = {
+    "garmin_hrv_5min_high": [("trend", 3), ("trend", 5)],
+    "garmin_hrv_overnight_avg": [("trend", 3), ("trend", 5)],
+    "garmin_min_hr": [("trend", 5), ("trend", 14)],
+    "garmin_resting_hr": [("trend", 5), ("trend", 14)],
+    "garmin_sleep_score": [("trend", 3), ("trend", 5)],
+    "garmin_sleep_deep_s": [("trend", 3), ("trend", 5)],
+    "garmin_sleep_rem_s": [("trend", 3), ("trend", 5)],
+    "tsb": [("trend", 5), ("trend", 14), ("state_days", 30)],
+    "ctl": [("trend", 14), ("trend", 30)],
+    "atl": [("trend", 5), ("trend", 14)],
+}
+
+BASELINE_DEVIATION_SIGNALS = {
+    "garmin_hrv_5min_high",
+    "garmin_hrv_overnight_avg",
+    "garmin_min_hr",
+    "garmin_resting_hr",
+}
+
+
+def _rolling_linear_slope(
+    series: List[Tuple[date_type, float]],
+    window: int,
+) -> List[Tuple[date_type, float]]:
+    """Compute rolling linear regression slope, normalized by signal SD.
+
+    Returns (date, slope) for each date that has >= window data points
+    in the preceding window days.
+    """
+    if len(series) < window:
+        return []
+
+    by_date = {d: v for d, v in series}
+    dates = sorted(by_date.keys())
+    result = []
+
+    for i, d in enumerate(dates):
+        window_start = d - timedelta(days=window - 1)
+        window_vals = [
+            (dd, by_date[dd]) for dd in dates
+            if window_start <= dd <= d and dd in by_date
+        ]
+        if len(window_vals) < max(3, window // 2):
+            continue
+
+        xs = [float((dd - window_vals[0][0]).days) for dd, _ in window_vals]
+        ys = [v for _, v in window_vals]
+        n = len(xs)
+
+        x_mean = sum(xs) / n
+        y_mean = sum(ys) / n
+
+        num = sum((x - x_mean) * (y - y_mean) for x, y in zip(xs, ys))
+        den = sum((x - x_mean) ** 2 for x in xs)
+        if den == 0:
+            continue
+
+        slope = num / den
+
+        if n > 1:
+            y_sd = math.sqrt(sum((y - y_mean) ** 2 for y in ys) / (n - 1))
+            if y_sd > 0:
+                slope = slope / y_sd
+
+        result.append((d, round(slope, 6)))
+
+    return result
+
+
+def _rolling_volatility(
+    series: List[Tuple[date_type, float]],
+    window: int,
+) -> List[Tuple[date_type, float]]:
+    """Rolling standard deviation over window days."""
+    if len(series) < window:
+        return []
+
+    by_date = {d: v for d, v in series}
+    dates = sorted(by_date.keys())
+    result = []
+
+    for d in dates:
+        window_start = d - timedelta(days=window - 1)
+        vals = [by_date[dd] for dd in dates if window_start <= dd <= d and dd in by_date]
+        if len(vals) < max(3, window // 2):
+            continue
+        m = sum(vals) / len(vals)
+        var = sum((v - m) ** 2 for v in vals) / len(vals)
+        result.append((d, round(math.sqrt(var), 6)))
+
+    return result
+
+
+def _baseline_deviation(
+    series: List[Tuple[date_type, float]],
+) -> List[Tuple[date_type, float]]:
+    """(today - rolling_mean_30d) / rolling_sd_30d for each date."""
+    if len(series) < 35:
+        return []
+
+    by_date = {d: v for d, v in series}
+    dates = sorted(by_date.keys())
+    result = []
+
+    for d in dates:
+        window_start = d - timedelta(days=29)
+        vals = [by_date[dd] for dd in dates if window_start <= dd <= d and dd in by_date]
+        if len(vals) < 15:
+            continue
+        m = sum(vals) / len(vals)
+        sd = math.sqrt(sum((v - m) ** 2 for v in vals) / len(vals))
+        if sd == 0:
+            continue
+        today_val = by_date.get(d)
+        if today_val is None:
+            continue
+        result.append((d, round((today_val - m) / sd, 4)))
+
+    return result
+
+
+def _state_duration(
+    series: List[Tuple[date_type, float]],
+) -> List[Tuple[date_type, float]]:
+    """Consecutive days above/below 30-day rolling mean.
+
+    Positive = days above mean, negative = days below.
+    """
+    if len(series) < 35:
+        return []
+
+    by_date = {d: v for d, v in series}
+    dates = sorted(by_date.keys())
+    result = []
+
+    for idx, d in enumerate(dates):
+        window_start = d - timedelta(days=29)
+        vals = [by_date[dd] for dd in dates if window_start <= dd <= d and dd in by_date]
+        if len(vals) < 15:
+            continue
+        rolling_mean = sum(vals) / len(vals)
+        today_val = by_date.get(d)
+        if today_val is None:
+            continue
+        above = today_val >= rolling_mean
+        streak = 1
+        for prev_idx in range(idx - 1, -1, -1):
+            prev_d = dates[prev_idx]
+            prev_v = by_date.get(prev_d)
+            if prev_v is None:
+                break
+            prev_window_start = prev_d - timedelta(days=29)
+            prev_vals = [by_date[dd] for dd in dates if prev_window_start <= dd <= prev_d and dd in by_date]
+            if len(prev_vals) < 15:
+                break
+            prev_mean = sum(prev_vals) / len(prev_vals)
+            if (prev_v >= prev_mean) == above:
+                streak += 1
+            else:
+                break
+        result.append((d, float(streak) if above else float(-streak)))
+
+    return result
+
+
+def compute_derived_signals(
+    inputs: Dict[str, List[Tuple[date_type, float]]],
+) -> Dict[str, List[Tuple[date_type, float]]]:
+    """Compute Layer 2 derived signals from raw inputs.
+
+    For each signal in DERIVATIVE_CONFIG, computes trend slopes at
+    specified windows. For signals in BASELINE_DEVIATION_SIGNALS,
+    also computes z-score deviation from 30-day baseline.
+    """
+    derived: Dict[str, List[Tuple[date_type, float]]] = {}
+
+    for signal_name, derivatives in DERIVATIVE_CONFIG.items():
+        raw = inputs.get(signal_name, [])
+        if not raw:
+            continue
+
+        for deriv_type, window in derivatives:
+            min_required = window + 5
+            if len(raw) < min_required:
+                continue
+
+            if deriv_type == "trend":
+                key = f"{signal_name}_trend_{window}d"
+                result = _rolling_linear_slope(raw, window)
+                if result:
+                    derived[key] = result
+
+            elif deriv_type == "volatility":
+                key = f"{signal_name}_volatility_{window}d"
+                result = _rolling_volatility(raw, window)
+                if result:
+                    derived[key] = result
+
+            elif deriv_type == "state_days":
+                key = f"{signal_name}_state_days"
+                result = _state_duration(raw)
+                if result:
+                    derived[key] = result
+
+    for signal_name in BASELINE_DEVIATION_SIGNALS:
+        raw = inputs.get(signal_name, [])
+        if len(raw) >= 35:
+            key = f"{signal_name}_deviation"
+            result = _baseline_deviation(raw)
+            if result:
+                derived[key] = result
+
+    return derived
+
+
+# ---------------------------------------------------------------------------
+# Layer 4: Domain-Specified Interaction Terms
+# ---------------------------------------------------------------------------
+
+def compute_interaction_terms(
+    inputs: Dict[str, List[Tuple[date_type, float]]],
+) -> Dict[str, List[Tuple[date_type, float]]]:
+    """Compute explicit interaction terms from raw + derived inputs.
+
+    Each interaction is a hypothesis with a physiological rationale.
+    """
+    interactions: Dict[str, List[Tuple[date_type, float]]] = {}
+
+    def _to_dict(series):
+        return {d: v for d, v in series}
+
+    def _z_score_series(series):
+        if len(series) < 5:
+            return {}
+        vals = [v for _, v in series]
+        m = sum(vals) / len(vals)
+        sd = math.sqrt(sum((v - m) ** 2 for v in vals) / len(vals))
+        if sd == 0:
+            return {}
+        return {d: (v - m) / sd for d, v in series}
+
+    # 1. load_x_recovery: TSB × HRV_deviation (both z-scored)
+    tsb = inputs.get("tsb", [])
+    hrv_dev = inputs.get("garmin_hrv_5min_high_deviation", [])
+    if not hrv_dev:
+        hrv_dev = inputs.get("garmin_hrv_overnight_avg_deviation", [])
+    if tsb and hrv_dev:
+        z_tsb = _z_score_series(tsb)
+        z_hrv = _z_score_series(hrv_dev)
+        common = set(z_tsb.keys()) & set(z_hrv.keys())
+        if len(common) >= MIN_SAMPLE_SIZE:
+            interactions["load_x_recovery"] = [
+                (d, round(z_tsb[d] * z_hrv[d], 4)) for d in sorted(common)
+            ]
+
+    # 2. sleep_quality_x_session_intensity
+    sleep = inputs.get("garmin_sleep_score", [])
+    intensity = inputs.get("activity_intensity_score", [])
+    if sleep and intensity:
+        d_sleep = _to_dict(sleep)
+        d_int = _to_dict(intensity)
+        common = set(d_sleep.keys()) & set(d_int.keys())
+        if len(common) >= MIN_SAMPLE_SIZE:
+            interactions["sleep_quality_x_session_intensity"] = [
+                (d, round(d_sleep[d] * d_int[d], 2)) for d in sorted(common)
+            ]
+
+    # 3. hrv_rhr_convergence: hrv_trend_5d × (-1 × resting_hr_trend_5d)
+    hrv_trend = inputs.get("garmin_hrv_5min_high_trend_5d", [])
+    if not hrv_trend:
+        hrv_trend = inputs.get("garmin_hrv_overnight_avg_trend_5d", [])
+    rhr_trend = inputs.get("garmin_resting_hr_trend_5d", [])
+    if hrv_trend and rhr_trend:
+        d_hrv = _to_dict(hrv_trend)
+        d_rhr = _to_dict(rhr_trend)
+        common = set(d_hrv.keys()) & set(d_rhr.keys())
+        if len(common) >= MIN_SAMPLE_SIZE:
+            interactions["hrv_rhr_convergence"] = [
+                (d, round(d_hrv[d] * (-1 * d_rhr[d]), 6)) for d in sorted(common)
+            ]
+
+    # 4. heat_stress_index: dew_point × (1 + humidity/100)
+    dew = inputs.get("dew_point_f", [])
+    hum = inputs.get("humidity_pct", [])
+    if dew and hum:
+        d_dew = _to_dict(dew)
+        d_hum = _to_dict(hum)
+        common = set(d_dew.keys()) & set(d_hum.keys())
+        if len(common) >= MIN_SAMPLE_SIZE:
+            interactions["heat_stress_index"] = [
+                (d, round(d_dew[d] * (1 + d_hum[d] / 100), 2)) for d in sorted(common)
+            ]
+
+    # 5. hrv_rhr_divergence_flag: binary, 1 when trends disagree 3+ days
+    if hrv_trend and rhr_trend:
+        d_hrv = _to_dict(hrv_trend)
+        d_rhr = _to_dict(rhr_trend)
+        common_dates = sorted(set(d_hrv.keys()) & set(d_rhr.keys()))
+        if len(common_dates) >= 5:
+            divergence = []
+            for i, d in enumerate(common_dates):
+                h = d_hrv[d]
+                r = d_rhr[d]
+                agrees = (h > 0 and r < 0) or (h < 0 and r > 0) or (h == 0 and r == 0)
+                if agrees:
+                    divergence.append((d, 0.0))
+                else:
+                    streak = 1
+                    for j in range(i - 1, max(i - 3, -1), -1):
+                        prev = common_dates[j]
+                        ph = d_hrv.get(prev, 0)
+                        pr = d_rhr.get(prev, 0)
+                        prev_agrees = (ph > 0 and pr < 0) or (ph < 0 and pr > 0) or (ph == 0 and pr == 0)
+                        if not prev_agrees:
+                            streak += 1
+                        else:
+                            break
+                    divergence.append((d, 1.0 if streak >= 3 else 0.0))
+            if divergence:
+                interactions["hrv_rhr_divergence_flag"] = divergence
+
+    return interactions
+
+
+# ---------------------------------------------------------------------------
+# Layer 3: Output Segmentation helpers
+# ---------------------------------------------------------------------------
+
+_WORKOUT_TYPE_TO_ZONE = {
+    "easy_run": "easy", "recovery_run": "easy", "recovery": "easy",
+    "tempo_run": "threshold", "tempo": "threshold", "threshold": "threshold",
+    "intervals": "hard", "interval": "hard", "fartlek": "hard",
+    "hills": "hard", "race": "hard",
+    "long_run": "easy", "long_hmp": "threshold", "long_mp": "threshold",
+}
+
+
+def _resolve_workout_type(activity) -> Optional[str]:
+    """Resolve workout type with fallback chain.
+
+    1. Activity.workout_type (indexed column)
+    2. Activity.run_shape["summary"]["workout_classification"] (JSONB)
+    3. None (exclude from segmented outputs)
+    """
+    wt = getattr(activity, "workout_type", None)
+    if wt:
+        return wt
+
+    run_shape = getattr(activity, "run_shape", None)
+    if run_shape and isinstance(run_shape, dict):
+        summary = run_shape.get("summary", {})
+        wc = summary.get("workout_classification")
+        if wc:
+            return wc
+
+    return None
+
+
+def _workout_type_to_zone(wt: str) -> Optional[str]:
+    """Map a workout type string to easy/threshold/hard zone."""
+    if not wt:
+        return None
+    return _WORKOUT_TYPE_TO_ZONE.get(wt.lower())
+
+
+def aggregate_recovery_rate(
+    athlete_id: str,
+    start_date: datetime,
+    end_date: datetime,
+    db: Session,
+) -> List[Tuple[date_type, float]]:
+    """Compute HRV rebound 48h after hard sessions.
+
+    Gated: only computed when athlete has sufficient HRV density
+    (5+ hrv_overnight_avg readings per week on average).
+    Returns delta between HRV on hard-session day and 48h later.
+    """
+    gd_rows = db.query(GarminDay).filter(
+        GarminDay.athlete_id == athlete_id,
+        GarminDay.calendar_date >= start_date.date(),
+        GarminDay.calendar_date <= end_date.date(),
+    ).all()
+
+    hrv_by_date = {}
+    for row in gd_rows:
+        val = getattr(row, "hrv_overnight_avg", None)
+        if val is not None:
+            hrv_by_date[row.calendar_date] = float(val)
+
+    if not hrv_by_date:
+        return []
+
+    date_range = (end_date.date() - start_date.date()).days
+    weeks = max(1, date_range / 7)
+    readings_per_week = len(hrv_by_date) / weeks
+    if readings_per_week < 5:
+        return []
+
+    activities = db.query(Activity).filter(
+        Activity.athlete_id == athlete_id,
+        Activity.sport == "run",
+        Activity.is_duplicate == False,  # noqa: E712
+        Activity.start_time >= start_date,
+        Activity.start_time <= end_date,
+    ).all()
+
+    result = []
+    for a in activities:
+        wt = _resolve_workout_type(a)
+        zone = _workout_type_to_zone(wt) if wt else None
+        if zone != "hard":
+            continue
+
+        hard_date = a.start_time.date()
+        rebound_date = hard_date + timedelta(days=2)
+
+        hrv_hard = hrv_by_date.get(hard_date)
+        hrv_rebound = hrv_by_date.get(rebound_date)
+
+        if hrv_hard is not None and hrv_rebound is not None and hrv_hard > 0:
+            rate = (hrv_rebound - hrv_hard) / hrv_hard
+            result.append((hard_date, round(rate, 4)))
+
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Full Discovery Sweep (V2 entry point)
+# ---------------------------------------------------------------------------
+
+_V2_OUTPUT_METRICS = [
+    "efficiency",
+    "efficiency_easy",
+    "efficiency_threshold",
+    "efficiency_hard",
+    "recovery_rate",
+]
+
+
+def run_full_discovery(
+    athlete_id: str,
+    days: int = 180,
+    db: Session = None,
+) -> Dict:
+    """Run the V2 multi-output discovery sweep.
+
+    1. Aggregates all inputs once
+    2. Computes derived signals (Layer 2)
+    3. Computes interaction terms (Layer 4)
+    4. Tests all (input, output_metric, lag) combinations
+    5. Applies BH-FDR per output metric
+    6. Persists findings
+    """
+    if not db:
+        raise ValueError("Database session required")
+
+    end_date = datetime.utcnow()
+    start_date = end_date - timedelta(days=days)
+
+    inputs = aggregate_daily_inputs(athlete_id, start_date, end_date, db)
+    load_inputs = aggregate_training_load_inputs(athlete_id, start_date, end_date, db)
+    inputs.update(load_inputs)
+    inputs.update(aggregate_activity_level_inputs(athlete_id, start_date, end_date, db))
+    inputs.update(aggregate_feedback_inputs(athlete_id, start_date, end_date, db))
+    inputs.update(aggregate_training_pattern_inputs(athlete_id, start_date, end_date, db))
+    inputs.update(aggregate_cross_training_inputs(athlete_id, start_date, end_date, db))
+    inputs["daily_session_stress"] = aggregate_daily_session_stress(
+        athlete_id, start_date, end_date, db,
+    )
+
+    derived = compute_derived_signals(inputs)
+    inputs.update(derived)
+
+    interactions = compute_interaction_terms(inputs)
+    inputs.update(interactions)
+
+    usable_inputs = {
+        k: v for k, v in inputs.items() if len(v) >= MIN_SAMPLE_SIZE
+    }
+
+    all_results: Dict[str, Dict] = {}
+    total_findings = 0
+
+    for output_metric in _V2_OUTPUT_METRICS:
+        if output_metric == "efficiency":
+            outputs = aggregate_efficiency_outputs(athlete_id, start_date, end_date, db)
+        elif output_metric == "efficiency_easy":
+            outputs = aggregate_efficiency_by_effort_zone(athlete_id, start_date, end_date, db, "easy")
+        elif output_metric == "efficiency_threshold":
+            outputs = aggregate_efficiency_by_effort_zone(athlete_id, start_date, end_date, db, "threshold")
+        elif output_metric == "efficiency_hard":
+            outputs = aggregate_efficiency_by_effort_zone(athlete_id, start_date, end_date, db, "race")
+        elif output_metric == "recovery_rate":
+            outputs = aggregate_recovery_rate(athlete_id, start_date, end_date, db)
+        else:
+            continue
+
+        if len(outputs) < MIN_SAMPLE_SIZE:
+            all_results[output_metric] = {
+                "skipped": True,
+                "reason": f"Insufficient output data ({len(outputs)} < {MIN_SAMPLE_SIZE})",
+            }
+            continue
+
+        candidates = []
+        for input_name, input_data in usable_inputs.items():
+            lagged_results = find_time_shifted_correlations(
+                input_data, outputs, max_lag_days=7,
+            )
+            for r in lagged_results:
+                if abs(r.correlation_coefficient) >= MIN_CORRELATION_STRENGTH and r.sample_size >= MIN_SAMPLE_SIZE:
+                    r.input_name = input_name
+                    candidates.append(r)
+
+        if not candidates:
+            all_results[output_metric] = {"correlations": [], "total": 0}
+            continue
+
+        best_by_input: Dict[str, CorrelationResult] = {}
+        for c in candidates:
+            existing = best_by_input.get(c.input_name)
+            if existing is None or abs(c.correlation_coefficient) > abs(existing.correlation_coefficient):
+                best_by_input[c.input_name] = c
+
+        ordered = list(best_by_input.values())
+        p_values = [c.p_value for c in ordered]
+        significant = benjamini_hochberg_filter(p_values)
+
+        correlations = []
+        for c, is_sig in zip(ordered, significant):
+            if not is_sig:
+                continue
+            entry = c.to_dict()
+            entry["output_metric"] = output_metric
+
+            confounder_key = (c.input_name, output_metric)
+            confounder_var = CONFOUNDER_MAP.get(confounder_key)
+            if confounder_var and confounder_var in inputs:
+                partial_r = compute_partial_correlation(
+                    usable_inputs[c.input_name], outputs,
+                    inputs[confounder_var],
+                    lag_days=c.time_lag_days,
+                )
+                entry["partial_correlation_coefficient"] = partial_r
+                entry["confounder_variable"] = confounder_var
+                entry["is_confounded"] = (
+                    partial_r is None or abs(partial_r) < MIN_CORRELATION_STRENGTH
+                )
+            else:
+                entry["partial_correlation_coefficient"] = None
+                entry["confounder_variable"] = None
+                entry["is_confounded"] = False
+
+            expected_dir = DIRECTION_EXPECTATIONS.get(confounder_key)
+            entry["direction_expected"] = expected_dir
+            entry["direction_counterintuitive"] = (
+                expected_dir is not None and c.direction != expected_dir
+            )
+
+            correlations.append(entry)
+
+        correlations.sort(key=lambda x: abs(x["correlation_coefficient"]), reverse=True)
+
+        from services.n1_insight_generator import get_metric_meta
+        meta = get_metric_meta(output_metric)
+
+        metric_result = {
+            "output_metric": output_metric,
+            "output_metric_metadata": {
+                "metric_key": meta.metric_key,
+                "higher_is_better": meta.higher_is_better,
+                "polarity_ambiguous": meta.polarity_ambiguous,
+            },
+            "sample_size": len(outputs),
+            "inputs_tested": len(usable_inputs),
+            "candidates_before_fdr": len(ordered),
+            "correlations": correlations,
+            "total": len(correlations),
+        }
+
+        try:
+            from services.correlation_persistence import persist_correlation_findings
+            persist_correlation_findings(
+                athlete_id=UUID(athlete_id) if isinstance(athlete_id, str) else athlete_id,
+                analysis_result={
+                    "correlations": correlations,
+                    "output_metric": output_metric,
+                    "analysis_period": {
+                        "start": start_date.isoformat(),
+                        "end": end_date.isoformat(),
+                        "days": days,
+                    },
+                },
+                db=db,
+                output_metric=output_metric,
+            )
+        except Exception as e:
+            logger.warning(f"Persistence failed for {output_metric}: {e}")
+
+        all_results[output_metric] = metric_result
+        total_findings += len(correlations)
+
+    return {
+        "athlete_id": athlete_id,
+        "engine_version": "v2",
+        "analysis_period": {
+            "start": start_date.isoformat(),
+            "end": end_date.isoformat(),
+            "days": days,
+        },
+        "total_inputs": len(usable_inputs),
+        "derived_signals": len(derived),
+        "interaction_terms": len(interactions),
+        "output_metrics": all_results,
+        "total_findings": total_findings,
+    }
+
+
 def analyze_correlations(
     athlete_id: str,
     days: int = 90,
     db: Session = None,
-    include_training_load: bool = True,  # NEW PARAMETER
-    output_metric: str = "efficiency",     # NEW PARAMETER: "efficiency", "pace_easy", "completion"
-    shadow_mode: bool = False,             # Phase 0B: bypass production cache when True
+    include_training_load: bool = True,
+    output_metric: str = "efficiency",
+    shadow_mode: bool = False,
 ) -> Dict:
     """
     Main correlation analysis function.

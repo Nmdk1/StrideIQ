@@ -43,8 +43,23 @@ _ENVIRONMENT_SIGNALS: frozenset = frozenset({
 
 
 def _is_suppressed_for_athlete(input_name: str) -> bool:
-    """True if this signal should never appear in athlete-facing surfaces."""
-    return input_name in _SUPPRESSED_SIGNALS or input_name in _ENVIRONMENT_SIGNALS
+    """True if this signal should never appear in athlete-facing surfaces.
+
+    Derived signals and interaction terms inherit suppression from their
+    parent signals. The engine still tests them internally — suppression
+    is a display-time decision, not a computation-time decision.
+    """
+    if input_name in _SUPPRESSED_SIGNALS or input_name in _ENVIRONMENT_SIGNALS:
+        return True
+
+    for parent in _SUPPRESSED_SIGNALS | _ENVIRONMENT_SIGNALS:
+        if input_name.startswith(parent + "_"):
+            return True
+
+    _SUPPRESSED_INTERACTIONS = frozenset({
+        "heat_stress_index",
+    })
+    return input_name in _SUPPRESSED_INTERACTIONS
 
 
 SIGNAL_UNITS: Dict[str, str] = {
@@ -88,6 +103,8 @@ SIGNAL_UNITS: Dict[str, str] = {
     "garmin_active_time_s": "min",
     "garmin_moderate_intensity_s": "min", "garmin_vigorous_intensity_s": "min",
     "hrv_rhr_ratio": "",
+    "garmin_resting_hr": "bpm",
+    "garmin_hrv_overnight_avg": "ms",
     "garmin_aerobic_te": "", "garmin_anaerobic_te": "",
     "garmin_perceived_effort": "/10", "garmin_body_battery_impact": "",
     "active_kcal": "kcal",
@@ -187,6 +204,12 @@ COACHING_LANGUAGE: Dict[str, str] = {
     "feedback_perceived_effort": "perceived effort",
     "run_start_hour": "time of day",
     "hrv_rhr_ratio": "recovery ratio",
+    "garmin_resting_hr": "resting heart rate",
+    "garmin_hrv_overnight_avg": "overnight HRV",
+    "load_x_recovery": "training load × recovery",
+    "sleep_quality_x_session_intensity": "sleep × session intensity",
+    "hrv_rhr_convergence": "HRV-RHR convergence",
+    "hrv_rhr_divergence_flag": "HRV-RHR divergence",
 }
 
 
