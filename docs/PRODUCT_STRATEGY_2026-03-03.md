@@ -273,7 +273,48 @@ That's the product. Everything else is execution.
 
 ---
 
-## Connection to Current Build (Updated Apr 4, 2026)
+### 14. Compound Recovery Signals (HRV/RHR Ratio)
+
+HRV and resting HR are already tracked independently. The hypothesis:
+a combined signal (HRV ÷ RHR, or a z-score composite) may have stronger
+predictive power for next-day efficiency than either metric alone. This
+is a cheap test — derive the compound signal in the correlation engine's
+input builder, let the existing pipeline discover whether it correlates.
+If it does, it becomes a new recovery readiness metric that no consumer
+app currently surfaces.
+
+**Status:** Scoped for builder. Estimated: 1 session.
+
+### 15. Personal Coach Tier (Monetization)
+
+Two distinct product shapes under evaluation:
+1. **Service model** — Michael coaches athletes directly using StrideIQ
+   as the intelligence layer. The system provides the data, the human
+   provides the relationship and judgment.
+2. **Platform model** — coaches bring their own athletes. StrideIQ
+   provides the intelligence tools (findings, plans, briefings) under
+   a coach dashboard with multi-athlete views.
+
+The platform scales; the service proves the concept. Both require a
+coach-facing view of athlete intelligence, permissioning, and billing.
+
+**Status:** Strategic priority. Requires dedicated planning session.
+
+### 16. AI Nutrition Intelligence
+
+Not a food logger — a nutrition correlation engine. The differentiator:
+nutrition data feeds into the same pipeline as sleep, HRV, and training
+load, producing findings like "your efficiency improves when protein
+exceeds 140g on the day before intervals." Without this connection,
+it's MyFitnessPal with fewer features.
+
+Two paths: integrate with an existing tracker (MyFitnessPal API,
+Cronometer) or build AI-powered food identification and tracking
+natively. The integration path is faster; the native path is stickier.
+
+**Status:** Strategic priority. Requires scoping after coach tier.
+
+## Connection to Current Build (Updated Apr 8, 2026)
 
 The correlation engine is the foundation for everything above:
 
