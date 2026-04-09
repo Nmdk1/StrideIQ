@@ -859,7 +859,6 @@ def aggregate_activity_level_inputs(
         ("garmin_aerobic_te", "garmin_aerobic_te"),
         ("garmin_anaerobic_te", "garmin_anaerobic_te"),
         ("garmin_perceived_effort", "garmin_perceived_effort"),
-        ("garmin_body_battery_impact", "garmin_body_battery_impact"),
         ("activity_intensity_score", "intensity_score"),
         ("active_kcal", "active_kcal"),
     ]
