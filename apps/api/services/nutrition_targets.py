@@ -11,7 +11,7 @@ from datetime import date, datetime, timedelta
 from typing import Any, Dict, List, Optional
 from uuid import UUID
 
-import pytz
+from zoneinfo import ZoneInfo
 from sqlalchemy.orm import Session
 
 from models import (
@@ -199,7 +199,7 @@ def get_local_hour(athlete: Athlete) -> int:
     tz_name = athlete.timezone
     if tz_name:
         try:
-            tz = pytz.timezone(tz_name)
+            tz = ZoneInfo(tz_name)
             return datetime.now(tz).hour
         except Exception:
             pass
