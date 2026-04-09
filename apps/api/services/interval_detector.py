@@ -1,15 +1,20 @@
 """
 Detect and label structured workout intervals from ActivitySplit data.
 
-Classifies each split as warm_up / work / rest / cool_down based on pace
-patterns. Generates a human-readable summary like "5×4:00 at 7:09/mi avg,
-3:00 rest".
+Algorithm:
+  1. Identify "stopped" splits (very short distance = athlete stood still)
+  2. Group consecutive non-stopped splits into segments
+  3. Compute each segment's weighted-average pace
+  4. Classify segments: fast = work, slow before first work = warm_up,
+     slow after last work = cool_down
+  5. Number work segments 1-indexed
+  6. Generate summary like "3×9:00 at 6:25/mi avg, 2:00 rest"
 """
 from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field
-from typing import List, Optional, Tuple
+from typing import List, Optional
 
 
 @dataclass
@@ -22,7 +27,7 @@ class LabeledSplit:
     max_heartrate: Optional[int]
     average_cadence: Optional[float]
     gap_seconds_per_mile: Optional[float]
-    lap_type: Optional[str] = None  # warm_up, work, rest, cool_down
+    lap_type: Optional[str] = None
     interval_number: Optional[int] = None
     pace_sec_per_km: Optional[float] = None
 
@@ -49,7 +54,7 @@ class IntervalAnalysis:
 def _compute_pace(distance_m: Optional[float], time_s: Optional[int]) -> Optional[float]:
     if not distance_m or distance_m <= 0 or not time_s or time_s <= 0:
         return None
-    return (time_s / distance_m) * 1000  # sec per km
+    return (time_s / distance_m) * 1000
 
 
 def _format_duration(seconds: int) -> str:
@@ -66,133 +71,267 @@ def _format_pace_imperial(sec_per_km: float) -> str:
     return f"{m}:{s:02d}/mi"
 
 
+def _get(s, attr, default=None):
+    if isinstance(s, dict):
+        return s.get(attr, default)
+    return getattr(s, attr, default)
+
+
+def _to_labeled(s) -> LabeledSplit:
+    dist = float(_get(s, "distance") or 0)
+    et = _get(s, "elapsed_time")
+    mt = _get(s, "moving_time")
+    time_s = mt or et
+    return LabeledSplit(
+        split_number=_get(s, "split_number", 0),
+        distance=dist if dist > 0 else None,
+        elapsed_time=et,
+        moving_time=mt,
+        average_heartrate=_get(s, "average_heartrate"),
+        max_heartrate=_get(s, "max_heartrate"),
+        average_cadence=_get(s, "average_cadence"),
+        gap_seconds_per_mile=_get(s, "gap_seconds_per_mile"),
+        pace_sec_per_km=_compute_pace(dist, time_s),
+    )
+
+
+def _is_stopped(ls: LabeledSplit) -> bool:
+    """A split where the athlete was standing still or barely moving."""
+    dist = ls.distance or 0
+    time_s = ls.elapsed_time or ls.moving_time or 0
+    if dist < 10:
+        return True
+    if dist < 200 and time_s > 30:
+        return True
+    if dist > 0 and time_s > 0:
+        speed_m_s = dist / time_s
+        if speed_m_s < 0.5:
+            return True
+    return False
+
+
+@dataclass
+class _Segment:
+    splits: List[LabeledSplit] = field(default_factory=list)
+    is_stopped: bool = False
+
+    @property
+    def total_distance(self) -> float:
+        return sum(s.distance or 0 for s in self.splits)
+
+    @property
+    def total_time(self) -> int:
+        return sum(s.moving_time or s.elapsed_time or 0 for s in self.splits)
+
+    @property
+    def total_elapsed(self) -> int:
+        return sum(s.elapsed_time or s.moving_time or 0 for s in self.splits)
+
+    @property
+    def weighted_pace(self) -> Optional[float]:
+        d = self.total_distance
+        t = self.total_time
+        if d <= 0 or t <= 0:
+            return None
+        return (t / d) * 1000
+
+    @property
+    def avg_hr(self) -> Optional[int]:
+        hrs = [s.average_heartrate for s in self.splits if s.average_heartrate]
+        return round(sum(hrs) / len(hrs)) if hrs else None
+
+
+def _find_pace_gap(sorted_paces: List[float]) -> float:
+    """Find the threshold that separates fast (work) from slow (warm up/cool down).
+
+    Looks for the largest gap between consecutive sorted pace values.
+    The threshold is placed in the middle of that gap.
+    """
+    if len(sorted_paces) < 2:
+        return sorted_paces[0] if sorted_paces else 0
+
+    best_gap = 0.0
+    best_mid = sorted_paces[0]
+    for i in range(len(sorted_paces) - 1):
+        gap = sorted_paces[i + 1] - sorted_paces[i]
+        if gap > best_gap:
+            best_gap = gap
+            best_mid = (sorted_paces[i] + sorted_paces[i + 1]) / 2
+
+    if best_gap < sorted_paces[0] * 0.1:
+        return sorted_paces[len(sorted_paces) // 2]
+
+    return best_mid
+
+
+def _split_mixed_segments(segments: List[_Segment]) -> List[_Segment]:
+    """Split a running segment that contains a large internal pace shift.
+
+    Example: warm-up miles at 9:00/mi followed by threshold miles at 6:30/mi
+    in one continuous segment (no stop between them). We detect the transition
+    and split into two segments so the warm-up gets labeled correctly.
+    """
+    result: List[_Segment] = []
+    for seg in segments:
+        if seg.is_stopped or len(seg.splits) < 3:
+            result.append(seg)
+            continue
+
+        split_paces = []
+        for ls in seg.splits:
+            p = ls.pace_sec_per_km
+            if p is not None:
+                split_paces.append((ls, p))
+
+        if len(split_paces) < 3:
+            result.append(seg)
+            continue
+
+        fastest = min(p for _, p in split_paces)
+        slowest = max(p for _, p in split_paces)
+        if slowest <= 0 or (slowest - fastest) / slowest < 0.15:
+            result.append(seg)
+            continue
+
+        threshold = (fastest + slowest) / 2
+        best_split_point = None
+        best_ratio = 0.0
+
+        for k in range(1, len(seg.splits)):
+            before = seg.splits[:k]
+            after = seg.splits[k:]
+            b_dist = sum(s.distance or 0 for s in before)
+            b_time = sum(s.moving_time or s.elapsed_time or 0 for s in before)
+            a_dist = sum(s.distance or 0 for s in after)
+            a_time = sum(s.moving_time or s.elapsed_time or 0 for s in after)
+            if b_dist <= 0 or a_dist <= 0:
+                continue
+            b_pace = (b_time / b_dist) * 1000
+            a_pace = (a_time / a_dist) * 1000
+            diff = abs(b_pace - a_pace)
+            mean = (b_pace + a_pace) / 2
+            if mean <= 0:
+                continue
+            ratio = diff / mean
+            if ratio > best_ratio:
+                best_ratio = ratio
+                best_split_point = k
+
+        if best_split_point is not None and best_ratio > 0.15:
+            seg1 = _Segment(splits=seg.splits[:best_split_point])
+            seg2 = _Segment(splits=seg.splits[best_split_point:])
+            if seg1.total_distance > 200 and seg2.total_distance > 200:
+                result.append(seg1)
+                result.append(seg2)
+            else:
+                result.append(seg)
+        else:
+            result.append(seg)
+
+    return result
+
+
 def detect_interval_structure(splits_data: list) -> IntervalAnalysis:
-    """
-    Analyze splits to detect and label workout structure.
-
-    Args:
-        splits_data: list of dicts or ORM objects with split fields
-
-    Returns:
-        IntervalAnalysis with labeled splits and summary.
-    """
     if not splits_data or len(splits_data) < 3:
         return _passthrough(splits_data or [])
 
-    labeled = []
-    for s in splits_data:
-        dist = float(getattr(s, "distance", None) or (s.get("distance") if isinstance(s, dict) else None) or 0)
-        et = getattr(s, "elapsed_time", None) if not isinstance(s, dict) else s.get("elapsed_time")
-        mt = getattr(s, "moving_time", None) if not isinstance(s, dict) else s.get("moving_time")
-        time_s = mt or et
-        ls = LabeledSplit(
-            split_number=getattr(s, "split_number", None) if not isinstance(s, dict) else s.get("split_number", 0),
-            distance=dist if dist > 0 else None,
-            elapsed_time=et,
-            moving_time=mt,
-            average_heartrate=getattr(s, "average_heartrate", None) if not isinstance(s, dict) else s.get("average_heartrate"),
-            max_heartrate=getattr(s, "max_heartrate", None) if not isinstance(s, dict) else s.get("max_heartrate"),
-            average_cadence=getattr(s, "average_cadence", None) if not isinstance(s, dict) else s.get("average_cadence"),
-            gap_seconds_per_mile=getattr(s, "gap_seconds_per_mile", None) if not isinstance(s, dict) else s.get("gap_seconds_per_mile"),
-            pace_sec_per_km=_compute_pace(dist, time_s),
-        )
-        labeled.append(ls)
+    labeled = [_to_labeled(s) for s in splits_data]
 
-    valid = [ls for ls in labeled if ls.pace_sec_per_km is not None]
-    if len(valid) < 3:
-        return _passthrough_labeled(labeled)
-
-    paces = [ls.pace_sec_per_km for ls in valid]
-    mean_pace = sum(paces) / len(paces)
-    variance = sum((p - mean_pace) ** 2 for p in paces) / len(paces)
-    cv = (math.sqrt(variance) / mean_pace) * 100 if mean_pace > 0 else 0
-
-    if cv < 10:
-        return _passthrough_labeled(labeled)
-
-    fast_threshold = mean_pace * 0.93
-    slow_threshold = mean_pace * 1.07
+    segments: List[_Segment] = []
+    current = _Segment()
 
     for ls in labeled:
-        if ls.pace_sec_per_km is None:
-            continue
-        if ls.pace_sec_per_km <= fast_threshold:
-            ls.lap_type = "work"
-        elif ls.pace_sec_per_km >= slow_threshold:
-            ls.lap_type = "rest"
+        stopped = _is_stopped(ls)
+        if stopped:
+            if current.splits:
+                segments.append(current)
+                current = _Segment()
+            seg = _Segment(splits=[ls], is_stopped=True)
+            segments.append(seg)
         else:
-            ls.lap_type = "rest" if ls.pace_sec_per_km > mean_pace else "work"
+            current.splits.append(ls)
 
-    _label_warmup_cooldown(labeled)
-    _number_work_intervals(labeled)
-    summary = _build_summary(labeled)
+    if current.splits:
+        segments.append(current)
 
-    return IntervalAnalysis(labeled_splits=labeled, summary=summary)
+    segments = _split_mixed_segments(segments)
 
+    running_segments = [seg for seg in segments if not seg.is_stopped]
+    if len(running_segments) < 2:
+        return _passthrough_labeled(labeled)
 
-def _label_warmup_cooldown(labeled: List[LabeledSplit]) -> None:
-    """Promote first and last slow segments to warm_up / cool_down."""
-    if not labeled:
-        return
+    paces = [seg.weighted_pace for seg in running_segments if seg.weighted_pace]
+    if len(paces) < 2:
+        return _passthrough_labeled(labeled)
 
-    for ls in labeled:
-        if ls.lap_type == "rest":
-            ls.lap_type = "warm_up"
-            break
-        elif ls.lap_type == "work":
-            break
+    sorted_paces = sorted(paces)
+    pace_range = sorted_paces[-1] - sorted_paces[0]
+    if sorted_paces[0] <= 0 or (pace_range / sorted_paces[0]) < 0.08:
+        return _passthrough_labeled(labeled)
 
-    for ls in reversed(labeled):
-        if ls.lap_type in ("rest", None) and ls.pace_sec_per_km is not None:
-            time_s = ls.moving_time or ls.elapsed_time or 0
-            if time_s > 60:
+    fast_threshold = _find_pace_gap(sorted_paces)
+    for seg in running_segments:
+        p = seg.weighted_pace
+        if p is not None:
+            seg._is_fast = p < fast_threshold
+        else:
+            seg._is_fast = False
+
+    fast_indices = [i for i, seg in enumerate(segments) if not seg.is_stopped and getattr(seg, '_is_fast', False)]
+    if not fast_indices:
+        return _passthrough_labeled(labeled)
+
+    first_fast = fast_indices[0]
+    last_fast = fast_indices[-1]
+
+    work_num = 0
+    for i, seg in enumerate(segments):
+        if seg.is_stopped:
+            for ls in seg.splits:
+                ls.lap_type = "rest"
+        elif getattr(seg, '_is_fast', False):
+            work_num += 1
+            for ls in seg.splits:
+                ls.lap_type = "work"
+                ls.interval_number = work_num
+        elif i < first_fast:
+            for ls in seg.splits:
+                ls.lap_type = "warm_up"
+        elif i > last_fast:
+            for ls in seg.splits:
                 ls.lap_type = "cool_down"
-            break
-        elif ls.lap_type == "work":
-            break
+        else:
+            for ls in seg.splits:
+                ls.lap_type = "rest"
 
+    if work_num < 1:
+        return _passthrough_labeled(labeled)
 
-def _number_work_intervals(labeled: List[LabeledSplit]) -> None:
-    """Assign 1-indexed interval_number to work splits."""
-    n = 0
-    for ls in labeled:
-        if ls.lap_type == "work":
-            n += 1
-            ls.interval_number = n
+    work_segs = [seg for seg in segments if not seg.is_stopped and getattr(seg, '_is_fast', False)]
+    rest_segs = [seg for seg in segments if seg.is_stopped]
 
-
-def _build_summary(labeled: List[LabeledSplit]) -> IntervalSummary:
-    """Generate IntervalSummary from labeled splits."""
-    work = [ls for ls in labeled if ls.lap_type == "work"]
-    rest = [ls for ls in labeled if ls.lap_type == "rest"]
-
-    if len(work) < 2:
-        if len(work) == 1:
-            return _build_tempo_summary(labeled, work[0])
-        return IntervalSummary(is_structured=False)
-
-    work_times = [ls.moving_time or ls.elapsed_time or 0 for ls in work]
-    work_paces = [ls.pace_sec_per_km for ls in work if ls.pace_sec_per_km]
-    work_hrs = [ls.average_heartrate for ls in work if ls.average_heartrate]
-    rest_times = [ls.moving_time or ls.elapsed_time or 0 for ls in rest]
-    rest_hrs = [ls.average_heartrate for ls in rest if ls.average_heartrate]
+    work_times = [seg.total_time for seg in work_segs]
+    work_paces = [seg.weighted_pace for seg in work_segs if seg.weighted_pace]
+    work_hrs = [seg.avg_hr for seg in work_segs if seg.avg_hr]
+    rest_times = [seg.total_elapsed for seg in rest_segs]
+    rest_hrs = [seg.avg_hr for seg in rest_segs if seg.avg_hr]
 
     avg_work_time = sum(work_times) / len(work_times) if work_times else 0
     avg_work_pace = sum(work_paces) / len(work_paces) if work_paces else None
     avg_rest_time = sum(rest_times) / len(rest_times) if rest_times else None
 
-    fastest_idx = None
-    slowest_idx = None
-    if work_paces and len(work) >= 2:
-        fastest_pace = min(ls.pace_sec_per_km for ls in work if ls.pace_sec_per_km)
-        slowest_pace = max(ls.pace_sec_per_km for ls in work if ls.pace_sec_per_km)
-        for ls in work:
-            if ls.pace_sec_per_km == fastest_pace and fastest_idx is None:
-                fastest_idx = ls.interval_number
-            if ls.pace_sec_per_km == slowest_pace:
-                slowest_idx = ls.interval_number
+    fastest_num = None
+    slowest_num = None
+    if len(work_segs) >= 2:
+        best_pace = min(seg.weighted_pace for seg in work_segs if seg.weighted_pace)
+        worst_pace = max(seg.weighted_pace for seg in work_segs if seg.weighted_pace)
+        for idx, seg in enumerate(work_segs):
+            if seg.weighted_pace == best_pace and fastest_num is None:
+                fastest_num = idx + 1
+            if seg.weighted_pace == worst_pace:
+                slowest_num = idx + 1
 
-    desc_parts = [f"{len(work)}×{_format_duration(int(round(avg_work_time)))}"]
+    desc_parts = [f"{len(work_segs)}\u00d7{_format_duration(int(round(avg_work_time)))}"]
     if avg_work_pace:
         desc_parts.append(f"at {_format_pace_imperial(avg_work_pace)} avg")
     if avg_rest_time and avg_rest_time > 0:
@@ -200,56 +339,23 @@ def _build_summary(labeled: List[LabeledSplit]) -> IntervalSummary:
 
     description = ", ".join(desc_parts) if len(desc_parts) > 1 else desc_parts[0]
 
-    return IntervalSummary(
+    summary = IntervalSummary(
         is_structured=True,
         workout_description=description,
-        num_work_intervals=len(work),
+        num_work_intervals=len(work_segs),
         avg_work_pace_sec_per_km=avg_work_pace,
         avg_work_hr=round(sum(work_hrs) / len(work_hrs)) if work_hrs else None,
         avg_rest_duration_s=avg_rest_time,
         avg_rest_hr=round(sum(rest_hrs) / len(rest_hrs)) if rest_hrs else None,
-        fastest_interval=fastest_idx,
-        slowest_interval=slowest_idx,
+        fastest_interval=fastest_num,
+        slowest_interval=slowest_num,
     )
 
-
-def _build_tempo_summary(labeled: List[LabeledSplit], work_split: LabeledSplit) -> IntervalSummary:
-    """Summary for single-segment sustained efforts (tempo, threshold)."""
-    time_s = work_split.moving_time or work_split.elapsed_time or 0
-    desc = _format_duration(time_s)
-    if work_split.pace_sec_per_km:
-        desc += f" at {_format_pace_imperial(work_split.pace_sec_per_km)}"
-
-    return IntervalSummary(
-        is_structured=True,
-        workout_description=desc,
-        num_work_intervals=1,
-        avg_work_pace_sec_per_km=work_split.pace_sec_per_km,
-        avg_work_hr=work_split.average_heartrate,
-        avg_rest_duration_s=None,
-        avg_rest_hr=None,
-        fastest_interval=1,
-        slowest_interval=1,
-    )
+    return IntervalAnalysis(labeled_splits=labeled, summary=summary)
 
 
 def _passthrough(splits_data: list) -> IntervalAnalysis:
-    labeled = []
-    for s in splits_data:
-        dist = float(getattr(s, "distance", None) or (s.get("distance") if isinstance(s, dict) else None) or 0)
-        et = getattr(s, "elapsed_time", None) if not isinstance(s, dict) else s.get("elapsed_time")
-        mt = getattr(s, "moving_time", None) if not isinstance(s, dict) else s.get("moving_time")
-        labeled.append(LabeledSplit(
-            split_number=getattr(s, "split_number", None) if not isinstance(s, dict) else s.get("split_number", 0),
-            distance=dist if dist > 0 else None,
-            elapsed_time=et,
-            moving_time=mt,
-            average_heartrate=getattr(s, "average_heartrate", None) if not isinstance(s, dict) else s.get("average_heartrate"),
-            max_heartrate=getattr(s, "max_heartrate", None) if not isinstance(s, dict) else s.get("max_heartrate"),
-            average_cadence=getattr(s, "average_cadence", None) if not isinstance(s, dict) else s.get("average_cadence"),
-            gap_seconds_per_mile=getattr(s, "gap_seconds_per_mile", None) if not isinstance(s, dict) else s.get("gap_seconds_per_mile"),
-            pace_sec_per_km=_compute_pace(dist, mt or et),
-        ))
+    labeled = [_to_labeled(s) for s in splits_data]
     return IntervalAnalysis(labeled_splits=labeled, summary=IntervalSummary())
 
 
