@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
 import { useAuth } from '@/lib/hooks/useAuth';
 import {
@@ -53,6 +53,8 @@ export default function NutritionPage() {
   const [showCatalog, setShowCatalog] = useState(false);
   const [catalogSearch, setCatalogSearch] = useState('');
   const [catalogCategory, setCatalogCategory] = useState<string>('');
+  const [scannerOpen, setScannerOpen] = useState(false);
+  const [scannerLoading, setScannerLoading] = useState(false);
   const [formData, setFormData] = useState<NutritionEntryCreate>({
     athlete_id: user?.id || '',
     date: today,
@@ -66,7 +68,7 @@ export default function NutritionPage() {
   });
 
   const photoRef = useRef<HTMLInputElement>(null);
-  const barcodeRef = useRef<HTMLInputElement>(null);
+  const scannerRef = useRef<unknown>(null);
 
   const shelfProductIds = new Set(shelfItems?.map((s) => s.product_id) || []);
 
@@ -149,34 +151,81 @@ export default function NutritionPage() {
     }
   };
 
-  const handleBarcodeCapture = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  const stopScanner = useCallback(async () => {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const scanner = scannerRef.current as any;
+      if (scanner) {
+        const state = scanner.getState?.();
+        if (state === 2) await scanner.stop();
+        await scanner.clear();
+        scannerRef.current = null;
+      }
+    } catch { /* scanner may already be stopped */ }
+    setScannerOpen(false);
+    setScannerLoading(false);
+  }, []);
 
+  const startScanner = useCallback(async () => {
+    setScannerOpen(true);
+    setScannerLoading(true);
     try {
       const { Html5Qrcode } = await import('html5-qrcode');
-      const scanner = new Html5Qrcode('barcode-reader-hidden');
-      const result = await scanner.scanFile(file, true);
-      await scanner.clear();
+      await new Promise((r) => setTimeout(r, 100));
+      const scanner = new Html5Qrcode('barcode-live-reader', {
+        formatsToSupport: [0, 2, 3, 4, 5, 10],
+        verbose: false,
+      });
+      scannerRef.current = scanner;
+      await scanner.start(
+        { facingMode: 'environment' },
+        {
+          fps: 10,
+          qrbox: { width: 280, height: 120 },
+          aspectRatio: 1.0,
+        },
+        async (decodedText: string) => {
+          try {
+            const state = scanner.getState?.();
+            if (state === 2) await scanner.stop();
+          } catch { /* ignore */ }
+          await scanner.clear();
+          scannerRef.current = null;
+          setScannerOpen(false);
+          setScannerLoading(false);
 
-      const scan = await scanBarcode.mutateAsync(result);
-      if (scan.found && scan.food_name) {
-        setBarcodeResult({
-          food_name: scan.food_name,
-          calories: scan.calories || 0,
-          protein_g: scan.protein_g || 0,
-          carbs_g: scan.carbs_g || 0,
-          fat_g: scan.fat_g || 0,
-          servings: 1,
-          fdc_id: scan.fdc_id,
-        });
-      } else {
-        showToast('Product not found — try a photo instead');
-      }
+          try {
+            const scan = await scanBarcode.mutateAsync(decodedText);
+            if (scan.found && scan.food_name) {
+              setBarcodeResult({
+                food_name: scan.food_name,
+                calories: scan.calories || 0,
+                protein_g: scan.protein_g || 0,
+                carbs_g: scan.carbs_g || 0,
+                fat_g: scan.fat_g || 0,
+                servings: 1,
+                fdc_id: scan.fdc_id,
+              });
+            } else {
+              showToast('Product not found — try a photo instead');
+            }
+          } catch {
+            showToast('Lookup failed — try again');
+          }
+        },
+        () => { /* ignore scan errors (frames without barcode) */ },
+      );
+      setScannerLoading(false);
     } catch {
-      showToast('Could not read barcode. Try again or use photo.');
+      showToast('Could not access camera');
+      setScannerOpen(false);
+      setScannerLoading(false);
     }
-  };
+  }, [scanBarcode, showToast]);
+
+  useEffect(() => {
+    return () => { stopScanner(); };
+  }, [stopScanner]);
 
   const handleConfirmBarcode = async () => {
     if (!barcodeResult) return;
@@ -318,11 +367,32 @@ export default function NutritionPage() {
             </div>
           )}
 
-          {/* Hidden barcode reader div */}
-          <div id="barcode-reader-hidden" className="hidden" />
+          {/* Live barcode scanner overlay */}
+          {scannerOpen && (
+            <>
+              <div className="fixed inset-0 bg-black/70 z-40" onClick={stopScanner} />
+              <div className="fixed bottom-0 left-0 right-0 z-50 bg-slate-800 rounded-t-2xl border-t border-slate-700/50 max-h-[75vh] overflow-hidden animate-slide-up">
+                <div className="w-10 h-1 bg-slate-600 rounded-full mx-auto mt-3" />
+                <div className="p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h2 className="text-sm font-semibold text-white">Scan Barcode</h2>
+                    <button onClick={stopScanner} className="text-slate-400 text-xs">Cancel</button>
+                  </div>
+                  {scannerLoading && (
+                    <div className="flex items-center justify-center py-6">
+                      <LoadingSpinner />
+                      <span className="ml-2 text-xs text-slate-400">Starting camera...</span>
+                    </div>
+                  )}
+                  <div id="barcode-live-reader" className="rounded-lg overflow-hidden" />
+                  <p className="text-xs text-slate-500 text-center">Point camera at the barcode — it will scan automatically</p>
+                </div>
+              </div>
+            </>
+          )}
 
           {/* Input Modes */}
-          {!showForm && !photoPreview && !barcodeResult && (
+          {!showForm && !photoPreview && !barcodeResult && !scannerOpen && (
             <>
               <div className="grid grid-cols-3 gap-3">
                 <button
@@ -336,7 +406,7 @@ export default function NutritionPage() {
                   <span className="text-xs text-slate-400">Photo</span>
                 </button>
                 <button
-                  onClick={() => barcodeRef.current?.click()}
+                  onClick={startScanner}
                   className="flex flex-col items-center justify-center gap-2 bg-slate-800 rounded-xl border border-slate-700/50 p-4 min-h-[88px] active:bg-slate-700 transition-colors"
                 >
                   <svg className="w-7 h-7 text-purple-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
@@ -364,19 +434,11 @@ export default function NutritionPage() {
                 className="hidden"
                 onChange={handlePhotoCapture}
               />
-              <input
-                ref={barcodeRef}
-                type="file"
-                accept="image/*"
-                capture="environment"
-                className="hidden"
-                onChange={handleBarcodeCapture}
-              />
             </>
           )}
 
           {/* Fueling Shelf */}
-          {!showForm && !photoPreview && !barcodeResult && (
+          {!showForm && !photoPreview && !barcodeResult && !scannerOpen && (
             <div className="bg-slate-800 rounded-xl border border-slate-700/50 p-4">
               <div className="flex items-center justify-between mb-3">
                 <h2 className="text-sm font-semibold text-slate-300">My Fueling Shelf</h2>
