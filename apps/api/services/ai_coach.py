@@ -876,6 +876,19 @@ Policy:
                 },
             },
             {
+                "name": "get_nutrition_log",
+                "description": "Get detailed nutrition log entries. Use when the athlete asks about their food, meals, fueling, macros, or calorie intake. Returns individual entries with macros, daily summaries, and pre-run fueling patterns.",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "days": {"type": "integer", "description": "Days of history to retrieve (default 7, max 90)"},
+                        "entry_type": {"type": "string", "description": "Filter by type: daily, pre_activity, during_activity, post_activity (default: all)"},
+                        "activity_id": {"type": "string", "description": "Filter to entries linked to a specific activity UUID"}
+                    },
+                    "required": [],
+                },
+            },
+            {
                 "name": "get_best_runs",
                 "description": "Get best runs by an explicit metric (efficiency, pace, distance, intensity_score), optionally filtered to an effort zone.",
                 "input_schema": {
@@ -1078,6 +1091,8 @@ Policy:
                 result = coach_tools.get_efficiency_by_zone(self.db, athlete_id, **tool_input)
             elif tool_name == "get_nutrition_correlations":
                 result = coach_tools.get_nutrition_correlations(self.db, athlete_id, **tool_input)
+            elif tool_name == "get_nutrition_log":
+                result = coach_tools.get_nutrition_log(self.db, athlete_id, **tool_input)
             elif tool_name == "get_best_runs":
                 result = coach_tools.get_best_runs(self.db, athlete_id, **tool_input)
             elif tool_name == "compare_training_periods":
@@ -1861,6 +1876,18 @@ If you need more data to answer well, call the tools. That's why they're there."
                             "type": "integer",
                             "description": "Days of history (default 90, max 365)"
                         }
+                    }
+                }
+            },
+            {
+                "name": "get_nutrition_log",
+                "description": "Get detailed nutrition log entries. Use when the athlete asks about their food, meals, fueling, macros, or calorie intake.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "days": {"type": "integer", "description": "Days of history (default 7, max 90)"},
+                        "entry_type": {"type": "string", "description": "Filter: daily, pre_activity, during_activity, post_activity"},
+                        "activity_id": {"type": "string", "description": "Filter to a specific activity UUID"}
                     }
                 }
             },

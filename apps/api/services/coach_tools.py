@@ -1677,6 +1677,137 @@ def get_nutrition_correlations(
         return {"ok": False, "tool": "get_nutrition_correlations", "error": str(e)}
 
 
+def get_nutrition_log(
+    db: Session,
+    athlete_id: UUID,
+    days: int = 7,
+    entry_type: str = "",
+    activity_id: str = "",
+) -> Dict[str, Any]:
+    """
+    Return recent nutrition entries for coaching conversation.
+    Supports filtering by entry_type (daily, pre_activity, during_activity, post_activity)
+    or by activity_id to see what was eaten around a specific run.
+    """
+    from models import NutritionEntry
+    now = datetime.utcnow()
+    try:
+        days = max(1, min(int(days), 90))
+        start = now - timedelta(days=days)
+        units = _preferred_units(db, athlete_id)
+
+        q = (
+            db.query(NutritionEntry)
+            .filter(
+                NutritionEntry.athlete_id == athlete_id,
+                NutritionEntry.date >= start.date(),
+            )
+            .order_by(NutritionEntry.date.desc(), NutritionEntry.created_at.desc())
+        )
+
+        if entry_type:
+            q = q.filter(NutritionEntry.entry_type == entry_type)
+        if activity_id:
+            q = q.filter(NutritionEntry.activity_id == activity_id)
+
+        entries = q.limit(50).all()
+
+        if not entries:
+            return {
+                "ok": True,
+                "tool": "get_nutrition_log",
+                "generated_at": _iso(now),
+                "narrative": f"No nutrition entries found in the last {days} days.",
+                "data": {"entries": [], "summary": {}},
+            }
+
+        entry_list = []
+        daily_totals: Dict[str, Dict[str, float]] = {}
+
+        for e in entries:
+            d = e.date.isoformat() if e.date else ""
+            row = {
+                "date": d,
+                "entry_type": e.entry_type or "daily",
+                "notes": (e.notes or "")[:120],
+                "calories": float(e.calories) if e.calories else None,
+                "protein_g": float(e.protein_g) if e.protein_g else None,
+                "carbs_g": float(e.carbs_g) if e.carbs_g else None,
+                "fat_g": float(e.fat_g) if e.fat_g else None,
+                "caffeine_mg": e.caffeine_mg,
+                "fluid_ml": e.fluid_ml,
+                "macro_source": e.macro_source,
+            }
+            if e.activity_id:
+                act = db.query(Activity).filter(Activity.id == e.activity_id).first()
+                if act:
+                    dist = act.distance_meters or 0
+                    if units == "imperial":
+                        row["linked_activity"] = f"{act.name or 'Run'} ({dist / _M_PER_MI:.1f}mi)"
+                    else:
+                        row["linked_activity"] = f"{act.name or 'Run'} ({dist / 1000:.1f}km)"
+            entry_list.append(row)
+
+            if d:
+                if d not in daily_totals:
+                    daily_totals[d] = {"cal": 0, "p": 0, "c": 0, "f": 0, "caf": 0, "entries": 0}
+                dt = daily_totals[d]
+                dt["cal"] += float(e.calories or 0)
+                dt["p"] += float(e.protein_g or 0)
+                dt["c"] += float(e.carbs_g or 0)
+                dt["f"] += float(e.fat_g or 0)
+                dt["caf"] += float(e.caffeine_mg or 0)
+                dt["entries"] += 1
+
+        days_with_data = len(daily_totals)
+        if days_with_data > 0:
+            avg_cal = sum(d["cal"] for d in daily_totals.values()) / days_with_data
+            avg_p = sum(d["p"] for d in daily_totals.values()) / days_with_data
+            avg_c = sum(d["c"] for d in daily_totals.values()) / days_with_data
+            avg_f = sum(d["f"] for d in daily_totals.values()) / days_with_data
+        else:
+            avg_cal = avg_p = avg_c = avg_f = 0
+
+        summary = {
+            "days_with_entries": days_with_data,
+            "total_entries": len(entries),
+            "daily_avg_calories": round(avg_cal),
+            "daily_avg_protein_g": round(avg_p),
+            "daily_avg_carbs_g": round(avg_c),
+            "daily_avg_fat_g": round(avg_f),
+        }
+
+        pre_run = [e for e in entries if e.entry_type == "pre_activity"]
+        during_run = [e for e in entries if e.entry_type == "during_activity"]
+        if pre_run:
+            summary["pre_run_entries"] = len(pre_run)
+            summary["pre_run_avg_carbs_g"] = round(sum(float(e.carbs_g or 0) for e in pre_run) / len(pre_run))
+            summary["pre_run_avg_caffeine_mg"] = round(sum(float(e.caffeine_mg or 0) for e in pre_run) / len(pre_run))
+        if during_run:
+            summary["during_run_entries"] = len(during_run)
+            summary["during_run_avg_carbs_g"] = round(sum(float(e.carbs_g or 0) for e in during_run) / len(during_run))
+
+        narrative_parts = [f"Found {len(entries)} nutrition entries over the last {days} days ({days_with_data} days with data)."]
+        if avg_cal > 0:
+            narrative_parts.append(f"Daily average: {round(avg_cal)} cal, {round(avg_p)}g protein, {round(avg_c)}g carbs, {round(avg_f)}g fat.")
+        if pre_run:
+            narrative_parts.append(f"Pre-run fueling logged {len(pre_run)} times (avg {summary.get('pre_run_avg_carbs_g', 0)}g carbs, {summary.get('pre_run_avg_caffeine_mg', 0)}mg caffeine).")
+
+        return {
+            "ok": True,
+            "tool": "get_nutrition_log",
+            "generated_at": _iso(now),
+            "narrative": " ".join(narrative_parts),
+            "data": {"entries": entry_list, "summary": summary},
+        }
+    except Exception as e:
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        return {"ok": False, "tool": "get_nutrition_log", "error": str(e)}
+
+
 def get_weekly_volume(db: Session, athlete_id: UUID, weeks: int = 12) -> Dict[str, Any]:
     """
     Weekly rollups of run volume (distance/time/count).
@@ -3869,6 +4000,69 @@ def build_athlete_brief(db: Session, athlete_id: UUID) -> str:
                     sections.append("## Efficiency Trend\n" + "\n".join(lines))
     except Exception as e:
         logger.debug(f"Brief: efficiency trend failed: {e}")
+
+    # ── 11b. NUTRITION SNAPSHOT ───────────────────────────────────────
+    try:
+        from models import NutritionEntry
+        _n_today = today
+        _n_week_ago = today - timedelta(days=7)
+
+        today_entries = (
+            db.query(NutritionEntry)
+            .filter(
+                NutritionEntry.athlete_id == athlete_id,
+                NutritionEntry.date == _n_today,
+            )
+            .all()
+        )
+        week_entries = (
+            db.query(NutritionEntry)
+            .filter(
+                NutritionEntry.athlete_id == athlete_id,
+                NutritionEntry.date >= _n_week_ago,
+            )
+            .all()
+        )
+
+        if today_entries or week_entries:
+            n_lines = [
+                "(INTERNAL — use to reason about fueling but do NOT recite raw numbers unprompted. "
+                "Only discuss nutrition specifics when the athlete asks. Use get_nutrition_log tool for detail.)"
+            ]
+
+            if today_entries:
+                t_cal = sum(float(e.calories or 0) for e in today_entries)
+                t_p = sum(float(e.protein_g or 0) for e in today_entries)
+                t_c = sum(float(e.carbs_g or 0) for e in today_entries)
+                t_f = sum(float(e.fat_g or 0) for e in today_entries)
+                t_caf = sum(float(e.caffeine_mg or 0) for e in today_entries)
+                n_lines.append(f"Today: {round(t_cal)} cal, {round(t_p)}g P / {round(t_c)}g C / {round(t_f)}g F ({len(today_entries)} entries)")
+                if t_caf > 0:
+                    n_lines.append(f"Today caffeine: {round(t_caf)}mg")
+            else:
+                n_lines.append("Today: no entries logged yet")
+
+            if week_entries:
+                by_day: Dict[str, list] = {}
+                for e in week_entries:
+                    d_str = e.date.isoformat() if e.date else ""
+                    by_day.setdefault(d_str, []).append(e)
+                days_logged = len(by_day)
+                avg_cal = sum(sum(float(x.calories or 0) for x in day) for day in by_day.values()) / max(days_logged, 1)
+                avg_p = sum(sum(float(x.protein_g or 0) for x in day) for day in by_day.values()) / max(days_logged, 1)
+                avg_c = sum(sum(float(x.carbs_g or 0) for x in day) for day in by_day.values()) / max(days_logged, 1)
+                avg_f = sum(sum(float(x.fat_g or 0) for x in day) for day in by_day.values()) / max(days_logged, 1)
+                n_lines.append(f"7-day avg: {round(avg_cal)} cal/day ({round(avg_p)}P / {round(avg_c)}C / {round(avg_f)}F) — logged {days_logged}/7 days")
+
+                pre_run = [e for e in week_entries if e.entry_type == "pre_activity"]
+                if pre_run:
+                    pr_carbs = sum(float(e.carbs_g or 0) for e in pre_run) / len(pre_run)
+                    pr_caf = sum(float(e.caffeine_mg or 0) for e in pre_run) / len(pre_run)
+                    n_lines.append(f"Pre-run pattern: {len(pre_run)} entries, avg {round(pr_carbs)}g carbs, {round(pr_caf)}mg caffeine")
+
+            sections.append("## Nutrition Snapshot\n" + "\n".join(n_lines))
+    except Exception as e:
+        logger.debug(f"Brief: nutrition snapshot failed: {e}")
 
     # ── 12. INTENT & CHECK-IN ────────────────────────────────────────
     try:
