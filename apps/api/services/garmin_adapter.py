@@ -491,6 +491,12 @@ def adapt_activity_detail_laps(
     if not laps_raw:
         return _derive_splits_from_samples(samples)
 
+    if laps_raw:
+        sample_keys = sorted(laps_raw[0].keys())
+        type_field = laps_raw[0].get("messageType") or laps_raw[0].get("lapType") or laps_raw[0].get("intensity")
+        if type_field is not None or any(k for k in sample_keys if "type" in k.lower()):
+            logger.info("Garmin lap metadata keys=%s type_field=%s", sample_keys, type_field)
+
     # Keep only laps with a valid start time; sort ascending
     laps_sorted = sorted(
         (lap for lap in laps_raw if lap.get("startTimeInSeconds") is not None),
