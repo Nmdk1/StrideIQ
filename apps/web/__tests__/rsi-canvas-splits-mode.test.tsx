@@ -27,9 +27,9 @@ const mockUseStreamAnalysis = useStreamAnalysis as jest.MockedFunction<typeof us
 const streamData = generateTestStreamData(500);
 
 const mockSplits: Split[] = [
-  { split_number: 1, distance: 1609, elapsed_time: 200, moving_time: 195, average_heartrate: 140, max_heartrate: 155, average_cadence: 85, gap_seconds_per_mile: 720 },
-  { split_number: 2, distance: 1609, elapsed_time: 180, moving_time: 175, average_heartrate: 155, max_heartrate: 170, average_cadence: 88, gap_seconds_per_mile: 680 },
-  { split_number: 3, distance: 800,  elapsed_time: 80,  moving_time: 78,  average_heartrate: 165, max_heartrate: 180, average_cadence: 92, gap_seconds_per_mile: 650 },
+  { split_number: 1, distance: 1609, elapsed_time: 200, moving_time: 195, average_heartrate: 140, max_heartrate: 155, average_cadence: 85, gap_seconds_per_mile: 720, lap_type: null, interval_number: null },
+  { split_number: 2, distance: 1609, elapsed_time: 180, moving_time: 175, average_heartrate: 155, max_heartrate: 170, average_cadence: 88, gap_seconds_per_mile: 680, lap_type: null, interval_number: null },
+  { split_number: 3, distance: 800,  elapsed_time: 80,  moving_time: 78,  average_heartrate: 165, max_heartrate: 180, average_cadence: 92, gap_seconds_per_mile: 650, lap_type: null, interval_number: null },
 ];
 
 function renderWithSplits(splits: Split[] | null = mockSplits) {

@@ -8,8 +8,8 @@ from alembic import op
 import sqlalchemy as sa
 
 revision = "interval_view_001"
-down_revision = None
-branch_labels = ("interval_view",)
+down_revision = "nutrition_intelligence_001"
+branch_labels = None
 depends_on = None
 
 
