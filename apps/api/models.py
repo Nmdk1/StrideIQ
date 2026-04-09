@@ -903,6 +903,27 @@ class BodyComposition(Base):
     )
 
 
+class NutritionGoal(Base):
+    """
+    Athlete's nutrition targets. One row per athlete (current goals only).
+    Load-adaptive: rest-day base scaled by workout tier multipliers.
+    """
+    __tablename__ = "nutrition_goal"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    athlete_id = Column(UUID(as_uuid=True), ForeignKey("athlete.id"), nullable=False, unique=True, index=True)
+    goal_type = Column(Text, nullable=False)
+    calorie_target = Column(Integer, nullable=True)
+    protein_g_per_kg = Column(Float, nullable=False, default=1.8)
+    carb_pct = Column(Float, nullable=True, default=0.55)
+    fat_pct = Column(Float, nullable=True, default=0.45)
+    caffeine_target_mg = Column(Integer, nullable=True)
+    load_adaptive = Column(Boolean, default=True, nullable=False)
+    load_multipliers = Column(JSONB, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+
 class NutritionEntry(Base):
     """
     Nutrition tracking for correlation analysis.

@@ -28,6 +28,7 @@ from models import (
     AthleteFuelingProfile,
     FuelingProduct,
     NutritionEntry,
+    NutritionGoal,
 )
 from schemas import (
     BarcodeScanRequest,
@@ -43,6 +44,12 @@ from schemas import (
     PhotoParseItemResponse,
 )
 from services import nutrition_parser
+from services.nutrition_targets import (
+    compute_daily_targets,
+    get_daily_actuals,
+    get_local_hour,
+    get_nutrition_insights,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -59,6 +66,180 @@ def nutrition_parse_available():
     kimi = bool(settings.KIMI_API_KEY)
     openai = bool(os.getenv("OPENAI_API_KEY"))
     return {"available": kimi or openai}
+
+
+# ---------------------------------------------------------------------------
+# Nutrition goal / planning
+# ---------------------------------------------------------------------------
+
+class NutritionGoalRequest(BaseModel):
+    goal_type: str  # 'performance', 'maintain', 'recomp'
+    calorie_target: Optional[int] = None
+    protein_g_per_kg: float = 1.8
+    carb_pct: Optional[float] = 0.55
+    fat_pct: Optional[float] = 0.45
+    caffeine_target_mg: Optional[int] = None
+    load_adaptive: bool = True
+    load_multipliers: Optional[Dict[str, float]] = None
+
+
+class NutritionGoalResponse(BaseModel):
+    id: str
+    goal_type: str
+    calorie_target: Optional[int] = None
+    protein_g_per_kg: float
+    carb_pct: Optional[float] = None
+    fat_pct: Optional[float] = None
+    caffeine_target_mg: Optional[int] = None
+    load_adaptive: bool
+    load_multipliers: Optional[Dict[str, float]] = None
+
+
+class DailyTargetResponse(BaseModel):
+    calorie_target: int
+    protein_g: float
+    carbs_g: float
+    fat_g: float
+    caffeine_mg: Optional[int] = None
+    day_tier: str
+    day_tier_label: str
+    base_calories: int
+    multiplier: float
+    load_adaptive: bool
+    goal_type: str
+    workout_title: Optional[str] = None
+    actual_calories: float
+    actual_protein_g: float
+    actual_carbs_g: float
+    actual_fat_g: float
+    actual_caffeine_mg: float
+    time_pct: float
+    insights: List[Dict[str, str]]
+
+
+_TIER_LABELS = {
+    "rest": "Rest day",
+    "easy": "Easy day",
+    "moderate": "Moderate day",
+    "hard": "Hard day",
+    "long": "Long run day",
+}
+
+
+@router.get("/nutrition/goal", response_model=Optional[NutritionGoalResponse])
+def get_nutrition_goal(
+    current_user: Athlete = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    goal = db.query(NutritionGoal).filter(NutritionGoal.athlete_id == current_user.id).first()
+    if not goal:
+        return None
+    return NutritionGoalResponse(
+        id=str(goal.id),
+        goal_type=goal.goal_type,
+        calorie_target=goal.calorie_target,
+        protein_g_per_kg=goal.protein_g_per_kg,
+        carb_pct=goal.carb_pct,
+        fat_pct=goal.fat_pct,
+        caffeine_target_mg=goal.caffeine_target_mg,
+        load_adaptive=goal.load_adaptive,
+        load_multipliers=goal.load_multipliers,
+    )
+
+
+@router.post("/nutrition/goal", response_model=NutritionGoalResponse, status_code=200)
+def upsert_nutrition_goal(
+    payload: NutritionGoalRequest,
+    current_user: Athlete = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    if payload.goal_type not in ("performance", "maintain", "recomp"):
+        raise HTTPException(status_code=422, detail="goal_type must be 'performance', 'maintain', or 'recomp'")
+
+    if payload.carb_pct is not None and payload.fat_pct is not None:
+        macro_sum = payload.carb_pct + payload.fat_pct
+        if not (0.99 <= macro_sum <= 1.01):
+            raise HTTPException(status_code=422, detail=f"carb_pct + fat_pct must equal 1.0, got {macro_sum:.3f}")
+
+    goal = db.query(NutritionGoal).filter(NutritionGoal.athlete_id == current_user.id).first()
+    if goal:
+        goal.goal_type = payload.goal_type
+        goal.calorie_target = payload.calorie_target
+        goal.protein_g_per_kg = payload.protein_g_per_kg
+        goal.carb_pct = payload.carb_pct
+        goal.fat_pct = payload.fat_pct
+        goal.caffeine_target_mg = payload.caffeine_target_mg
+        goal.load_adaptive = payload.load_adaptive
+        goal.load_multipliers = payload.load_multipliers
+    else:
+        goal = NutritionGoal(
+            athlete_id=current_user.id,
+            goal_type=payload.goal_type,
+            calorie_target=payload.calorie_target,
+            protein_g_per_kg=payload.protein_g_per_kg,
+            carb_pct=payload.carb_pct,
+            fat_pct=payload.fat_pct,
+            caffeine_target_mg=payload.caffeine_target_mg,
+            load_adaptive=payload.load_adaptive,
+            load_multipliers=payload.load_multipliers,
+        )
+        db.add(goal)
+
+    db.commit()
+    db.refresh(goal)
+
+    return NutritionGoalResponse(
+        id=str(goal.id),
+        goal_type=goal.goal_type,
+        calorie_target=goal.calorie_target,
+        protein_g_per_kg=goal.protein_g_per_kg,
+        carb_pct=goal.carb_pct,
+        fat_pct=goal.fat_pct,
+        caffeine_target_mg=goal.caffeine_target_mg,
+        load_adaptive=goal.load_adaptive,
+        load_multipliers=goal.load_multipliers,
+    )
+
+
+@router.get("/nutrition/daily-target", response_model=Optional[DailyTargetResponse])
+def get_daily_target(
+    target_date: Optional[str] = Query(None),
+    current_user: Athlete = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    from datetime import date as date_type
+    td = date_type.fromisoformat(target_date) if target_date else date.today()
+
+    targets = compute_daily_targets(db, current_user.id, td)
+    if not targets:
+        return None
+
+    actuals = get_daily_actuals(db, current_user.id, td)
+    local_hour = get_local_hour(current_user)
+    time_pct = round((local_hour / 24) * 100, 1)
+    insights = get_nutrition_insights(db, current_user.id, targets["day_tier"], limit=1)
+
+    return DailyTargetResponse(
+        calorie_target=targets["calorie_target"],
+        protein_g=targets["protein_g"],
+        carbs_g=targets["carbs_g"],
+        fat_g=targets["fat_g"],
+        caffeine_mg=targets["caffeine_mg"],
+        day_tier=targets["day_tier"],
+        day_tier_label=_TIER_LABELS.get(targets["day_tier"], targets["day_tier"]),
+        base_calories=targets["base_calories"],
+        multiplier=targets["multiplier"],
+        load_adaptive=targets["load_adaptive"],
+        goal_type=targets["goal_type"],
+        workout_title=targets["workout_title"],
+        actual_calories=actuals["calories"],
+        actual_protein_g=actuals["protein_g"],
+        actual_carbs_g=actuals["carbs_g"],
+        actual_fat_g=actuals["fat_g"],
+        actual_caffeine_mg=actuals["caffeine_mg"],
+        time_pct=time_pct,
+        insights=insights,
+    )
 
 
 # ---------------------------------------------------------------------------

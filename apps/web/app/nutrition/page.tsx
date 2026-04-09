@@ -18,6 +18,9 @@ import {
   useScanBarcode,
   useNutritionSummary,
   useActivityLinkedNutrition,
+  useNutritionGoal,
+  useUpsertNutritionGoal,
+  useDailyTarget,
 } from '@/lib/hooks/queries/nutrition';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { nutritionService } from '@/lib/api/services/nutrition';
@@ -154,6 +157,34 @@ export default function NutritionPage() {
   const { data: summary30 } = useNutritionSummary(30);
   const { data: activityLinked } = useActivityLinkedNutrition(30);
 
+  const { data: nutritionGoal } = useNutritionGoal();
+  const upsertGoal = useUpsertNutritionGoal();
+  const { data: dailyTarget } = useDailyTarget();
+  const { data: historyTarget } = useDailyTarget(selectedDate !== today ? selectedDate : undefined);
+
+  const [showGoalSetup, setShowGoalSetup] = useState(false);
+  const [goalForm, setGoalForm] = useState({
+    goal_type: 'performance' as 'performance' | 'maintain' | 'recomp',
+    protein_g_per_kg: 1.8,
+    carb_pct: 0.55,
+    fat_pct: 0.45,
+    caffeine_target_mg: undefined as number | undefined,
+    load_adaptive: true,
+  });
+
+  useEffect(() => {
+    if (nutritionGoal) {
+      setGoalForm({
+        goal_type: nutritionGoal.goal_type,
+        protein_g_per_kg: nutritionGoal.protein_g_per_kg,
+        carb_pct: nutritionGoal.carb_pct ?? 0.55,
+        fat_pct: nutritionGoal.fat_pct ?? 0.45,
+        caffeine_target_mg: nutritionGoal.caffeine_target_mg ?? undefined,
+        load_adaptive: nutritionGoal.load_adaptive,
+      });
+    }
+  }, [nutritionGoal]);
+
   const [showForm, setShowForm] = useState(false);
   const [nlText, setNlText] = useState('');
   const [toast, setToast] = useState<string | null>(null);
@@ -209,6 +240,23 @@ export default function NutritionPage() {
     setToast(msg);
     setTimeout(() => setToast(null), 3000);
   }, []);
+
+  const handleSaveGoal = async () => {
+    try {
+      await upsertGoal.mutateAsync({
+        goal_type: goalForm.goal_type,
+        protein_g_per_kg: goalForm.protein_g_per_kg,
+        carb_pct: goalForm.carb_pct,
+        fat_pct: goalForm.fat_pct,
+        caffeine_target_mg: goalForm.caffeine_target_mg,
+        load_adaptive: goalForm.load_adaptive,
+      });
+      setShowGoalSetup(false);
+      showToast('Goal saved');
+    } catch {
+      showToast('Failed to save goal');
+    }
+  };
 
   const totals = entries?.reduce(
     (acc, e) => ({
@@ -549,6 +597,124 @@ export default function NutritionPage() {
             </>
           )}
 
+          {/* Goal Setup Bottom Sheet */}
+          {showGoalSetup && (
+            <>
+              <div className="fixed inset-0 bg-black/70 z-40" onClick={() => setShowGoalSetup(false)} />
+              <div className="fixed bottom-0 left-0 right-0 z-50 bg-slate-800 rounded-t-2xl border-t border-slate-700/50 max-h-[85vh] overflow-y-auto animate-slide-up">
+                <div className="w-10 h-1 bg-slate-600 rounded-full mx-auto mt-3" />
+                <div className="p-5 space-y-5">
+                  <div className="flex items-center justify-between">
+                    <h2 className="text-base font-semibold text-white">Nutrition Goal</h2>
+                    <button onClick={() => setShowGoalSetup(false)} className="text-slate-400 text-xs min-h-[44px] flex items-center">Cancel</button>
+                  </div>
+
+                  {/* Goal Type */}
+                  <div>
+                    <label className="block text-xs text-slate-400 mb-2">What are you working toward?</label>
+                    <div className="grid grid-cols-3 gap-2">
+                      {([
+                        ['performance', 'Performance', 'Fuel training fully'],
+                        ['maintain', 'Maintain', 'Sustain current weight'],
+                        ['recomp', 'Recomp', 'Lean out on rest days'],
+                      ] as const).map(([value, title, desc]) => (
+                        <button
+                          key={value}
+                          onClick={() => setGoalForm((f) => ({ ...f, goal_type: value }))}
+                          className={`p-3 rounded-xl border text-left min-h-[72px] ${
+                            goalForm.goal_type === value
+                              ? 'border-blue-500 bg-blue-600/10'
+                              : 'border-slate-600/50 bg-slate-700/50'
+                          }`}
+                        >
+                          <span className="block text-sm font-medium text-white">{title}</span>
+                          <span className="block text-[10px] text-slate-400 mt-0.5">{desc}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Protein */}
+                  <div>
+                    <label className="block text-xs text-slate-400 mb-1">Protein (g/kg body weight)</label>
+                    <div className="flex items-center gap-3">
+                      <input
+                        type="range"
+                        min="1.2"
+                        max="2.4"
+                        step="0.1"
+                        value={goalForm.protein_g_per_kg}
+                        onChange={(e) => setGoalForm((f) => ({ ...f, protein_g_per_kg: parseFloat(e.target.value) }))}
+                        className="flex-1 accent-blue-500"
+                      />
+                      <span className="text-sm font-medium text-white w-10 text-right">{goalForm.protein_g_per_kg.toFixed(1)}</span>
+                    </div>
+                  </div>
+
+                  {/* Carb/Fat split — linked slider */}
+                  <div>
+                    <label className="block text-xs text-slate-400 mb-1">
+                      Remaining calories: Carbs {Math.round(goalForm.carb_pct * 100)}% / Fat {Math.round(goalForm.fat_pct * 100)}%
+                    </label>
+                    <input
+                      type="range"
+                      min="0.30"
+                      max="0.75"
+                      step="0.05"
+                      value={goalForm.carb_pct}
+                      onChange={(e) => {
+                        const carb = parseFloat(e.target.value);
+                        setGoalForm((f) => ({ ...f, carb_pct: carb, fat_pct: parseFloat((1 - carb).toFixed(2)) }));
+                      }}
+                      className="w-full accent-emerald-500"
+                    />
+                    <div className="flex justify-between text-[10px] text-slate-500 mt-1">
+                      <span>More fat</span>
+                      <span>More carbs</span>
+                    </div>
+                  </div>
+
+                  {/* Caffeine */}
+                  <div>
+                    <label className="block text-xs text-slate-400 mb-1">Daily caffeine target (mg, optional)</label>
+                    <input
+                      type="number"
+                      placeholder="e.g. 400"
+                      value={goalForm.caffeine_target_mg ?? ''}
+                      onChange={(e) => setGoalForm((f) => ({ ...f, caffeine_target_mg: e.target.value ? parseInt(e.target.value) : undefined }))}
+                      className="w-full bg-slate-700 border border-slate-600/50 rounded-lg px-3 py-2.5 text-sm text-white placeholder-slate-500 min-h-[44px]"
+                    />
+                  </div>
+
+                  {/* Load adaptive toggle */}
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <span className="text-sm text-white">Adapt to training load</span>
+                      <p className="text-[10px] text-slate-500">Scale calories by workout intensity</p>
+                    </div>
+                    <button
+                      onClick={() => setGoalForm((f) => ({ ...f, load_adaptive: !f.load_adaptive }))}
+                      className={`w-11 h-6 rounded-full transition-colors flex items-center ${
+                        goalForm.load_adaptive ? 'bg-blue-600 justify-end' : 'bg-slate-600 justify-start'
+                      }`}
+                    >
+                      <div className="w-5 h-5 bg-white rounded-full mx-0.5 shadow" />
+                    </button>
+                  </div>
+
+                  {/* Save */}
+                  <button
+                    onClick={handleSaveGoal}
+                    disabled={upsertGoal.isPending}
+                    className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-3 rounded-xl text-sm min-h-[48px] disabled:opacity-50 transition-colors"
+                  >
+                    {upsertGoal.isPending ? 'Saving...' : 'Save Goal'}
+                  </button>
+                </div>
+              </div>
+            </>
+          )}
+
           {/* Catalog Browser Modal */}
           {showCatalog && (
             <>
@@ -800,21 +966,110 @@ export default function NutritionPage() {
           {/* ======================== TAB 1: LOG ======================== */}
           {activeTab === 'log' && (
             <>
-              {/* Daily Summary */}
-              <div className="bg-slate-800 rounded-xl border border-slate-700/50 p-4">
-                <h1 className="text-lg font-semibold mb-2">Today&apos;s Nutrition</h1>
-                {entries && entries.length > 0 ? (
-                  <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-slate-300">
-                    <span className="font-medium text-white">{Math.round(totals.cal)} cal</span>
-                    <span>{Math.round(totals.protein)}g P</span>
-                    <span>{Math.round(totals.carbs)}g C</span>
-                    <span>{Math.round(totals.fat)}g F</span>
-                    {totals.caffeine > 0 && <span>{Math.round(totals.caffeine)}mg caf</span>}
+              {/* Daily Target Progress or Summary */}
+              {dailyTarget ? (
+                <div className="bg-slate-800 rounded-xl border border-slate-700/50 p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h1 className="text-lg font-semibold">Today&apos;s Nutrition</h1>
+                      <p className="text-xs text-slate-400 mt-0.5">
+                        {dailyTarget.day_tier_label}
+                        {dailyTarget.workout_title ? ` — ${dailyTarget.workout_title}` : ''}
+                        {' '}({dailyTarget.multiplier}x)
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => setShowGoalSetup(true)}
+                      className="text-xs text-slate-500 hover:text-slate-300 min-h-[44px] flex items-center px-2"
+                    >
+                      Edit
+                    </button>
                   </div>
-                ) : (
-                  <p className="text-sm text-slate-500">No entries today. Log when convenient.</p>
-                )}
-              </div>
+
+                  {/* Calorie progress */}
+                  {(() => {
+                    const pct = Math.min(100, (dailyTarget.actual_calories / dailyTarget.calorie_target) * 100);
+                    const overUnder = dailyTarget.actual_calories - dailyTarget.calorie_target;
+                    const barColor = pct > 110 ? 'bg-amber-500' : pct > 90 ? 'bg-green-500' : 'bg-blue-500';
+                    return (
+                      <div>
+                        <div className="flex justify-between text-sm mb-1">
+                          <span className="text-white font-medium">{Math.round(dailyTarget.actual_calories)} / {dailyTarget.calorie_target} cal</span>
+                          <span className={`text-xs ${overUnder > 0 ? 'text-amber-400' : 'text-slate-400'}`}>
+                            {overUnder > 0 ? '+' : ''}{Math.round(overUnder)}
+                          </span>
+                        </div>
+                        <div className="w-full bg-slate-700 rounded-full h-2">
+                          <div className={`${barColor} h-2 rounded-full transition-all`} style={{ width: `${Math.min(pct, 100)}%` }} />
+                        </div>
+                        <div className="flex justify-between mt-1">
+                          <span className="text-[10px] text-slate-500">{Math.round(dailyTarget.time_pct)}% of day</span>
+                          <span className="text-[10px] text-slate-500">{Math.round(pct)}% of target</span>
+                        </div>
+                      </div>
+                    );
+                  })()}
+
+                  {/* Macro bars */}
+                  <div className="grid grid-cols-3 gap-3 text-xs">
+                    {([
+                      ['P', dailyTarget.actual_protein_g, dailyTarget.protein_g, 'bg-blue-500'],
+                      ['C', dailyTarget.actual_carbs_g, dailyTarget.carbs_g, 'bg-emerald-500'],
+                      ['F', dailyTarget.actual_fat_g, dailyTarget.fat_g, 'bg-amber-500'],
+                    ] as const).map(([label, actual, target, color]) => {
+                      const mpct = target > 0 ? Math.min(100, (actual / target) * 100) : 0;
+                      return (
+                        <div key={label}>
+                          <div className="flex justify-between mb-0.5">
+                            <span className="text-slate-400">{label}</span>
+                            <span className="text-slate-300">{Math.round(actual)}/{Math.round(target)}g</span>
+                          </div>
+                          <div className="w-full bg-slate-700 rounded-full h-1.5">
+                            <div className={`${color} h-1.5 rounded-full transition-all`} style={{ width: `${mpct}%` }} />
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {dailyTarget.caffeine_mg != null && dailyTarget.caffeine_mg > 0 && (
+                    <div className="text-xs text-slate-400">
+                      Caffeine: {Math.round(dailyTarget.actual_caffeine_mg)} / {dailyTarget.caffeine_mg}mg
+                    </div>
+                  )}
+
+                  {dailyTarget.insights.length > 0 && (
+                    <div className="bg-slate-700/50 rounded-lg p-2.5 border border-slate-600/30">
+                      <p className="text-xs text-blue-300">{dailyTarget.insights[0].text}</p>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="bg-slate-800 rounded-xl border border-slate-700/50 p-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h1 className="text-lg font-semibold">Today&apos;s Nutrition</h1>
+                      {entries && entries.length > 0 ? (
+                        <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-slate-300 mt-1">
+                          <span className="font-medium text-white">{Math.round(totals.cal)} cal</span>
+                          <span>{Math.round(totals.protein)}g P</span>
+                          <span>{Math.round(totals.carbs)}g C</span>
+                          <span>{Math.round(totals.fat)}g F</span>
+                          {totals.caffeine > 0 && <span>{Math.round(totals.caffeine)}mg caf</span>}
+                        </div>
+                      ) : (
+                        <p className="text-sm text-slate-500 mt-1">No entries today. Log when convenient.</p>
+                      )}
+                    </div>
+                    <button
+                      onClick={() => setShowGoalSetup(true)}
+                      className="text-xs text-blue-400 hover:text-blue-300 min-h-[44px] flex items-center px-2"
+                    >
+                      Set goals
+                    </button>
+                  </div>
+                </div>
+              )}
 
               {/* Input Modes */}
               {!showForm && !photoPreview && !barcodeResult && !scannerOpen && (
@@ -1082,19 +1337,43 @@ export default function NutritionPage() {
               </div>
 
               {/* Selected Date Totals */}
-              <div className="bg-slate-800 rounded-xl border border-slate-700/50 p-4">
-                <h2 className="text-sm font-semibold text-slate-300 mb-2">{formatDateShort(selectedDate)} Totals</h2>
-                {historyEntries && historyEntries.length > 0 ? (
-                  <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-slate-300">
-                    <span className="font-medium text-white">{Math.round(historyTotals.cal)} cal</span>
-                    <span>{Math.round(historyTotals.protein)}g P</span>
-                    <span>{Math.round(historyTotals.carbs)}g C</span>
-                    <span>{Math.round(historyTotals.fat)}g F</span>
-                    {historyTotals.caffeine > 0 && <span>{Math.round(historyTotals.caffeine)}mg caf</span>}
-                  </div>
-                ) : (
-                  <p className="text-sm text-slate-500">No entries for this date.</p>
-                )}
+              <div className="bg-slate-800 rounded-xl border border-slate-700/50 p-4 space-y-2">
+                <h2 className="text-sm font-semibold text-slate-300">{formatDateShort(selectedDate)} Totals</h2>
+                {(() => {
+                  const ht = selectedDate === today ? dailyTarget : historyTarget;
+                  if (ht && historyEntries && historyEntries.length > 0) {
+                    const calPct = ht.calorie_target > 0 ? Math.round((historyTotals.cal / ht.calorie_target) * 100) : 0;
+                    return (
+                      <>
+                        <p className="text-xs text-slate-400">{ht.day_tier_label} ({ht.multiplier}x)</p>
+                        <div className="flex justify-between text-sm">
+                          <span className="text-white font-medium">{Math.round(historyTotals.cal)} / {ht.calorie_target} cal</span>
+                          <span className="text-xs text-slate-400">{calPct}%</span>
+                        </div>
+                        <div className="w-full bg-slate-700 rounded-full h-1.5">
+                          <div className={`h-1.5 rounded-full ${calPct > 110 ? 'bg-amber-500' : calPct > 90 ? 'bg-green-500' : 'bg-blue-500'}`} style={{ width: `${Math.min(calPct, 100)}%` }} />
+                        </div>
+                        <div className="flex gap-3 text-xs text-slate-400">
+                          <span>{Math.round(historyTotals.protein)}/{Math.round(ht.protein_g)}g P</span>
+                          <span>{Math.round(historyTotals.carbs)}/{Math.round(ht.carbs_g)}g C</span>
+                          <span>{Math.round(historyTotals.fat)}/{Math.round(ht.fat_g)}g F</span>
+                        </div>
+                      </>
+                    );
+                  }
+                  if (historyEntries && historyEntries.length > 0) {
+                    return (
+                      <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-slate-300">
+                        <span className="font-medium text-white">{Math.round(historyTotals.cal)} cal</span>
+                        <span>{Math.round(historyTotals.protein)}g P</span>
+                        <span>{Math.round(historyTotals.carbs)}g C</span>
+                        <span>{Math.round(historyTotals.fat)}g F</span>
+                        {historyTotals.caffeine > 0 && <span>{Math.round(historyTotals.caffeine)}mg caf</span>}
+                      </div>
+                    );
+                  }
+                  return <p className="text-sm text-slate-500">No entries for this date.</p>;
+                })()}
               </div>
 
               {/* Selected Date Entries */}

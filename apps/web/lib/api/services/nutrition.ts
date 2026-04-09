@@ -229,6 +229,19 @@ export const nutritionService = {
     return apiClient.get<ActivityNutritionResponse>(`/v1/nutrition/activity-linked?days=${days}`);
   },
 
+  async getGoal(): Promise<NutritionGoal | null> {
+    return apiClient.get<NutritionGoal | null>('/v1/nutrition/goal');
+  },
+
+  async upsertGoal(goal: NutritionGoalRequest): Promise<NutritionGoal> {
+    return apiClient.post<NutritionGoal>('/v1/nutrition/goal', goal);
+  },
+
+  async getDailyTarget(targetDate?: string): Promise<DailyTarget | null> {
+    const qs = targetDate ? `?target_date=${targetDate}` : '';
+    return apiClient.get<DailyTarget | null>(`/v1/nutrition/daily-target${qs}`);
+  },
+
   async exportCsv(startDate: string, endDate: string): Promise<void> {
     const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
     const res = await fetch(`${(await import('../config')).API_CONFIG.baseURL}/v1/nutrition/export?start_date=${startDate}&end_date=${endDate}`, {
@@ -295,4 +308,54 @@ export interface ActivityNutrition {
 
 export interface ActivityNutritionResponse {
   activities: ActivityNutrition[];
+}
+
+export interface NutritionGoal {
+  id: string;
+  goal_type: 'performance' | 'maintain' | 'recomp';
+  calorie_target?: number;
+  protein_g_per_kg: number;
+  carb_pct?: number;
+  fat_pct?: number;
+  caffeine_target_mg?: number;
+  load_adaptive: boolean;
+  load_multipliers?: Record<string, number>;
+}
+
+export interface NutritionGoalRequest {
+  goal_type: 'performance' | 'maintain' | 'recomp';
+  calorie_target?: number;
+  protein_g_per_kg?: number;
+  carb_pct?: number;
+  fat_pct?: number;
+  caffeine_target_mg?: number;
+  load_adaptive?: boolean;
+  load_multipliers?: Record<string, number>;
+}
+
+export interface NutritionInsight {
+  metric: string;
+  text: string;
+}
+
+export interface DailyTarget {
+  calorie_target: number;
+  protein_g: number;
+  carbs_g: number;
+  fat_g: number;
+  caffeine_mg?: number;
+  day_tier: string;
+  day_tier_label: string;
+  base_calories: number;
+  multiplier: number;
+  load_adaptive: boolean;
+  goal_type: string;
+  workout_title?: string;
+  actual_calories: number;
+  actual_protein_g: number;
+  actual_carbs_g: number;
+  actual_fat_g: number;
+  actual_caffeine_mg: number;
+  time_pct: number;
+  insights: NutritionInsight[];
 }

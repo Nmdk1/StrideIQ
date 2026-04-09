@@ -14,9 +14,12 @@ import {
   type FuelingProfileEntry,
   type NutritionSummary,
   type ActivityNutritionResponse,
+  type NutritionGoal,
+  type NutritionGoalRequest,
+  type DailyTarget,
 } from '../../api/services/nutrition';
 
-export type { NutritionEntry, PhotoParseResult, BarcodeScanResult, FuelingProduct, FuelingProfileEntry, NutritionSummary, ActivityNutritionResponse };
+export type { NutritionEntry, PhotoParseResult, BarcodeScanResult, FuelingProduct, FuelingProfileEntry, NutritionSummary, ActivityNutritionResponse, NutritionGoal, DailyTarget };
 
 export const nutritionKeys = {
   all: ['nutrition'] as const,
@@ -28,6 +31,8 @@ export const nutritionKeys = {
   fuelingProfile: () => [...nutritionKeys.all, 'fuelingProfile'] as const,
   summary: (days: number) => [...nutritionKeys.all, 'summary', days] as const,
   activityLinked: (days: number) => [...nutritionKeys.all, 'activityLinked', days] as const,
+  goal: () => [...nutritionKeys.all, 'goal'] as const,
+  dailyTarget: (date?: string) => [...nutritionKeys.all, 'dailyTarget', date] as const,
 } as const;
 
 export function useNLParsingAvailable() {
@@ -173,6 +178,33 @@ export function useActivityLinkedNutrition(days: number = 30) {
   return useQuery<ActivityNutritionResponse>({
     queryKey: nutritionKeys.activityLinked(days),
     queryFn: () => nutritionService.getActivityLinked(days),
+    staleTime: 60 * 1000,
+  });
+}
+
+export function useNutritionGoal() {
+  return useQuery<NutritionGoal | null>({
+    queryKey: nutritionKeys.goal(),
+    queryFn: () => nutritionService.getGoal(),
+    staleTime: 5 * 60 * 1000,
+  });
+}
+
+export function useUpsertNutritionGoal() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (goal: NutritionGoalRequest) => nutritionService.upsertGoal(goal),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: nutritionKeys.goal() });
+      queryClient.invalidateQueries({ queryKey: nutritionKeys.all });
+    },
+  });
+}
+
+export function useDailyTarget(targetDate?: string) {
+  return useQuery<DailyTarget | null>({
+    queryKey: nutritionKeys.dailyTarget(targetDate),
+    queryFn: () => nutritionService.getDailyTarget(targetDate),
     staleTime: 60 * 1000,
   });
 }

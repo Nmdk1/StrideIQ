@@ -4060,6 +4060,20 @@ def build_athlete_brief(db: Session, athlete_id: UUID) -> str:
                     pr_caf = sum(float(e.caffeine_mg or 0) for e in pre_run) / len(pre_run)
                     n_lines.append(f"Pre-run pattern: {len(pre_run)} entries, avg {round(pr_carbs)}g carbs, {round(pr_caf)}mg caffeine")
 
+            try:
+                from services.nutrition_targets import compute_daily_targets
+                targets = compute_daily_targets(db, athlete_id, today)
+                if targets:
+                    tier_labels = {"rest": "Rest day", "easy": "Easy day", "moderate": "Moderate day", "hard": "Hard day", "long": "Long run day"}
+                    tier_label = tier_labels.get(targets["day_tier"], targets["day_tier"])
+                    n_lines.append(
+                        f"Goal: {targets['goal_type']} — {tier_label} ({targets['multiplier']}x) — "
+                        f"target {targets['calorie_target']} cal, {targets['protein_g']}g P / "
+                        f"{targets['carbs_g']}g C / {targets['fat_g']}g F"
+                    )
+            except Exception:
+                pass
+
             sections.append("## Nutrition Snapshot\n" + "\n".join(n_lines))
     except Exception as e:
         logger.debug(f"Brief: nutrition snapshot failed: {e}")
