@@ -1,34 +1,40 @@
 /**
- * React Query hooks for nutrition entries
+ * React Query hooks for nutrition
  */
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { nutritionService, type NutritionEntryCreate, type NutritionEntryUpdate } from '../../api/services/nutrition';
-import type { NutritionEntry } from '../../api/services/nutrition';
+import {
+  nutritionService,
+  type NutritionEntryCreate,
+  type NutritionEntryUpdate,
+  type NutritionEntry,
+  type PhotoParseResult,
+  type BarcodeScanResult,
+  type FuelingProduct,
+  type FuelingProfileEntry,
+} from '../../api/services/nutrition';
+
+export type { NutritionEntry, PhotoParseResult, BarcodeScanResult, FuelingProduct, FuelingProfileEntry };
 
 export const nutritionKeys = {
   all: ['nutrition'] as const,
   lists: () => [...nutritionKeys.all, 'list'] as const,
-  list: (params?: any) => [...nutritionKeys.lists(), params] as const,
+  list: (params?: Record<string, unknown>) => [...nutritionKeys.lists(), params] as const,
   detail: (id: string) => [...nutritionKeys.all, 'detail', id] as const,
   nlParsingAvailable: () => [...nutritionKeys.all, 'nlParsingAvailable'] as const,
+  fuelingProducts: (params?: Record<string, unknown>) => [...nutritionKeys.all, 'fuelingProducts', params] as const,
+  fuelingProfile: () => [...nutritionKeys.all, 'fuelingProfile'] as const,
 } as const;
 
-/**
- * Check whether NL parsing is available (OPENAI_API_KEY configured).
- */
 export function useNLParsingAvailable() {
   return useQuery<{ available: boolean }>({
     queryKey: nutritionKeys.nlParsingAvailable(),
     queryFn: () => nutritionService.nlParsingAvailable(),
     retry: false,
-    staleTime: 5 * 60 * 1000, // 5 minutes
+    staleTime: 5 * 60 * 1000,
   });
 }
 
-/**
- * List nutrition entries
- */
 export function useNutritionEntries(params?: {
   start_date?: string;
   end_date?: string;
@@ -36,15 +42,12 @@ export function useNutritionEntries(params?: {
   activity_id?: string;
 }) {
   return useQuery<NutritionEntry[]>({
-    queryKey: nutritionKeys.list(params),
+    queryKey: nutritionKeys.list(params as Record<string, unknown>),
     queryFn: () => nutritionService.listEntries(params),
-    staleTime: 30 * 1000, // 30 seconds
+    staleTime: 30 * 1000,
   });
 }
 
-/**
- * Get nutrition entry by ID
- */
 export function useNutritionEntry(id: string) {
   return useQuery<NutritionEntry>({
     queryKey: nutritionKeys.detail(id),
@@ -53,12 +56,8 @@ export function useNutritionEntry(id: string) {
   });
 }
 
-/**
- * Create nutrition entry mutation
- */
 export function useCreateNutritionEntry() {
   const queryClient = useQueryClient();
-
   return useMutation({
     mutationFn: (entry: NutritionEntryCreate) => nutritionService.createEntry(entry),
     onSuccess: () => {
@@ -67,9 +66,6 @@ export function useCreateNutritionEntry() {
   });
 }
 
-/**
- * Parse natural language nutrition text to prefill a form.
- */
 export function useParseNutritionText() {
   return useMutation({
     mutationFn: (text: string) => nutritionService.parseText(text),
@@ -77,12 +73,70 @@ export function useParseNutritionText() {
   });
 }
 
-/**
- * Update nutrition entry mutation
- */
+export function useParsePhoto() {
+  return useMutation<PhotoParseResult, Error, File>({
+    mutationFn: (file: File) => nutritionService.parsePhoto(file),
+    retry: false,
+  });
+}
+
+export function useScanBarcode() {
+  return useMutation<BarcodeScanResult, Error, string>({
+    mutationFn: (upc: string) => nutritionService.scanBarcode(upc),
+    retry: false,
+  });
+}
+
+export function useFuelingProducts(params?: { brand?: string; category?: string; search?: string }) {
+  return useQuery<FuelingProduct[]>({
+    queryKey: nutritionKeys.fuelingProducts(params as Record<string, unknown>),
+    queryFn: () => nutritionService.listFuelingProducts(params),
+    staleTime: 5 * 60 * 1000,
+  });
+}
+
+export function useFuelingProfile() {
+  return useQuery<FuelingProfileEntry[]>({
+    queryKey: nutritionKeys.fuelingProfile(),
+    queryFn: () => nutritionService.getFuelingProfile(),
+    staleTime: 60 * 1000,
+  });
+}
+
+export function useAddToProfile() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (data: { productId: number; usageContext?: string; notes?: string }) =>
+      nutritionService.addToProfile(data.productId, data.usageContext, data.notes),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: nutritionKeys.fuelingProfile() });
+    },
+  });
+}
+
+export function useRemoveFromProfile() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (productId: number) => nutritionService.removeFromProfile(productId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: nutritionKeys.fuelingProfile() });
+    },
+  });
+}
+
+export function useLogFueling() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (data: { product_id: number; entry_type?: string; activity_id?: string; quantity?: number }) =>
+      nutritionService.logFueling(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: nutritionKeys.lists() });
+    },
+  });
+}
+
 export function useUpdateNutritionEntry() {
   const queryClient = useQueryClient();
-
   return useMutation({
     mutationFn: ({ id, updates }: { id: string; updates: NutritionEntryUpdate }) =>
       nutritionService.updateEntry(id, updates),
@@ -93,12 +147,8 @@ export function useUpdateNutritionEntry() {
   });
 }
 
-/**
- * Delete nutrition entry mutation
- */
 export function useDeleteNutritionEntry() {
   const queryClient = useQueryClient();
-
   return useMutation({
     mutationFn: (id: string) => nutritionService.deleteEntry(id),
     onSuccess: () => {
@@ -106,5 +156,3 @@ export function useDeleteNutritionEntry() {
     },
   });
 }
-
-

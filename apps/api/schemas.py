@@ -172,14 +172,20 @@ class NutritionEntryCreate(BaseModel):
     athlete_id: UUID
     date: date
     entry_type: str  # 'pre_activity', 'during_activity', 'post_activity', 'daily'
-    activity_id: Optional[UUID] = None  # Required for pre/during/post, None for daily
+    activity_id: Optional[UUID] = None
     calories: Optional[float] = None
     protein_g: Optional[float] = None
     carbs_g: Optional[float] = None
     fat_g: Optional[float] = None
     fiber_g: Optional[float] = None
-    timing: Optional[datetime] = None  # When consumed
+    timing: Optional[datetime] = None
     notes: Optional[str] = None
+    caffeine_mg: Optional[float] = None
+    fluid_ml: Optional[float] = None
+    carb_source: Optional[str] = None
+    glucose_fructose_ratio: Optional[float] = None
+    macro_source: Optional[str] = None
+    fueling_product_id: Optional[int] = None
 
 
 class NutritionEntryResponse(BaseModel):
@@ -196,9 +202,119 @@ class NutritionEntryResponse(BaseModel):
     fiber_g: Optional[float] = None
     timing: Optional[datetime] = None
     notes: Optional[str] = None
+    caffeine_mg: Optional[float] = None
+    fluid_ml: Optional[float] = None
+    carb_source: Optional[str] = None
+    glucose_fructose_ratio: Optional[float] = None
+    macro_source: Optional[str] = None
+    fueling_product_id: Optional[int] = None
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class PhotoParseItemResponse(BaseModel):
+    food: str
+    grams: float
+    calories: float
+    protein_g: float
+    carbs_g: float
+    fat_g: float
+    fiber_g: float
+    macro_source: str
+    fdc_id: Optional[int] = None
+
+
+class PhotoParseResponse(BaseModel):
+    items: list[PhotoParseItemResponse]
+    total_calories: float
+    total_protein_g: float
+    total_carbs_g: float
+    total_fat_g: float
+    total_fiber_g: float
+    template_match: Optional[dict] = None
+
+
+class BarcodeScanRequest(BaseModel):
+    upc: str
+
+
+class BarcodeScanResponse(BaseModel):
+    found: bool
+    food_name: Optional[str] = None
+    serving_size_g: Optional[float] = None
+    calories: Optional[float] = None
+    protein_g: Optional[float] = None
+    carbs_g: Optional[float] = None
+    fat_g: Optional[float] = None
+    fiber_g: Optional[float] = None
+    macro_source: str = "branded_barcode"
+    fdc_id: Optional[int] = None
+
+
+class FuelingProductResponse(BaseModel):
+    id: int
+    brand: str
+    product_name: str
+    variant: Optional[str] = None
+    category: str
+    serving_size_g: Optional[float] = None
+    calories: Optional[float] = None
+    carbs_g: Optional[float] = None
+    protein_g: Optional[float] = None
+    fat_g: Optional[float] = None
+    fiber_g: Optional[float] = None
+    caffeine_mg: Optional[float] = None
+    sodium_mg: Optional[float] = None
+    fluid_ml: Optional[float] = None
+    carb_source: Optional[str] = None
+    glucose_fructose_ratio: Optional[float] = None
+    is_verified: Optional[bool] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class FuelingProductCreate(BaseModel):
+    brand: str
+    product_name: str
+    variant: Optional[str] = None
+    category: str
+    serving_size_g: Optional[float] = None
+    calories: Optional[float] = None
+    carbs_g: float
+    protein_g: Optional[float] = None
+    fat_g: Optional[float] = None
+    fiber_g: Optional[float] = None
+    caffeine_mg: float = 0
+    sodium_mg: Optional[float] = None
+    fluid_ml: Optional[float] = None
+    carb_source: Optional[str] = None
+    glucose_fructose_ratio: Optional[float] = None
+
+
+class FuelingProfileAdd(BaseModel):
+    product_id: int
+    usage_context: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class FuelingProfileResponse(BaseModel):
+    id: int
+    product_id: int
+    is_active: bool
+    usage_context: Optional[str] = None
+    notes: Optional[str] = None
+    product: FuelingProductResponse
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class FuelingLogRequest(BaseModel):
+    product_id: int
+    entry_type: str = "daily"
+    activity_id: Optional[UUID] = None
+    quantity: float = 1.0
+    timing: Optional[datetime] = None
 
 
 class WorkPatternCreate(BaseModel):

@@ -1,39 +1,46 @@
-/**
- * Nutrition Logging Page
- * 
- * Low-friction, non-guilt-inducing nutrition tracking.
- * Tone: Sparse, optional-friendly, no pressure.
- */
-
 'use client';
 
-import { useState } from 'react';
+import { useState, useRef, useCallback } from 'react';
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
 import { useAuth } from '@/lib/hooks/useAuth';
-import { useNutritionEntries, useCreateNutritionEntry, useParseNutritionText, useNLParsingAvailable } from '@/lib/hooks/queries/nutrition';
+import {
+  useNutritionEntries,
+  useCreateNutritionEntry,
+  useParseNutritionText,
+  useNLParsingAvailable,
+  useParsePhoto,
+  useFuelingProfile,
+  useLogFueling,
+  useScanBarcode,
+} from '@/lib/hooks/queries/nutrition';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
-import { ErrorMessage } from '@/components/ui/ErrorMessage';
 import type { NutritionEntryCreate } from '@/lib/api/services/nutrition';
-
-const NUTRITION_PRESETS = [
-  { name: 'Banana', calories: 105, carbs_g: 27, protein_g: 1.3, fat_g: 0.4 },
-  { name: 'Energy Gel', calories: 100, carbs_g: 25, protein_g: 0, fat_g: 0 },
-  { name: 'Protein Shake', calories: 150, protein_g: 25, carbs_g: 5, fat_g: 3 },
-  { name: 'Toast with Peanut Butter', calories: 250, carbs_g: 30, protein_g: 10, fat_g: 12 },
-  { name: 'Oatmeal', calories: 150, carbs_g: 27, protein_g: 5, fat_g: 3 },
-];
 
 export default function NutritionPage() {
   const { user } = useAuth();
   const today = new Date().toISOString().split('T')[0];
   const { data: entries, isLoading } = useNutritionEntries({ start_date: today, end_date: today });
   const { data: nlAvailable } = useNLParsingAvailable();
+  const { data: shelfItems } = useFuelingProfile();
   const createEntry = useCreateNutritionEntry();
-  const parseNutritionText = useParseNutritionText();
-  
+  const parseText = useParseNutritionText();
+  const parsePhoto = useParsePhoto();
+  const logFueling = useLogFueling();
+  const scanBarcode = useScanBarcode();
+
   const [showForm, setShowForm] = useState(false);
   const [nlText, setNlText] = useState('');
-  const [postSubmitMessage, setPostSubmitMessage] = useState<string | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
+  const [photoPreview, setPhotoPreview] = useState<string | null>(null);
+  const [photoItems, setPhotoItems] = useState<Array<{
+    food: string; grams: number; calories: number;
+    protein_g: number; carbs_g: number; fat_g: number; fiber_g: number;
+    macro_source: string; fdc_id?: number;
+  }> | null>(null);
+  const [barcodeResult, setBarcodeResult] = useState<{
+    food_name: string; calories: number; protein_g: number;
+    carbs_g: number; fat_g: number; servings: number; fdc_id?: number;
+  } | null>(null);
   const [formData, setFormData] = useState<NutritionEntryCreate>({
     athlete_id: user?.id || '',
     date: today,
@@ -46,25 +53,136 @@ export default function NutritionPage() {
     notes: '',
   });
 
-  const handlePreset = (preset: typeof NUTRITION_PRESETS[0]) => {
-    setFormData({
-      ...formData,
-      calories: preset.calories,
-      carbs_g: preset.carbs_g,
-      protein_g: preset.protein_g,
-      fat_g: preset.fat_g,
-    });
-    setShowForm(true);
+  const photoRef = useRef<HTMLInputElement>(null);
+  const barcodeRef = useRef<HTMLInputElement>(null);
+
+  const showToast = useCallback((msg: string) => {
+    setToast(msg);
+    setTimeout(() => setToast(null), 3000);
+  }, []);
+
+  const totals = entries?.reduce(
+    (acc, e) => ({
+      cal: acc.cal + (e.calories || 0),
+      protein: acc.protein + (e.protein_g || 0),
+      carbs: acc.carbs + (e.carbs_g || 0),
+      fat: acc.fat + (e.fat_g || 0),
+      caffeine: acc.caffeine + (e.caffeine_mg || 0),
+    }),
+    { cal: 0, protein: 0, carbs: 0, fat: 0, caffeine: 0 },
+  ) || { cal: 0, protein: 0, carbs: 0, fat: 0, caffeine: 0 };
+
+  const handlePhotoCapture = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setPhotoPreview(URL.createObjectURL(file));
+    setPhotoItems(null);
+    try {
+      const result = await parsePhoto.mutateAsync(file);
+      setPhotoItems(result.items);
+    } catch {
+      showToast('Photo analysis failed. Try again or type it instead.');
+      setPhotoPreview(null);
+    }
+  };
+
+  const handleConfirmPhoto = async () => {
+    if (!photoItems?.length) return;
+    const totalCal = photoItems.reduce((s, i) => s + i.calories, 0);
+    const totalP = photoItems.reduce((s, i) => s + i.protein_g, 0);
+    const totalC = photoItems.reduce((s, i) => s + i.carbs_g, 0);
+    const totalF = photoItems.reduce((s, i) => s + i.fat_g, 0);
+    const totalFib = photoItems.reduce((s, i) => s + i.fiber_g, 0);
+    const notes = photoItems.map((i) => `${i.food} (${i.grams}g)`).join(', ');
+    const primarySource = photoItems[0]?.macro_source || 'llm_estimated';
+
+    try {
+      await createEntry.mutateAsync({
+        athlete_id: user?.id || '',
+        date: today,
+        entry_type: 'daily',
+        calories: Math.round(totalCal),
+        protein_g: Math.round(totalP),
+        carbs_g: Math.round(totalC),
+        fat_g: Math.round(totalF),
+        fiber_g: Math.round(totalFib),
+        notes,
+        macro_source: primarySource,
+      });
+      showToast('Meal logged');
+      setPhotoPreview(null);
+      setPhotoItems(null);
+    } catch {
+      showToast('Failed to save. Try again.');
+    }
+  };
+
+  const handleBarcodeCapture = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      const { Html5Qrcode } = await import('html5-qrcode');
+      const scanner = new Html5Qrcode('barcode-reader-hidden');
+      const result = await scanner.scanFile(file, true);
+      await scanner.clear();
+
+      const scan = await scanBarcode.mutateAsync(result);
+      if (scan.found && scan.food_name) {
+        setBarcodeResult({
+          food_name: scan.food_name,
+          calories: scan.calories || 0,
+          protein_g: scan.protein_g || 0,
+          carbs_g: scan.carbs_g || 0,
+          fat_g: scan.fat_g || 0,
+          servings: 1,
+          fdc_id: scan.fdc_id,
+        });
+      } else {
+        showToast('Product not found — try a photo instead');
+      }
+    } catch {
+      showToast('Could not read barcode. Try again or use photo.');
+    }
+  };
+
+  const handleConfirmBarcode = async () => {
+    if (!barcodeResult) return;
+    const s = barcodeResult.servings;
+    try {
+      await createEntry.mutateAsync({
+        athlete_id: user?.id || '',
+        date: today,
+        entry_type: 'daily',
+        calories: Math.round(barcodeResult.calories * s),
+        protein_g: Math.round(barcodeResult.protein_g * s),
+        carbs_g: Math.round(barcodeResult.carbs_g * s),
+        fat_g: Math.round(barcodeResult.fat_g * s),
+        notes: barcodeResult.food_name,
+        macro_source: 'branded_barcode',
+      });
+      showToast('Logged');
+      setBarcodeResult(null);
+    } catch {
+      showToast('Failed to save');
+    }
+  };
+
+  const handleShelfTap = async (productId: number, productName: string) => {
+    try {
+      await logFueling.mutateAsync({ product_id: productId, entry_type: 'daily' });
+      showToast(`Logged: ${productName}`);
+    } catch {
+      showToast('Failed to log');
+    }
   };
 
   const handleParse = async (e: React.FormEvent) => {
     e.preventDefault();
-    setPostSubmitMessage(null);
     const text = nlText.trim();
     if (!text) return;
-
     try {
-      const draft = await parseNutritionText.mutateAsync(text);
+      const draft = await parseText.mutateAsync(text);
       setFormData((prev) => ({
         ...prev,
         athlete_id: user?.id || draft.athlete_id || prev.athlete_id,
@@ -76,10 +194,11 @@ export default function NutritionPage() {
         fat_g: draft.fat_g,
         fiber_g: draft.fiber_g,
         notes: draft.notes || text,
+        macro_source: draft.macro_source,
       }));
       setShowForm(true);
-    } catch (err) {
-      // Error handled by mutation state
+    } catch {
+      /* mutation state shows error */
     }
   };
 
@@ -87,8 +206,8 @@ export default function NutritionPage() {
     e.preventDefault();
     try {
       await createEntry.mutateAsync(formData);
+      showToast('Logged');
       setShowForm(false);
-      setPostSubmitMessage("Logged. We'll surface patterns once we have enough check-ins + nutrition to compare.");
       setFormData({
         athlete_id: user?.id || '',
         date: today,
@@ -100,103 +219,272 @@ export default function NutritionPage() {
         fiber_g: undefined,
         notes: '',
       });
-    } catch (err) {
-      // Error handled by mutation
+    } catch {
+      /* mutation state shows error */
     }
+  };
+
+  const removePhotoItem = (idx: number) => {
+    if (!photoItems) return;
+    setPhotoItems(photoItems.filter((_, i) => i !== idx));
   };
 
   if (isLoading) {
     return (
       <ProtectedRoute>
-        <div className="min-h-screen flex items-center justify-center">
+        <div className="min-h-screen flex items-center justify-center bg-slate-900">
           <LoadingSpinner size="lg" />
         </div>
       </ProtectedRoute>
     );
   }
 
-  const showNLParsing = nlAvailable?.available === true;
-
   return (
     <ProtectedRoute>
-      <div className="min-h-screen bg-slate-900 text-slate-100 py-8">
-        <div className="max-w-4xl mx-auto px-4">
-          <div className="mb-8">
-            <h1 className="text-3xl font-bold mb-2">Nutrition</h1>
-            <p className="text-slate-400">
-              Log nutrition to spot patterns. Completely optional. Log when convenient.
-            </p>
+      <div className="min-h-screen bg-slate-900 text-slate-100">
+        <div className="max-w-lg mx-auto px-4 py-6 space-y-4">
+
+          {/* Daily Summary */}
+          <div className="bg-slate-800 rounded-xl border border-slate-700/50 p-4">
+            <h1 className="text-lg font-semibold mb-2">Today&apos;s Nutrition</h1>
+            {entries && entries.length > 0 ? (
+              <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-slate-300">
+                <span className="font-medium text-white">{Math.round(totals.cal)} cal</span>
+                <span>{Math.round(totals.protein)}g P</span>
+                <span>{Math.round(totals.carbs)}g C</span>
+                <span>{Math.round(totals.fat)}g F</span>
+                {totals.caffeine > 0 && <span>{Math.round(totals.caffeine)}mg caf</span>}
+              </div>
+            ) : (
+              <p className="text-sm text-slate-500">No entries today. Log when convenient.</p>
+            )}
           </div>
 
-          {postSubmitMessage && (
-            <div className="bg-green-900/20 border border-green-700/40 text-green-200 rounded-lg p-4 mb-6">
-              <p className="text-sm">{postSubmitMessage}</p>
+          {/* Toast */}
+          {toast && (
+            <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 bg-green-800/90 text-green-100 px-4 py-2 rounded-lg text-sm shadow-lg">
+              {toast}
             </div>
           )}
 
-          {/* Quick Presets */}
-          {!showForm && (
-            <div className="bg-slate-800 rounded-lg border border-slate-700/50 p-6 mb-6">
-              <h2 className="text-lg font-semibold mb-4">Quick Add</h2>
+          {/* Hidden barcode reader div */}
+          <div id="barcode-reader-hidden" className="hidden" />
 
-              {/* Natural language input */}
-              {showNLParsing && (
-                <form onSubmit={handleParse} className="mb-5">
-                  <label className="block text-sm font-medium mb-2">Describe what you ate (optional)</label>
+          {/* Input Modes */}
+          {!showForm && !photoPreview && !barcodeResult && (
+            <>
+              <div className="grid grid-cols-3 gap-3">
+                <button
+                  onClick={() => photoRef.current?.click()}
+                  className="flex flex-col items-center justify-center gap-2 bg-slate-800 rounded-xl border border-slate-700/50 p-4 min-h-[88px] active:bg-slate-700 transition-colors"
+                >
+                  <svg className="w-7 h-7 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M6.827 6.175A2.31 2.31 0 015.186 7.23c-.38.054-.757.112-1.134.175C2.999 7.58 2.25 8.507 2.25 9.574V18a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9.574c0-1.067-.75-1.994-1.802-2.169a47.865 47.865 0 00-1.134-.175 2.31 2.31 0 01-1.64-1.055l-.822-1.316a2.192 2.192 0 00-1.736-1.039 48.774 48.774 0 00-5.232 0 2.192 2.192 0 00-1.736 1.039l-.821 1.316z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 12.75a4.5 4.5 0 11-9 0 4.5 4.5 0 019 0z" />
+                  </svg>
+                  <span className="text-xs text-slate-400">Photo</span>
+                </button>
+                <button
+                  onClick={() => barcodeRef.current?.click()}
+                  className="flex flex-col items-center justify-center gap-2 bg-slate-800 rounded-xl border border-slate-700/50 p-4 min-h-[88px] active:bg-slate-700 transition-colors"
+                >
+                  <svg className="w-7 h-7 text-purple-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 4.875c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5A1.125 1.125 0 013.75 9.375v-4.5zM3.75 14.625c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5a1.125 1.125 0 01-1.125-1.125v-4.5zM13.5 4.875c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5A1.125 1.125 0 0113.5 9.375v-4.5z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 6.75h.75v.75h-.75v-.75zM6.75 16.5h.75v.75h-.75v-.75zM16.5 6.75h.75v.75h-.75v-.75zM13.5 13.5h.75v.75h-.75v-.75zM13.5 19.5h.75v.75h-.75v-.75zM19.5 13.5h.75v.75h-.75v-.75zM19.5 19.5h.75v.75h-.75v-.75zM16.5 16.5h.75v.75h-.75v-.75z" />
+                  </svg>
+                  <span className="text-xs text-slate-400">Scan</span>
+                </button>
+                <button
+                  onClick={() => setShowForm(true)}
+                  className="flex flex-col items-center justify-center gap-2 bg-slate-800 rounded-xl border border-slate-700/50 p-4 min-h-[88px] active:bg-slate-700 transition-colors"
+                >
+                  <svg className="w-7 h-7 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10" />
+                  </svg>
+                  <span className="text-xs text-slate-400">Type it</span>
+                </button>
+              </div>
+
+              <input
+                ref={photoRef}
+                type="file"
+                accept="image/*"
+                capture="environment"
+                className="hidden"
+                onChange={handlePhotoCapture}
+              />
+              <input
+                ref={barcodeRef}
+                type="file"
+                accept="image/*"
+                capture="environment"
+                className="hidden"
+                onChange={handleBarcodeCapture}
+              />
+            </>
+          )}
+
+          {/* Fueling Shelf */}
+          {shelfItems && shelfItems.length > 0 && !showForm && !photoPreview && !barcodeResult && (
+            <div className="bg-slate-800 rounded-xl border border-slate-700/50 p-4">
+              <h2 className="text-sm font-semibold text-slate-300 mb-3">My Fueling Shelf</h2>
+              <div className="flex gap-2 overflow-x-auto pb-2 -mx-1 px-1 scrollbar-none">
+                {shelfItems.map((item) => (
+                  <button
+                    key={item.id}
+                    onClick={() => handleShelfTap(item.product.id, `${item.product.brand} ${item.product.product_name}`)}
+                    className="flex-shrink-0 flex flex-col items-center justify-center bg-slate-700/60 rounded-lg border border-slate-600/50 px-3 py-2 min-w-[72px] min-h-[56px] active:bg-slate-600 transition-colors"
+                  >
+                    <span className="text-xs font-medium text-white truncate max-w-[64px]">
+                      {item.product.brand.slice(0, 4)}
+                    </span>
+                    <span className="text-[10px] text-slate-400 truncate max-w-[64px]">
+                      {item.product.caffeine_mg ? `${item.product.caffeine_mg}mg caf` : `${item.product.carbs_g}g C`}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Photo Confirmation Bottom Sheet */}
+          {photoPreview && (
+            <div className="bg-slate-800 rounded-xl border border-slate-700/50 overflow-hidden">
+              <div className="relative">
+                <img src={photoPreview} alt="Meal" className="w-full max-h-48 object-cover" />
+                {parsePhoto.isPending && (
+                  <div className="absolute inset-0 bg-slate-900/60 flex items-center justify-center">
+                    <div className="flex items-center gap-2 text-white">
+                      <LoadingSpinner size="sm" />
+                      <span className="text-sm">Analyzing...</span>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {photoItems && (
+                <div className="p-4 space-y-3">
+                  {photoItems.map((item, idx) => (
+                    <div key={idx} className="flex items-center justify-between bg-slate-700/40 rounded-lg p-3">
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-white truncate">{item.food}</p>
+                        <p className="text-xs text-slate-400">
+                          {item.grams}g &middot; {Math.round(item.calories)} cal &middot; {Math.round(item.protein_g)}P {Math.round(item.carbs_g)}C {Math.round(item.fat_g)}F
+                        </p>
+                      </div>
+                      <button
+                        onClick={() => removePhotoItem(idx)}
+                        className="ml-2 p-1 text-slate-500 hover:text-red-400 min-w-[44px] min-h-[44px] flex items-center justify-center"
+                      >
+                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                      </button>
+                    </div>
+                  ))}
+
+                  <div className="border-t border-slate-700 pt-3 text-sm text-slate-300">
+                    Total: {Math.round(photoItems.reduce((s, i) => s + i.calories, 0))} cal
+                    &middot; {Math.round(photoItems.reduce((s, i) => s + i.protein_g, 0))}g P
+                    &middot; {Math.round(photoItems.reduce((s, i) => s + i.carbs_g, 0))}g C
+                    &middot; {Math.round(photoItems.reduce((s, i) => s + i.fat_g, 0))}g F
+                  </div>
+
+                  <div className="flex gap-2">
+                    <button
+                      onClick={handleConfirmPhoto}
+                      disabled={createEntry.isPending}
+                      className="flex-1 py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-700 rounded-lg text-white font-medium text-sm min-h-[44px]"
+                    >
+                      {createEntry.isPending ? <LoadingSpinner size="sm" /> : 'Looks right'}
+                    </button>
+                    <button
+                      onClick={() => { setPhotoPreview(null); setPhotoItems(null); }}
+                      className="px-4 py-3 bg-slate-700 hover:bg-slate-600 rounded-lg text-slate-300 text-sm min-h-[44px]"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Barcode Result */}
+          {barcodeResult && (
+            <div className="bg-slate-800 rounded-xl border border-slate-700/50 p-4 space-y-3">
+              <h2 className="text-sm font-semibold">{barcodeResult.food_name}</h2>
+              <p className="text-xs text-slate-400">
+                Per serving: {barcodeResult.calories} cal &middot; {barcodeResult.protein_g}g P &middot; {barcodeResult.carbs_g}g C &middot; {barcodeResult.fat_g}g F
+              </p>
+              <div className="flex items-center gap-4">
+                <span className="text-sm text-slate-300">Servings:</span>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setBarcodeResult({ ...barcodeResult, servings: Math.max(0.5, barcodeResult.servings - 0.5) })}
+                    className="w-11 h-11 bg-slate-700 rounded-lg text-lg flex items-center justify-center active:bg-slate-600"
+                  >
+                    -
+                  </button>
+                  <span className="w-8 text-center font-medium">{barcodeResult.servings}</span>
+                  <button
+                    onClick={() => setBarcodeResult({ ...barcodeResult, servings: barcodeResult.servings + 0.5 })}
+                    className="w-11 h-11 bg-slate-700 rounded-lg text-lg flex items-center justify-center active:bg-slate-600"
+                  >
+                    +
+                  </button>
+                </div>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={handleConfirmBarcode}
+                  disabled={createEntry.isPending}
+                  className="flex-1 py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-700 rounded-lg text-white font-medium text-sm min-h-[44px]"
+                >
+                  Log
+                </button>
+                <button
+                  onClick={() => setBarcodeResult(null)}
+                  className="px-4 py-3 bg-slate-700 hover:bg-slate-600 rounded-lg text-slate-300 text-sm min-h-[44px]"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Text / Custom Entry Form */}
+          {showForm && (
+            <div className="bg-slate-800 rounded-xl border border-slate-700/50 p-4 space-y-4">
+              {nlAvailable?.available && (
+                <form onSubmit={handleParse}>
+                  <label className="block text-sm font-medium mb-2">Describe what you ate</label>
                   <div className="flex gap-2">
                     <input
                       value={nlText}
                       onChange={(e) => setNlText(e.target.value)}
-                      className="flex-1 px-3 py-2 bg-slate-900 border border-slate-700/50 rounded text-white"
-                      placeholder='e.g., "oatmeal and black coffee"'
+                      className="flex-1 px-3 py-2 bg-slate-900 border border-slate-700/50 rounded-lg text-white text-sm min-h-[44px]"
+                      placeholder='"oatmeal and black coffee"'
                     />
                     <button
                       type="submit"
-                      disabled={parseNutritionText.isPending || !nlText.trim()}
-                      className="px-4 py-2 bg-slate-700 hover:bg-slate-600 disabled:bg-slate-800 disabled:cursor-not-allowed rounded text-slate-200 font-medium"
+                      disabled={parseText.isPending || !nlText.trim()}
+                      className="px-4 py-2 bg-slate-700 hover:bg-slate-600 disabled:bg-slate-800 disabled:cursor-not-allowed rounded-lg text-slate-200 text-sm font-medium min-h-[44px]"
                     >
-                      {parseNutritionText.isPending ? <LoadingSpinner size="sm" /> : 'Parse'}
+                      {parseText.isPending ? <LoadingSpinner size="sm" /> : 'Parse'}
                     </button>
                   </div>
-                  <p className="text-xs text-slate-500 mt-2">
-                    We&apos;ll estimate macros and pre-fill the form. You can edit anything before saving.
-                  </p>
-                  {parseNutritionText.isError && <ErrorMessage error={parseNutritionText.error} />}
                 </form>
               )}
 
-              <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
-                {NUTRITION_PRESETS.map((preset) => (
-                  <button
-                    key={preset.name}
-                    onClick={() => handlePreset(preset)}
-                    className="px-3 py-2 bg-slate-700 hover:bg-slate-600 rounded text-sm text-slate-300 transition-colors"
-                  >
-                    {preset.name}
-                  </button>
-                ))}
-              </div>
-              <button
-                onClick={() => setShowForm(true)}
-                className="mt-4 w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded text-white font-medium"
-              >
-                Custom Entry
-              </button>
-            </div>
-          )}
-
-          {/* Entry Form */}
-          {showForm && (
-            <div className="bg-slate-800 rounded-lg border border-slate-700/50 p-6 mb-6">
-              <h2 className="text-lg font-semibold mb-4">Log Nutrition</h2>
-              <form onSubmit={handleSubmit} className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
+              <form onSubmit={handleSubmit} className="space-y-3">
+                <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-sm font-medium mb-2">Type</label>
+                    <label className="block text-xs font-medium mb-1 text-slate-400">Type</label>
                     <select
                       value={formData.entry_type}
-                      onChange={(e) => setFormData({ ...formData, entry_type: e.target.value as any })}
-                      className="w-full px-3 py-2 bg-slate-900 border border-slate-700/50 rounded text-white"
+                      onChange={(e) => setFormData({ ...formData, entry_type: e.target.value as NutritionEntryCreate['entry_type'] })}
+                      className="w-full px-3 py-2 bg-slate-900 border border-slate-700/50 rounded-lg text-white text-sm min-h-[44px]"
                     >
                       <option value="daily">Daily</option>
                       <option value="pre_activity">Pre-Run</option>
@@ -205,80 +493,52 @@ export default function NutritionPage() {
                     </select>
                   </div>
                   <div>
-                    <label className="block text-sm font-medium mb-2">Date</label>
+                    <label className="block text-xs font-medium mb-1 text-slate-400">Date</label>
                     <input
                       type="date"
                       value={formData.date}
                       onChange={(e) => setFormData({ ...formData, date: e.target.value })}
-                      className="w-full px-3 py-2 bg-slate-900 border border-slate-700/50 rounded text-white"
+                      className="w-full px-3 py-2 bg-slate-900 border border-slate-700/50 rounded-lg text-white text-sm min-h-[44px]"
                     />
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium mb-2">Calories</label>
-                    <input
-                      type="number"
-                      value={formData.calories || ''}
-                      onChange={(e) => setFormData({ ...formData, calories: e.target.value ? parseFloat(e.target.value) : undefined })}
-                      className="w-full px-3 py-2 bg-slate-900 border border-slate-700/50 rounded text-white"
-                      placeholder="Optional"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-2">Protein (g)</label>
-                    <input
-                      type="number"
-                      step="0.1"
-                      value={formData.protein_g || ''}
-                      onChange={(e) => setFormData({ ...formData, protein_g: e.target.value ? parseFloat(e.target.value) : undefined })}
-                      className="w-full px-3 py-2 bg-slate-900 border border-slate-700/50 rounded text-white"
-                      placeholder="Optional"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-2">Carbs (g)</label>
-                    <input
-                      type="number"
-                      step="0.1"
-                      value={formData.carbs_g || ''}
-                      onChange={(e) => setFormData({ ...formData, carbs_g: e.target.value ? parseFloat(e.target.value) : undefined })}
-                      className="w-full px-3 py-2 bg-slate-900 border border-slate-700/50 rounded text-white"
-                      placeholder="Optional"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-2">Fat (g)</label>
-                    <input
-                      type="number"
-                      step="0.1"
-                      value={formData.fat_g || ''}
-                      onChange={(e) => setFormData({ ...formData, fat_g: e.target.value ? parseFloat(e.target.value) : undefined })}
-                      className="w-full px-3 py-2 bg-slate-900 border border-slate-700/50 rounded text-white"
-                      placeholder="Optional"
-                    />
-                  </div>
+                <div className="grid grid-cols-2 gap-3">
+                  {[
+                    { label: 'Calories', key: 'calories' as const },
+                    { label: 'Protein (g)', key: 'protein_g' as const },
+                    { label: 'Carbs (g)', key: 'carbs_g' as const },
+                    { label: 'Fat (g)', key: 'fat_g' as const },
+                  ].map(({ label, key }) => (
+                    <div key={key}>
+                      <label className="block text-xs font-medium mb-1 text-slate-400">{label}</label>
+                      <input
+                        type="number"
+                        step="0.1"
+                        value={formData[key] ?? ''}
+                        onChange={(e) => setFormData({ ...formData, [key]: e.target.value ? parseFloat(e.target.value) : undefined })}
+                        className="w-full px-3 py-2 bg-slate-900 border border-slate-700/50 rounded-lg text-white text-sm min-h-[44px]"
+                        placeholder="—"
+                      />
+                    </div>
+                  ))}
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium mb-2">Notes (Optional)</label>
-                  <textarea
+                  <label className="block text-xs font-medium mb-1 text-slate-400">Notes</label>
+                  <input
                     value={formData.notes || ''}
                     onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-                    rows={2}
-                    className="w-full px-3 py-2 bg-slate-900 border border-slate-700/50 rounded text-white"
-                    placeholder="e.g., Pre-run fuel"
+                    className="w-full px-3 py-2 bg-slate-900 border border-slate-700/50 rounded-lg text-white text-sm min-h-[44px]"
+                    placeholder="e.g., Pre-run oatmeal"
                   />
                 </div>
-
-                {createEntry.isError && <ErrorMessage error={createEntry.error} />}
 
                 <div className="flex gap-2">
                   <button
                     type="submit"
                     disabled={createEntry.isPending}
-                    className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-700 disabled:cursor-not-allowed rounded text-white font-medium"
+                    className="flex-1 py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-700 rounded-lg text-white font-medium text-sm min-h-[44px]"
                   >
                     {createEntry.isPending ? <LoadingSpinner size="sm" /> : 'Log Entry'}
                   </button>
@@ -286,6 +546,7 @@ export default function NutritionPage() {
                     type="button"
                     onClick={() => {
                       setShowForm(false);
+                      setNlText('');
                       setFormData({
                         athlete_id: user?.id || '',
                         date: today,
@@ -298,7 +559,7 @@ export default function NutritionPage() {
                         notes: '',
                       });
                     }}
-                    className="px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded text-slate-300 font-medium"
+                    className="px-4 py-3 bg-slate-700 hover:bg-slate-600 rounded-lg text-slate-300 text-sm min-h-[44px]"
                   >
                     Cancel
                   </button>
@@ -307,39 +568,38 @@ export default function NutritionPage() {
             </div>
           )}
 
-          {/* Today&apos;s Entries */}
+          {/* Today's Log */}
           {entries && entries.length > 0 && (
-            <div className="bg-slate-800 rounded-lg border border-slate-700/50 p-6">
-              <h2 className="text-lg font-semibold mb-4">Today&apos;s Entries</h2>
-              <div className="space-y-3">
-                {entries.map((entry) => (
-                  <div key={entry.id} className="bg-slate-900 rounded p-4">
-                    <div className="flex justify-between items-start mb-2">
-                      <span className="text-sm font-medium capitalize">{entry.entry_type.replace('_', ' ')}</span>
-                      {entry.calories && <span className="text-sm text-slate-400">{entry.calories} cal</span>}
-                    </div>
-                    {(entry.protein_g || entry.carbs_g || entry.fat_g) && (
-                      <div className="text-xs text-slate-400">
-                        {entry.protein_g && `P: ${entry.protein_g}g `}
-                        {entry.carbs_g && `C: ${entry.carbs_g}g `}
-                        {entry.fat_g && `F: ${entry.fat_g}g`}
+            <div className="space-y-2">
+              <h2 className="text-sm font-semibold text-slate-400 px-1">Today&apos;s Log</h2>
+              {entries.map((entry) => (
+                <div key={entry.id} className="bg-slate-800 rounded-xl border border-slate-700/50 p-3">
+                  <div className="flex justify-between items-start">
+                    <div className="min-w-0 flex-1">
+                      {entry.notes && <p className="text-sm text-white truncate">{entry.notes}</p>}
+                      <div className="text-xs text-slate-400 mt-0.5">
+                        <span className="capitalize">{entry.entry_type.replace(/_/g, ' ')}</span>
+                        {entry.macro_source && (
+                          <span className="ml-2 text-slate-500">{entry.macro_source.replace(/_/g, ' ')}</span>
+                        )}
                       </div>
-                    )}
-                    {entry.notes && <p className="text-sm text-slate-300 mt-2">{entry.notes}</p>}
+                    </div>
+                    <div className="text-right text-xs text-slate-300 flex-shrink-0 ml-2">
+                      {entry.calories != null && <div>{Math.round(entry.calories)} cal</div>}
+                      <div className="text-slate-500">
+                        {entry.protein_g != null && `${Math.round(entry.protein_g)}P `}
+                        {entry.carbs_g != null && `${Math.round(entry.carbs_g)}C `}
+                        {entry.fat_g != null && `${Math.round(entry.fat_g)}F`}
+                      </div>
+                    </div>
                   </div>
-                ))}
-              </div>
+                </div>
+              ))}
             </div>
           )}
 
-          {entries && entries.length === 0 && !showForm && (
-            <div className="bg-slate-800 rounded-lg border border-slate-700/50 p-6 text-center">
-              <p className="text-slate-400">No entries today. Log when convenient.</p>
-            </div>
-          )}
         </div>
       </div>
     </ProtectedRoute>
   );
 }
-

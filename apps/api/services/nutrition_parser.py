@@ -1,14 +1,9 @@
 """
-Nutrition Natural-Language Parsing (Phase 1)
+Nutrition Natural-Language Parsing.
 
-Converts free-form food text into approximate macros.
-
-Design goals:
-- Keep the endpoint lightweight and resilient
-- Return a best-effort structured estimate (not medical-grade accuracy)
-- Fail gracefully so manual entry remains the fallback
+Uses Kimi K2.5 to identify foods from text, then looks up USDA for verified macros.
+Falls back to OpenAI if Kimi is unavailable.
 """
-
 from __future__ import annotations
 
 import json
@@ -17,13 +12,6 @@ import os
 from typing import Any, Dict, Optional
 
 logger = logging.getLogger(__name__)
-
-try:
-    from openai import OpenAI
-
-    OPENAI_AVAILABLE = True
-except ImportError:
-    OPENAI_AVAILABLE = False
 
 
 def _coerce_float(value: Any) -> Optional[float]:
@@ -43,14 +31,9 @@ def _coerce_float(value: Any) -> Optional[float]:
 
 
 def _extract_json_object(text: str) -> Dict[str, Any]:
-    """
-    Extract first JSON object from model output.
-    We keep this deliberately simple and robust.
-    """
     if not text:
         raise ValueError("Empty model response")
 
-    # Fast path: direct JSON
     try:
         parsed = json.loads(text)
         if isinstance(parsed, dict):
@@ -58,7 +41,6 @@ def _extract_json_object(text: str) -> Dict[str, Any]:
     except Exception:
         pass
 
-    # Fallback: find first {...} block
     start = text.find("{")
     end = text.rfind("}")
     if start == -1 or end == -1 or end <= start:
@@ -71,32 +53,13 @@ def _extract_json_object(text: str) -> Dict[str, Any]:
     return parsed
 
 
-def parse_nutrition_text(text: str) -> Dict[str, Optional[float] | str]:
-    """
-    Parse nutrition free text using OpenAI.
+_NL_SYSTEM = (
+    "You are a nutrition logging helper. "
+    "Given a short text describing food/drink, estimate macros. "
+    "Return ONLY valid JSON. No markdown, no commentary."
+)
 
-    Returns:
-      dict with keys: calories, protein_g, carbs_g, fat_g, fiber_g, notes
-    """
-    if not text or not text.strip():
-        raise ValueError("text is required")
-
-    if not OPENAI_AVAILABLE:
-        raise RuntimeError("OpenAI client not installed")
-
-    api_key = os.getenv("OPENAI_API_KEY")
-    if not api_key:
-        raise RuntimeError("OPENAI_API_KEY not configured")
-
-    client = OpenAI(api_key=api_key)
-
-    system = (
-        "You are a nutrition logging helper. "
-        "Given a short text describing food/drink, estimate macros. "
-        "Return ONLY valid JSON. No markdown, no commentary."
-    )
-
-    user = f"""Text: {text}
+_NL_USER_TEMPLATE = """Text: {text}
 
 Return a JSON object with these keys:
 {{
@@ -113,21 +76,18 @@ Rules:
 - If the text is too vague, set numbers to null but still return notes.
 - notes should be a short canonicalized list of detected items."""
 
-    try:
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {"role": "system", "content": system},
-                {"role": "user", "content": user},
-            ],
-            max_tokens=400,
-        )
-        content = response.choices[0].message.content or ""
-    except Exception as e:
-        logger.error(f"OpenAI nutrition parse failed: {e}")
-        raise RuntimeError("OpenAI request failed")
 
-    data = _extract_json_object(content)
+def parse_nutrition_text(text: str, db=None) -> Dict[str, Optional[float] | str]:
+    """
+    Parse nutrition free text using Kimi K2.5 (primary) or OpenAI (fallback).
+
+    If a db session is provided and USDA foods are seeded, attempts USDA
+    lookup for verified macros. Otherwise uses model-estimated values.
+    """
+    if not text or not text.strip():
+        raise ValueError("text is required")
+
+    data = _call_llm(text)
 
     calories = _coerce_float(data.get("calories"))
     protein_g = _coerce_float(data.get("protein_g"))
@@ -138,6 +98,22 @@ Rules:
     if not isinstance(notes, str) or not notes.strip():
         notes = text.strip()
 
+    macro_source = "llm_estimated"
+
+    if db is not None and notes:
+        try:
+            from services.usda_food_lookup import lookup_food
+            match = lookup_food(notes, db)
+            if match:
+                calories = calories or round(match.calories_per_100g, 1)
+                protein_g = protein_g or round(match.protein_per_100g, 1)
+                carbs_g = carbs_g or round(match.carbs_per_100g, 1)
+                fat_g = fat_g or round(match.fat_per_100g, 1)
+                fiber_g = fiber_g or round(match.fiber_per_100g, 1)
+                macro_source = "usda_local" if "local" in match.source else "usda_api"
+        except Exception:
+            logger.debug("USDA lookup skipped", exc_info=True)
+
     return {
         "calories": calories,
         "protein_g": protein_g,
@@ -145,5 +121,70 @@ Rules:
         "fat_g": fat_g,
         "fiber_g": fiber_g,
         "notes": notes.strip(),
+        "macro_source": macro_source,
     }
 
+
+def _call_llm(text: str) -> dict:
+    """Try Kimi K2.5 first, fall back to OpenAI."""
+    result = _call_kimi(text)
+    if result is not None:
+        return result
+
+    result = _call_openai(text)
+    if result is not None:
+        return result
+
+    raise RuntimeError("All LLM providers failed for nutrition text parsing")
+
+
+def _call_kimi(text: str) -> Optional[dict]:
+    try:
+        from core.config import settings
+        from openai import OpenAI
+
+        api_key = settings.KIMI_API_KEY
+        if not api_key:
+            return None
+
+        client = OpenAI(api_key=api_key, base_url=settings.KIMI_BASE_URL, timeout=15)
+        response = client.chat.completions.create(
+            model="kimi-k2.5",
+            messages=[
+                {"role": "system", "content": _NL_SYSTEM},
+                {"role": "user", "content": _NL_USER_TEMPLATE.format(text=text)},
+            ],
+            max_tokens=400,
+            response_format={"type": "json_object"},
+            extra_body={"thinking": {"type": "disabled"}},
+        )
+        content = response.choices[0].message.content or ""
+        return _extract_json_object(content)
+    except Exception:
+        logger.warning("Kimi nutrition text parse failed", exc_info=True)
+        return None
+
+
+def _call_openai(text: str) -> Optional[dict]:
+    try:
+        from openai import OpenAI
+
+        api_key = os.getenv("OPENAI_API_KEY")
+        if not api_key:
+            return None
+
+        client = OpenAI(api_key=api_key, timeout=15)
+        response = client.chat.completions.create(
+            model="gpt-4.1-mini",
+            messages=[
+                {"role": "system", "content": _NL_SYSTEM},
+                {"role": "user", "content": _NL_USER_TEMPLATE.format(text=text)},
+            ],
+            max_tokens=400,
+            response_format={"type": "json_object"},
+        )
+        content = response.choices[0].message.content or ""
+        return _extract_json_object(content)
+    except Exception:
+        logger.warning("OpenAI nutrition text parse failed", exc_info=True)
+        return None

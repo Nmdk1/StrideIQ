@@ -599,6 +599,20 @@ def aggregate_daily_inputs(
         (row.date, float(row.total_calories)) for row in calorie_data
     ]
 
+    caffeine_data = db.query(
+        NutritionEntry.date,
+        func.sum(NutritionEntry.caffeine_mg).label("total_caffeine"),
+    ).filter(
+        NutritionEntry.athlete_id == athlete_id,
+        NutritionEntry.date >= start_date.date(),
+        NutritionEntry.date <= end_date.date(),
+        NutritionEntry.caffeine_mg.isnot(None),
+    ).group_by(NutritionEntry.date).all()
+
+    inputs["daily_caffeine_mg"] = [
+        (row.date, float(row.total_caffeine)) for row in caffeine_data
+    ]
+
     # Body composition trends (weight, BMI)
     weight_data = db.query(
         BodyComposition.date,
@@ -869,7 +883,82 @@ def aggregate_activity_level_inputs(
     if tod_series:
         inputs["run_start_hour"] = tod_series
 
+    inputs.update(_aggregate_fueling_inputs(athlete_id, by_date, db))
+
     return inputs
+
+
+def _aggregate_fueling_inputs(
+    athlete_id: str,
+    by_date: dict,
+    db: Session,
+) -> Dict[str, List[Tuple[date_type, float]]]:
+    """Derive fueling signals per activity from NutritionEntry."""
+    fueling: Dict[str, List[Tuple[date_type, float]]] = {}
+    pre_caffeine = []
+    pre_carbs = []
+    during_carbs = []
+    during_carbs_hr = []
+    during_caffeine = []
+    during_fluid = []
+    meal_gap = []
+
+    for d, a in sorted(by_date.items()):
+        entries = db.query(NutritionEntry).filter(
+            NutritionEntry.athlete_id == athlete_id,
+            NutritionEntry.activity_id == a.id,
+        ).all()
+
+        pre = [e for e in entries if e.entry_type == "pre_activity"]
+        during = [e for e in entries if e.entry_type == "during_activity"]
+
+        c_pre = sum(float(e.caffeine_mg or 0) for e in pre)
+        carb_pre = sum(float(e.carbs_g or 0) for e in pre)
+        c_dur = sum(float(e.caffeine_mg or 0) for e in during)
+        carb_dur = sum(float(e.carbs_g or 0) for e in during)
+        fl_dur = sum(float(e.fluid_ml or 0) for e in during)
+
+        if c_pre > 0:
+            pre_caffeine.append((d, c_pre))
+        if carb_pre > 0:
+            pre_carbs.append((d, carb_pre))
+        if carb_dur > 0:
+            during_carbs.append((d, carb_dur))
+            if a.duration_s and a.duration_s > 0:
+                during_carbs_hr.append((d, carb_dur / (float(a.duration_s) / 3600)))
+        if c_dur > 0:
+            during_caffeine.append((d, c_dur))
+        if fl_dur > 0:
+            during_fluid.append((d, fl_dur))
+
+        if a.start_time:
+            last_meal = db.query(NutritionEntry).filter(
+                NutritionEntry.athlete_id == athlete_id,
+                NutritionEntry.timing.isnot(None),
+                NutritionEntry.timing < a.start_time,
+                NutritionEntry.date == d,
+            ).order_by(NutritionEntry.timing.desc()).first()
+            if last_meal and last_meal.timing:
+                gap_min = (a.start_time - last_meal.timing).total_seconds() / 60
+                if 0 < gap_min < 720:
+                    meal_gap.append((d, gap_min))
+
+    if pre_caffeine:
+        fueling["pre_run_caffeine_mg"] = pre_caffeine
+    if pre_carbs:
+        fueling["pre_run_carbs_g"] = pre_carbs
+    if during_carbs:
+        fueling["during_run_carbs_g"] = during_carbs
+    if during_carbs_hr:
+        fueling["during_run_carbs_g_per_hour"] = during_carbs_hr
+    if during_caffeine:
+        fueling["during_run_caffeine_mg"] = during_caffeine
+    if during_fluid:
+        fueling["during_run_fluid_ml"] = during_fluid
+    if meal_gap:
+        fueling["pre_run_meal_gap_minutes"] = meal_gap
+
+    return fueling
 
 
 def aggregate_feedback_inputs(
