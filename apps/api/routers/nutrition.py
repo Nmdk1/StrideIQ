@@ -3,15 +3,20 @@ Nutrition API Endpoints
 
 Photo parsing, barcode scanning, fueling product library, and CRUD for nutrition entries.
 """
+import csv
+import io
 import logging
 import os
-from datetime import date, datetime, timezone
+from collections import defaultdict
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from core.auth import get_current_user
@@ -352,6 +357,224 @@ def log_fueling(
     invalidate_correlation_cache(str(current_user.id))
 
     return entry
+
+
+# ---------------------------------------------------------------------------
+# Reporting: summary, trends, export
+# ---------------------------------------------------------------------------
+
+
+class _DaySummary(BaseModel):
+    date: str
+    calories: float
+    protein_g: float
+    carbs_g: float
+    fat_g: float
+    fiber_g: float
+    caffeine_mg: float
+    entry_count: int
+    has_pre_activity: bool
+    has_during_activity: bool
+
+
+class NutritionSummaryResponse(BaseModel):
+    days: List[_DaySummary]
+    period_avg_calories: float
+    period_avg_protein_g: float
+    period_avg_carbs_g: float
+    period_avg_fat_g: float
+    days_logged: int
+    total_days: int
+
+
+@router.get("/nutrition/summary", response_model=NutritionSummaryResponse)
+def get_nutrition_summary(
+    days: int = Query(7, ge=1, le=365),
+    current_user: Athlete = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    end = date.today()
+    start = end - timedelta(days=days - 1)
+
+    entries = (
+        db.query(NutritionEntry)
+        .filter(
+            NutritionEntry.athlete_id == current_user.id,
+            NutritionEntry.date >= start,
+            NutritionEntry.date <= end,
+        )
+        .all()
+    )
+
+    by_day: Dict[str, list] = defaultdict(list)
+    for e in entries:
+        by_day[e.date.isoformat()].append(e)
+
+    day_summaries = []
+    d = start
+    while d <= end:
+        ds = d.isoformat()
+        day_entries = by_day.get(ds, [])
+        day_summaries.append(_DaySummary(
+            date=ds,
+            calories=sum(float(e.calories or 0) for e in day_entries),
+            protein_g=sum(float(e.protein_g or 0) for e in day_entries),
+            carbs_g=sum(float(e.carbs_g or 0) for e in day_entries),
+            fat_g=sum(float(e.fat_g or 0) for e in day_entries),
+            fiber_g=sum(float(e.fiber_g or 0) for e in day_entries),
+            caffeine_mg=sum(float(e.caffeine_mg or 0) for e in day_entries),
+            entry_count=len(day_entries),
+            has_pre_activity=any(e.entry_type == "pre_activity" for e in day_entries),
+            has_during_activity=any(e.entry_type == "during_activity" for e in day_entries),
+        ))
+        d += timedelta(days=1)
+
+    logged_days = [s for s in day_summaries if s.entry_count > 0]
+    n_logged = len(logged_days)
+
+    return NutritionSummaryResponse(
+        days=day_summaries,
+        period_avg_calories=round(sum(s.calories for s in logged_days) / max(n_logged, 1)),
+        period_avg_protein_g=round(sum(s.protein_g for s in logged_days) / max(n_logged, 1)),
+        period_avg_carbs_g=round(sum(s.carbs_g for s in logged_days) / max(n_logged, 1)),
+        period_avg_fat_g=round(sum(s.fat_g for s in logged_days) / max(n_logged, 1)),
+        days_logged=n_logged,
+        total_days=len(day_summaries),
+    )
+
+
+class _ActivityNutrition(BaseModel):
+    activity_id: str
+    activity_name: str
+    activity_date: str
+    distance_mi: Optional[float] = None
+    pre_entries: List[Dict[str, Any]]
+    during_entries: List[Dict[str, Any]]
+    post_entries: List[Dict[str, Any]]
+    pre_total_carbs_g: float
+    pre_total_caffeine_mg: float
+    during_total_carbs_g: float
+
+
+class ActivityNutritionResponse(BaseModel):
+    activities: List[_ActivityNutrition]
+
+
+@router.get("/nutrition/activity-linked", response_model=ActivityNutritionResponse)
+def get_activity_linked_nutrition(
+    days: int = Query(30, ge=1, le=365),
+    current_user: Athlete = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    cutoff = date.today() - timedelta(days=days)
+    M_PER_MI = 1609.344
+
+    linked_entries = (
+        db.query(NutritionEntry)
+        .filter(
+            NutritionEntry.athlete_id == current_user.id,
+            NutritionEntry.activity_id.isnot(None),
+            NutritionEntry.date >= cutoff,
+        )
+        .all()
+    )
+
+    by_activity: Dict[str, list] = defaultdict(list)
+    for e in linked_entries:
+        by_activity[str(e.activity_id)].append(e)
+
+    activity_ids = list(by_activity.keys())
+    if not activity_ids:
+        return ActivityNutritionResponse(activities=[])
+
+    activities = (
+        db.query(Activity)
+        .filter(Activity.id.in_(activity_ids))
+        .order_by(Activity.start_time.desc())
+        .all()
+    )
+
+    result = []
+    for act in activities:
+        act_entries = by_activity.get(str(act.id), [])
+        pre = [e for e in act_entries if e.entry_type == "pre_activity"]
+        during = [e for e in act_entries if e.entry_type == "during_activity"]
+        post = [e for e in act_entries if e.entry_type == "post_activity"]
+
+        def _entry_dict(e: NutritionEntry) -> Dict[str, Any]:
+            return {
+                "notes": e.notes or "",
+                "calories": float(e.calories or 0),
+                "carbs_g": float(e.carbs_g or 0),
+                "protein_g": float(e.protein_g or 0),
+                "fat_g": float(e.fat_g or 0),
+                "caffeine_mg": float(e.caffeine_mg or 0),
+                "macro_source": e.macro_source or "",
+            }
+
+        dist = (act.distance_meters or 0) / M_PER_MI if act.distance_meters else None
+        result.append(_ActivityNutrition(
+            activity_id=str(act.id),
+            activity_name=act.name or "Run",
+            activity_date=act.start_time.date().isoformat() if act.start_time else "",
+            distance_mi=round(dist, 1) if dist else None,
+            pre_entries=[_entry_dict(e) for e in pre],
+            during_entries=[_entry_dict(e) for e in during],
+            post_entries=[_entry_dict(e) for e in post],
+            pre_total_carbs_g=sum(float(e.carbs_g or 0) for e in pre),
+            pre_total_caffeine_mg=sum(float(e.caffeine_mg or 0) for e in pre),
+            during_total_carbs_g=sum(float(e.carbs_g or 0) for e in during),
+        ))
+
+    return ActivityNutritionResponse(activities=result)
+
+
+@router.get("/nutrition/export")
+def export_nutrition_csv(
+    start_date: str = Query(...),
+    end_date: str = Query(...),
+    current_user: Athlete = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    entries = (
+        db.query(NutritionEntry)
+        .filter(
+            NutritionEntry.athlete_id == current_user.id,
+            NutritionEntry.date >= start_date,
+            NutritionEntry.date <= end_date,
+        )
+        .order_by(NutritionEntry.date.asc(), NutritionEntry.created_at.asc())
+        .all()
+    )
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow([
+        "date", "entry_type", "calories", "protein_g", "carbs_g", "fat_g",
+        "fiber_g", "caffeine_mg", "fluid_ml", "notes", "macro_source", "created_at",
+    ])
+    for e in entries:
+        writer.writerow([
+            e.date.isoformat() if e.date else "",
+            e.entry_type or "",
+            float(e.calories) if e.calories else "",
+            float(e.protein_g) if e.protein_g else "",
+            float(e.carbs_g) if e.carbs_g else "",
+            float(e.fat_g) if e.fat_g else "",
+            float(e.fiber_g) if e.fiber_g else "",
+            float(e.caffeine_mg) if e.caffeine_mg else "",
+            float(e.fluid_ml) if e.fluid_ml else "",
+            e.notes or "",
+            e.macro_source or "",
+            e.created_at.isoformat() if e.created_at else "",
+        ])
+
+    output.seek(0)
+    return StreamingResponse(
+        output,
+        media_type="text/csv",
+        headers={"Content-Disposition": f"attachment; filename=nutrition_{start_date}_to_{end_date}.csv"},
+    )
 
 
 # ---------------------------------------------------------------------------

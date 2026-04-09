@@ -12,9 +12,11 @@ import {
   type BarcodeScanResult,
   type FuelingProduct,
   type FuelingProfileEntry,
+  type NutritionSummary,
+  type ActivityNutritionResponse,
 } from '../../api/services/nutrition';
 
-export type { NutritionEntry, PhotoParseResult, BarcodeScanResult, FuelingProduct, FuelingProfileEntry };
+export type { NutritionEntry, PhotoParseResult, BarcodeScanResult, FuelingProduct, FuelingProfileEntry, NutritionSummary, ActivityNutritionResponse };
 
 export const nutritionKeys = {
   all: ['nutrition'] as const,
@@ -24,6 +26,8 @@ export const nutritionKeys = {
   nlParsingAvailable: () => [...nutritionKeys.all, 'nlParsingAvailable'] as const,
   fuelingProducts: (params?: Record<string, unknown>) => [...nutritionKeys.all, 'fuelingProducts', params] as const,
   fuelingProfile: () => [...nutritionKeys.all, 'fuelingProfile'] as const,
+  summary: (days: number) => [...nutritionKeys.all, 'summary', days] as const,
+  activityLinked: (days: number) => [...nutritionKeys.all, 'activityLinked', days] as const,
 } as const;
 
 export function useNLParsingAvailable() {
@@ -154,5 +158,21 @@ export function useDeleteNutritionEntry() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: nutritionKeys.all });
     },
+  });
+}
+
+export function useNutritionSummary(days: number = 7) {
+  return useQuery<NutritionSummary>({
+    queryKey: nutritionKeys.summary(days),
+    queryFn: () => nutritionService.getSummary(days),
+    staleTime: 60 * 1000,
+  });
+}
+
+export function useActivityLinkedNutrition(days: number = 30) {
+  return useQuery<ActivityNutritionResponse>({
+    queryKey: nutritionKeys.activityLinked(days),
+    queryFn: () => nutritionService.getActivityLinked(days),
+    staleTime: 60 * 1000,
   });
 }

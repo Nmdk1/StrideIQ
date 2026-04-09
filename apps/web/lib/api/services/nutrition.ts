@@ -221,4 +221,78 @@ export const nutritionService = {
   }): Promise<NutritionEntry> {
     return apiClient.post<NutritionEntry>('/v1/nutrition/log-fueling', data);
   },
+  async getSummary(days: number = 7): Promise<NutritionSummary> {
+    return apiClient.get<NutritionSummary>(`/v1/nutrition/summary?days=${days}`);
+  },
+
+  async getActivityLinked(days: number = 30): Promise<ActivityNutritionResponse> {
+    return apiClient.get<ActivityNutritionResponse>(`/v1/nutrition/activity-linked?days=${days}`);
+  },
+
+  async exportCsv(startDate: string, endDate: string): Promise<void> {
+    const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
+    const res = await fetch(`${(await import('../config')).API_CONFIG.baseURL}/v1/nutrition/export?start_date=${startDate}&end_date=${endDate}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!res.ok) throw new Error('Export failed');
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `nutrition_${startDate}_to_${endDate}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  },
 } as const;
+
+export interface DaySummary {
+  date: string;
+  calories: number;
+  protein_g: number;
+  carbs_g: number;
+  fat_g: number;
+  fiber_g: number;
+  caffeine_mg: number;
+  entry_count: number;
+  has_pre_activity: boolean;
+  has_during_activity: boolean;
+}
+
+export interface NutritionSummary {
+  days: DaySummary[];
+  period_avg_calories: number;
+  period_avg_protein_g: number;
+  period_avg_carbs_g: number;
+  period_avg_fat_g: number;
+  days_logged: number;
+  total_days: number;
+}
+
+export interface ActivityNutritionEntry {
+  notes: string;
+  calories: number;
+  carbs_g: number;
+  protein_g: number;
+  fat_g: number;
+  caffeine_mg: number;
+  macro_source: string;
+}
+
+export interface ActivityNutrition {
+  activity_id: string;
+  activity_name: string;
+  activity_date: string;
+  distance_mi?: number;
+  pre_entries: ActivityNutritionEntry[];
+  during_entries: ActivityNutritionEntry[];
+  post_entries: ActivityNutritionEntry[];
+  pre_total_carbs_g: number;
+  pre_total_caffeine_mg: number;
+  during_total_carbs_g: number;
+}
+
+export interface ActivityNutritionResponse {
+  activities: ActivityNutrition[];
+}
