@@ -153,8 +153,7 @@ export default function NutritionPage() {
 
   const stopScanner = useCallback(async () => {
     try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const scanner = scannerRef.current as any;
+      const scanner = scannerRef.current as { getState?: () => number; stop: () => Promise<void>; clear: () => Promise<void> };
       if (scanner) {
         const state = scanner.getState?.();
         if (state === 2) await scanner.stop();
