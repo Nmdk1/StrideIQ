@@ -89,7 +89,8 @@ def _cleanup_stale_version_entries() -> None:
         cur.execute(
             "DELETE FROM alembic_version "
             "WHERE version_num IN ("
-            "'readiness_score_001', 'self_regulation_001', 'phase1c_001'"
+            "'readiness_score_001', 'self_regulation_001', 'phase1c_001', "
+            "'nutrition_intelligence_001'"
             ")"
         )
         deleted = cur.rowcount
