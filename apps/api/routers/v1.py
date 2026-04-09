@@ -17,6 +17,8 @@ from schemas import (
     DailyCheckinCreate,
     DailyCheckinResponse,
     ActivitySplitResponse,
+    IntervalSummaryResponse,
+    SplitsWithIntervalsResponse,
     PersonalBestResponse,
 )
 
@@ -349,14 +351,13 @@ def create_activity(
     return ActivityResponse(**activity_dict)
 
 
-@router.get("/activities/{activity_id}/splits", response_model=List[ActivitySplitResponse])
+@router.get("/activities/{activity_id}/splits", response_model=SplitsWithIntervalsResponse)
 def get_activity_splits(
     activity_id: UUID,
     current_user: Athlete = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Get splits for a specific activity (auth + ownership enforced)."""
-    # Verify activity exists AND belongs to the authenticated user
+    """Get splits for a specific activity with interval structure detection."""
     activity = (
         db.query(Activity)
         .filter(Activity.id == activity_id, Activity.athlete_id == current_user.id)
@@ -364,12 +365,71 @@ def get_activity_splits(
     )
     if not activity:
         raise HTTPException(status_code=404, detail="Activity not found")
-    
+
     splits = db.query(ActivitySplit).filter(
         ActivitySplit.activity_id == activity_id
     ).order_by(ActivitySplit.split_number).all()
-    
-    return splits
+
+    has_persisted_labels = any(s.lap_type is not None for s in splits)
+
+    if has_persisted_labels:
+        split_responses = [ActivitySplitResponse.model_validate(s) for s in splits]
+        work = [s for s in splits if s.lap_type == "work"]
+        if len(work) >= 1:
+            from services.interval_detector import detect_interval_structure
+            analysis = detect_interval_structure(splits)
+            return SplitsWithIntervalsResponse(
+                splits=split_responses,
+                interval_summary=IntervalSummaryResponse(**{
+                    "is_structured": analysis.summary.is_structured,
+                    "workout_description": analysis.summary.workout_description,
+                    "num_work_intervals": analysis.summary.num_work_intervals,
+                    "avg_work_pace_sec_per_km": analysis.summary.avg_work_pace_sec_per_km,
+                    "avg_work_hr": analysis.summary.avg_work_hr,
+                    "avg_rest_duration_s": analysis.summary.avg_rest_duration_s,
+                    "avg_rest_hr": analysis.summary.avg_rest_hr,
+                    "fastest_interval": analysis.summary.fastest_interval,
+                    "slowest_interval": analysis.summary.slowest_interval,
+                }),
+            )
+        return SplitsWithIntervalsResponse(splits=split_responses, interval_summary=None)
+
+    from services.interval_detector import detect_interval_structure
+    analysis = detect_interval_structure(splits)
+
+    split_responses = []
+    for ls in analysis.labeled_splits:
+        split_responses.append(ActivitySplitResponse(
+            split_number=ls.split_number,
+            distance=ls.distance,
+            elapsed_time=ls.elapsed_time,
+            moving_time=ls.moving_time,
+            average_heartrate=ls.average_heartrate,
+            max_heartrate=ls.max_heartrate,
+            average_cadence=float(ls.average_cadence) if ls.average_cadence is not None else None,
+            gap_seconds_per_mile=float(ls.gap_seconds_per_mile) if ls.gap_seconds_per_mile is not None else None,
+            lap_type=ls.lap_type,
+            interval_number=ls.interval_number,
+        ))
+
+    interval_summary = None
+    if analysis.summary.is_structured:
+        interval_summary = IntervalSummaryResponse(
+            is_structured=True,
+            workout_description=analysis.summary.workout_description,
+            num_work_intervals=analysis.summary.num_work_intervals,
+            avg_work_pace_sec_per_km=analysis.summary.avg_work_pace_sec_per_km,
+            avg_work_hr=analysis.summary.avg_work_hr,
+            avg_rest_duration_s=analysis.summary.avg_rest_duration_s,
+            avg_rest_hr=analysis.summary.avg_rest_hr,
+            fastest_interval=analysis.summary.fastest_interval,
+            slowest_interval=analysis.summary.slowest_interval,
+        )
+
+    return SplitsWithIntervalsResponse(
+        splits=split_responses,
+        interval_summary=interval_summary,
+    )
 
 
 @router.get("/activities/{activity_id}/streams")

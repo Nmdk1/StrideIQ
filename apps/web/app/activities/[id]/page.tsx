@@ -120,7 +120,7 @@ interface Activity {
   start_coords: [number, number] | null;
 }
 
-import type { Split } from '@/lib/types/splits';
+import type { Split, SplitsResponse } from '@/lib/types/splits';
 
 function normalizeCadenceToSpm(raw: number | null | undefined): number | null {
   if (raw === null || raw === undefined) return null;
@@ -151,7 +151,7 @@ export default function ActivityDetailPage() {
     enabled: !authLoading && !!token && !!activityId,
   });
 
-  const { data: splits } = useQuery<Split[]>({
+  const { data: splitsResponse } = useQuery<SplitsResponse>({
     queryKey: ['activity-splits', activityId],
     queryFn: async () => {
       const res = await fetch(
@@ -160,11 +160,14 @@ export default function ActivityDetailPage() {
           headers: { Authorization: `Bearer ${token}` },
         }
       );
-      if (!res.ok) return [];
+      if (!res.ok) return { splits: [], interval_summary: null };
       return res.json();
     },
     enabled: !authLoading && !!token && !!activityId,
   });
+
+  const splits = splitsResponse?.splits ?? null;
+  const intervalSummary = splitsResponse?.interval_summary ?? null;
 
   const { data: findings } = useQuery<{ text: string; domain: string; confidence_tier: string; evidence_summary?: string | null }[]>({
     queryKey: ['activity-findings', activityId],
@@ -456,6 +459,7 @@ export default function ActivityDetailPage() {
           <RunShapeCanvas
             activityId={activityId}
             splits={splits ?? null}
+            intervalSummary={intervalSummary}
             provider={activity.provider}
             deviceName={activity.device_name}
             heatAdjustmentPct={activity.heat_adjustment_pct}

@@ -758,21 +758,26 @@ def _ingest_activity_detail_item(
         db.query(ActivitySplit).filter(
             ActivitySplit.activity_id == activity.id
         ).delete(synchronize_session=False)
-        for lap in lap_splits:
+        from services.interval_detector import detect_interval_structure
+        analysis = detect_interval_structure(lap_splits)
+
+        for ls in analysis.labeled_splits:
             db.add(ActivitySplit(
                 activity_id=activity.id,
-                split_number=lap["split_number"],
-                distance=lap["distance"],
-                elapsed_time=lap["elapsed_time"],
-                moving_time=lap["moving_time"],
-                average_heartrate=lap["average_heartrate"],
-                max_heartrate=lap["max_heartrate"],
-                average_cadence=lap["average_cadence"],
-                gap_seconds_per_mile=lap["gap_seconds_per_mile"],
+                split_number=ls.split_number,
+                distance=ls.distance,
+                elapsed_time=ls.elapsed_time,
+                moving_time=ls.moving_time,
+                average_heartrate=ls.average_heartrate,
+                max_heartrate=ls.max_heartrate,
+                average_cadence=ls.average_cadence,
+                gap_seconds_per_mile=ls.gap_seconds_per_mile,
+                lap_type=ls.lap_type,
+                interval_number=ls.interval_number,
             ))
         logger.info(
-            "Created %d splits for garmin_activity_id=%s",
-            len(lap_splits), garmin_activity_id_int,
+            "Created %d splits (structured=%s) for garmin_activity_id=%s",
+            len(lap_splits), analysis.summary.is_structured, garmin_activity_id_int,
         )
 
         # Re-run race detection now that splits are available.

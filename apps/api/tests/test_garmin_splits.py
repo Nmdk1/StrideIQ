@@ -310,6 +310,7 @@ class TestIngestActivityDetailCreatesSplits:
         mock_activity.start_time = datetime(2026, 2, 25, 8, 0, 0, tzinfo=timezone.utc)
         mock_activity.stream_fetch_status = None
         mock_activity.garmin_activity_id = 12345678
+        mock_activity.sport = "run"
 
         mock_db = MagicMock()
 
@@ -356,6 +357,7 @@ class TestIngestActivityDetailIdempotentSplits:
         mock_activity.start_time = datetime(2026, 2, 25, 8, 0, 0, tzinfo=timezone.utc)
         mock_activity.stream_fetch_status = None
         mock_activity.garmin_activity_id = 12345678
+        mock_activity.sport = "run"
 
         delete_called = {"n": 0}
         mock_db = MagicMock()
@@ -400,6 +402,7 @@ class TestIngestActivityDetailSampleFallbackWhenNoLaps:
         mock_activity.start_time = datetime(2026, 2, 25, 8, 0, 0, tzinfo=timezone.utc)
         mock_activity.stream_fetch_status = None
         mock_activity.garmin_activity_id = 12345678
+        mock_activity.sport = "run"
 
         mock_db = MagicMock()
 
@@ -441,6 +444,7 @@ class TestIngestActivityDetailSampleFallbackWhenNoLaps:
         mock_activity.start_time = datetime(2026, 2, 25, 8, 0, 0, tzinfo=timezone.utc)
         mock_activity.stream_fetch_status = None
         mock_activity.garmin_activity_id = 99999
+        mock_activity.sport = "run"
 
         mock_db = MagicMock()
 

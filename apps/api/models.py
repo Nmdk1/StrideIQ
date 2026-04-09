@@ -702,7 +702,9 @@ class ActivitySplit(Base):
     max_heartrate = Column(Integer, nullable=True)
     average_cadence = Column(Numeric, nullable=True)
     gap_seconds_per_mile = Column(Numeric, nullable=True)  # Grade Adjusted Pace (NGP) in seconds per mile
-    
+    lap_type = Column(Text, nullable=True)  # warm_up, work, rest, cool_down
+    interval_number = Column(Integer, nullable=True)  # 1-indexed for work intervals only
+
     # --- RELATIONSHIPS ---
     activity = relationship("Activity", back_populates="splits")
 

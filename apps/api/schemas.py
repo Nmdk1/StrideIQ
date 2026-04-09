@@ -67,8 +67,27 @@ class ActivitySplitResponse(BaseModel):
     max_heartrate: Optional[int] = None
     average_cadence: Optional[float] = None
     gap_seconds_per_mile: Optional[float] = None
+    lap_type: Optional[str] = None
+    interval_number: Optional[int] = None
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class IntervalSummaryResponse(BaseModel):
+    is_structured: bool = False
+    workout_description: Optional[str] = None
+    num_work_intervals: int = 0
+    avg_work_pace_sec_per_km: Optional[float] = None
+    avg_work_hr: Optional[int] = None
+    avg_rest_duration_s: Optional[float] = None
+    avg_rest_hr: Optional[int] = None
+    fastest_interval: Optional[int] = None
+    slowest_interval: Optional[int] = None
+
+
+class SplitsWithIntervalsResponse(BaseModel):
+    splits: List[ActivitySplitResponse]
+    interval_summary: Optional[IntervalSummaryResponse] = None
 
 
 class ActivityResponse(BaseModel):

@@ -60,8 +60,9 @@ import { lttbDownsample } from '@/components/activities/rsi/utils/lttb';
 import { effortToColor } from '@/components/activities/rsi/utils/effortColor';
 import { useStreamHover } from '@/lib/context/StreamHoverContext';
 import { useUnits } from '@/lib/context/UnitsContext';
-import type { Split } from '@/lib/types/splits';
+import type { Split, IntervalSummary } from '@/lib/types/splits';
 import { SplitsTable, normalizeCadenceToSpm } from '@/components/activities/SplitsTable';
+import { IntervalsView } from '@/components/activities/IntervalsView';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -71,6 +72,8 @@ export interface RunShapeCanvasProps {
   activityId: string;
   /** Optional splits data for the Splits tab panel */
   splits?: Split[] | null;
+  /** Interval analysis summary from the splits API */
+  intervalSummary?: IntervalSummary | null;
   /** Data source: 'garmin' | 'strava' | null */
   provider?: string | null;
   /** Device model for Garmin attribution in the splits footer (e.g. "forerunner165") */
@@ -637,17 +640,21 @@ function DriftMetrics({ drift }: { drift: DriftAnalysis }) {
 
 function SplitsModePanel({
   splits,
+  intervalSummary,
   provider,
   deviceName,
   onRowHover,
   rowRefs,
 }: {
   splits: Split[];
+  intervalSummary?: IntervalSummary | null;
   provider?: string | null;
   deviceName?: string | null;
   onRowHover?: (index: number | null) => void;
   rowRefs?: React.MutableRefObject<Map<number, HTMLTableRowElement>>;
 }) {
+  const [showFlat, setShowFlat] = React.useState(false);
+
   if (!splits || splits.length === 0) {
     return (
       <div className="mt-3 text-sm text-slate-500" data-testid="splits-panel-empty">
@@ -656,12 +663,41 @@ function SplitsModePanel({
     );
   }
 
+  const isStructured = intervalSummary?.is_structured === true;
+
   return (
-    <div
-      className="mt-3"
-      data-testid="splits-panel"
-    >
-      <SplitsTable splits={splits} provider={provider} deviceName={deviceName} onRowHover={onRowHover} rowRefs={rowRefs} />
+    <div className="mt-3" data-testid="splits-panel">
+      {isStructured && (
+        <div className="flex items-center gap-2 mb-1 px-1">
+          <button
+            onClick={() => setShowFlat(false)}
+            className={`text-xs px-2.5 py-1 rounded-md transition-colors ${
+              !showFlat ? 'bg-slate-700 text-white' : 'text-slate-400 hover:text-slate-300'
+            }`}
+          >
+            Intervals
+          </button>
+          <button
+            onClick={() => setShowFlat(true)}
+            className={`text-xs px-2.5 py-1 rounded-md transition-colors ${
+              showFlat ? 'bg-slate-700 text-white' : 'text-slate-400 hover:text-slate-300'
+            }`}
+          >
+            Mile Splits
+          </button>
+        </div>
+      )}
+
+      {isStructured && !showFlat ? (
+        <IntervalsView
+          splits={splits}
+          intervalSummary={intervalSummary!}
+          provider={provider}
+          deviceName={deviceName}
+        />
+      ) : (
+        <SplitsTable splits={splits} provider={provider} deviceName={deviceName} onRowHover={onRowHover} rowRefs={rowRefs} />
+      )}
     </div>
   );
 }
@@ -809,6 +845,7 @@ function LabModePanel({
 export function RunShapeCanvas({
   activityId,
   splits,
+  intervalSummary,
   provider,
   deviceName,
   heatAdjustmentPct,
@@ -1461,6 +1498,7 @@ export function RunShapeCanvas({
       {splits && (
         <SplitsModePanel
           splits={splits}
+          intervalSummary={intervalSummary}
           provider={provider}
           deviceName={deviceName}
           onRowHover={handleSplitRowHover}
