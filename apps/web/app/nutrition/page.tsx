@@ -9,7 +9,10 @@ import {
   useParseNutritionText,
   useNLParsingAvailable,
   useParsePhoto,
+  useFuelingProducts,
   useFuelingProfile,
+  useAddToProfile,
+  useRemoveFromProfile,
   useLogFueling,
   useScanBarcode,
 } from '@/lib/hooks/queries/nutrition';
@@ -22,11 +25,14 @@ export default function NutritionPage() {
   const { data: entries, isLoading } = useNutritionEntries({ start_date: today, end_date: today });
   const { data: nlAvailable } = useNLParsingAvailable();
   const { data: shelfItems } = useFuelingProfile();
+  const { data: allProducts } = useFuelingProducts();
   const createEntry = useCreateNutritionEntry();
   const parseText = useParseNutritionText();
   const parsePhoto = useParsePhoto();
   const logFueling = useLogFueling();
   const scanBarcode = useScanBarcode();
+  const addToProfile = useAddToProfile();
+  const removeFromProfile = useRemoveFromProfile();
 
   const [showForm, setShowForm] = useState(false);
   const [nlText, setNlText] = useState('');
@@ -41,6 +47,12 @@ export default function NutritionPage() {
     food_name: string; calories: number; protein_g: number;
     carbs_g: number; fat_g: number; servings: number; fdc_id?: number;
   } | null>(null);
+  const [templateMatch, setTemplateMatch] = useState<{
+    meal_signature: string; items: Record<string, unknown>[]; times_confirmed: number;
+  } | null>(null);
+  const [showCatalog, setShowCatalog] = useState(false);
+  const [catalogSearch, setCatalogSearch] = useState('');
+  const [catalogCategory, setCatalogCategory] = useState<string>('');
   const [formData, setFormData] = useState<NutritionEntryCreate>({
     athlete_id: user?.id || '',
     date: today,
@@ -55,6 +67,21 @@ export default function NutritionPage() {
 
   const photoRef = useRef<HTMLInputElement>(null);
   const barcodeRef = useRef<HTMLInputElement>(null);
+
+  const shelfProductIds = new Set(shelfItems?.map((s) => s.product_id) || []);
+
+  const filteredCatalog = (allProducts || []).filter((p) => {
+    if (catalogCategory && p.category !== catalogCategory) return false;
+    if (catalogSearch) {
+      const q = catalogSearch.toLowerCase();
+      return (
+        p.brand.toLowerCase().includes(q) ||
+        p.product_name.toLowerCase().includes(q) ||
+        (p.variant || '').toLowerCase().includes(q)
+      );
+    }
+    return true;
+  });
 
   const showToast = useCallback((msg: string) => {
     setToast(msg);
@@ -77,9 +104,13 @@ export default function NutritionPage() {
     if (!file) return;
     setPhotoPreview(URL.createObjectURL(file));
     setPhotoItems(null);
+    setTemplateMatch(null);
     try {
       const result = await parsePhoto.mutateAsync(file);
       setPhotoItems(result.items);
+      if (result.template_match && result.template_match.times_confirmed >= 3) {
+        setTemplateMatch(result.template_match);
+      }
     } catch {
       showToast('Photo analysis failed. Try again or type it instead.');
       setPhotoPreview(null);
@@ -112,6 +143,7 @@ export default function NutritionPage() {
       showToast('Meal logged');
       setPhotoPreview(null);
       setPhotoItems(null);
+      setTemplateMatch(null);
     } catch {
       showToast('Failed to save. Try again.');
     }
@@ -229,6 +261,25 @@ export default function NutritionPage() {
     setPhotoItems(photoItems.filter((_, i) => i !== idx));
   };
 
+  const adjustPortion = (idx: number, delta: number) => {
+    if (!photoItems) return;
+    setPhotoItems(photoItems.map((item, i) => {
+      if (i !== idx) return item;
+      const oldGrams = item.grams;
+      const newGrams = Math.max(5, oldGrams + delta);
+      const ratio = newGrams / oldGrams;
+      return {
+        ...item,
+        grams: newGrams,
+        calories: item.calories * ratio,
+        protein_g: item.protein_g * ratio,
+        carbs_g: item.carbs_g * ratio,
+        fat_g: item.fat_g * ratio,
+        fiber_g: item.fiber_g * ratio,
+      };
+    }));
+  };
+
   if (isLoading) {
     return (
       <ProtectedRoute>
@@ -325,61 +376,215 @@ export default function NutritionPage() {
           )}
 
           {/* Fueling Shelf */}
-          {shelfItems && shelfItems.length > 0 && !showForm && !photoPreview && !barcodeResult && (
+          {!showForm && !photoPreview && !barcodeResult && (
             <div className="bg-slate-800 rounded-xl border border-slate-700/50 p-4">
-              <h2 className="text-sm font-semibold text-slate-300 mb-3">My Fueling Shelf</h2>
-              <div className="flex gap-2 overflow-x-auto pb-2 -mx-1 px-1 scrollbar-none">
-                {shelfItems.map((item) => (
-                  <button
-                    key={item.id}
-                    onClick={() => handleShelfTap(item.product.id, `${item.product.brand} ${item.product.product_name}`)}
-                    className="flex-shrink-0 flex flex-col items-center justify-center bg-slate-700/60 rounded-lg border border-slate-600/50 px-3 py-2 min-w-[72px] min-h-[56px] active:bg-slate-600 transition-colors"
-                  >
-                    <span className="text-xs font-medium text-white truncate max-w-[64px]">
-                      {item.product.brand.slice(0, 4)}
-                    </span>
-                    <span className="text-[10px] text-slate-400 truncate max-w-[64px]">
-                      {item.product.caffeine_mg ? `${item.product.caffeine_mg}mg caf` : `${item.product.carbs_g}g C`}
-                    </span>
-                  </button>
-                ))}
+              <div className="flex items-center justify-between mb-3">
+                <h2 className="text-sm font-semibold text-slate-300">My Fueling Shelf</h2>
+                <button
+                  onClick={() => setShowCatalog(true)}
+                  className="text-xs text-blue-400 hover:text-blue-300 min-h-[44px] flex items-center px-2"
+                >
+                  + Add products
+                </button>
               </div>
+              {shelfItems && shelfItems.length > 0 ? (
+                <div className="flex gap-2 overflow-x-auto pb-2 -mx-1 px-1 scrollbar-none">
+                  {shelfItems.map((item) => (
+                    <button
+                      key={item.id}
+                      onClick={() => handleShelfTap(item.product.id, `${item.product.brand} ${item.product.product_name}`)}
+                      className="flex-shrink-0 flex flex-col items-center justify-center bg-slate-700/60 rounded-lg border border-slate-600/50 px-3 py-2 min-w-[72px] min-h-[56px] active:bg-slate-600 transition-colors"
+                    >
+                      <span className="text-xs font-medium text-white truncate max-w-[64px]">
+                        {item.product.brand.slice(0, 4)}
+                      </span>
+                      <span className="text-[10px] text-slate-400 truncate max-w-[64px]">
+                        {item.product.caffeine_mg ? `${item.product.caffeine_mg}mg caf` : `${item.product.carbs_g}g C`}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-xs text-slate-500">Tap &quot;+ Add products&quot; to build your fueling shelf for one-tap logging.</p>
+              )}
+            </div>
+          )}
+
+          {/* Catalog Browser Modal */}
+          {showCatalog && (
+            <>
+              <div className="fixed inset-0 bg-black/50 z-40" onClick={() => setShowCatalog(false)} />
+              <div className="fixed bottom-0 left-0 right-0 z-50 bg-slate-800 rounded-t-2xl border-t border-slate-700/50 max-h-[85vh] flex flex-col animate-slide-up">
+                <div className="w-10 h-1 bg-slate-600 rounded-full mx-auto mt-3" />
+                <div className="p-4 space-y-3 flex-shrink-0">
+                  <div className="flex items-center justify-between">
+                    <h2 className="text-sm font-semibold text-white">Fueling Products</h2>
+                    <button
+                      onClick={() => setShowCatalog(false)}
+                      className="text-slate-400 hover:text-white min-w-[44px] min-h-[44px] flex items-center justify-center"
+                    >
+                      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </div>
+
+                  <input
+                    value={catalogSearch}
+                    onChange={(e) => setCatalogSearch(e.target.value)}
+                    className="w-full px-3 py-2 bg-slate-900 border border-slate-700/50 rounded-lg text-white text-sm min-h-[44px]"
+                    placeholder="Search brands or products..."
+                  />
+
+                  <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-none">
+                    {['', 'gel', 'drink_mix', 'chew', 'bar', 'electrolyte'].map((cat) => (
+                      <button
+                        key={cat}
+                        onClick={() => setCatalogCategory(cat)}
+                        className={`flex-shrink-0 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
+                          catalogCategory === cat
+                            ? 'bg-blue-600 text-white'
+                            : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
+                        }`}
+                      >
+                        {cat ? cat.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()) : 'All'}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="flex-1 overflow-y-auto px-4 pb-4 space-y-1.5">
+                  {filteredCatalog.map((product) => {
+                    const onShelf = shelfProductIds.has(product.id);
+                    return (
+                      <div key={product.id} className="flex items-center justify-between bg-slate-700/30 rounded-lg p-3">
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-white truncate">
+                            {product.brand} {product.product_name}
+                            {product.variant && <span className="text-slate-400"> — {product.variant}</span>}
+                          </p>
+                          <p className="text-xs text-slate-400">
+                            {product.carbs_g}g C &middot; {product.calories} cal
+                            {product.caffeine_mg ? ` · ${product.caffeine_mg}mg caf` : ''}
+                          </p>
+                        </div>
+                        <button
+                          onClick={async () => {
+                            if (onShelf) {
+                              await removeFromProfile.mutateAsync(product.id);
+                              showToast(`Removed ${product.brand} ${product.product_name}`);
+                            } else {
+                              await addToProfile.mutateAsync({ productId: product.id });
+                              showToast(`Added ${product.brand} ${product.product_name}`);
+                            }
+                          }}
+                          className={`ml-2 min-w-[44px] min-h-[44px] flex items-center justify-center rounded-lg text-sm font-medium transition-colors ${
+                            onShelf
+                              ? 'bg-red-900/40 text-red-400 hover:bg-red-900/60'
+                              : 'bg-blue-600/20 text-blue-400 hover:bg-blue-600/40'
+                          }`}
+                        >
+                          {onShelf ? '−' : '+'}
+                        </button>
+                      </div>
+                    );
+                  })}
+                  {filteredCatalog.length === 0 && (
+                    <p className="text-sm text-slate-500 text-center py-8">No products match your search.</p>
+                  )}
+                </div>
+              </div>
+            </>
+          )}
+
+          {/* Photo preview (behind bottom sheet) */}
+          {photoPreview && !photoItems && (
+            <div className="relative rounded-xl overflow-hidden">
+              <img src={photoPreview} alt="Meal" className="w-full max-h-64 object-cover" />
+              {parsePhoto.isPending && (
+                <div className="absolute inset-0 bg-slate-900/60 flex items-center justify-center">
+                  <div className="flex flex-col items-center gap-3">
+                    <LoadingSpinner size="sm" />
+                    <span className="text-sm text-white">Analyzing your meal...</span>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
           {/* Photo Confirmation Bottom Sheet */}
-          {photoPreview && (
-            <div className="bg-slate-800 rounded-xl border border-slate-700/50 overflow-hidden">
-              <div className="relative">
-                <img src={photoPreview} alt="Meal" className="w-full max-h-48 object-cover" />
-                {parsePhoto.isPending && (
-                  <div className="absolute inset-0 bg-slate-900/60 flex items-center justify-center">
-                    <div className="flex items-center gap-2 text-white">
-                      <LoadingSpinner size="sm" />
-                      <span className="text-sm">Analyzing...</span>
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {photoItems && (
+          {photoPreview && photoItems && (
+            <>
+              <div
+                className="fixed inset-0 bg-black/50 z-40"
+                onClick={() => { setPhotoPreview(null); setPhotoItems(null); }}
+              />
+              <div className="fixed bottom-0 left-0 right-0 z-50 bg-slate-800 rounded-t-2xl border-t border-slate-700/50 max-h-[85vh] overflow-y-auto animate-slide-up">
+                <div className="w-10 h-1 bg-slate-600 rounded-full mx-auto mt-3" />
                 <div className="p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h2 className="text-sm font-semibold text-white">Detected Items</h2>
+                    <img src={photoPreview} alt="Meal" className="w-12 h-12 rounded-lg object-cover" />
+                  </div>
+
+                  {templateMatch && (
+                    <button
+                      onClick={() => {
+                        const tmplItems = templateMatch.items as Array<{ food?: string; calories?: number; protein_g?: number; carbs_g?: number; fat_g?: number; fiber_g?: number; grams?: number; macro_source?: string }>;
+                        setPhotoItems(tmplItems.map((ti) => ({
+                          food: ti.food || '',
+                          grams: ti.grams || 0,
+                          calories: ti.calories || 0,
+                          protein_g: ti.protein_g || 0,
+                          carbs_g: ti.carbs_g || 0,
+                          fat_g: ti.fat_g || 0,
+                          fiber_g: ti.fiber_g || 0,
+                          macro_source: ti.macro_source || 'template',
+                        })));
+                        setTemplateMatch(null);
+                      }}
+                      className="w-full bg-emerald-900/30 border border-emerald-700/40 rounded-lg p-3 text-left active:bg-emerald-900/50 transition-colors"
+                    >
+                      <p className="text-xs font-medium text-emerald-400">Your usual meal?</p>
+                      <p className="text-xs text-slate-400 mt-0.5">
+                        Logged {templateMatch.times_confirmed} times — tap to use saved portions
+                      </p>
+                    </button>
+                  )}
+
                   {photoItems.map((item, idx) => (
-                    <div key={idx} className="flex items-center justify-between bg-slate-700/40 rounded-lg p-3">
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-white truncate">{item.food}</p>
+                    <div key={idx} className="bg-slate-700/40 rounded-lg p-3 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <p className="text-sm font-medium text-white truncate flex-1 min-w-0">{item.food}</p>
+                        <button
+                          onClick={() => removePhotoItem(idx)}
+                          className="ml-2 text-slate-500 hover:text-red-400 min-w-[44px] min-h-[44px] flex items-center justify-center"
+                        >
+                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                          </svg>
+                        </button>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => adjustPortion(idx, -10)}
+                            className="w-9 h-9 bg-slate-600 rounded-lg text-sm flex items-center justify-center active:bg-slate-500"
+                          >
+                            -
+                          </button>
+                          <span className="text-sm font-medium text-white w-14 text-center">{Math.round(item.grams)}g</span>
+                          <button
+                            onClick={() => adjustPortion(idx, 10)}
+                            className="w-9 h-9 bg-slate-600 rounded-lg text-sm flex items-center justify-center active:bg-slate-500"
+                          >
+                            +
+                          </button>
+                        </div>
                         <p className="text-xs text-slate-400">
-                          {item.grams}g &middot; {Math.round(item.calories)} cal &middot; {Math.round(item.protein_g)}P {Math.round(item.carbs_g)}C {Math.round(item.fat_g)}F
+                          {Math.round(item.calories)} cal &middot; {Math.round(item.protein_g)}P {Math.round(item.carbs_g)}C {Math.round(item.fat_g)}F
                         </p>
                       </div>
-                      <button
-                        onClick={() => removePhotoItem(idx)}
-                        className="ml-2 p-1 text-slate-500 hover:text-red-400 min-w-[44px] min-h-[44px] flex items-center justify-center"
-                      >
-                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                        </svg>
-                      </button>
                     </div>
                   ))}
 
@@ -390,7 +595,7 @@ export default function NutritionPage() {
                     &middot; {Math.round(photoItems.reduce((s, i) => s + i.fat_g, 0))}g F
                   </div>
 
-                  <div className="flex gap-2">
+                  <div className="flex gap-2 pb-safe">
                     <button
                       onClick={handleConfirmPhoto}
                       disabled={createEntry.isPending}
@@ -406,8 +611,8 @@ export default function NutritionPage() {
                     </button>
                   </div>
                 </div>
-              )}
-            </div>
+              </div>
+            </>
           )}
 
           {/* Barcode Result */}
