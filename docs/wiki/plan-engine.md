@@ -87,11 +87,37 @@ JSON-based registry (`workout_registry.json`) with variant definitions. 38 appro
 
 `phase_week` is **NOT** populated on `PlannedWorkout`. Phase context is derived from week number relative to plan start and phase boundaries defined in the plan's phase structure.
 
+### RPI-to-Training-Pace Calculator
+
+Training paces are derived from a **hardcoded lookup table** (`_RPI_PACE_TABLE` in `services/rpi_calculator.py`) covering RPI 20-85 with linear interpolation for fractional values. This replaced a formula-based intensity-percentage pipeline that regressed 3+ times.
+
+**Derivation (see `services/rpi_pace_derivation.py` for full proof):**
+
+1. Start from the two published Daniels/Gilbert equations: oxygen cost of running + time-to-exhaustion fraction
+2. Derive velocity function: `v = 29.54 + 5.000663*vdot - 0.007546*vdot^2` (quadratic regression of the exact inverse of the oxygen cost equation)
+3. Apply fixed effort fractions: Easy 70%/62%, Threshold 88%, Interval 97.5%
+4. Apply slow-runner correction for RPI < 39: `adjusted = RPI*(2/3) + 13` — compensates for the oxygen cost equation's systematic underestimation at low velocities
+5. Marathon pace: Newton's method on the time-to-exhaustion equation
+6. Repetition: I pace minus 24.1 sec/mi (6 sec per 400m)
+
+Verified against the official Daniels reference calculator (vdoto2.com) at RPI 31 (10K = 1:02:00): all 6 zones match within +/- 1 second.
+
+| RPI | Easy | Threshold | Interval | Rep |
+|-----|------|-----------|----------|-----|
+| 25 | 12:22 | 11:04 | 9:35 | 9:11 |
+| 31 | 11:14 | 9:43 | 8:40 | 8:16 |
+| 45 | 8:58 | 7:28 | 6:52 | 6:28 |
+| 60 | 7:07 | 5:54 | 5:26 | 5:02 |
+| 75 | 5:56 | 4:56 | 4:32 | 4:08 |
+
+**Critical rule:** DO NOT replace `_RPI_PACE_TABLE` with formula-based approaches. The table is the single source of truth for training paces.
+
 ## Key Decisions
 
 - **Diagnosis-first:** Plan generation starts with diagnosing the athlete, not selecting a template
 - **KB-grounded:** Every plan decision traces to an annotated rule
 - **RPI-only predictions:** Race predictions and training paces come from the individual performance model, never population formulas
+- **Table-based training paces:** Hardcoded lookup table derived from first principles, not intensity-percentage formulas (which regressed 3+ times)
 - **Athlete agency within guardrails:** Variant dropdown with 38 variants, phase-appropriate filtering
 - **No silent swaps:** Adaptations require explicit approval
 
@@ -100,8 +126,64 @@ JSON-based registry (`workout_registry.json`) with variant definitions. 38 appro
 - **`phase_week` not populated:** Phase context must be derived, not read directly
 - **Fingerprint bridge partial consumption:** Only `cutback_frequency` and `quality_spacing_min_hours` are consumed; `limiter` and `primary_quality_emphasis` are computed but not wired to session scheduling
 - **7-day archetype (ID 14):** Requires lifting the `max(3, min(6, ...))` clamp in `constraint_aware_planner.py`
+- **Marathon pace at very low RPIs (< 28):** Marathon pace can exceed easy pace because the iterative Newton's method correctly models extreme fatigue over marathon duration for very slow runners. Not a bug — these athletes would not train for marathons.
 
-## What's Next
+## Next-Generation Algorithm Spec (V2)
+
+A full rewrite of the plan generator algorithm is specified in `docs/specs/PLAN_GENERATOR_ALGORITHM_SPEC.md`. This is the builder's single source of truth for the generator rewrite.
+
+### New Plan Modes
+
+The current engine only generates race-specific plans. V2 adds:
+
+| Mode | Sub-modes | Duration | Use case |
+|------|-----------|----------|----------|
+| **Race** | M/HM, 5K/10K, Ultra (50K-100mi) | 6-16 weeks | Preparing for a specific race |
+| **Build** | Onramp (8wk), Volume (6wk repeatable), Intensity (4wk) | 4-8 weeks | General fitness without a race |
+| **Maintain** | — | 4 weeks, repeating | Hold fitness between goals |
+
+All modes use the **same unified engine** — same segments schema, same pace ladder, same progression rules. The difference is dosage and periodization structure, not architecture.
+
+### Key Architectural Additions
+
+- **Extension-based progression:** Within a block, pace stays CONSTANT. The segment duration extends week over week (e.g., 400m → 800m → 1200m → mile at the same pace). This replaces "do the same workout faster."
+- **Build-over-build memory:** `peak_workout_state` stored on `TrainingPlan`. Each successive block seeds its starting point from the previous block's peak, ensuring continuous adaptation across cycles.
+- **Unified segments schema:** All structured workouts populate `PlannedWorkout.segments` with types: `warmup`, `cooldown`, `work`, `float`, `jog_rest`, `easy`, `threshold`, `interval`, `stride`, `steady`, `hike`, `fatigue_resistance`, `uphill_tm`.
+- **Effort-based descriptions:** Athlete-facing text uses effort language (10K effort, threshold, easy/mod) with pace as secondary guidance. Internal `pace_pct_mp` is never shown to the athlete.
+- **Fueling targets:** Every workout ≥90 min includes `fueling_target_g_per_hr` in the segments schema and a fueling reminder in the description.
+- **Distance ranges:** Prescribed as ranges (e.g., "8-16 mi") for athlete self-selection — central to the "plans written in pencil" philosophy.
+- **Three rotating long run types:** Easy progressive (A), threshold segments (B), fatigue resistance (C) — rotating weekly to prevent staleness.
+- **Auto-renewal:** Build and Maintain plans auto-generate the next block before the current one ends, ensuring the calendar is never empty.
+
+### Coaching Science KB
+
+The generator is grounded in a comprehensive knowledge base of modern coaching science:
+
+| Document | Content |
+|----------|---------|
+| `ROCHE_SWAP_TRAINING_PHILOSOPHY_UNIFIED_2026-04-10.md` | **Start here.** Unified synthesis: hierarchy of interventions, sliding bottleneck model, speed theory, threshold theory, fatigue resistance, coaching voice |
+| `ROCHE_SWAP_COACHING_PHILOSOPHY_2026-04-10.md` | Plan-level analysis of 8 SWAP plans (beginner ultra, base building, 5K/10K, champion ultra, onramp, 50K int/adv, marathon) |
+| `ROCHE_SWAP_EFFORT_DICTIONARY_2026-04-10.md` | Canonical effort term mapping — mandatory for all workout descriptions |
+| `ROCHE_SWAP_WORKOUT_EXECUTION_GUIDE_2026-04-10.md` | Execution protocols for every workout type (strides, hills, TM, easy/mod, Power Hour, fatigue resistance, combos) |
+| `ROCHE_SWAP_12WK_MARATHON_PLAN_2026-04-10.md` | Quality bar: advanced 12-week marathon plan |
+| `ROCHE_SWAP_PLANS_SUPPLEMENTARY_2026-04-10.md` | Quality bar: HM 6wk, track/vVO2 6wk, 100K-100mi 16wk |
+| `ROCHE_SWAP_FUELING_REFERENCE_2026-04-10.md` | Carb tiers, hydration, caffeine, in-training fueling practice |
+| `GREEN_COACHING_PHILOSOPHY_REFERENCE_NOTE_2026-04-10.md` | Jon Green: adaptive coaching, "plans written in pencil" |
+| `DAVIS_MODERN_MARATHON_APPROACH_REFERENCE_NOTE_2026-04-10.md` | John Davis: 5 principles, ladder of support, three-phase periodization |
+| `DAVIS_FIVE_PRINCIPLES_MARATHON_TRAINING_2026-04-10.md` | Davis: 4 components of marathon fitness, stress/recovery, full-spectrum training |
+| `SSMAX_STEADY_STATE_MAX_REFERENCE_NOTE_2026-04-10.md` | SSmax = critical power = MLSS = LT2 |
+| `COE_STYLE_TRAINING_REFERENCE_NOTE_2026-04-10.md` | Peter Coe: multi-pace, circuit training |
+| `ADVANCED_EXERCISE_PHYSIOLOGY_SYNTHESIS_2026-04-10.md` | CP/W', HRV, biomechanical wear, Norwegian model |
+
+### The Hierarchy (Single Species, Sliding Bottleneck)
+
+There is no separate "elite" vs "recreational" hierarchy. One hierarchy governs all athletes — the bottleneck shifts based on training age:
+
+1. Health → 2. Consistency → 3. Nutrition/fueling → 4. Easy volume → 5. Strides → 6. Threshold → 7. vVO2 → 8. Long run structure → 9. Strength → 10. Race-specific → 11. Heat → 12. Doubles → 13. Supplements → 14. Lactate monitoring
+
+Early-development athletes are bottlenecked at items 1-4. Established athletes at items 6-10. The generator applies the same science at the appropriate dose.
+
+## What's Next (Current Engine)
 
 - Wire limiter + primary quality emphasis from fingerprint bridge into session scheduling
 - Archetype 14 (7-day) support
@@ -109,10 +191,13 @@ JSON-based registry (`workout_registry.json`) with variant definitions. 38 appro
 
 ## Sources
 
-- `docs/specs/N1_ENGINE_ADR_V2.md` — requirements, blocking criteria, archetypes
-- `docs/specs/N1_PLAN_ENGINE_SPEC.md` — engine spec
+- `docs/specs/PLAN_GENERATOR_ALGORITHM_SPEC.md` — **V2 algorithm spec (single source of truth for rewrite)**
+- `docs/specs/N1_ENGINE_ADR_V2.md` — V1 requirements, blocking criteria, archetypes
+- `docs/specs/N1_PLAN_ENGINE_SPEC.md` — V1 engine spec
 - `docs/TRAINING_PLAN_REBUILD_PLAN.md` — phased build plan, operational status
+- `docs/BUILDER_INSTRUCTIONS_2026-04-10_TRAINING_LIFECYCLE.md` — Training Lifecycle Product (Build/Maintain/Custom modes)
 - `docs/specs/KB_RULE_REGISTRY_ANNOTATED.md` — 76 rules
 - `docs/specs/WORKOUT_FLUENCY_REGISTRY_SPEC.md` — workout registry
 - `docs/specs/PLAN_COACHED_OUTPUT_AND_LOAD_CONTRACT.md` — load contract
+- `docs/references/` — 13 coaching science KB documents
 - `apps/api/services/plan_framework/` — all framework code
