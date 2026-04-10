@@ -730,13 +730,13 @@ class FitnessBankCalculator:
 
         valid = [
             r for r in races
-            if r.rpi >= 35.0
+            if r.rpi >= 15.0
             and r.confidence >= 0.5
             and r.date >= cutoff
         ]
 
         if not valid:
-            valid = [r for r in races if r.rpi >= 35.0 and r.confidence >= 0.5]
+            valid = [r for r in races if r.rpi >= 15.0 and r.confidence >= 0.5]
 
         if not valid:
             return 0.0, None

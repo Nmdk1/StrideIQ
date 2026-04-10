@@ -107,6 +107,11 @@ def extract_best_efforts_from_activity(
         if not distance_meters or not elapsed_time:
             continue
         
+        # Reject physically impossible efforts (GPS corruption)
+        from services.personal_best import _is_plausible_effort
+        if not _is_plausible_effort(distance_meters, elapsed_time, category):
+            continue
+        
         # Parse achievement time
         start_date_str = effort.get('start_date')
         if start_date_str:
@@ -200,6 +205,11 @@ def regenerate_personal_bests(athlete: Athlete, db: Session) -> Dict[str, int]:
         if effort.distance_category in processed_categories:
             continue
         processed_categories.add(effort.distance_category)
+        
+        # Reject physically impossible efforts (GPS corruption)
+        from services.personal_best import _is_plausible_effort
+        if not _is_plausible_effort(effort.distance_meters, effort.elapsed_time, effort.distance_category):
+            continue
         
         existing_pb = existing_pbs.get(effort.distance_category)
         

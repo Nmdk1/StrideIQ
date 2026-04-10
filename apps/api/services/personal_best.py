@@ -14,6 +14,46 @@ from services.rpi_calculator import calculate_rpi_from_race_time
 logger = logging.getLogger(__name__)
 
 
+# Minimum plausible seconds per mile by distance category.
+# Sub-elite WR territory — anything faster is GPS corruption.
+_MIN_PACE_SECS_PER_MILE: Dict[str, float] = {
+    '400m': 55,     # ~55s/mi pace (short burst)
+    '800m': 100,    # ~1:40/mi pace
+    'mile': 200,    # 3:20/mi (WR is 3:43)
+    '2mile': 210,   # 3:30/mi
+    '5k': 240,      # 4:00/mi (WR is 4:34)
+    '10k': 250,     # 4:10/mi (WR is 4:33)
+    '15k': 255,     # 4:15/mi
+    '25k': 260,     # 4:20/mi
+    '30k': 260,     # 4:20/mi
+    '50k': 270,     # 4:30/mi
+    '100k': 300,    # 5:00/mi
+    'half_marathon': 260,  # 4:20/mi (WR is 4:27)
+    'marathon': 270,       # 4:30/mi (WR is 4:34)
+}
+
+# Absolute floor: no human runs sustained faster than 3:00/mi
+_ABSOLUTE_MIN_PACE_SECS_PER_MILE = 180.0
+
+
+def _is_plausible_effort(distance_meters: float, time_seconds: float, category: str) -> bool:
+    """Reject efforts that are physically impossible (GPS corruption, glitches)."""
+    if distance_meters <= 0 or time_seconds <= 0:
+        return False
+    miles = distance_meters / 1609.34
+    if miles <= 0:
+        return False
+    pace_secs_per_mile = time_seconds / miles
+    floor = _MIN_PACE_SECS_PER_MILE.get(category, _ABSOLUTE_MIN_PACE_SECS_PER_MILE)
+    if pace_secs_per_mile < floor:
+        logger.warning(
+            "Rejected implausible PB: %s in %.0fs = %.0fs/mi (floor=%ds) — likely GPS corruption",
+            category, time_seconds, pace_secs_per_mile, floor,
+        )
+        return False
+    return True
+
+
 # Distance categories with tolerance ranges (in meters)
 DISTANCE_CATEGORIES = {
     '400m': (380, 420),  # 400m ± 20m
@@ -122,6 +162,9 @@ def update_personal_best(
     category = get_distance_category(distance_meters)
     if not category:
         return None  # Not a standard distance
+    
+    if not _is_plausible_effort(distance_meters, time_seconds, category):
+        return None
     
     # Check if this is a PB (faster time for this distance category)
     existing_pb = db.query(PersonalBest).filter(
@@ -255,6 +298,9 @@ def recalculate_all_pbs(athlete: Athlete, db: Session, preserve_strava_pbs: bool
             if not category:
                 continue
             
+            if not _is_plausible_effort(distance_meters, time_seconds, category):
+                continue
+            
             # Track fastest time for each category
             if category not in pbs_by_category:
                 pbs_by_category[category] = activity
@@ -377,6 +423,8 @@ def backfill_rpi_from_pbs(db: Session, athlete_id: Optional[str] = None) -> Dict
             
             for pb in pbs:
                 if not pb.distance_meters or not pb.time_seconds:
+                    continue
+                if not _is_plausible_effort(pb.distance_meters, pb.time_seconds, pb.distance_category):
                     continue
                     
                 rpi = calculate_rpi_from_race_time(

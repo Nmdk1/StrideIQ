@@ -92,12 +92,14 @@ def _calculate_paces_from_training_paces(rpi: float) -> Dict[str, float]:
     if easy_sec is None or marathon_sec is None or threshold_sec is None or interval_sec is None:
         logger.warning(
             "Could not derive training paces from rpi_calculator output; "
-            f"rpi={rpi}, raw_keys={list(raw.keys())}"
+            "rpi=%s, raw_keys=%s — returning None paces (effort labels will be used)",
+            rpi, list(raw.keys()),
         )
-        easy_sec = easy_sec or 540  # 9:00
-        marathon_sec = marathon_sec or 480  # 8:00
-        threshold_sec = threshold_sec or 450  # 7:30
-        interval_sec = interval_sec or 405  # 6:45
+        return {
+            "easy": None, "long": None, "marathon": None,
+            "threshold": None, "interval": None, "repetition": None,
+            "recovery": None,
+        }
 
     if repetition_sec is None:
         repetition_sec = int(interval_sec * 0.92) if interval_sec else 373

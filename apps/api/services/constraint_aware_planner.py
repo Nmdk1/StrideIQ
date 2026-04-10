@@ -361,7 +361,7 @@ class ConstraintAwarePlanner:
         except Exception as ex:
             logger.warning("Fingerprint bridge unavailable, using defaults: %s", ex)
 
-        # 3. Derive RPI: proven race > goal-time-derived > none.
+        # 3. Derive RPI: proven race > goal-time > race anchors > PBs > none.
         _best_rpi = bank.best_rpi
         if (not _best_rpi or _best_rpi <= 0) and goal_time:
             dist_m = _DISTANCE_METERS.get(race_distance)
@@ -373,6 +373,11 @@ class ConstraintAwarePlanner:
                         "RPI derived from goal time: %s in %s -> RPI=%.1f",
                         race_distance, goal_time, _best_rpi,
                     )
+
+        if not _best_rpi or _best_rpi <= 0:
+            _best_rpi = self._rpi_from_anchors_or_pbs(athlete_id, db)
+            if _best_rpi and _best_rpi > 0:
+                logger.info("RPI recovered from race anchors/PBs: %.1f", _best_rpi)
 
         weeks = generate_n1_plan(
             race_distance=race_distance,
@@ -847,6 +852,47 @@ class ConstraintAwarePlanner:
         if score >= 1:
             return "medium"
         return "low"
+
+    @staticmethod
+    def _rpi_from_anchors_or_pbs(athlete_id: UUID, db: Session) -> Optional[float]:
+        """Last-resort RPI: try user-entered race anchors, then plausible PBs."""
+        from models import AthleteRaceResultAnchor, PersonalBest
+        from services.personal_best import _is_plausible_effort
+
+        best_rpi = None
+
+        # 1. Race anchors (user-entered race results)
+        anchors = db.query(AthleteRaceResultAnchor).filter(
+            AthleteRaceResultAnchor.athlete_id == athlete_id
+        ).all()
+        for anc in anchors:
+            if not anc.distance_meters or not anc.time_seconds or anc.time_seconds <= 0:
+                continue
+            rpi = calculate_rpi_from_race_time(anc.distance_meters, anc.time_seconds)
+            if rpi and rpi > 15 and (best_rpi is None or rpi > best_rpi):
+                best_rpi = rpi
+                logger.info("RPI from race anchor %s: %.1f", anc.distance_key, rpi)
+
+        if best_rpi and best_rpi > 0:
+            return best_rpi
+
+        # 2. Personal bests (from activity history, plausibility-filtered)
+        RPI_ELIGIBLE = {'5k', '10k', '15k', 'half_marathon', 'marathon', '25k', '30k'}
+        pbs = db.query(PersonalBest).filter(
+            PersonalBest.athlete_id == athlete_id,
+            PersonalBest.distance_category.in_(RPI_ELIGIBLE),
+        ).all()
+        for pb in pbs:
+            if not pb.distance_meters or not pb.time_seconds:
+                continue
+            if not _is_plausible_effort(pb.distance_meters, pb.time_seconds, pb.distance_category):
+                continue
+            rpi = calculate_rpi_from_race_time(pb.distance_meters, pb.time_seconds)
+            if rpi and rpi > 15 and (best_rpi is None or rpi > best_rpi):
+                best_rpi = rpi
+                logger.info("RPI from PB %s: %.1f", pb.distance_category, rpi)
+
+        return best_rpi
 
     @staticmethod
     def _parse_goal_seconds(gt: Optional[str]) -> Optional[int]:
