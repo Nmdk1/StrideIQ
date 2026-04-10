@@ -52,7 +52,7 @@ def record_page_view(
         athlete_id=current_user.id,
         screen=event.screen,
         referrer_screen=event.referrer_screen,
-        metadata=event.metadata,
+        event_metadata=event.metadata,
     )
     db.add(pv)
     db.commit()

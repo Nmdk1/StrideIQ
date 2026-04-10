@@ -2866,7 +2866,7 @@ class PageView(Base):
     entered_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
     exited_at = Column(DateTime(timezone=True), nullable=True)
     duration_seconds = Column(Float, nullable=True)
-    metadata = Column(JSONB, nullable=True)
+    event_metadata = Column("metadata", JSONB, nullable=True)
 
     __table_args__ = (
         Index("ix_page_view_athlete_entered", "athlete_id", "entered_at"),
