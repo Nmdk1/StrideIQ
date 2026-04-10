@@ -7,7 +7,7 @@ routers, and configuration for production use.
 from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from routers import v1, strava, strava_webhook, feedback, body_composition, nutrition, work_pattern, auth, activity_analysis, activity_feedback, activity_reflection, training_availability, run_delivery, activities, analytics, correlations, insight_feedback, recovery_metrics, daily_checkin, admin, run_analysis, training_load, population_insights, athlete_profile, training_plans, ai_coach, coach_actions, preferences, compare, activity_workout_type, athlete_insights, contextual_compare, attribution, causal, data_export, calendar, insights, diagnostics, plan_generation, home, plan_export, onboarding, billing, progress, daily_intelligence, stream_analysis, consent, fingerprint, auto_discovery_admin
+from routers import v1, strava, strava_webhook, feedback, body_composition, nutrition, work_pattern, auth, activity_analysis, activity_feedback, activity_reflection, training_availability, run_delivery, activities, analytics, correlations, insight_feedback, recovery_metrics, daily_checkin, admin, run_analysis, training_load, population_insights, athlete_profile, training_plans, ai_coach, coach_actions, preferences, compare, activity_workout_type, athlete_insights, contextual_compare, attribution, causal, data_export, calendar, insights, diagnostics, plan_generation, home, plan_export, onboarding, billing, progress, daily_intelligence, stream_analysis, consent, fingerprint, auto_discovery_admin, reports
 from routers import imports as provider_imports
 try:
     from routers import garmin
@@ -411,6 +411,7 @@ app.include_router(onboarding.router)
 app.include_router(coach_actions.router)
 app.include_router(billing.router)
 app.include_router(progress.router)
+app.include_router(reports.router)
 app.include_router(daily_intelligence.router)
 app.include_router(consent.router)
 app.include_router(fingerprint.router)
