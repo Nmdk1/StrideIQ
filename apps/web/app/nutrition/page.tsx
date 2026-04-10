@@ -7,6 +7,7 @@ import {
   useNutritionEntries,
   useCreateNutritionEntry,
   useDeleteNutritionEntry,
+  useUpdateNutritionEntry,
   useParseNutritionText,
   useNLParsingAvailable,
   useParsePhoto,
@@ -145,6 +146,7 @@ export default function NutritionPage() {
   const { data: allProducts } = useFuelingProducts();
   const createEntry = useCreateNutritionEntry();
   const deleteEntry = useDeleteNutritionEntry();
+  const updateEntry = useUpdateNutritionEntry();
   const parseText = useParseNutritionText();
   const parsePhoto = useParsePhoto();
   const logFueling = useLogFueling();
@@ -217,6 +219,11 @@ export default function NutritionPage() {
     fiber_g: undefined,
     notes: '',
   });
+
+  const [editingEntryId, setEditingEntryId] = useState<string | null>(null);
+  const [editForm, setEditForm] = useState<{
+    calories?: number; protein_g?: number; carbs_g?: number; fat_g?: number; notes?: string;
+  }>({});
 
   const photoRef = useRef<HTMLInputElement>(null);
   const scannerRef = useRef<unknown>(null);
@@ -513,9 +520,32 @@ export default function NutritionPage() {
   const handleDeleteEntry = async (id: string) => {
     try {
       await deleteEntry.mutateAsync(id);
+      setEditingEntryId(null);
       showToast('Entry deleted');
     } catch {
       showToast('Failed to delete');
+    }
+  };
+
+  const startEditing = (entry: { id: string; calories?: number | null; protein_g?: number | null; carbs_g?: number | null; fat_g?: number | null; notes?: string | null }) => {
+    setEditingEntryId(entry.id);
+    setEditForm({
+      calories: entry.calories ?? undefined,
+      protein_g: entry.protein_g ?? undefined,
+      carbs_g: entry.carbs_g ?? undefined,
+      fat_g: entry.fat_g ?? undefined,
+      notes: entry.notes ?? '',
+    });
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editingEntryId) return;
+    try {
+      await updateEntry.mutateAsync({ id: editingEntryId, updates: editForm });
+      setEditingEntryId(null);
+      showToast('Entry updated');
+    } catch {
+      showToast('Failed to update');
     }
   };
 
@@ -1135,13 +1165,15 @@ export default function NutritionPage() {
                         <button
                           key={item.id}
                           onClick={() => handleShelfTap(item.product.id, `${item.product.brand} ${item.product.product_name}`)}
-                          className="flex-shrink-0 flex flex-col items-center justify-center bg-slate-700/60 rounded-lg border border-slate-600/50 px-3 py-2 min-w-[72px] min-h-[56px] active:bg-slate-600 transition-colors"
+                          className="flex-shrink-0 flex flex-col items-start bg-slate-700/60 rounded-lg border border-slate-600/50 px-3 py-2 min-w-[100px] max-w-[130px] min-h-[56px] active:bg-slate-600 transition-colors"
                         >
-                          <span className="text-xs font-medium text-white truncate max-w-[64px]">
-                            {item.product.brand.slice(0, 4)}
+                          <span className="text-[10px] text-slate-500 leading-tight">{item.product.brand}</span>
+                          <span className="text-xs font-medium text-white leading-tight line-clamp-2">
+                            {item.product.product_name}{item.product.variant ? ` ${item.product.variant}` : ''}
                           </span>
-                          <span className="text-[10px] text-slate-400 truncate max-w-[64px]">
-                            {item.product.caffeine_mg ? `${item.product.caffeine_mg}mg caf` : `${item.product.carbs_g}g C`}
+                          <span className="text-[10px] text-slate-400 mt-0.5">
+                            {item.product.calories ? `${item.product.calories} cal` : ''}
+                            {item.product.caffeine_mg ? ` · ${item.product.caffeine_mg}mg caf` : ''}
                           </span>
                         </button>
                       ))}
@@ -1273,23 +1305,106 @@ export default function NutritionPage() {
                   <h2 className="text-sm font-semibold text-slate-400 px-1">Today&apos;s Log</h2>
                   {entries.map((entry) => (
                     <div key={entry.id} className="bg-slate-800 rounded-xl border border-slate-700/50 p-3">
-                      <div className="flex justify-between items-start">
-                        <div className="min-w-0 flex-1">
-                          {entry.notes && <p className="text-sm text-white truncate">{entry.notes}</p>}
-                          <div className="flex items-center gap-2 text-xs text-slate-400 mt-0.5">
-                            <span className="capitalize">{entry.entry_type.replace(/_/g, ' ')}</span>
-                            {macroSourceBadge(entry.macro_source)}
+                      {editingEntryId === entry.id ? (
+                        <div className="space-y-3">
+                          <div>
+                            <label className="block text-xs text-slate-500 mb-1">Notes</label>
+                            <input
+                              value={editForm.notes ?? ''}
+                              onChange={(e) => setEditForm({ ...editForm, notes: e.target.value })}
+                              className="w-full px-3 py-2 bg-slate-900 border border-slate-700/50 rounded-lg text-white text-sm min-h-[44px]"
+                            />
+                          </div>
+                          <div className="grid grid-cols-4 gap-2">
+                            <div>
+                              <label className="block text-[10px] text-slate-500 mb-0.5">Cal</label>
+                              <input
+                                type="number"
+                                value={editForm.calories ?? ''}
+                                onChange={(e) => setEditForm({ ...editForm, calories: e.target.value ? Number(e.target.value) : undefined })}
+                                className="w-full px-2 py-1.5 bg-slate-900 border border-slate-700/50 rounded text-white text-sm"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-[10px] text-slate-500 mb-0.5">Protein</label>
+                              <input
+                                type="number"
+                                value={editForm.protein_g ?? ''}
+                                onChange={(e) => setEditForm({ ...editForm, protein_g: e.target.value ? Number(e.target.value) : undefined })}
+                                className="w-full px-2 py-1.5 bg-slate-900 border border-slate-700/50 rounded text-white text-sm"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-[10px] text-slate-500 mb-0.5">Carbs</label>
+                              <input
+                                type="number"
+                                value={editForm.carbs_g ?? ''}
+                                onChange={(e) => setEditForm({ ...editForm, carbs_g: e.target.value ? Number(e.target.value) : undefined })}
+                                className="w-full px-2 py-1.5 bg-slate-900 border border-slate-700/50 rounded text-white text-sm"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-[10px] text-slate-500 mb-0.5">Fat</label>
+                              <input
+                                type="number"
+                                value={editForm.fat_g ?? ''}
+                                onChange={(e) => setEditForm({ ...editForm, fat_g: e.target.value ? Number(e.target.value) : undefined })}
+                                className="w-full px-2 py-1.5 bg-slate-900 border border-slate-700/50 rounded text-white text-sm"
+                              />
+                            </div>
+                          </div>
+                          <div className="flex gap-2 justify-end">
+                            <button
+                              onClick={() => handleDeleteEntry(entry.id)}
+                              disabled={deleteEntry.isPending}
+                              className="px-3 py-1.5 text-red-400 text-xs hover:bg-red-400/10 rounded min-h-[36px]"
+                            >
+                              Delete
+                            </button>
+                            <button
+                              onClick={() => setEditingEntryId(null)}
+                              className="px-3 py-1.5 text-slate-400 text-xs hover:bg-slate-700 rounded min-h-[36px]"
+                            >
+                              Cancel
+                            </button>
+                            <button
+                              onClick={handleSaveEdit}
+                              disabled={updateEntry.isPending}
+                              className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white text-xs rounded min-h-[36px]"
+                            >
+                              {updateEntry.isPending ? 'Saving...' : 'Save'}
+                            </button>
                           </div>
                         </div>
-                        <div className="text-right text-xs text-slate-300 flex-shrink-0 ml-2">
-                          {entry.calories != null && <div>{Math.round(entry.calories)} cal</div>}
-                          <div className="text-slate-500">
-                            {entry.protein_g != null && `${Math.round(entry.protein_g)}P `}
-                            {entry.carbs_g != null && `${Math.round(entry.carbs_g)}C `}
-                            {entry.fat_g != null && `${Math.round(entry.fat_g)}F`}
+                      ) : (
+                        <button
+                          onClick={() => startEditing(entry)}
+                          className="w-full text-left"
+                        >
+                          <div className="flex justify-between items-start">
+                            <div className="min-w-0 flex-1">
+                              {entry.notes && <p className="text-sm text-white truncate">{entry.notes}</p>}
+                              <div className="flex items-center gap-2 text-xs text-slate-400 mt-0.5">
+                                <span className="capitalize">{entry.entry_type.replace(/_/g, ' ')}</span>
+                                {macroSourceBadge(entry.macro_source)}
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2 flex-shrink-0 ml-2">
+                              <div className="text-right text-xs text-slate-300">
+                                {entry.calories != null && <div>{Math.round(entry.calories)} cal</div>}
+                                <div className="text-slate-500">
+                                  {entry.protein_g != null && `${Math.round(entry.protein_g)}P `}
+                                  {entry.carbs_g != null && `${Math.round(entry.carbs_g)}C `}
+                                  {entry.fat_g != null && `${Math.round(entry.fat_g)}F`}
+                                </div>
+                              </div>
+                              <svg className="w-3.5 h-3.5 text-slate-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931z" />
+                              </svg>
+                            </div>
                           </div>
-                        </div>
-                      </div>
+                        </button>
+                      )}
                     </div>
                   ))}
                 </div>

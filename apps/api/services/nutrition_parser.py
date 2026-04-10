@@ -54,8 +54,8 @@ def _extract_json_object(text: str) -> Dict[str, Any]:
 
 
 _NL_SYSTEM = (
-    "You are a nutrition logging helper. "
-    "Given a short text describing food/drink, estimate macros. "
+    "You are a nutrition logging helper for athletes. "
+    "Given a short text describing food/drink, estimate macros accurately. "
     "Return ONLY valid JSON. No markdown, no commentary."
 )
 
@@ -72,9 +72,12 @@ Return a JSON object with these keys:
 }}
 
 Rules:
-- Prefer conservative, reasonable estimates if uncertain.
+- When the user specifies a weight or quantity (e.g. "0.5 lb", "8 oz", "200g"), calculate macros for THAT EXACT amount. Do NOT default to a standard serving size when a weight is given. Example: 0.5 lb (8 oz) of 80/20 ground beef is ~580 calories and ~46g protein raw, ~480 cal cooked.
+- When multiple items are listed together, calculate each item separately and SUM the totals.
+- Use USDA-accurate values. For meats, a pound of raw ground beef (80/20) is ~1152 cal, 80g protein, 88g fat. Scale proportionally.
+- If no quantity is given, assume one standard serving.
 - If the text is too vague, set numbers to null but still return notes.
-- notes should be a short canonicalized list of detected items."""
+- notes should be a short canonicalized list of detected items with quantities."""
 
 
 def parse_nutrition_text(text: str, db=None) -> Dict[str, Optional[float] | str]:
