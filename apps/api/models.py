@@ -2853,6 +2853,27 @@ class GarminDay(Base):
 
 
 # ---------------------------------------------------------------------------
+# Usage Telemetry
+# ---------------------------------------------------------------------------
+
+class PageView(Base):
+    __tablename__ = "page_view"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    athlete_id = Column(UUID(as_uuid=True), ForeignKey("athlete.id"), nullable=False, index=True)
+    screen = Column(Text, nullable=False)
+    referrer_screen = Column(Text, nullable=True)
+    entered_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    exited_at = Column(DateTime(timezone=True), nullable=True)
+    duration_seconds = Column(Float, nullable=True)
+    metadata = Column(JSONB, nullable=True)
+
+    __table_args__ = (
+        Index("ix_page_view_athlete_entered", "athlete_id", "entered_at"),
+    )
+
+
+# ---------------------------------------------------------------------------
 # Runtoon MVP Models
 # ---------------------------------------------------------------------------
 

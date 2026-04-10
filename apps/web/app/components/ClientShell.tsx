@@ -3,11 +3,12 @@
 import BottomTabs from "./BottomTabs";
 import StravaBanner from "./StravaBanner";
 import { useAutoSync } from "@/lib/hooks/useAutoSync";
+import { usePageTracking } from "@/lib/hooks/usePageTracking";
 import { Toaster } from "sonner";
 
 /**
  * Client-side shell that wraps every page.
- * Houses auto-sync, toaster, bottom tabs, and Strava banner.
+ * Houses auto-sync, toaster, bottom tabs, Strava banner, and page tracking.
  */
 export default function ClientShell({
   children,
@@ -15,6 +16,7 @@ export default function ClientShell({
   children: React.ReactNode;
 }) {
   useAutoSync();
+  usePageTracking();
 
   return (
     <>
