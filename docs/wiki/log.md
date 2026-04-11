@@ -1,5 +1,19 @@
 # Wiki Log
 
+## [2026-04-11] plan-engine-v2-wired | V2 plan engine wired to production route
+
+- **New file:** `plan_saver.py` — Maps V2WeekPlan/V2DayPlan to TrainingPlan + PlannedWorkout DB rows. Handles distance estimation from segments (explicit distance_km, time-based duration×pace, distance_range midpoint), duration estimation, JSONB segment serialization, coach notes. Sets `generation_method = "v2"`.
+- **New file:** `router_adapter.py` — Loads FitnessBank, FingerprintParams, LoadContext from DB; maps ConstraintAwarePlanRequest to V2 inputs (including TuneUpRace conversion); calls `generate_plan_v2()`; saves via plan_saver; stitches V1-compatible response shape (fitness_bank, model, prediction, volume_contract, weeks).
+- **New file:** `test_plan_saver.py` — 17 unit tests covering distance/duration estimation, segments JSON, coach notes, tune-up race mapping, plan start alignment.
+- **Modified:** `routers/plan_generation.py` — Added `engine: Optional[str] = None` query parameter to `POST /v2/plans/constraint-aware`. When `engine=v2` and user is admin/owner, routes through V2. V1 remains default.
+- **Updated:** `plan-engine.md` — Added "V2 Engine — Production Status" section with architecture table, V1 vs V2 comparison, API access, production verification results, rollout plan.
+- **Updated:** `infrastructure.md` — Migration heads updated to `plan_engine_v2_001`, recent migrations list updated.
+- **Updated:** `index.md` — Plan engine quick reference shows both V1 and V2. All Pages table updated.
+- **Updated:** `frontend.md` — Plans/create route note about `engine=v2` query param.
+- **Updated:** `PLAN_ENGINE_V2_MASTER_PLAN.md` — Phases 1-5 marked complete, Phase 6 partially complete.
+- **Updated:** `TRAINING_PLAN_REBUILD_PLAN.md` — Operational update for V2 sandbox + migration wiring.
+- **Production verified:** V2 dry-run (23-week marathon, 1208mi total, 62.6 peak) and V1 default (24-week marathon, 1161mi total) both passing on production.
+
 ## [2026-04-10] rpi-table-fix | RPI calculator replaced with derived hardcoded table
 
 - **Replaced:** `rpi_calculator.py` — removed the broken `INTENSITY_TABLE` + formula pipeline that regressed 3+ times at low RPIs (produced 7:41/mi interval for a 62:00 10K runner). Replaced with `_RPI_PACE_TABLE`: a 66-row hardcoded lookup (RPI 20-85) derived from the published Daniels/Gilbert oxygen cost + time-to-exhaustion equations, with a slow-runner correction for RPI < 39. Verified against official reference calculator to +/- 1 second at all tested levels.

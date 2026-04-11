@@ -1,6 +1,6 @@
 # StrideIQ Internal Wiki
 
-**Last updated:** April 8, 2026
+**Last updated:** April 11, 2026
 
 This is the single onboarding document. Read this instead of the 12-document read order.
 
@@ -18,7 +18,8 @@ This is the single onboarding document. Read this instead of the 12-document rea
 | **Beat container** | `strideiq_beat` |
 | **Coach model** | Kimi K2.5 (all athletes), Claude Sonnet 4.6 (fallback only) |
 | **Briefing model** | Claude Opus 4.6 (primary), Gemini 2.5 Flash (fallback) — different from coach |
-| **Plan engine** | `services/plan_framework/n1_engine.py` |
+| **Plan engine (V1)** | `services/plan_framework/n1_engine.py` |
+| **Plan engine (V2)** | `services/plan_engine_v2/engine.py` — active behind `engine=v2` flag, admin/owner only |
 | **Deploy** | `ssh root@187.124.67.153` then `cd /opt/strideiq/repo && git pull origin main && docker compose -f docker-compose.prod.yml up -d --build` |
 | **CI** | Must be green before deploy. `gh run list` to check. |
 
@@ -45,13 +46,16 @@ Before writing any code, understand these five things:
 | **[Coach Architecture](./coach-architecture.md)** | AI coach system — Kimi K2.5 routing, context builders, system prompt, tools, KB scanner, budget caps |
 | **[Briefing System](./briefing-system.md)** | Morning briefing — Lane 2A, prompt assembly, 8 intelligence sources, workout structure detection, guardrails |
 | **[Correlation Engine](./correlation-engine.md)** | N=1 intelligence pipeline — Layers 1-4, AutoDiscovery, finding lifecycle, limiter taxonomy, cross-training inputs, fingerprint bridge |
-| **[Plan Engine](./plan-engine.md)** | N1 Engine V3 — diagnosis-first, 14 archetypes, 76 KB rules, 12 blocking criteria, adaptive re-plan, workout registry |
+| **[Plan Engine](./plan-engine.md)** | V1 (N1 Engine V3) + **V2 deployed** — V2 wired to production behind `engine=v2` flag, 13 coaching science KB docs, extension-based progression, rich segments, fueling |
 | **[Garmin Integration](./garmin-integration.md)** | Three webhook types, FIT file pipeline, weather enrichment (Open-Meteo), health API, accepted sports |
 | **[Activity Processing](./activity-processing.md)** | Shape extraction, effort classification, heat adjustment, maps (Leaflet), Runtoons, cross-training detail pages |
 | **[Operating Manual](./operating-manual.md)** | Personal Operating Manual V2 — findings display, cascade chains, race character, interestingness filter |
 | **[Infrastructure](./infrastructure.md)** | Server, containers, deployment, Celery/Beat, database, CI, environment variables |
 | **[Monetization](./monetization.md)** | Two-tier model ($24.99/mo), Stripe integration, promo codes |
 | **[Frontend](./frontend.md)** | Next.js 14 routes, component architecture, data layer (TanStack Query), contexts |
+| **[Nutrition](./nutrition.md)** | AI Nutrition Intelligence — photo/barcode/NL parsing, fueling shelf, nutrition planning, load-adaptive targets, first-class metric (#3 in hierarchy) |
+| **[Usage Telemetry](./telemetry.md)** | First-party page view tracking — PageView model, tracking hook, admin usage reports |
+| **[Unified Reports](./reports.md)** | Cross-domain reporting — health, activities, nutrition, body comp in configurable date ranges |
 | **[Decisions](./decisions.md)** | 56 ADRs summarized — key architectural choices and their current state |
 
 ## Maintenance Contract

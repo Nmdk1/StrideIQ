@@ -30,10 +30,11 @@ Single Hostinger KVM 8 droplet (8 vCPU, 32GB RAM) running all services. Producti
 ### Database
 
 - PostgreSQL 16 with TimescaleDB extension
-- 95 Alembic migrations (as of Apr 2026)
-- ~53 models in `models.py`
+- 113 Alembic migrations (as of Apr 10, 2026)
+- ~85 models in `models.py`
 - Migration integrity: `.github/scripts/ci_alembic_heads_check.py` verifies single head + single root
-- Expected migration heads: `EXPECTED_HEADS = {"wellness_stamp_001", "athlete_override_001"}`
+- Expected migration heads: `EXPECTED_HEADS = {"plan_engine_v2_001"}`
+- Recent migrations: nutrition tables (nutrition_entry, fueling_product, usda_food, nutrition_goal), page_view (telemetry), plan_preview (V2 sandbox)
 
 ### Celery & Task Scheduling
 
@@ -60,6 +61,16 @@ cd /opt/strideiq/repo && git pull origin main && docker compose -f docker-compos
 This single command pulls, rebuilds ALL containers (api, worker, beat, web), and restarts them with the new image. **Do not** use `docker restart` — it restarts containers with the old image, silently leaving worker/beat running stale code.
 
 **CI must be green before deploy** — this is non-negotiable from the Operating Contract.
+
+### API Routers
+
+60+ routers in `apps/api/routers/`. Recent additions:
+
+| Router | Endpoints | Purpose |
+|--------|-----------|---------|
+| `nutrition.py` | `/v1/nutrition/*` | Nutrition entry CRUD, parsing (photo/barcode/NL), goals, targets |
+| `reports.py` | `/v1/reports/*` | Unified cross-domain reporting, CSV export |
+| `telemetry.py` | `/v1/telemetry/*` | Page view entry/exit, admin usage report |
 
 ### CI Pipeline
 

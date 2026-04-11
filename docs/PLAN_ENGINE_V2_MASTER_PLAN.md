@@ -250,115 +250,89 @@ current one ends, seeded from peak_workout_state.
 
 ## Phased Milestones
 
-### Phase 1: Foundation (Week 1)
+### Phase 1: Foundation — ✅ COMPLETE (April 9, 2026)
 
 **Goal:** V2 generates valid plans for easy cases with correct paces,
 effort language, and segments.
 
-**Deliver:**
-- [ ] `pace_ladder.py` — percentage ladder from RPI, consuming
+**Delivered:**
+- [x] `pace_ladder.py` — percentage ladder from RPI, consuming
       `calculate_paces_from_rpi()`
-- [ ] `effort_mapper.py` — internal % → athlete-facing effort text
-- [ ] `segments_builder.py` — unified segment schema
-- [ ] `models.py` (V2 dataclasses) — PaceLadder, WorkoutSegment, etc.
-- [ ] `engine.py` shell — loads fitness bank, computes ladder, returns
-      a stub plan
+- [x] `effort_mapper.py` — internal % → athlete-facing effort text
+- [x] `models.py` (V2 dataclasses) — PaceLadder, WorkoutSegment, V2DayPlan, V2WeekPlan, V2PlanPreview
+- [x] `engine.py` — loads fitness bank, computes ladder, builds phases, produces full plans
 
-**Validation:** Generate a plan for `established_marathon` profile.
-Verify: paces match RPI, segments populated, effort language correct,
-no "% MP" in descriptions.
-
-**Founder review:** Review pace ladder output for your own RPI.
-Do the numbers look right?
-
-### Phase 2: Workout Library + Long Runs (Week 2)
+### Phase 2: Workout Library + Long Runs — ✅ COMPLETE (April 9, 2026)
 
 **Goal:** V2 produces complete weeks with correct workout types,
 long run rotation, and distance ranges.
 
-**Deliver:**
-- [ ] `workout_library.py` — all 22 workout types
-- [ ] `long_run_rotation.py` — A/B/C cycling
-- [ ] `distance_ranges.py` — ranges by mode and volume
-- [ ] `fueling.py` — targets for ≥90 min workouts
-- [ ] Weekly assembly in `engine.py` — produce full week plans
+**Delivered:**
+- [x] `workout_library.py` — 22+ workout types with concrete segments
+- [x] Three rotating long run types (easy progressive, threshold segments, fatigue resistance)
+- [x] Distance ranges on all easy/long runs
+- [x] Fueling on all workouts ≥90 minutes
+- [x] Weekly assembly in `engine.py` with schedule_week()
 
-**Validation:** Generate single weeks for 5 profiles. Verify: long
-runs rotate, distance ranges present on easy/long, fueling on ≥90 min,
-workout variety appropriate for phase.
-
-**Founder review:** Review a sample week for your own profile. Does
-it look like something you'd actually run?
-
-### Phase 3: Periodization + Progression (Week 3)
+### Phase 3: Periodization + Progression — ✅ COMPLETE (April 10, 2026)
 
 **Goal:** V2 produces full multi-week plans with correct phase
 structure and extension-based progression.
 
-**Deliver:**
-- [ ] `periodization.py` — phase structures for all modes and distances
-- [ ] `progression.py` — extension, variety, hybrid alternating
-- [ ] Full plan assembly in `engine.py` — multi-week plans
-- [ ] Integration with fingerprint bridge — consume `limiter`,
+**Delivered:**
+- [x] `periodizer.py` — phase structures for race/build/maintain modes
+- [x] Extension-based progression (pace constant, duration grows)
+- [x] Full plan assembly in `engine.py` — multi-week plans
+- [x] Integration with fingerprint bridge — consumes `limiter`,
       `primary_quality_emphasis`, `cutback_frequency`,
       `quality_spacing_min_hours`
-- [ ] Integration with load context — volume seeding from L30
+- [x] Integration with load context — volume seeding from L30
+- [x] Tune-up race integration with preserved midweek quality
 
-**Validation:** Generate full plans for 10 profiles. Verify: phases
-correct per distance, extension works (pace constant, duration grows),
-fingerprint params influence plan structure, load context seeds volume.
-
-**Founder review:** Review your own full marathon plan. Compare to
-what you'd write on a napkin. Where is V2 better? Where is it worse?
-
-### Phase 4: All Modes + Build-Over-Build (Week 4)
+### Phase 4: All Modes + Build-Over-Build — ✅ COMPLETE (April 10, 2026)
 
 **Goal:** V2 handles all plan modes including Build and Maintain, with
 build-over-build seeding.
 
-**Deliver:**
-- [ ] Build-Onramp (8 weeks, no threshold, 4 runs/week)
-- [ ] Build-Volume (6 weeks repeatable, BONUS WEEK)
-- [ ] Build-Intensity (4 weeks, 2 quality days)
-- [ ] Maintain (4 weeks repeatable)
-- [ ] Build-over-build seeding (peak_workout_state → next block)
-- [ ] Auto-renewal task (generates next block before current ends)
-- [ ] `plan_preview` migration
+**Delivered:**
+- [x] Build-Onramp (8 weeks, no threshold, 4 runs/week)
+- [x] Build-Volume (6 weeks repeatable)
+- [x] Build-Intensity (4 weeks, 2 quality days)
+- [x] Maintain (4 weeks repeatable)
+- [x] Build-over-build seeding (peak_workout_state → next block)
+- [x] `plan_preview` migration (`plan_engine_v2_001`)
 
-**Validation:** All 15 synthetic profiles generate without errors.
-Quality gate passes on all 15. Build-over-build seeding verified
-(block 2 starts at or above block 1 week 1).
+### Phase 5: Quality Gate + Evaluation — ✅ COMPLETE (April 10, 2026)
 
-**Founder review:** Review onramp plan (would you give this to a
-brand new runner?), build-volume plan (would you use this between
-races?), maintain plan (does it hold fitness without overloading?).
+**Goal:** V2 passes all validation criteria and produces founder-reviewed
+plans.
 
-### Phase 5: Quality Gate + Evaluation (Week 5)
+**Delivered:**
+- [x] V2-specific quality gate (integrated in engine.py)
+- [x] Evaluation harness — all real athlete profiles + synthetic profiles
+- [x] Test matrix runner with full reports
+- [x] Founder coaching review of all generated plans
+- [x] Tune-up plans reviewed and validated by founder
 
-**Goal:** V2 passes all validation criteria and produces a side-by-side
-report vs V1.
+**Founder review (April 10, 2026):** "The long run staircase on the
+16-week marathon is what it should be — 14 → 16 → 18 → cutback → 20
+→ 21 → cutback → 18 → tune-up → 21 → cutback → 19 → 18 → taper.
+Visit the peak, drop, visit again, taper down. The tune-up week
+preserving quality (threshold Wed, pre-race Fri, race Sat, recovery
+LR Sun) is correct handling."
 
-**Deliver:**
-- [ ] V2-specific quality gate (24 checks from sandbox doc)
-- [ ] Existing V1 quality gate runs on V2 output (no regression)
-- [ ] Evaluation harness — all 15 profiles
-- [ ] Side-by-side report generated
-- [ ] Replanner hook updated to call V2 when feature flag is on
-
-**Validation:** All gates pass. Report reviewed. V1 test suite
-still green (V1 untouched).
-
-**Founder review:** Full report review. Manual approval of 4 key
-profiles: established_marathon, first_marathon, onramp_brand_new,
-advanced_50k.
-
-### Phase 6: Cutover (Week 6+)
+### Phase 6: Cutover — 🔄 IN PROGRESS
 
 **Goal:** V2 goes live, starting with founder account.
 
-- [ ] `POST /v2/plans/generate` endpoint
-- [ ] `plan_engine_version` field on Athlete model
-- [ ] Founder account switched to V2
+- [x] `engine=v2` query parameter on `POST /v2/plans/constraint-aware`
+- [x] `router_adapter.py` — request mapping, FitnessBank/FingerprintParams/LoadContext loading, response stitching
+- [x] `plan_saver.py` — V2WeekPlan → TrainingPlan + PlannedWorkout DB rows
+- [x] Admin/owner gate (V2 only available to admin/owner roles)
+- [x] V2 deployed to production (April 11, 2026)
+- [x] Smoke test: V2 dry-run generates correctly on production
+- [x] V1 default path verified unaffected
+- [ ] Founder account switched to V2 for live plan generation
 - [ ] 7 days monitoring
 - [ ] Beta athlete rollout
 - [ ] 14 days monitoring

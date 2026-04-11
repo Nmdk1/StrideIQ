@@ -183,11 +183,74 @@ There is no separate "elite" vs "recreational" hierarchy. One hierarchy governs 
 
 Early-development athletes are bottlenecked at items 1-4. Established athletes at items 6-10. The generator applies the same science at the appropriate dose.
 
-## What's Next (Current Engine)
+## V2 Engine — Production Status
 
-- Wire limiter + primary quality emphasis from fingerprint bridge into session scheduling
-- Archetype 14 (7-day) support
-- Full P4 load context implementation (fields: `target_duration_hours`, RPE, nutrition JSONB)
+Plan Engine V2 is deployed and live behind a feature flag. V1 remains the default for all users. V2 is activated by passing `engine=v2` on the constraint-aware endpoint, gated to `admin`/`owner` roles.
+
+### V2 Architecture
+
+V2 is a ground-up rewrite of the plan generator, informed by modern coaching science (Davis, Green, Roche, Coe). It replaces V1's generation logic while preserving V1's intelligence infrastructure (FitnessBank, FingerprintParams, LoadContext, QualityGate).
+
+| Component | File | Role |
+|-----------|------|------|
+| `engine.py` | `services/plan_engine_v2/engine.py` | Orchestrator — loads athlete data, builds phases, produces weeks |
+| `pace_ladder.py` | `services/plan_engine_v2/pace_ladder.py` | Percentage-based pace ladder from RPI |
+| `periodizer.py` | `services/plan_engine_v2/periodizer.py` | Phase structure (general → supportive → specific → taper) |
+| `volume.py` | `services/plan_engine_v2/volume.py` | Long run staircase, volume targets, readiness gate |
+| `workout_library.py` | `services/plan_engine_v2/workout_library.py` | 22+ workout types with concrete segments |
+| `day_scheduler.py` | `services/plan_engine_v2/day_scheduler.py` | Assigns workout types to days (hard-easy, MLR spacing) |
+| `models.py` | `services/plan_engine_v2/models.py` | V2 dataclasses (V2DayPlan, V2WeekPlan, V2PlanPreview, WorkoutSegment) |
+| `plan_saver.py` | `services/plan_engine_v2/plan_saver.py` | Maps V2 output → TrainingPlan + PlannedWorkout DB rows |
+| `router_adapter.py` | `services/plan_engine_v2/router_adapter.py` | Request mapping, FitnessBank/FingerprintParams/LoadContext loading, response stitching |
+
+### V2 Key Differences from V1
+
+| Aspect | V1 | V2 |
+|--------|----|----|
+| Phase model | Theme-driven (rebuild_easy, build_t, etc.) | Coaching periodization (general, supportive, specific, taper) |
+| Workout output | Flat paces dict + description | Rich segments JSONB (warmup → work → cooldown with pace, distance, duration) |
+| Long run | Single type per week | Three rotating types (easy progressive, threshold segments, fatigue resistance) + oscillation at peak |
+| Volume control | `sustainable_peak_weekly` ceiling | `desired_peak_weekly_miles` (athlete decides peak) |
+| Fueling | Not present | Automatic on all runs exceeding 90 minutes |
+| Distance prescription | Single target | Ranges (min, max) for athlete self-selection |
+| Effort language | Zone names | Effort-based descriptions (10K effort, easy/mod) with pace as secondary |
+| Medium-long runs | Implicit | Explicit mid-week MLR slot with optimal spacing from quality/long days |
+| Tune-up races | V1 planner handling | Surgical insertion preserving midweek quality, recovery long run post-race |
+| Extension progression | N/A | Pace constant, duration grows within a block |
+| `generation_method` | `"constraint_aware"` | `"v2"` |
+
+### API Access
+
+```
+POST /v2/plans/constraint-aware?engine=v2&dry_run=true
+```
+
+Same request body as V1 (`ConstraintAwarePlanRequest`). V2 response is shape-compatible with V1 (same top-level keys: `success`, `plan_id`, `fitness_bank`, `model`, `prediction`, `weeks`, etc.) plus `"engine": "v2"`.
+
+### Production Verification (April 11, 2026)
+
+- V2 dry-run: 23-week marathon plan, 1208 total miles, 62.6 peak weekly miles
+- Long run staircase: 14 → 16 → 18 → cutback → 20 → 21 → cutback → 18 → tune-up → 21 → cutback → taper
+- W1 structure: rest, easy, threshold_cruise, easy_strides, medium_long, easy, long_easy
+- V1 default path: unaffected, still generates correctly
+- All containers healthy
+
+### Coaching Science KB
+
+V2 is grounded in 13 coaching science documents in `docs/references/`. See the "Coaching Science KB" table below.
+
+### What's Next (V2 Rollout)
+
+1. Founder live testing with `engine=v2` on real plan generation (not just dry-run)
+2. 7-day monitoring: verify calendar display, detail views, exports all work with V2 segments
+3. Beta athlete rollout
+4. V1 archived after 4 weeks stable
+
+## What's Next (V1 Engine — legacy)
+
+- Wire limiter + primary quality emphasis from fingerprint bridge into session scheduling (deferred — V2 handles this)
+- Archetype 14 (7-day) support (deferred — V2 handles this)
+- Full P4 load context implementation (deferred — V2 handles this)
 
 ## Sources
 

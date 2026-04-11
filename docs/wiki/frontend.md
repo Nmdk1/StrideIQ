@@ -32,8 +32,10 @@ Sport-specific components: `CyclingDetail`, `StrengthDetail`, `HikingDetail`, `F
 
 | Route | Purpose |
 |-------|---------|
+| `/nutrition` | Nutrition tracking — Log (input + edit + delete), History, Insights tabs |
+| `/reports` | Unified reports — health, activities, nutrition, body comp in configurable date ranges |
 | `/checkin` | Daily check-in (redirects to `/home` after) |
-| `/plans/create` | Plan wizard (absorbed availability) |
+| `/plans/create` | Plan wizard (absorbed availability). Constraint-aware endpoint accepts `engine=v2` query param (admin/owner only) to use V2 plan engine. |
 | `/plans/[id]` | Plan detail |
 | `/plans/preview` | Plan preview before purchase |
 | `/plans/checkout` | Stripe checkout |
@@ -70,14 +72,16 @@ Sport-specific components: `CyclingDetail`, `StrengthDetail`, `HikingDetail`, `F
 | `components/coach/` | `ProposalCard.tsx` |
 | `components/runtoon/` | Share prompt and view |
 | `components/ui/` | Shared primitives (button, dialog, card, badge, spinner) |
+| `components/nutrition/` | Barcode scanner, fueling shelf, NL input, nutrition goal setup |
 
 ### Data Layer
 
 | Layer | Location |
 |-------|----------|
 | **API client** | `lib/api/client.ts` — HTTP client with auth |
-| **Service modules** | `lib/api/services/*.ts` — typed API calls per domain |
+| **Service modules** | `lib/api/services/*.ts` — typed API calls per domain (nutrition, reports, etc.) |
 | **React Query hooks** | `lib/hooks/queries/*.ts` — TanStack Query hooks per domain |
+| **Standalone hooks** | `lib/hooks/usePageTracking.ts` — usage telemetry (fires on every route change) |
 | **Contexts** | `lib/context/` — `AuthContext`, `StreamHoverContext`, `UnitsContext`, `CompareContext`, `ConsentContext` |
 | **Feature flags** | `lib/featureFlags.ts` |
 
@@ -87,13 +91,15 @@ Sport-specific components: `CyclingDetail`, `StrengthDetail`, `HikingDetail`, `F
 - **`useUnits()` hook:** Metric/imperial unit conversion throughout the app
 - **i18n:** `lib/i18n/` with `en.ts`, `es.ts`, `ja.ts` translations
 - **`DayDetailPanel.tsx`:** Unified save action — swap + edit consolidated into single button (fixed Apr 7, 2026)
+- **`usePageTracking()` hook:** Wired in `ClientShell.tsx`, fires on every authenticated route change. Posts page entry, patches exit on navigation or tab close via `sendBeacon`/`fetch` with `keepalive`. See [telemetry.md](./telemetry.md).
 
 ## Key Decisions
 
 - **App Router:** Next.js 14 file-based routing
 - **TanStack Query:** All API data fetched via React Query hooks, not manual fetch
 - **Tailwind:** Utility-first CSS, no CSS modules
-- **No separate mobile app:** Mobile-responsive web app only
+- **No separate mobile app:** Mobile-responsive web app only (native app spec in progress)
+- **Inline entry editing:** Nutrition log entries support tap-to-edit and delete directly in the Log tab
 
 ## Known Issues
 

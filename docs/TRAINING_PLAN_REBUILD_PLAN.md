@@ -1,4 +1,4 @@
-pro# Training Plan & Daily Adaptation — Phased Build Plan
+# Training Plan & Daily Adaptation — Phased Build Plan
 
 **Date:** February 12, 2026
 **Status:** APPROVED — Ready to build
@@ -90,6 +90,27 @@ pro# Training Plan & Daily Adaptation — Phased Build Plan
 >   tau1/tau2/HRV signature for volume ramp ceiling (N=1), not blanket 1mi/session.
 >   The 1mi/session is a floor; the ceiling should be individualized.
 > - CI #804 and #805: GREEN. Commits: `f258cd4`, `6aa149e`, `f0cbb21`.
+>
+> **Operational Update — April 11, 2026 (Plan Engine V2 sandbox + production migration)**
+> - **Plan Engine V2 sandbox complete.** New plan generator (`services/plan_engine_v2/`) built from
+>   ground up with modern coaching science KB (13 documents: Davis, Green, Roche, Coe).
+>   Phase model: general → supportive → specific → taper. Rich segments JSONB output.
+>   Fueling on all runs ≥90 min. Three rotating long run types. Extension-based progression.
+>   Distance ranges for athlete self-selection. Medium-long runs with optimal spacing.
+>   Tune-up race handling preserving midweek quality.
+> - **Founder coaching review passed:** Long run staircase (14→16→18→cutback→20→21→cutback→
+>   18→tune-up→21→cutback→taper), tune-up week quality preservation, fueling coverage
+>   all validated by founder's coaching eye.
+> - **V2 wired to production route:** `POST /v2/plans/constraint-aware?engine=v2` available
+>   for admin/owner roles. `router_adapter.py` loads FitnessBank, FingerprintParams,
+>   LoadContext from DB and maps to V2 inputs. `plan_saver.py` maps V2 output to existing
+>   `TrainingPlan` + `PlannedWorkout` tables with `generation_method = "v2"`.
+>   V1 default path unaffected.
+> - **Production smoke verified:** V2 dry-run generates 23-week marathon plan (1208mi total,
+>   62.6 peak weekly miles). V1 default generates 24-week marathon plan (1161mi total).
+>   Both passing. All containers healthy.
+> - **Migration:** `plan_engine_v2_001` (plan_preview table). CI expected heads updated.
+> - **Next:** Founder live testing with real plan generation, 7-day monitoring, beta rollout.
 >
 > **Operational Update — April 4, 2026 (Wellness surfaces + Manual V2 + nav consolidation)**
 > - **Pre-Activity Wellness Stamps:** Five new columns on Activity (`pre_sleep_h`,
@@ -678,7 +699,7 @@ Flags — NOT overrides. Fires only on sustained trajectories, not single-day si
 
 | Phase | What | Gate to Start | Status |
 |-------|------|---------------|--------|
-| **1** | World-class plans: marathon → half → 10K → 5K. N=1 overrides. Paces everywhere. Taper democratization. | None | ✅ V3 REBUILT — diagnosis-first engine (143 PASS / 14 archetypes) |
+| **1** | World-class plans: marathon → half → 10K → 5K. N=1 overrides. Paces everywhere. Taper democratization. | None | ✅ V3 REBUILT → **V2 ENGINE deployed** (coaching science KB, rich segments, fueling, extension progression) |
 | **2** | Daily adaptation engine: readiness score, rules engine, workout state machine, nightly replan, no-race modes. | Phase 1 substantially complete | ✅ COMPLETE |
 | **3A** | Adaptation narration: coach explains intelligence decisions. | Phase 2 running | ✅ COMPLETE |
 | **3B** | Contextual workout narratives. | Narration accuracy > 90% for 4 weeks | ✅ CODE COMPLETE — pipeline wired to Celery, gate accruing |
@@ -722,13 +743,14 @@ Flags — NOT overrides. Fires only on sustained trajectories, not single-day si
 
 ---
 
-## Build Priority (updated 2026-03-22)
+## Build Priority (updated 2026-04-11)
 
 1. ~~**Monetization tier mapping**~~ — ✅ COMPLETE (2-tier model shipped 2026-03-19)
-2. ~~**Coached plan output quality (P1-P5)**~~ — ✅ V3 ENGINE REBUILT (2026-03-29). Diagnosis-first architecture. KB Rule Evaluator: 445 PASS / 0 FAIL across 33 coaching rules × 14 archetypes. Ongoing refinement.
-3. **Phase 4 (50K Ultra)** — new user segment + differentiation
-4. **Phase 3B** — when 4-week narration quality gate clears (monitor `/v1/intelligence/narration/quality`)
-5. **Phase 3C** — when 3+ month data/stat gates clear
+2. ~~**Coached plan output quality (P1-P5)**~~ — ✅ V3 ENGINE REBUILT (2026-03-29) → **V2 ENGINE deployed** (2026-04-11). Coaching science KB, rich segments, fueling, extension progression. Founder-validated. Wired to production behind `engine=v2` flag, cutover in progress.
+3. **V2 cutover** — founder live testing → 7-day monitoring → beta rollout → global default
+4. **Phase 4 (50K Ultra)** — new user segment + differentiation
+5. **Phase 3B** — when 4-week narration quality gate clears (monitor `/v1/intelligence/narration/quality`)
+6. **Phase 3C** — when 3+ month data/stat gates clear
 
 ---
 
