@@ -3361,3 +3361,45 @@ class AutoDiscoveryScanCoverage(Base):
         Index("ix_adsc_athlete_loop", "athlete_id", "loop_type"),
         Index("ix_adsc_athlete_last_scanned", "athlete_id", "last_scanned_at"),
     )
+
+
+class PlanPreview(Base):
+    """Plan Engine V2 output — preview plans stored as JSON.
+
+    V2 writes here, leaving V1's training_plan untouched.
+    Each row is one generated plan (one block). Build-over-build
+    seeding reads peak_workout_state from the previous block.
+    """
+    __tablename__ = "plan_preview"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    athlete_id = Column(UUID(as_uuid=True), ForeignKey("athlete.id", ondelete="CASCADE"),
+                        nullable=False, index=True)
+
+    mode = Column(Text, nullable=False)
+    goal_event = Column(Text, nullable=True)
+    block_number = Column(Integer, nullable=False, server_default="1")
+    total_weeks = Column(Integer, nullable=False)
+
+    plan_json = Column(JSONB, nullable=False)
+
+    peak_workout_state = Column(JSONB, nullable=True)
+
+    engine_version = Column(Text, nullable=False, server_default="v2")
+    anchor_type = Column(Text, nullable=True)
+    athlete_type = Column(Text, nullable=True)
+    phase_structure = Column(JSONB, nullable=True)
+    pace_ladder = Column(JSONB, nullable=True)
+
+    status = Column(Text, nullable=False, server_default="preview")
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    activated_at = Column(DateTime(timezone=True), nullable=True)
+    expires_at = Column(DateTime(timezone=True), nullable=True)
+
+    promoted_plan_id = Column(UUID(as_uuid=True),
+                              ForeignKey("training_plan.id", ondelete="SET NULL"),
+                              nullable=True)
+
+    __table_args__ = (
+        Index("ix_plan_preview_athlete_status", "athlete_id", "status"),
+    )
