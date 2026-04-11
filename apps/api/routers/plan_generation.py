@@ -2207,6 +2207,7 @@ def _save_constraint_aware_plan(
 async def create_constraint_aware_plan(
     request: ConstraintAwarePlanRequest,
     dry_run: bool = False,
+    engine: Optional[str] = None,
     athlete: Athlete = Depends(get_current_athlete),
     db: Session = Depends(get_db),
 ):
@@ -2352,6 +2353,32 @@ async def create_constraint_aware_plan(
     except Exception as ex:
         logger.warning("intake safety gate check failed, proceeding: %s", ex)
 
+    # ── V2 Engine Path ──────────────────────────────────────────────
+    if engine == "v2" and getattr(athlete, "role", None) in ("admin", "owner"):
+        try:
+            from services.plan_engine_v2.router_adapter import generate_and_save_v2
+            return generate_and_save_v2(
+                athlete_id=athlete.id,
+                db=db,
+                race_date=request.race_date,
+                race_distance=request.race_distance.lower(),
+                race_name=request.race_name,
+                goal_time_seconds=request.goal_time_seconds,
+                tune_up_races=request.tune_up_races,
+                target_peak_weekly_miles=request.target_peak_weekly_miles,
+                taper_weeks=request.taper_weeks,
+                dry_run=dry_run,
+                preferred_units=getattr(athlete, "preferred_units", "imperial"),
+            )
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error("V2 plan generation failed for %s: %s", athlete.id, e)
+            import traceback
+            traceback.print_exc()
+            raise HTTPException(status_code=500, detail=f"V2 plan generation failed: {str(e)}")
+
+    # ── V1 Engine Path (default) ────────────────────────────────────
     # Generate plan using Constraint-Aware Planner
     try:
         from services.constraint_aware_planner import generate_constraint_aware_plan
