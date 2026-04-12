@@ -6,6 +6,27 @@
 
 ---
 
+## Advisory lineage, research honesty, and independent synthesis
+
+**Lineage (no pretending otherwise).** The three product levers—**shareable finding artifacts**, **Strava-visible distribution**, **SEO around existing free tools**—were articulated in prior advisor/founder conversation before this document. What was added here is **process**: dependency order, per-phase success/kill criteria, global out-of-scope boundaries, OAuth gating, and the **approval checkboxes**. That is **execution architecture**, not a claim of net-new strategic invention.
+
+**What this doc did *not* originally contain (fair critique).** A full **primary** research pass: scraped forum threads, structured competitor teardowns, cohort interviews, or a written evidence appendix with citations. Those remain **follow-up work** if you want the strategy layer to match the rigor of the engineering layer.
+
+**Desk-level patterns (secondary sources / industry common knowledge)** that nevertheless support the *shape* of the plan—not StrideIQ-specific proof:
+
+- **Free-tool / high-intent pages:** Matching calculator-style queries with dedicated landing URLs is a standard bootstrap acquisition pattern for solo products (intent in → value out → optional signup). Organic search typically has **long feedback loops** (often months), so “technical SEO + measurement first” is how you avoid flying blind—consistent with common indie SEO guidance on patience + baseline hygiene.
+- **Running category structure:** The market splits roughly between **planner-first** products (simple plans, broad appeal) and **analyst-first** products (depth, metrics, serious amateurs). StrideIQ’s moat is **N=1 intelligence**, not a generic plan PDF—so **shareable proof (Phase 2)** and **credible tool SEO (Phase 1)** align with an **analyst-grade** buyer more than with lifestyle influencer reach alone.
+- **Strava as social layer:** Activities and descriptions are a **native distribution surface** for runners; any third-party line must earn trust (opt-in, preview, no spam). That is product judgment + API policy discipline, not a novel claim.
+
+**Independent synthesis (StrideIQ-specific, not generic SaaS):**
+
+- The natural “viral unit” for a **correlation-engine** product is not a generic tip graphic—it is **evidence**: a defensible, already-suppressed finding the athlete is willing to attach their name to. That is why Phase 2 is tied to **Manual/briefing** truth, not marketing copy.
+- **Phase 1 before Phase 2 (measurement):** Instrumenting tool → CTA → account creation means when cards ship, you can separate “sharing works” from “landing pages convert”—otherwise Phase 2 success is **unattributable noise**.
+
+**Recorded advisor recommendation (for founder decision):** Approve **Phase 1 only** first. Reassess after the **90-day** window in Phase 1. If organic tool traffic is flat, **do not** assume SEO failed in isolation—tighten queries, copy, and internal links—but **do** elevate Phase 2 as the next bet regardless, with telemetry already live. Phase 2 remains the **distribution unlock**; Phase 1 is the **instrumentation unlock**.
+
+---
+
 ## Initiative scope (founder approval)
 
 This block is the **control surface**. Agents implement **only phases you mark**. Everything else stays documentation.
@@ -42,6 +63,8 @@ Fill in when you are ready for agents to implement.
 - [ ] **Phase 2** — Shareable finding cards  
 - [ ] **Phase 3** — Strava line *(OAuth scope approval recorded separately)*  
 - [ ] **Phase 4** — Influencer pilot *(process + 1–2 contacts; no scaled spend)*  
+
+**Suggested first cut (advisor, non-binding):** Phase 1 only — instrumentation before betting heavily on Phase 2; see **Advisory lineage, research honesty, and independent synthesis** above.
 
 **If none are checked:** no implementation; planning and research only.
 
