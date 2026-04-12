@@ -52,6 +52,8 @@ jest.mock('@/components/auth/ProtectedRoute', () => ({
 
 jest.mock('@/components/home/CompactPMC', () => ({ CompactPMC: () => null }));
 jest.mock('@/components/home/AdaptationProposalCard', () => ({ AdaptationProposalCard: () => null }));
+jest.mock('@/components/home/TrialBanner', () => ({ TrialBanner: () => null }));
+jest.mock('@/components/home/FirstInsightsBanner', () => ({ FirstInsightsBanner: () => null }));
 
 jest.mock('@/components/home/LastRunHero', () => ({
   LastRunHero: () => <div data-testid="last-run-hero" />,
