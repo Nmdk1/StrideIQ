@@ -377,9 +377,10 @@ export default function NutritionPage() {
       scannerRef.current = scanner;
 
       // Try rear camera first, fall back to front camera, then any camera
-      const cameraConfigs: Array<{ facingMode: string } | boolean> = [
+      const cameraConfigs: MediaTrackConstraints[] = [
         { facingMode: 'environment' },
         { facingMode: 'user' },
+        {},
       ];
 
       let started = false;
