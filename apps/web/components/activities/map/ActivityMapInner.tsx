@@ -177,8 +177,15 @@ function FitBounds({ bounds }: { bounds: LatLngBoundsExpression }) {
   const didFit = useRef(false);
   useEffect(() => {
     if (!didFit.current) {
-      map.fitBounds(bounds, { padding: [30, 30], maxZoom: 16 });
+      // Delay fit until after CSS layout settles so the container has
+      // its final dimensions — otherwise bounds are calculated against
+      // the wrong viewport and the route ends up tiny.
+      const timer = setTimeout(() => {
+        map.invalidateSize();
+        map.fitBounds(bounds, { padding: [20, 20], maxZoom: 17 });
+      }, 200);
       didFit.current = true;
+      return () => clearTimeout(timer);
     }
   }, [map, bounds]);
   return null;
@@ -286,7 +293,7 @@ export default function ActivityMapInner({
             ? 'fixed inset-0 z-50 bg-slate-900'
             : 'relative rounded-lg overflow-hidden border border-slate-700/30'
         }
-        style={isFullscreen ? undefined : { aspectRatio: '4 / 3', maxHeight: 340 }}
+        style={isFullscreen ? undefined : { aspectRatio: '4 / 3' }}
       >
         {/* Fullscreen toggle */}
         <button
