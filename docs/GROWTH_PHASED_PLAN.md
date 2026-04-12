@@ -1,8 +1,58 @@
 # StrideIQ — Phased Growth Plan (Scoped)
 
-**Status:** Planning document — not implementation commitment  
+**Status:** Planning document — implementation starts only on **checked approval** below  
 **Read first:** [`docs/SESSION_HANDOFF_2026-03-28_GROWTH_AGENT_ONBOARDING.md`](SESSION_HANDOFF_2026-03-28_GROWTH_AGENT_ONBOARDING.md), [`docs/FOUNDER_OPERATING_CONTRACT.md`](FOUNDER_OPERATING_CONTRACT.md)  
 **Context:** Phases assume **product-led / automated / user-assisted** growth; founder does not run outbound or personal-brand marketing. Influencer is **Phase 4** only with a **product-first brief** (prior ad-hoc promotion without naming StrideIQ is not treated as a disproof of the channel).
+
+---
+
+## Initiative scope (founder approval)
+
+This block is the **control surface**. Agents implement **only phases you mark**. Everything else stays documentation.
+
+### What this initiative covers (when approved)
+
+| Phase | One-line scope | Requires |
+|-------|----------------|----------|
+| **1** | SEO + technical discoverability for existing free tools (`apps/web/app/tools/**`), internal links, sitemap/robots check, tool-funnel **measurement** (telemetry events as specified in Phase 1) | Nothing beyond normal web deploy |
+| **2** | Shareable **image cards** for trust-safe findings (Manual / briefing surfaces), Web Share / download, branding + link, telemetry | Phase 1 **recommended** first; trust review |
+| **3** | Opt-in **Strava activity description** one-liner + preview | **Separate founder approval** for any **new OAuth scope** (e.g. `activity:write`), relink UX, Strava policy alignment — see [`FOUNDER_OPERATING_CONTRACT.md`](FOUNDER_OPERATING_CONTRACT.md) |
+| **4** | **Process only:** brief, creator fit criteria, 1–2 pilot outreach, UTM + metrics; no retainer / spend without separate approval | Phase 1 **minimum**; Phase 2 **strongly preferred** |
+
+### Global in scope (any approved phase)
+
+- Changes under **`apps/web`** (landing, tools, metadata, components supporting share UI).
+- **`apps/api`** only where needed for Phase 2–3 (e.g. share payload, Strava post path) — scoped commits, no unrelated refactors.
+- **First-party telemetry** definitions and events; no third-party analytics.
+- **Docs** updates for shipped behavior (SITE_AUDIT, optional session handoff).
+
+### Global out of scope (entire initiative)
+
+- Paid acquisition, influencer **contracts or spend** without explicit separate approval.
+- New **blog / content calendar** as the primary growth lever.
+- **Onboarding flow rewrites** framed as growth (traffic is the bottleneck).
+- Founder **outbound**, community management, or personal-brand campaigns.
+- **OAuth / API permission expansion** without explicit founder approval (binding contract).
+
+### Approve phases (check to authorize build work)
+
+Fill in when you are ready for agents to implement.
+
+- [ ] **Phase 1** — SEO + tools funnel + measurement  
+- [ ] **Phase 2** — Shareable finding cards  
+- [ ] **Phase 3** — Strava line *(OAuth scope approval recorded separately)*  
+- [ ] **Phase 4** — Influencer pilot *(process + 1–2 contacts; no scaled spend)*  
+
+**If none are checked:** no implementation; planning and research only.
+
+**Approval record**
+
+| Field | Value |
+|-------|--------|
+| Date | |
+| Phases approved | (e.g. 1 only, or 1–2) |
+| Notes | |
+| Founder sign-off | |
 
 ---
 
