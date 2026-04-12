@@ -1,6 +1,6 @@
 # StrideIQ — Deep Research Memo (Growth)
 
-**Date:** April 12, 2026 (expanded second pass: Intervals.icu, Elevate, Strava–Runna market, SEO technical depth, Reddit, measurement, behavioral wedge)  
+**Date:** April 12, 2026 (second pass: Intervals, Elevate, Strava–Runna, SEO depth, Reddit, measurement; **third pass:** advisor assessment — copy mandate, 10→100 gap, father–son post-mortem, Show HN as “moment”, founder Reddit constraint)  
 **Purpose:** Independent desk research to ground [`docs/GROWTH_PHASED_PLAN.md`](GROWTH_PHASED_PLAN.md) in evidence, analogs, and channel mechanics—not to replace founder judgment or primary research with users.
 
 **Methodology**
@@ -10,6 +10,12 @@
 - **What this is not:** Scraped Reddit/LetsRun thread corpora, Search Console exports for StrideIQ, paid survey, or live competitor product teardowns behind login. Those are **recommended follow-ups** and should supersede desk conclusions when available.
 
 **Honest limitation:** Web search is a blunt instrument. Findings are **directional** and **hypothesis-generating**. The bar you set—“deeper than a one-line Google”—is addressed by **multi-source synthesis, named analogs, and explicit gaps**, not by pretending this is McKinsey-grade primary research.
+
+---
+
+## Strategic copy principle (non-negotiable for public-facing growth)
+
+**Advisor + product-strategy alignment:** Do **not** lead the homepage, ads, or tool landing **hero** with **“AI coach”** or **“training plans”** as the **primary** headline. The **plan** lane is **commodity + consolidating** (see Strava × Runna). StrideIQ’s differentiated promise is **retrospective truth**: **connect Garmin/Strava → something true about *your* body in the first session** (see [`PRODUCT_STRATEGY_2026-03-03.md`](PRODUCT_STRATEGY_2026-03-03.md) first-session hook). Plans and coach are **supporting** proof, not the lead.
 
 ---
 
@@ -166,6 +172,44 @@ StrideIQ is **not** starting from a fax problem in 1994; the parallel is: **wedg
 
 ---
 
+### 2.9 The 10 → 100 user gap (distinct from 30k–100k compounding)
+
+**What the public record shows:** Intervals.icu’s [About](https://www.intervals.icu/about/) page documents **origin → organic word of mouth → 100k+ athletes by 2024** and **full-time September 2024**, but **does not** publish **how the first 50 users** arrived. Desk research **does not** surface a Tinker blog post titled “our first customers.”
+
+**Plausible mechanisms (hypotheses, not verified)**
+
+- **Cycling/triathlon** forum culture (English-language **Slowtwitch**, club WhatsApp, Strava club chatter) as **pre-Reddit** discovery paths—comparison threads (e.g. Intervals vs TrainingPeaks) appear in **tri** forums by **2024**; very early diffusion may be **invisible** in SEO-indexed pages.
+- **Strava-adjacent** power users recommending tools in **comments** and **HN**—e.g. an HN discussion ([item 42915986](https://news.ycombinator.com/item?id=42915986)) where a user praises Intervals.icu unprompted (“**totally worth paying to support**”)—**organic advocacy**, not a **Show HN** launch thread from the founder.
+- **Multi-year side project** (2018→2024) means “first 100” may be **stretched over years**, not a single **viral week**—timeline honesty remains important.
+
+**What would actually crack the 10→100 black box**
+
+- **Primary:** Interview or written Q&A with **David Tinker** (or dig **forum.intervals.icu** / project Discord archives for **2018–2020** posts by the founder—labor-intensive).
+- **Secondary:** **Podcast** episodes mentioning Intervals’ origin ([example index: Spotify “Stroke FM” interview listing](https://podcasters.spotify.com/pod/show/khosravanih/episodes/Mastering-your-Fitness-Metrics-Interview-with-intervals-icu-David-Tinker-e3c1e29))—transcribe for **first-user** anecdotes.
+
+**StrideIQ implication:** The **10→100** problem may require **one concentrated “moment”** (see §3.4 Show HN) **plus** SEO/tool **baseline**—not **only** long SEO lag.
+
+---
+
+### 2.10 Father–son state records — influencer post-mortem (hypotheses, not a write-off)
+
+**Facts from founder context (as stated in product handoffs):** A **Brady Holmer**–adjacent promotion highlighted the **human story** (father–son state age-group records); **StrideIQ was not named** in a way that drove product trials; founder saw **~30–50 new X followers**, not a measurable **signup wave**.
+
+**Hypotheses for why attention did not convert** (testable; not accusations toward any third party)
+
+| Hypothesis | Implication |
+|------------|-------------|
+| **No product in the hero** | If the clip/post centers **human drama** without **named product + URL + single CTA**, viewers **follow** the people, not the **software**. |
+| **Followers ≠ buyers** | X engagement rewards **story**; **SaaS** conversion requires **intent** (problem-aware, desktop/mobile signup friction). |
+| **Audience mismatch** | Holmer’s audience may skew **general science/fitness** vs **Garmin-paywall serious** runners who would **connect a device** same day. |
+| **Messenger–ecosystem friction** | If the messenger is **strongly associated with another device ecosystem** (e.g. COROS), **Garmin-primary** positioning of StrideIQ may feel **orthogonal** to viewers’ next step—**messaging** should still lead **data truth**, not hardware tribalism. |
+| **Single moment vs funnel** | One **broadcast** without **retargeting**, **landing A/B**, or **tool** follow-up leaves **no** compounding—vs Intervals’ **years** of drip advocacy. |
+| **Proof type** | **Records** prove **athletic outcome**; StrideIQ must prove **product mechanism** (“here is the **finding** the engine produced”)—different **evidence** for different **claim**. |
+
+**Strategic use of the story (advisor direction):** Reframe for **technical audiences** (HN, serious runners) as **evidence of physiological modeling**, not **celebrity**—paired with **reproducible demo**: connect → **first finding** in minutes.
+
+---
+
 ## 3. Channels — mechanics, evidence, and constraints
 
 ### 3.1 SEO and programmatic intent (calculator / tool pages)
@@ -222,13 +266,27 @@ This **supports** the phased plan’s **de-emphasis of outbound** and **emphasis
 
 ---
 
-### 3.4 Hacker News / “Show HN” (tech-adjacent early adopters)
+### 3.4 Hacker News / “Show HN” — high-variance, but a credible **10→100 “moment”**
 
 **Observed pattern (search-indexed threads):** Fitness **Show HN** posts range from **hundreds of points** (e.g. Workout.lol ~993 points, 281 comments per index) to **single-digit** traction. **Discussion quality** often attacks **coaching correctness**—HN rewards **technical honesty** and punishes **shallow AI wrappers**.
 
-**Inference**
+**Advisor reassessment (not dismissive):** For StrideIQ, **variance is not the same as irrelevance**. A product with a **demo-able wow** (“connect Garmin → **true** statement about **your** body in minutes”) and **engineering depth** is **exactly** the profile HN often rewards—**when** the post is **substantive**, the founder **stays in the thread** to answer technical questions, and claims are **grounded** in determinism + safety (Athlete Trust contract), not vibe-marketing.
 
-- A future **Show HN** is **optional** and **high variance**. It works best when the **demo is undeniable** (connect real data → real insight in session) and the poster **engages technically** in comments—not as a substitute for **runner-specific** channels.
+**Intervals.icu on HN (data point):** Intervals is discussed **organically** on HN (e.g. [thread 42915986](https://news.ycombinator.com/item?id=42915986)) with **user advocacy** (“totally worth paying to support”)—not necessarily a **founder-launched** Show HN. That supports **technical community pull** for analyst tools even without a formal launch post.
+
+**Recommended package for a future StrideIQ Show HN (planning only — founder approves timing)**
+
+| Element | Purpose |
+|---------|---------|
+| **Title** | Lead with **first-session truth**, not “AI coach” or “plans” (see **Strategic copy principle** above). |
+| **Demo** | Screen recording or live: OAuth → sync → **one** suppressed-safe finding in **≤2 minutes** (or honest “insufficient data” if demo account is cold). |
+| **Evidence** | Father–son state records as **outcome validation of the model**, not celebrity—tie to **what the engine would surface** (without violating privacy). |
+| **Thread discipline** | Reply to **every** technical objection; link to **deterministic** behavior vs LLM slop; never overclaim. |
+| **CTA** | Single URL + **what to do next** (trial, connect). |
+
+**Risks:** Hostile coaching audits; privacy questions; “another AI app” skepticism—mitigate with **architecture honesty** and **contracts** (suppression, safety tests).
+
+**Relationship to phased plan:** This is **not** a replacement for **Phase 1** (SEO + telemetry). Run **after** measurement exists so you can tag **hn** traffic in first-party analytics. Treat as **one-shot event**, not a weekly channel.
 
 ---
 
@@ -242,15 +300,18 @@ This **supports** the phased plan’s **de-emphasis of outbound** and **emphasis
 
 ---
 
-### 3.6 Reddit — site-wide norms and subreddit variance
+### 3.6 Reddit — site-wide norms; **founder-specific constraint**
 
 **Platform rule of thumb (long-standing Reddit culture):** Reddit Inc. and moderator guidance have historically described **self-promotion** as acceptable only when **a small fraction** of submissions link to your own site/product—the often-cited heuristic is **~90% neutral participation / ~10% self-link** (see [reddit.com/wiki/selfpromotion](https://www.reddit.com/wiki/selfpromotion) — **read current version**; rules evolve).
 
-**Inference**
+**Inference (general)**
 
-- **Drive-by “check out my app”** posts in **r/running**, **r/AdvancedRunning**, etc. are **high-ban-risk** and **low-trust**.
-- **Viable pattern:** years-long **identity as a helpful athlete** (or separate persona) with **occasional** deep posts that include a link **when the subreddit asks**—contradicts founder **no-community-job** constraint unless delegated or **earned over years**.
-- **Practical conclusion for StrideIQ:** treat Reddit as **earned media** (someone else posts your tool/findings) or **paid** (Reddit ads—out of current scope unless approved), **not** as a **primary outbound** lever. Aligns with phased plan.
+- **Drive-by “check out my app”** posts are **high-ban-risk** and **low-trust**.
+- **Earned** mention (someone else recommends your product) is the only **reliable** organic pattern for builders who will not farm karma.
+
+**Founder-specific (StrideIQ):** The founder reports a **permanent ban** from **r/AdvancedRunning** after a dispute involving **moderation and competitor mention**—regardless of fault, **Reddit cannot be assigned** as a channel the founder will **personally** cultivate. **Do not** recommend “post in weekly thread” or “rebuild karma” as **founder** work. Third-party **earned** Reddit threads remain possible as **read-only** research only (see §5).
+
+**Practical conclusion:** Prefer **product-mediated** discovery (SEO, shareable cards, Strava, **Show HN**, credible press/podcast) over **founder participation** on Reddit.
 
 ---
 
@@ -323,7 +384,7 @@ Use this matrix in **messaging** to avoid **unfavorable** comparison (“vs Runn
 1. **Google Search Console:** Export **queries, pages, CTR** for `/tools/*` over **12 months**; identify **query–page mismatch**.
 2. **5–10 semi-structured interviews** with **masters + data-heavy** runners who use **Garmin + Strava** (not necessarily StrideIQ users): *how* they found **Intervals.icu**, Runalyze, TrainingPeaks, Athletica; **what** triggered signup; **whether** they pay for **multiple** tools (substitutes vs complements).
 3. **Competitive teardown matrix** (same script for each): connect flow, **time-to-first surprising insight**, pricing, **trust moments** on site, **export/portability** narrative.
-4. **Reddit / r/AdvancedRunning:** **Read-only** thematic coding of “how I chose my training app” threads (no posting)—**manual** or tool-assisted scrape with **privacy ethics** respected.
+4. **Reddit (research only, not founder channel):** The founder is **not** to rely on **r/AdvancedRunning** participation (see §3.6). If useful, a **delegate** or **researcher** may do **read-only** thematic coding of “how I chose my training app” threads—**no** expectation of founder posting.
 5. **Strava API Terms / Brand Guidelines:** Founder or counsel **read-through** of current **API Agreement** and **developer brand rules** before **Phase 3** implementation (not substituted by this memo).
 6. **Chrome Web Store:** If an extension path is ever evaluated—**live** install snapshot for Elevate (desk research cites **aggregators**; marketing claims need **primary** store data).
 
@@ -346,6 +407,7 @@ Use this matrix in **messaging** to avoid **unfavorable** comparison (“vs Runn
 | Strava Developers — Authentication / API | https://developers.strava.com/docs/authentication/ |
 | Kalzumeus Software (patio11) | https://www.kalzumeus.com |
 | Garmin Connect IQ — Developer hub | https://developer.garmin.com/connect-iq/ |
+| Hacker News — Intervals.icu organic thread (example) | https://news.ycombinator.com/item?id=42915986 |
 
 ---
 

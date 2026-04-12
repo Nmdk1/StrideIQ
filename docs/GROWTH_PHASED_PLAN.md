@@ -1,7 +1,7 @@
 # StrideIQ — Phased Growth Plan (Scoped)
 
 **Status:** Planning document — implementation starts only on **checked approval** below  
-**Read first:** [`docs/SESSION_HANDOFF_2026-03-28_GROWTH_AGENT_ONBOARDING.md`](SESSION_HANDOFF_2026-03-28_GROWTH_AGENT_ONBOARDING.md), [`docs/FOUNDER_OPERATING_CONTRACT.md`](FOUNDER_OPERATING_CONTRACT.md), **[`docs/GROWTH_DEEP_RESEARCH.md`](GROWTH_DEEP_RESEARCH.md)** (analogs incl. Intervals.icu & Strava–Runna market, SEO technical depth, Reddit, measurement—desk research, April 2026, expanded v2)  
+**Read first:** [`docs/SESSION_HANDOFF_2026-03-28_GROWTH_AGENT_ONBOARDING.md`](SESSION_HANDOFF_2026-03-28_GROWTH_AGENT_ONBOARDING.md), [`docs/FOUNDER_OPERATING_CONTRACT.md`](FOUNDER_OPERATING_CONTRACT.md), **[`docs/GROWTH_DEEP_RESEARCH.md`](GROWTH_DEEP_RESEARCH.md)** (analogs incl. Intervals.icu & Strava–Runna market, SEO technical depth, Reddit, measurement—desk research, April 2026, v2–v3)  
 **Context:** Phases assume **product-led / automated / user-assisted** growth; founder does not run outbound or personal-brand marketing. Influencer is **Phase 4** only with a **product-first brief** (prior ad-hoc promotion without naming StrideIQ is not treated as a disproof of the channel).
 
 ---
@@ -10,7 +10,7 @@
 
 **Lineage (no pretending otherwise).** The three product levers—**shareable finding artifacts**, **Strava-visible distribution**, **SEO around existing free tools**—were articulated in prior advisor/founder conversation before this document. What was added here is **process**: dependency order, per-phase success/kill criteria, global out-of-scope boundaries, OAuth gating, and the **approval checkboxes**. That is **execution architecture**, not a claim of net-new strategic invention.
 
-**Research artifact (April 12, 2026; expanded second pass).** [`docs/GROWTH_DEEP_RESEARCH.md`](GROWTH_DEEP_RESEARCH.md) contains **multi-source desk research**: primary quotes (Friel/TrainingPeaks, Smashrun, Runalyze 2018 + infra migration, **Intervals.icu** about page, **Strava press** re Runna acquisition), analog products and **competitive matrix**, channels (**technical SEO** table, Strava ecosystem, HN, Garmin CIQ, **Reddit** norms, **measurement/attribution**, behavioral wedge), and **explicit gaps** (GSC export, interviews, API terms read-through). That memo **does not** replace **primary** research (interviews, your own GSC data, structured forum coding).
+**Research artifact (April 12, 2026; v2–v3).** [`docs/GROWTH_DEEP_RESEARCH.md`](GROWTH_DEEP_RESEARCH.md) contains **multi-source desk research**: primary quotes (Friel/TrainingPeaks, Smashrun, Runalyze 2018 + infra migration, **Intervals.icu** about page, **Strava press** re Runna acquisition), analog products and **competitive matrix**, channels (**technical SEO** table, Strava ecosystem, HN, Garmin CIQ, **Reddit** norms, **measurement/attribution**, behavioral wedge), and **explicit gaps** (GSC export, interviews, API terms read-through). That memo **does not** replace **primary** research (interviews, your own GSC data, structured forum coding).
 
 **Desk-level patterns (secondary sources / industry common knowledge)** that nevertheless support the *shape* of the plan—not StrideIQ-specific proof:
 
@@ -64,7 +64,11 @@ Fill in when you are ready for agents to implement.
 - [ ] **Phase 3** — Strava line *(OAuth scope approval recorded separately)*  
 - [ ] **Phase 4** — Influencer pilot *(process + 1–2 contacts; no scaled spend)*  
 
-**Suggested first cut (advisor, non-binding):** Phase 1 only — instrumentation before betting heavily on Phase 2; see **Advisory lineage, research honesty, and independent synthesis** above.
+**Suggested first cut (advisor, non-binding):** **Approve Phase 1** (SEO + telemetry) first — instrumentation before betting heavily on Phase 2; see [`GROWTH_DEEP_RESEARCH.md`](GROWTH_DEEP_RESEARCH.md).
+
+**After Phase 1 telemetry is live (advisor):** Plan **one concentrated “moment”** — a **Show HN**-style launch with **live demo** (connect → first true finding), **father–son story as technical evidence** (not celebrity), single CTA — see **§3.4** in [`GROWTH_DEEP_RESEARCH.md`](GROWTH_DEEP_RESEARCH.md). Not a substitute for Phase 1; **tags** `utm`/`hn` traffic when measurement exists.
+
+**Copy rule (actionable now):** All growth-facing heroes lead with **first-session truth about *your* body** — not “AI coach” or “plans” as the primary headline (research memo **Strategic copy principle** + [`PRODUCT_STRATEGY_2026-03-03.md`](PRODUCT_STRATEGY_2026-03-03.md)).
 
 **If none are checked:** no implementation; planning and research only.
 
