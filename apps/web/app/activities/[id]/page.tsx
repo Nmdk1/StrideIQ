@@ -9,7 +9,7 @@
  * Runs: tabbed layout (Overview default) — see BUILDER_INSTRUCTIONS_2026-04-12_ACTIVITY_PAGE_TABBED_LAYOUT.md
  */
 
-import React, { useState, useRef, useEffect, useSyncExternalStore } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/lib/hooks/useAuth';
@@ -181,26 +181,11 @@ export default function ActivityDetailPage() {
   const streamAnalysis = useStreamAnalysis(activityId);
   const analysisData = isAnalysisData(streamAnalysis.data) ? streamAnalysis.data : null;
   const [activeTab, setActiveTab] = useState<ActivityTabId>('overview');
-  /** Mobile: user toggles map; desktop (md+): always show — do not mount Leaflet while `display:none` (zero-size fit). */
-  const [routeMapOpen, setRouteMapOpen] = useState(false);
-  /** Avoid SSR/client mismatch from matchMedia; first paint matches server (no map), then client commits. */
+  /** Avoid SSR/client mismatch — first paint matches server (no map), then client mounts. */
   const [clientReady, setClientReady] = useState(false);
   useEffect(() => {
     setClientReady(true);
   }, []);
-  const isMdUp = useSyncExternalStore(
-    onStoreChange => {
-      if (typeof window === 'undefined') return () => {};
-      const mq = window.matchMedia('(min-width: 768px)');
-      mq.addEventListener('change', onStoreChange);
-      return () => mq.removeEventListener('change', onStoreChange);
-    },
-    () => window.matchMedia('(min-width: 768px)').matches,
-    () => false,
-  );
-  const showRouteMap = clientReady && (isMdUp || routeMapOpen);
-  /** Splits tab: show map on mobile even when Overview map is collapsed. */
-  const showSplitsMap = clientReady && (isMdUp || routeMapOpen || activeTab === 'splits');
 
   const splitTableRowRefs = useRef<Map<number, HTMLTableRowElement>>(new Map());
 
@@ -522,23 +507,11 @@ export default function ActivityDetailPage() {
                     splitTableRowRefs={splitTableRowRefs}
                   />
                 </div>
-                <div
-                  className="min-h-[88px] rounded-lg border border-dashed border-slate-600/40 bg-slate-800/20 mb-4 px-4 py-3"
-                  aria-label="Insights for this chart"
-                />
+                {/* Intelligence slot — empty until backend insights land */}
+                <div id="intelligence-slot" />
                 {activity.gps_track && activity.gps_track.length > 1 && (
                   <div className="mb-4">
-                    <div className="flex items-center justify-between md:hidden mb-2 px-0">
-                      <span className="text-xs font-medium text-slate-500 uppercase tracking-wide">Route</span>
-                      <button
-                        type="button"
-                        onClick={() => setRouteMapOpen((v) => !v)}
-                        className="text-sm text-orange-400/90 hover:text-orange-300"
-                      >
-                        {routeMapOpen ? 'Hide map' : 'Show map'}
-                      </button>
-                    </div>
-                    {showRouteMap && (
+                    {clientReady && (
                       <RouteContext
                         activityId={activityId}
                         track={activity.gps_track}
@@ -584,7 +557,7 @@ export default function ActivityDetailPage() {
                 deviceName={activity.device_name}
                 stream={analysisData?.stream}
                 splitTableRowRefs={splitTableRowRefs}
-                showMap={showSplitsMap}
+                showMap={clientReady}
               />
             ),
             analysis: (
