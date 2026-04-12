@@ -145,7 +145,7 @@ export function ActivitySplitsTabPanel({
           startCoords={startCoords}
           sportType={sportType || 'run'}
           startTime={startTime}
-          streamPoints={stream}
+          streamPoints={stream ?? undefined}
           weather={{
             temperature_f: temperatureF,
             weather_condition: weatherCondition,
