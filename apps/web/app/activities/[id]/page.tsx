@@ -31,6 +31,7 @@ import { ActivitySplitsTabPanel } from '@/components/activities/ActivitySplitsTa
 import { GoingInStrip } from '@/components/activities/GoingInStrip';
 import { GoingInCard } from '@/components/activities/GoingInCard';
 import { FindingsCards } from '@/components/activities/FindingsCards';
+import { WhyThisRun } from '@/components/activities/WhyThisRun';
 import { AnalysisTabPanel } from '@/components/activities/AnalysisTabPanel';
 
 interface Activity {
@@ -578,6 +579,7 @@ export default function ActivityDetailPage() {
                   preSleepH={activity.pre_sleep_h}
                   preSleepScore={activity.pre_sleep_score}
                 />
+                <WhyThisRun activityId={activityId} />
                 <FindingsCards findings={findings} />
                 {activity.narrative && (
                   <div className="px-4 py-3 bg-slate-800/30 border border-slate-700/30 rounded-lg">
