@@ -18,7 +18,7 @@ Principles:
 
 import logging
 from datetime import datetime, timedelta, timezone
-from typing import Dict, List
+from typing import Dict, List, Optional
 from uuid import UUID
 
 from sqlalchemy.orm import Session
@@ -130,7 +130,12 @@ def persist_correlation_findings(
             existing.direction = direction
             existing.confidence = confidence
             existing.category = category
-            existing.insight_text = insight_text
+            existing.insight_text = _build_finding_text(
+                input_name, direction, strength, r, lag, output_metric,
+                threshold_value=existing.threshold_value,
+                threshold_direction=existing.threshold_direction,
+                times_confirmed=existing.times_confirmed,
+            )
             existing.partial_correlation_coefficient = partial_r
             existing.confounder_variable = confounder_var
             existing.is_confounded = is_confounded
@@ -301,6 +306,9 @@ def _build_finding_text(
     r: float,
     lag_days: int,
     output_metric: str,
+    threshold_value: Optional[float] = None,
+    threshold_direction: Optional[str] = None,
+    times_confirmed: Optional[int] = None,
 ) -> str:
     """Build human-readable insight text (mirrors n1_insight_generator)."""
     try:
@@ -312,6 +320,9 @@ def _build_finding_text(
             r=r,
             lag_days=lag_days,
             output_metric=output_metric,
+            threshold_value=threshold_value,
+            threshold_direction=threshold_direction,
+            times_confirmed=times_confirmed,
         )
     except ImportError:
         return f"{input_name} has a {strength} {direction} correlation with {output_metric}"

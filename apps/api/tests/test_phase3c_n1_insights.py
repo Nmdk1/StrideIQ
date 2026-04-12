@@ -145,19 +145,19 @@ class TestInsightContent:
     """N=1 insights reference the athlete's own data and are properly labeled."""
 
     def test_insight_uses_your_not_generic(self):
-        """Text says 'YOUR' not generic phrasing."""
+        """Text addresses the athlete directly."""
         text = _build_insight_text("sleep_hours", "positive", "moderate", 0.5, lag_days=0)
-        assert "YOUR" in text
+        assert "your" in text.lower()
 
     def test_insight_cites_specific_pattern(self):
         """Lag-based insight cites the specific timing."""
         text = _build_insight_text("sleep_hours", "positive", "moderate", 0.5, lag_days=2)
-        assert "2 days" in text or "within 2" in text
+        assert "2 days" in text or "next 2" in text
 
-    def test_insight_labeled_as_data_derived(self):
-        """Must include 'Based on your data' labeling."""
+    def test_insight_uses_coaching_voice(self):
+        """Uses coaching-style language, not algorithm-speak."""
         text = _build_insight_text("weekly_volume_km", "positive", "moderate", 0.5, lag_days=0)
-        assert text.startswith("Based on your data:")
+        assert "your" in text.lower()
 
     def test_insight_not_labeled_as_advice(self):
         """N=1 insights are observations, not prescriptions."""
@@ -184,11 +184,11 @@ class TestCorrelationToInsight:
     """Each meaningful correlation type maps to a specific insight format."""
 
     def test_workout_type_to_efficiency_insight(self):
-        """Workout volume → efficiency: text references YOUR and the input."""
+        """Workout volume → efficiency: text references the athlete and the input."""
         items = [_make_correlation(input_name="weekly_volume_km", r=0.55, lag=2)]
         insights = _gen(items)
         assert len(insights) == 1
-        assert "YOUR" in insights[0].text
+        assert "your" in insights[0].text.lower()
         assert insights[0].evidence["n"] == 50
 
     def test_sleep_to_performance_insight(self):
@@ -202,7 +202,7 @@ class TestCorrelationToInsight:
     def test_volume_threshold_insight(self):
         """Volume input → insight mentioning volume."""
         text = _build_insight_text("weekly_volume_km", "positive", "moderate", 0.5, lag_days=0)
-        assert "YOUR" in text
+        assert "your" in text.lower()
         assert "volume" in text.lower() or "weekly" in text.lower()
 
     def test_recovery_pattern_insight(self):
@@ -210,7 +210,7 @@ class TestCorrelationToInsight:
         items = [_make_correlation(input_name="days_since_quality", r=0.5, lag=0)]
         insights = _gen(items)
         assert len(insights) == 1
-        assert "YOUR" in insights[0].text
+        assert "your" in insights[0].text.lower()
 
     def test_hrv_individual_direction_insight(self):
         """HRV direction is discovered per-athlete, not assumed.
@@ -222,7 +222,9 @@ class TestCorrelationToInsight:
         for text in (text_pos, text_neg):
             assert "improve" not in text.lower()
             assert "decline" not in text.lower()
-            assert "associated with changes" in text
+            assert "help" not in text.lower()
+            assert "hurt" not in text.lower()
+            assert "linked to" in text
 
     def test_combination_correlation_insight(self):
         """Multiple correlations produce multiple insights, sorted by confidence."""

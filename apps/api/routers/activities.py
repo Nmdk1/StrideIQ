@@ -981,13 +981,31 @@ def get_activity_findings(
         .all()
     )
 
+    from services.n1_insight_generator import _build_insight_text, _is_obvious
+
     result = []
     for f in candidates:
         if not _finding_relevant(f, actual_values):
             continue
 
+        has_threshold = f.threshold_value is not None
+        if _is_obvious(f.input_name, f.output_metric, has_threshold=has_threshold):
+            continue
+
         tier = "strong" if f.times_confirmed >= 8 else "confirmed"
-        text = f.insight_text or f"{friendly_signal_name(f.input_name)} affects your {friendly_signal_name(f.output_metric)}"
+
+        text = _build_insight_text(
+            input_name=f.input_name,
+            direction=f.direction,
+            strength="strong" if abs(f.correlation_coefficient) >= 0.5 else "moderate",
+            r=f.correlation_coefficient,
+            lag_days=f.time_lag_days,
+            output_metric=f.output_metric,
+            threshold_value=f.threshold_value,
+            threshold_direction=f.threshold_direction,
+            times_confirmed=f.times_confirmed,
+        )
+
         evidence = f"Confirmed {f.times_confirmed} times" if f.times_confirmed else None
         result.append(FindingAnnotation(
             text=text,

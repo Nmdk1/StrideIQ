@@ -491,6 +491,51 @@ def _validate_metric_meta(meta: OutputMetricMeta) -> bool:
     return True
 
 
+# ---------------------------------------------------------------------------
+# Novelty gate — suppress findings that are obvious to any runner
+# ---------------------------------------------------------------------------
+# These input→output pairs are universally known. "Fresh legs help
+# performance" and "more sleep helps" are not insights — they're axioms.
+# A finding is only worth saying if the athlete would say "I didn't know that."
+
+_OBVIOUS_PAIRS: frozenset = frozenset({
+    ("feedback_leg_feel", "efficiency"),
+    ("feedback_leg_feel", "efficiency_easy"),
+    ("feedback_leg_feel", "efficiency_threshold"),
+    ("feedback_leg_feel", "pace_easy"),
+    ("feedback_leg_feel", "pace_threshold"),
+    ("feedback_energy_pre", "efficiency"),
+    ("feedback_energy_pre", "pace_easy"),
+    ("readiness_1_5", "efficiency"),
+    ("readiness_1_5", "pace_easy"),
+    ("soreness_1_5", "efficiency"),
+    ("soreness_1_5", "pace_easy"),
+})
+
+# Simple directional claims that are universally known. More interesting
+# is the THRESHOLD at which they matter, which Phase 3 text handles.
+# When a finding has threshold data it graduates from obvious to specific.
+_OBVIOUS_INPUTS_IF_NO_THRESHOLD: frozenset = frozenset({
+    "feedback_leg_feel",
+    "feedback_energy_pre",
+    "readiness_1_5",
+})
+
+
+def _is_obvious(input_name: str, output_metric: str, has_threshold: bool = False) -> bool:
+    """Return True if this finding is too obvious to surface.
+
+    Findings with specific threshold data are promoted past the gate —
+    "fresh legs help" is obvious, but "your pace suffers specifically
+    when leg freshness drops below 3/5" is not.
+    """
+    if (input_name, output_metric) in _OBVIOUS_PAIRS and not has_threshold:
+        return True
+    if input_name in _OBVIOUS_INPUTS_IF_NO_THRESHOLD and not has_threshold:
+        return True
+    return False
+
+
 def _is_beneficial(direction: str, output_metric: str) -> Optional[bool]:
     """Determine if the correlation direction is beneficial for the athlete.
 
@@ -534,55 +579,111 @@ def _build_insight_text(
     r: float,
     lag_days: int,
     output_metric: str = "efficiency",
+    threshold_value: Optional[float] = None,
+    threshold_direction: Optional[str] = None,
+    times_confirmed: Optional[int] = None,
 ) -> str:
-    """Build a single human-readable insight sentence.
+    """Build a coaching-voice insight sentence from correlation data.
 
-    For AMBIGUOUS metrics (raw efficiency, zone-filtered efficiency):
-      → neutral phrasing: "associated with changes in …"
-      → no "improves/declines" claim.
+    When threshold data is available, produces specific language:
+      "When your sleep drops below 6.5 hours, your easy pace tends to
+       suffer the next day."
 
-    For UNAMBIGUOUS metrics (pace_easy, completion, etc.):
-      → directional phrasing: "tends to improve/decline …"
+    Without threshold data, produces a general but still coaching-voiced
+    observation:
+      "Your easy pace is linked to your sleep duration — more sleep,
+       faster easy pace the next day."
+
+    Respects the Athlete Trust Safety Contract:
+      - Ambiguous metrics get neutral language (no "improves/declines")
+      - Directional claims only for whitelisted unambiguous metrics
     """
     friendly_input = _friendly(input_name)
     friendly_output = _friendly(output_metric)
 
-    # Lag phrasing
     if lag_days == 0:
         timing = ""
     elif lag_days == 1:
-        timing = " the following day"
+        timing = " the next day"
     else:
-        timing = f" within {lag_days} days"
+        timing = f" over the next {lag_days} days"
 
-    # Strength qualifier
-    if abs(r) >= 0.7:
-        qual = "strongly"
-    elif abs(r) >= 0.5:
-        qual = "noticeably"
-    else:
-        qual = "moderately"
+    confirmation = ""
+    if times_confirmed and times_confirmed >= 5:
+        confirmation = f" This has held up {times_confirmed} times in your data."
+    elif times_confirmed and times_confirmed >= 3:
+        confirmation = f" Confirmed {times_confirmed} times so far."
 
-    # Polarity-aware direction
     beneficial = _is_beneficial(direction, output_metric)
 
+    # --- THRESHOLD PATH: specific language with threshold enrichment ---
+    if threshold_value is not None and threshold_direction:
+        threshold_rounded = _format_threshold(input_name, threshold_value)
+
+        if threshold_direction == "below_matters":
+            condition = f"When your {friendly_input} drops below {threshold_rounded}"
+            # Below threshold = less input. If more input helps (beneficial),
+            # then less input hurts → "suffers". Vice versa.
+            outcome_is_bad = beneficial is True
+        else:
+            condition = f"When your {friendly_input} goes above {threshold_rounded}"
+            # Above threshold = more input. If more input helps (beneficial),
+            # then more input helps → "benefits". Vice versa.
+            outcome_is_bad = beneficial is False
+
+        if beneficial is None:
+            text = f"{condition}, your {friendly_output} shifts{timing}.{confirmation}"
+        elif outcome_is_bad:
+            text = f"{condition}, your {friendly_output} tends to suffer{timing}.{confirmation}"
+        else:
+            text = f"{condition}, your {friendly_output} tends to benefit{timing}.{confirmation}"
+
+        return text
+
+    # --- GENERAL PATH: no threshold, coaching-voiced observation ---
+    # beneficial=True means MORE input is good for the athlete.
+    # beneficial=False means MORE input is bad.
+    # The correlation direction (positive/negative) determines the
+    # input-output mechanical relationship, but the athlete cares about
+    # what to DO — more or less of the input.
     if beneficial is None:
-        # AMBIGUOUS metric — neutral language, no directional claim
         text = (
-            f"Based on your data: YOUR {friendly_output} is {qual} "
-            f"associated with changes{timing} when your {friendly_input} is higher."
+            f"Your {friendly_output} is linked to your {friendly_input}{timing}."
+            f"{confirmation}"
         )
     elif beneficial:
         text = (
-            f"Based on your data: YOUR {friendly_output} {qual} tends to improve"
-            f"{timing} when your {friendly_input} is higher."
+            f"More {friendly_input} tends to help your {friendly_output}{timing}."
+            f"{confirmation}"
         )
     else:
         text = (
-            f"Based on your data: YOUR {friendly_output} {qual} tends to decline"
-            f"{timing} when your {friendly_input} is higher."
+            f"More {friendly_input} tends to hurt your {friendly_output}{timing}."
+            f"{confirmation}"
         )
+
     return text
+
+
+def _format_threshold(input_name: str, value: float) -> str:
+    """Format a threshold value with appropriate units and precision."""
+    if "hours" in input_name or input_name in ("sleep_h", "sleep_hours", "work_hours"):
+        return f"{value:.1f} hours"
+    if "1_5" in input_name:
+        return f"{value:.0f}/5"
+    if "1_10" in input_name:
+        return f"{value:.0f}/10"
+    if input_name in ("hrv_rmssd", "garmin_hrv_5min_high", "garmin_hrv_overnight_avg"):
+        return f"{value:.0f}ms"
+    if "hr" in input_name.lower() and "ratio" not in input_name:
+        return f"{value:.0f} bpm"
+    if "pct" in input_name or "ratio" in input_name:
+        return f"{value:.0f}%"
+    if "temperature" in input_name:
+        return f"{value:.0f}°F"
+    if value == int(value):
+        return str(int(value))
+    return f"{value:.1f}"
 
 
 def _compute_confidence(r: float, p_adj: float, n: int) -> float:
@@ -698,6 +799,10 @@ def generate_n1_insights(
         direction = c.get("direction", "positive")
         strength = c.get("strength", "moderate")
         lag = c.get("time_lag_days", 0)
+
+        # Novelty gate: skip obvious findings (live path has no threshold data)
+        if _is_obvious(input_name, output_metric, has_threshold=False):
+            continue
 
         # Suppression check: skip if founder has suppressed this pattern
         fingerprint = _insight_fingerprint(input_name, direction, output_metric)

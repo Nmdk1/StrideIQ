@@ -43,7 +43,7 @@ from services.n1_insight_generator import (
 
 class TestInsightTextGeneration:
 
-    def test_text_starts_with_based_on_your_data(self):
+    def test_text_uses_coaching_voice(self):
         text = _build_insight_text(
             input_name="weekly_volume_km",
             direction="positive",
@@ -51,7 +51,7 @@ class TestInsightTextGeneration:
             r=0.5,
             lag_days=2,
         )
-        assert text.startswith("Based on your data:")
+        assert "your" in text.lower()
 
     def test_text_contains_your(self):
         text = _build_insight_text(
@@ -61,7 +61,7 @@ class TestInsightTextGeneration:
             r=0.4,
             lag_days=0,
         )
-        assert "YOUR" in text
+        assert "your" in text.lower()
 
     def test_text_is_non_prescriptive(self):
         """Insight should be observational, not prescriptive."""
@@ -81,54 +81,58 @@ class TestInsightTextGeneration:
 
     def test_lag_phrasing_one_day(self):
         text = _build_insight_text("sleep_hours", "positive", "moderate", 0.4, lag_days=1)
-        assert "following day" in text
+        assert "next day" in text
 
     def test_lag_phrasing_multi_day(self):
         text = _build_insight_text("sleep_hours", "positive", "moderate", 0.4, lag_days=3)
-        assert "within 3 days" in text
+        assert "next 3 days" in text
 
     # -- Ambiguous metric: raw efficiency --
 
     def test_efficiency_positive_r_gets_neutral_text(self):
-        """Raw efficiency is ambiguous — no 'improve' or 'decline'."""
+        """Raw efficiency is ambiguous — no 'improve/decline' or 'help/hurt'."""
         text = _build_insight_text("sleep_hours", "positive", "moderate", 0.5,
                                    lag_days=0, output_metric="efficiency")
-        assert "associated with changes" in text
+        assert "linked to" in text
         assert "improve" not in text.lower()
         assert "decline" not in text.lower()
+        assert "help" not in text.lower()
+        assert "hurt" not in text.lower()
 
     def test_efficiency_negative_r_gets_neutral_text(self):
         text = _build_insight_text("work_stress", "negative", "moderate", -0.5,
                                    lag_days=0, output_metric="efficiency")
-        assert "associated with changes" in text
+        assert "linked to" in text
         assert "improve" not in text.lower()
         assert "decline" not in text.lower()
+        assert "help" not in text.lower()
+        assert "hurt" not in text.lower()
 
     # -- Unambiguous metrics --
 
     def test_pace_easy_positive_r_means_worse(self):
-        """pace_easy: lower=better. Positive r (input up → pace up = slower) = decline."""
+        """pace_easy: lower=better. Positive r (more stress → slower) = hurts."""
         text = _build_insight_text("work_stress", "positive", "moderate", 0.5,
                                    lag_days=0, output_metric="pace_easy")
-        assert "decline" in text.lower()
+        assert "hurt" in text.lower()
 
     def test_pace_easy_negative_r_means_better(self):
-        """pace_easy: lower=better. Negative r (input up → pace down = faster) = improve."""
+        """pace_easy: lower=better. Negative r (more sleep → faster) = helps."""
         text = _build_insight_text("sleep_hours", "negative", "moderate", -0.5,
                                    lag_days=0, output_metric="pace_easy")
-        assert "improve" in text.lower()
+        assert "help" in text.lower()
 
     def test_completion_positive_r_means_better(self):
-        """completion_rate: higher=better. Positive r = improve."""
+        """completion_rate: higher=better. Positive r = helps."""
         text = _build_insight_text("sleep_hours", "positive", "moderate", 0.5,
                                    lag_days=0, output_metric="completion_rate")
-        assert "improve" in text.lower()
+        assert "help" in text.lower()
 
     def test_completion_negative_r_means_worse(self):
-        """completion_rate: higher=better. Negative r = decline."""
+        """completion_rate: higher=better. Negative r = hurts."""
         text = _build_insight_text("work_stress", "negative", "moderate", -0.5,
                                    lag_days=0, output_metric="completion_rate")
-        assert "decline" in text.lower()
+        assert "hurt" in text.lower()
 
 
 # ---------------------------------------------------------------------------
@@ -256,7 +260,9 @@ class TestMixedScenarioRegression:
             lower = text.lower()
             assert "improve" not in lower, f"'improve' found for direction={direction}"
             assert "decline" not in lower, f"'decline' found for direction={direction}"
-            assert "associated with changes" in lower
+            assert "help" not in lower, f"'help' found for direction={direction}"
+            assert "hurt" not in lower, f"'hurt' found for direction={direction}"
+            assert "linked to" in lower
 
     def test_ambiguous_insight_categorised_as_pattern(self):
         assert _categorize("positive", "efficiency") == "pattern"
@@ -264,18 +270,18 @@ class TestMixedScenarioRegression:
         assert _categorize("positive", "efficiency_threshold") == "pattern"
 
     def test_unambiguous_pace_correctly_directional(self):
-        """pace_easy: input up → pace down (negative r) = faster = improvement."""
-        text_improve = _build_insight_text(
+        """pace_easy: input up → pace down (negative r) = faster = helps."""
+        text_help = _build_insight_text(
             "sleep_hours", "negative", "moderate", -0.5, 0,
             output_metric="pace_easy",
         )
-        assert "improve" in text_improve.lower()
+        assert "help" in text_help.lower()
 
-        text_decline = _build_insight_text(
+        text_hurt = _build_insight_text(
             "work_stress", "positive", "moderate", 0.5, 0,
             output_metric="pace_easy",
         )
-        assert "decline" in text_decline.lower()
+        assert "hurt" in text_hurt.lower()
 
 
 # ---------------------------------------------------------------------------
@@ -360,9 +366,11 @@ class TestTier2MetadataSuppression:
             "sleep_hours", "positive", "moderate", 0.5, 0,
             output_metric="made_up_metric_abc",
         )
-        assert "associated with changes" in text
+        assert "linked to" in text
         assert "improve" not in text.lower()
         assert "decline" not in text.lower()
+        assert "help" not in text.lower()
+        assert "hurt" not in text.lower()
 
 
 # ---------------------------------------------------------------------------
@@ -397,8 +405,7 @@ class TestDirectionalWhitelist:
                 output_metric=metric,
             )
             lower = text.lower()
-            # Must use directional language (improve or decline)
-            assert "improve" in lower or "decline" in lower, (
+            assert "help" in lower or "hurt" in lower, (
                 f"Whitelisted metric '{metric}' did not get directional text"
             )
 
@@ -497,7 +504,7 @@ class TestGenerateN1Insights:
 
         assert len(insights) == 1
         assert insights[0].source == "n1"
-        assert "YOUR" in insights[0].text
+        assert "your" in insights[0].text.lower()
         assert insights[0].evidence["r"] == 0.55
 
     def test_filters_out_weak_correlations(self):
@@ -571,7 +578,7 @@ class TestGenerateN1Insights:
                                                  output_metric="efficiency")
 
         assert insights[0].category == "pattern"
-        assert "associated with changes" in insights[0].text
+        assert "linked to" in insights[0].text
 
     # -- Unambiguous metrics: proper directional categorisation --
 
