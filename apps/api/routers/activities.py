@@ -984,6 +984,7 @@ def get_activity_findings(
     from services.n1_insight_generator import _build_insight_text, _is_obvious
 
     result = []
+    seen_inputs: set = set()
     for f in candidates:
         if not _finding_relevant(f, actual_values):
             continue
@@ -992,7 +993,9 @@ def get_activity_findings(
         if _is_obvious(f.input_name, f.output_metric, has_threshold=has_threshold):
             continue
 
-        tier = "strong" if f.times_confirmed >= 8 else "confirmed"
+        # Input diversity: one finding per input signal max
+        if f.input_name in seen_inputs:
+            continue
 
         text = _build_insight_text(
             input_name=f.input_name,
@@ -1005,7 +1008,11 @@ def get_activity_findings(
             threshold_direction=f.threshold_direction,
             times_confirmed=f.times_confirmed,
         )
+        if text is None:
+            continue
 
+        seen_inputs.add(f.input_name)
+        tier = "strong" if f.times_confirmed >= 8 else "confirmed"
         evidence = f"Confirmed {f.times_confirmed} times" if f.times_confirmed else None
         result.append(FindingAnnotation(
             text=text,

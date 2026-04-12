@@ -50,7 +50,7 @@ from services.phase3_eligibility import (
 # ---------------------------------------------------------------------------
 
 def _make_correlation(
-    input_name="sleep_hours",
+    input_name="weekly_volume_km",
     r=0.55,
     p=0.001,
     n=50,
@@ -74,7 +74,7 @@ def _mock_corr_result(items):
     return {"correlations": items, "total_correlations_found": len(items)}
 
 
-def _gen(items, days_window=200, output_metric="efficiency", max_insights=10):
+def _gen(items, days_window=200, output_metric="completion_rate", max_insights=10):
     """Run generate_n1_insights with mocked correlation data."""
     corr = _mock_corr_result(items)
     with patch("services.correlation_engine.analyze_correlations", return_value=corr):
@@ -146,33 +146,39 @@ class TestInsightContent:
 
     def test_insight_uses_your_not_generic(self):
         """Text addresses the athlete directly."""
-        text = _build_insight_text("sleep_hours", "positive", "moderate", 0.5, lag_days=0)
+        text = _build_insight_text("weekly_volume_km", "positive", "moderate", 0.5,
+                                   lag_days=0, output_metric="completion_rate")
         assert "your" in text.lower()
 
     def test_insight_cites_specific_pattern(self):
         """Lag-based insight cites the specific timing."""
-        text = _build_insight_text("sleep_hours", "positive", "moderate", 0.5, lag_days=2)
+        text = _build_insight_text("weekly_volume_km", "positive", "moderate", 0.5,
+                                   lag_days=2, output_metric="completion_rate")
         assert "2 days" in text or "next 2" in text
 
     def test_insight_uses_coaching_voice(self):
         """Uses coaching-style language, not algorithm-speak."""
-        text = _build_insight_text("weekly_volume_km", "positive", "moderate", 0.5, lag_days=0)
+        text = _build_insight_text("weekly_volume_km", "positive", "moderate", 0.5,
+                                   lag_days=0, output_metric="completion_rate")
         assert "your" in text.lower()
 
     def test_insight_not_labeled_as_advice(self):
         """N=1 insights are observations, not prescriptions."""
-        text = _build_insight_text("weekly_volume_km", "positive", "strong", 0.7, lag_days=0)
+        text = _build_insight_text("weekly_volume_km", "positive", "strong", 0.7,
+                                   lag_days=0, output_metric="completion_rate")
         assert "you should" not in text.lower()
         assert "you must" not in text.lower()
 
     def test_no_raw_metrics_in_n1_insights(self):
         """No TSB, CTL, ATL, VDOT, EF, rMSSD in generated text."""
         inputs = [
-            "weekly_volume_km", "avg_hr", "sleep_hours", "hrv_rmssd",
-            "intensity_score", "efficiency", "completion_rate",
+            "weekly_volume_km", "avg_hr", "daily_protein_g", "hrv_rmssd",
+            "intensity_score", "completion_rate",
         ]
         for inp in inputs:
-            text = _build_insight_text(inp, "positive", "moderate", 0.5, 0)
+            text = _build_insight_text(inp, "positive", "moderate", 0.5, 0,
+                                       output_metric="completion_rate")
+            assert text is not None, f"Unexpected None for {inp}"
             assert not BANNED_PATTERN.search(text), f"Banned acronym in text for {inp}: {text}"
 
 
@@ -191,17 +197,18 @@ class TestCorrelationToInsight:
         assert "your" in insights[0].text.lower()
         assert insights[0].evidence["n"] == 50
 
-    def test_sleep_to_performance_insight(self):
-        """Sleep → efficiency: positive direction detected."""
-        items = [_make_correlation(input_name="sleep_hours", r=0.45, p=0.005, n=40)]
+    def test_daily_protein_to_performance_insight(self):
+        """Protein → completion_rate: positive direction detected."""
+        items = [_make_correlation(input_name="daily_protein_g", r=0.45, p=0.005, n=40)]
         insights = _gen(items)
         assert len(insights) == 1
         text_lower = insights[0].text.lower()
-        assert "sleep" in text_lower
+        assert "protein" in text_lower
 
     def test_volume_threshold_insight(self):
         """Volume input → insight mentioning volume."""
-        text = _build_insight_text("weekly_volume_km", "positive", "moderate", 0.5, lag_days=0)
+        text = _build_insight_text("weekly_volume_km", "positive", "moderate", 0.5,
+                                   lag_days=0, output_metric="completion_rate")
         assert "your" in text.lower()
         assert "volume" in text.lower() or "weekly" in text.lower()
 
@@ -214,22 +221,18 @@ class TestCorrelationToInsight:
 
     def test_hrv_individual_direction_insight(self):
         """HRV direction is discovered per-athlete, not assumed.
-        Ambiguous metric → neutral language regardless of r sign."""
+        Ambiguous metric → suppressed entirely rather than saying something meaningless."""
         text_pos = _build_insight_text("hrv_rmssd", "positive", "moderate", 0.5, 0,
                                         output_metric="efficiency")
         text_neg = _build_insight_text("hrv_rmssd", "negative", "moderate", -0.5, 0,
                                         output_metric="efficiency")
         for text in (text_pos, text_neg):
-            assert "improve" not in text.lower()
-            assert "decline" not in text.lower()
-            assert "help" not in text.lower()
-            assert "hurt" not in text.lower()
-            assert "linked to" in text
+            assert text is None
 
     def test_combination_correlation_insight(self):
         """Multiple correlations produce multiple insights, sorted by confidence."""
         items = [
-            _make_correlation(input_name="sleep_hours", r=0.6, p=0.001, n=60),
+            _make_correlation(input_name="daily_protein_g", r=0.6, p=0.001, n=60),
             _make_correlation(input_name="weekly_volume_km", r=0.4, p=0.005, n=40),
         ]
         insights = _gen(items)
@@ -365,7 +368,8 @@ class TestSafetyAndReview:
         with patch("services.correlation_engine.analyze_correlations", return_value=corr), \
              patch("services.phase3_eligibility._history_stats",
                    return_value={"history_span_days": 200}):
-            unsuppressed = generate_n1_insights(uuid4(), MagicMock(), days_window=200)
+            unsuppressed = generate_n1_insights(uuid4(), MagicMock(), days_window=200,
+                                                 output_metric="completion_rate")
 
         assert len(unsuppressed) >= 1
 

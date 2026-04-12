@@ -510,15 +510,30 @@ _OBVIOUS_PAIRS: frozenset = frozenset({
     ("readiness_1_5", "pace_easy"),
     ("soreness_1_5", "efficiency"),
     ("soreness_1_5", "pace_easy"),
+    ("sleep_quality_1_5", "efficiency"),
+    ("sleep_quality_1_5", "efficiency_easy"),
+    ("sleep_quality_1_5", "efficiency_threshold"),
+    ("sleep_quality_1_5", "pace_easy"),
+    ("sleep_hours", "efficiency"),
+    ("sleep_hours", "efficiency_easy"),
+    ("sleep_hours", "efficiency_threshold"),
+    ("sleep_h", "efficiency"),
+    ("sleep_h", "efficiency_easy"),
+    ("garmin_sleep_score", "efficiency"),
+    ("garmin_sleep_score", "efficiency_easy"),
+    ("garmin_sleep_score", "pace_easy"),
 })
 
-# Simple directional claims that are universally known. More interesting
-# is the THRESHOLD at which they matter, which Phase 3 text handles.
-# When a finding has threshold data it graduates from obvious to specific.
+# These inputs are universally known to affect performance.
+# Only worth showing if threshold data makes them specific.
 _OBVIOUS_INPUTS_IF_NO_THRESHOLD: frozenset = frozenset({
     "feedback_leg_feel",
     "feedback_energy_pre",
     "readiness_1_5",
+    "sleep_quality_1_5",
+    "sleep_hours",
+    "sleep_h",
+    "garmin_sleep_score",
 })
 
 
@@ -582,7 +597,7 @@ def _build_insight_text(
     threshold_value: Optional[float] = None,
     threshold_direction: Optional[str] = None,
     times_confirmed: Optional[int] = None,
-) -> str:
+) -> Optional[str]:
     """Build a coaching-voice insight sentence from correlation data.
 
     When threshold data is available, produces specific language:
@@ -632,7 +647,7 @@ def _build_insight_text(
             outcome_is_bad = beneficial is False
 
         if beneficial is None:
-            text = f"{condition}, your {friendly_output} shifts{timing}.{confirmation}"
+            return None
         elif outcome_is_bad:
             text = f"{condition}, your {friendly_output} tends to suffer{timing}.{confirmation}"
         else:
@@ -647,10 +662,7 @@ def _build_insight_text(
     # input-output mechanical relationship, but the athlete cares about
     # what to DO — more or less of the input.
     if beneficial is None:
-        text = (
-            f"Your {friendly_output} is linked to your {friendly_input}{timing}."
-            f"{confirmation}"
-        )
+        return None
     elif beneficial:
         text = (
             f"More {friendly_input} tends to help your {friendly_output}{timing}."
@@ -817,6 +829,8 @@ def generate_n1_insights(
             lag_days=lag,
             output_metric=output_metric,
         )
+        if text is None:
+            continue
 
         # Safety: reject if banned acronyms leak through friendly-name mapping
         if BANNED_PATTERN.search(text):

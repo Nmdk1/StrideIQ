@@ -100,7 +100,7 @@ def persist_correlation_findings(
         # Build category and confidence from N1 insight logic
         category = _categorize_finding(direction, output_metric)
         confidence = _compute_confidence(r, p, n)
-        insight_text = _build_finding_text(input_name, direction, strength, r, lag, output_metric)
+        insight_text = _build_finding_text(input_name, direction, strength, r, lag, output_metric) or ""
 
         # Suppression rules — confounded findings start inactive.
         # Counterintuitive direction only suppresses new findings (times_confirmed < 3).
@@ -135,7 +135,7 @@ def persist_correlation_findings(
                 threshold_value=existing.threshold_value,
                 threshold_direction=existing.threshold_direction,
                 times_confirmed=existing.times_confirmed,
-            )
+            ) or ""
             existing.partial_correlation_coefficient = partial_r
             existing.confounder_variable = confounder_var
             existing.is_confounded = is_confounded
