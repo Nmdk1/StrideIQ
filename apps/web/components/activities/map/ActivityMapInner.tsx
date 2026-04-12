@@ -10,6 +10,9 @@ import type { StreamPoint } from '@/components/activities/rsi/hooks/useStreamAna
 const CARTO_VOYAGER = 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png';
 const CARTO_ATTRIBUTION = '&copy; <a href="https://carto.com/">CARTO</a> &copy; <a href="https://www.openstreetmap.org/copyright">OSM</a>';
 
+/** When tiles don’t cover the viewport to the pixel (Leaflet + rounded corners), this shows through — must match basemap, not app chrome, or you get a “padding” ring. */
+const LEAFLET_BASEMAP_FALLBACK_BG = '#dce8e6';
+
 interface MileMarker {
   position: [number, number];
   label: string;
@@ -297,7 +300,7 @@ export default function ActivityMapInner({
         className={
           isFullscreen
             ? 'fixed inset-0 z-50 bg-slate-900'
-            : 'relative rounded-lg overflow-hidden border border-slate-700/30'
+            : 'route-map-surface relative rounded-lg overflow-hidden border border-slate-700/30'
         }
         style={isFullscreen ? undefined : { aspectRatio: '4 / 3' }}
       >
@@ -331,12 +334,12 @@ export default function ActivityMapInner({
           </div>
         )}
 
+        {/* absolute inset-0: map must paint edge-to-edge inside the rounded clip; no CSS filter here — filter + Leaflet caused a visible dark “gutter” around tiles */}
         <div
-          style={{
-            height: '100%',
-            width: '100%',
-            filter: 'brightness(0.75) contrast(1.1) saturate(0.5)',
-          }}
+          className={`absolute inset-0 z-0 min-h-0 min-w-0 ${
+            isFullscreen ? 'bg-slate-950' : ''
+          }`}
+          style={isFullscreen ? undefined : { backgroundColor: LEAFLET_BASEMAP_FALLBACK_BG }}
         >
           <MapContainer
             center={isPin ? startLatLng! : trackLatLng[0] || [0, 0]}
@@ -345,7 +348,12 @@ export default function ActivityMapInner({
             zoomControl={true}
             attributionControl={true}
             dragging={true}
-            style={{ height: '100%', width: '100%', background: '#0f172a' }}
+            className="z-0 !block h-full w-full"
+            style={{
+              height: '100%',
+              width: '100%',
+              background: 'transparent',
+            }}
           >
             <TileLayer url={CARTO_VOYAGER} attribution={CARTO_ATTRIBUTION} />
             <FitBounds bounds={bounds} />
