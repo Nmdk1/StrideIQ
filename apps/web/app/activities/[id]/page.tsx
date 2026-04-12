@@ -6,17 +6,14 @@
  * Restructured around the Run Shape Canvas as the centerpiece.
  * Spec: docs/specs/RSI_WIRING_SPEC.md (Layer 2)
  *
- * Layout (top to bottom):
- *   1. Header (back + name + date)
- *   2. Run Shape Canvas (hero — full width)
- *   3. Coachable Moments (gated: confidence >= 0.8 AND moments.length > 0)
- *   4. Reflection Prompt (3-tap: harder | expected | easier)
- *   5. Metrics Ribbon (compact horizontal strip)
- *   6. Runtoon (always visible — CTA for photo upload if not set up)
- *   --- "Show details" collapsible below ---
- *   7. Plan Comparison (conditional — from stream analysis)
- *   8. "Why This Run?" + Context Analysis
- *   9. "Compare to Similar" (existing link)
+ * Layout (top to bottom) — runs:
+ *   1. Header
+ *   2. Stats strip
+ *   3. Run Shape Canvas (full bleed on narrow viewports)
+ *   4. Route map (short; collapsed on small screens until "Show map")
+ *   5. Reflection, perception, workout type, wellness
+ *   6. Findings, then Runtoon
+ *   7. "Show details" → plan comparison, Why This Run, etc.
  */
 
 import React, { useState, useRef, useEffect } from 'react';
@@ -187,6 +184,17 @@ export default function ActivityDetailPage() {
   const streamAnalysis = useStreamAnalysis(activityId);
   const analysisData = isAnalysisData(streamAnalysis.data) ? streamAnalysis.data : null;
   const [showDetails, setShowDetails] = useState(false);
+  /** Mobile: map starts collapsed so run shape stays above the fold; desktop: expanded */
+  const [routeMapOpen, setRouteMapOpen] = useState(false);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const mq = window.matchMedia('(min-width: 768px)');
+    const sync = () => setRouteMapOpen(mq.matches);
+    sync();
+    mq.addEventListener('change', sync);
+    return () => mq.removeEventListener('change', sync);
+  }, []);
 
   // Title editing
   const queryClient = useQueryClient();
@@ -453,30 +461,7 @@ export default function ActivityDetailPage() {
           </div>
         ) : (
         <StreamHoverProvider>
-        {/* ── 2. Route Map (top of page — compact, wide) ── */}
-        {activity.gps_track && activity.gps_track.length > 1 && (
-          <div className="mb-4">
-            <RouteContext
-              activityId={activityId}
-              track={activity.gps_track}
-              startCoords={activity.start_coords}
-              sportType={activity.sport_type || 'run'}
-              startTime={activity.start_time}
-              streamPoints={analysisData?.stream}
-              weather={{
-                temperature_f: activity.temperature_f,
-                weather_condition: activity.weather_condition,
-                humidity_pct: activity.humidity_pct,
-                heat_adjustment_pct: activity.heat_adjustment_pct,
-              }}
-              distanceM={activity.distance_m}
-              durationS={activity.moving_time_s || activity.elapsed_time_s}
-              heatAdjustmentPct={activity.heat_adjustment_pct}
-            />
-          </div>
-        )}
-
-        {/* ── 3. Stats Banner (compact horizontal strip below map) ── */}
+        {/* ── 2. Stats Banner (compact) — above run shape so the chart is visible first on mobile ── */}
         <div className="mb-4">
           <div className="flex items-center gap-4 overflow-x-auto pb-1">
             <MetricPill label="Distance" value={formatDistance(activity.distance_m)} />
@@ -511,8 +496,8 @@ export default function ActivityDetailPage() {
           )}
         </div>
 
-        {/* ── 4. Run Shape Canvas + Splits (together — screenshottable) ── */}
-        <div className="mb-4">
+        {/* ── 3. Run Shape Canvas + Splits — hero; cancel horizontal padding on small screens ── */}
+        <div className="mb-4 -mx-4 sm:mx-0">
           <RunShapeCanvas
             activityId={activityId}
             splits={splits ?? null}
@@ -523,6 +508,41 @@ export default function ActivityDetailPage() {
             temperatureF={activity.temperature_f}
           />
         </div>
+
+        {/* ── 4. Route map — short; on mobile collapsed by default (Show map) ── */}
+        {activity.gps_track && activity.gps_track.length > 1 && (
+          <div className="mb-4">
+            <div className="flex items-center justify-between md:hidden mb-2 px-0">
+              <span className="text-xs font-medium text-slate-500 uppercase tracking-wide">Route</span>
+              <button
+                type="button"
+                onClick={() => setRouteMapOpen((v) => !v)}
+                className="text-sm text-orange-400/90 hover:text-orange-300"
+              >
+                {routeMapOpen ? 'Hide map' : 'Show map'}
+              </button>
+            </div>
+            <div className={routeMapOpen ? 'block' : 'hidden md:block'}>
+              <RouteContext
+                activityId={activityId}
+                track={activity.gps_track}
+                startCoords={activity.start_coords}
+                sportType={activity.sport_type || 'run'}
+                startTime={activity.start_time}
+                streamPoints={analysisData?.stream}
+                weather={{
+                  temperature_f: activity.temperature_f,
+                  weather_condition: activity.weather_condition,
+                  humidity_pct: activity.humidity_pct,
+                  heat_adjustment_pct: activity.heat_adjustment_pct,
+                }}
+                distanceM={activity.distance_m}
+                durationS={activity.moving_time_s || activity.elapsed_time_s}
+                heatAdjustmentPct={activity.heat_adjustment_pct}
+              />
+            </div>
+          </div>
+        )}
 
         {/* ── 5. Reflection Prompt (quick 3-tap) ── */}
         <ReflectionPrompt activityId={activityId} className="mb-4" />
@@ -576,12 +596,7 @@ export default function ActivityDetailPage() {
           </div>
         )}
 
-        {/* ── 6. Runtoon (always visible — CTA drives discovery for new users) ── */}
-        <div className="mb-6">
-          <RuntoonCard activityId={activityId} />
-        </div>
-
-        {/* ── Finding annotations ── */}
+        {/* ── Finding annotations (above Runtoon — chart/splits are the hero) ── */}
         {findings && findings.length > 0 && (
           <div className="mb-6 space-y-2">
             {findings.map((f, i) => (
@@ -599,6 +614,11 @@ export default function ActivityDetailPage() {
             ))}
           </div>
         )}
+
+        {/* ── Runtoon (below findings — not above fold) ── */}
+        <div className="mb-6">
+          <RuntoonCard activityId={activityId} />
+        </div>
 
         {/* ── A6: Collapsible details (Plan Comparison through Narrative Context) ── */}
         <div className="mb-6">

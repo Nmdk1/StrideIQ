@@ -103,7 +103,9 @@ interface ChartPoint {
 // ---------------------------------------------------------------------------
 
 const MAX_DISPLAY_POINTS = 500;
-const CHART_HEIGHT = 256;
+/** Mobile ~16:9 feel at typical phone width; taller on md+ */
+const CHART_HEIGHT_MOBILE = 200;
+const CHART_HEIGHT_DESKTOP = 280;
 
 /** RSI chart scaling — altitude relief (meters, MSL).
  * Min span prevents gentle rolling terrain from looking like mountains.
@@ -880,6 +882,16 @@ export function RunShapeCanvas({
   // Container sizing (ref + state declared here; effect added after data prep)
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const [chartWidth, setChartWidth] = useState(0);
+  const [chartHeight, setChartHeight] = useState(CHART_HEIGHT_MOBILE);
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const mq = window.matchMedia('(min-width: 768px)');
+    const apply = () =>
+      setChartHeight(mq.matches ? CHART_HEIGHT_DESKTOP : CHART_HEIGHT_MOBILE);
+    apply();
+    mq.addEventListener('change', apply);
+    return () => mq.removeEventListener('change', apply);
+  }, []);
 
   // --- Data preparation ---
   // The API returns a flat StreamAnalysisData (all analysis fields + stream array).
@@ -1226,7 +1238,7 @@ export function RunShapeCanvas({
       {/* Chart container: canvas + segments + SVG + interaction overlay stacked */}
       <div
         className="relative overflow-hidden"
-        style={{ height: CHART_HEIGHT }}
+        style={{ height: chartHeight }}
         ref={chartContainerRef}
         data-testid="chart-container"
       >
@@ -1236,7 +1248,7 @@ export function RunShapeCanvas({
         <EffortGradientCanvas
           data={chartData}
           width={chartWidth}
-          height={CHART_HEIGHT}
+          height={chartHeight}
         />
 
         {/* Layer 1: Segment overlay bands (AC-6, behind traces) */}
@@ -1257,7 +1269,7 @@ export function RunShapeCanvas({
         >
           <ComposedChart
             width={chartWidth}
-            height={CHART_HEIGHT}
+            height={chartHeight}
             data={chartData}
             margin={margin}
           >

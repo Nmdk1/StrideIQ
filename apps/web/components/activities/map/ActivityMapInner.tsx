@@ -37,6 +37,22 @@ export interface Props {
   hoveredIndex?: number | null;
 }
 
+/** Leaflet expects [lat, lng]. Some sources store [lng, lat]; detect via first coordinate. */
+function normalizeTrackLatLng(track: [number, number][]): [number, number][] {
+  if (track.length === 0) return track;
+  const [a, b] = track[0];
+  if (Math.abs(a) > 90 && Math.abs(b) <= 90) {
+    return track.map(([x, y]) => [y, x] as [number, number]);
+  }
+  return track;
+}
+
+function normalizeCoordPair(c: [number, number]): [number, number] {
+  const [a, b] = c;
+  if (Math.abs(a) > 90 && Math.abs(b) <= 90) return [b, a];
+  return c;
+}
+
 function haversine([lat1, lon1]: [number, number], [lat2, lon2]: [number, number]): number {
   const R = 6371000;
   const dLat = (lat2 - lat1) * Math.PI / 180;
@@ -180,6 +196,12 @@ export default function ActivityMapInner({
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [showEffort, setShowEffort] = useState(false);
 
+  const trackLatLng = useMemo(() => normalizeTrackLatLng(track), [track]);
+  const startLatLng = useMemo((): [number, number] | null => {
+    if (!startCoords) return null;
+    return normalizeCoordPair(startCoords);
+  }, [startCoords]);
+
   const hasPaceData = useMemo(
     () => streamPoints && streamPoints.some(p => p.lat != null && p.pace != null),
     [streamPoints],
@@ -191,19 +213,19 @@ export default function ActivityMapInner({
   );
 
   const bounds = useMemo(() => {
-    if (track.length === 0 && startCoords) return [startCoords, startCoords] as LatLngBoundsExpression;
-    if (track.length === 0) return [[0, 0], [0, 0]] as LatLngBoundsExpression;
+    if (trackLatLng.length === 0 && startLatLng) return [startLatLng, startLatLng] as LatLngBoundsExpression;
+    if (trackLatLng.length === 0) return [[0, 0], [0, 0]] as LatLngBoundsExpression;
     let minLat = Infinity, maxLat = -Infinity, minLng = Infinity, maxLng = -Infinity;
-    for (const [lat, lng] of track) {
+    for (const [lat, lng] of trackLatLng) {
       if (lat < minLat) minLat = lat;
       if (lat > maxLat) maxLat = lat;
       if (lng < minLng) minLng = lng;
       if (lng > maxLng) maxLng = lng;
     }
     return [[minLat, minLng], [maxLat, maxLng]] as LatLngBoundsExpression;
-  }, [track, startCoords]);
+  }, [trackLatLng, startLatLng]);
 
-  const mileMarkersAll = useMemo(() => computeMileMarkers(track, unitSystem), [track, unitSystem]);
+  const mileMarkersAll = useMemo(() => computeMileMarkers(trackLatLng, unitSystem), [trackLatLng, unitSystem]);
   const mileMarkers = useMemo(() => {
     const total = mileMarkersAll.length;
     if (total <= 5) return mileMarkersAll;
@@ -213,8 +235,9 @@ export default function ActivityMapInner({
       return mile === 1 || mile === total || mile % interval === 0;
     });
   }, [mileMarkersAll]);
-  const isPin = track.length === 0 && startCoords;
-  const isLoop = track.length > 1 && haversine(track[0], track[track.length - 1]) < 50;
+  const isPin = trackLatLng.length === 0 && startLatLng;
+  const isLoop =
+    trackLatLng.length > 1 && haversine(trackLatLng[0], trackLatLng[trackLatLng.length - 1]) < 50;
 
   const hoveredCoord = useMemo(() => {
     if (hoveredIndex == null || !streamPoints) return null;
@@ -253,7 +276,7 @@ export default function ActivityMapInner({
   }, [streamPoints]);
 
   // Use hi-res track for glow when available, fallback to coarse gps_track
-  const glowTrack = hiResTrack.length > 1 ? hiResTrack : track;
+  const glowTrack = hiResTrack.length > 1 ? hiResTrack : trackLatLng;
 
   return (
     <div>
@@ -261,9 +284,8 @@ export default function ActivityMapInner({
         className={
           isFullscreen
             ? 'fixed inset-0 z-50 bg-slate-900'
-            : 'relative rounded-lg overflow-hidden border border-slate-700/30'
+            : 'relative rounded-lg overflow-hidden border border-slate-700/30 h-[200px] md:h-[280px]'
         }
-        style={isFullscreen ? undefined : { aspectRatio: '2.2 / 1' }}
       >
         {/* Fullscreen toggle */}
         <button
@@ -303,7 +325,7 @@ export default function ActivityMapInner({
           }}
         >
           <MapContainer
-            center={isPin ? startCoords! : track[0] || [0, 0]}
+            center={isPin ? startLatLng! : trackLatLng[0] || [0, 0]}
             zoom={14}
             scrollWheelZoom={true}
             zoomControl={true}
@@ -333,9 +355,9 @@ export default function ActivityMapInner({
                 />
               ))
             ) : (
-              track.length > 1 && (
+              trackLatLng.length > 1 && (
                 <Polyline
-                  positions={track}
+                  positions={trackLatLng}
                   pathOptions={{ color: accentColor, weight: 4, opacity: 1, lineCap: 'round', lineJoin: 'round' }}
                 />
               )
@@ -347,24 +369,24 @@ export default function ActivityMapInner({
             ))}
 
             {/* Start/end markers — combined for loops, separate otherwise */}
-            {track.length > 0 && isLoop ? (
+            {trackLatLng.length > 0 && isLoop ? (
               <CircleMarker
-                center={track[0]}
+                center={trackLatLng[0]}
                 radius={8}
                 pathOptions={{ color: '#fff', weight: 2, fillColor: '#22c55e', fillOpacity: 1 }}
               />
             ) : (
               <>
-                {track.length > 0 && (
+                {trackLatLng.length > 0 && (
                   <CircleMarker
-                    center={track[0]}
+                    center={trackLatLng[0]}
                     radius={7}
                     pathOptions={{ color: '#fff', weight: 2, fillColor: '#22c55e', fillOpacity: 1 }}
                   />
                 )}
-                {track.length > 1 && (
+                {trackLatLng.length > 1 && (
                   <CircleMarker
-                    center={track[track.length - 1]}
+                    center={trackLatLng[trackLatLng.length - 1]}
                     radius={7}
                     pathOptions={{ color: '#fff', weight: 2, fillColor: '#ef4444', fillOpacity: 1 }}
                   />
@@ -382,9 +404,9 @@ export default function ActivityMapInner({
             )}
 
             {/* Pin marker (no track) */}
-            {isPin && startCoords && (
+            {isPin && startLatLng && (
               <CircleMarker
-                center={startCoords}
+                center={startLatLng}
                 radius={7}
                 pathOptions={{ color: accentColor, fillColor: accentColor, fillOpacity: 0.8, weight: 2 }}
               />
