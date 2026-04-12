@@ -309,7 +309,7 @@ This **supports** the phased plan’s **de-emphasis of outbound** and **emphasis
 - **Drive-by “check out my app”** posts are **high-ban-risk** and **low-trust**.
 - **Earned** mention (someone else recommends your product) is the only **reliable** organic pattern for builders who will not farm karma.
 
-**Founder-specific (StrideIQ):** The founder reports a **permanent ban** from **r/AdvancedRunning** after a dispute involving **moderation and competitor mention**—regardless of fault, **Reddit cannot be assigned** as a channel the founder will **personally** cultivate. **Do not** recommend “post in weekly thread” or “rebuild karma” as **founder** work. Third-party **earned** Reddit threads remain possible as **read-only** research only (see §5).
+**Founder-specific (StrideIQ):** The founder was **permanently banned** from **r/AdvancedRunning** by a moderator who **profits from a competing product (Runalyze)**. The founder considers the action unjust, abusive, and ethically abhorrent — Reddit provides **no recourse or appeal** for moderator abuse. This is not a self-promotion violation or behavioral issue on the founder’s part; it is a **targeted block by a financially conflicted gatekeeper**. The largest serious-running subreddit is therefore **permanently closed** as a founder channel. **Do not** recommend Reddit participation, karma building, or “post in the weekly thread” as founder work — the door is shut by hostile action, not by choice. Third-party **earned** Reddit mentions remain possible as **read-only** research signal only (see §5).
 
 **Practical conclusion:** Prefer **product-mediated** discovery (SEO, shareable cards, Strava, **Show HN**, credible press/podcast) over **founder participation** on Reddit.
 
