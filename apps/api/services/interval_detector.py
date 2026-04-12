@@ -101,12 +101,16 @@ def _is_stopped(ls: LabeledSplit) -> bool:
     time_s = ls.elapsed_time or ls.moving_time or 0
     if dist < 10:
         return True
-    if dist < 200 and time_s > 30:
-        return True
     if dist > 0 and time_s > 0:
         speed_m_s = dist / time_s
         if speed_m_s < 0.5:
             return True
+        # Short segment at running pace is NOT stopped (e.g. partial mile
+        # at a Garmin auto-lap boundary)
+        if speed_m_s >= 1.5:
+            return False
+    if dist < 200 and time_s > 30:
+        return True
     return False
 
 
@@ -270,10 +274,11 @@ def detect_interval_structure(splits_data: list) -> IntervalAnalysis:
         return _passthrough_labeled(labeled)
 
     fast_threshold = _find_pace_gap(sorted_paces)
+    MIN_WORK_DISTANCE_M = 400
     for seg in running_segments:
         p = seg.weighted_pace
-        if p is not None:
-            seg._is_fast = p < fast_threshold
+        if p is not None and p < fast_threshold and seg.total_distance >= MIN_WORK_DISTANCE_M:
+            seg._is_fast = True
         else:
             seg._is_fast = False
 
