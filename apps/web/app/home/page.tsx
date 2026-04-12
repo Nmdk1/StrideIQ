@@ -47,6 +47,7 @@ import {
   Bike,
   Mountain,
   StretchHorizontal,
+  UtensilsCrossed,
 } from 'lucide-react';
 
 // --- Workout styling ---
@@ -917,6 +918,23 @@ export default function HomePage() {
               />
             ) : null}
           </div>
+
+          {/* Nutrition — daily-use shortcut */}
+          <Link
+            href="/nutrition"
+            className="block group"
+          >
+            <div className="flex items-center gap-3 bg-slate-800/50 border border-slate-700/50 rounded-xl px-4 py-3 transition-colors group-hover:border-emerald-600/40 group-active:bg-slate-700/50">
+              <div className="flex items-center justify-center w-9 h-9 rounded-lg bg-emerald-500/20 flex-shrink-0">
+                <UtensilsCrossed className="w-5 h-5 text-emerald-400" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-white">Log Nutrition</p>
+                <p className="text-xs text-slate-500">Photo, scan, or type what you ate</p>
+              </div>
+              <ArrowRight className="w-4 h-4 text-slate-600 group-hover:text-emerald-400 transition-colors flex-shrink-0" />
+            </div>
+          </Link>
 
           {/* Finding or Cold-Start */}
           {data.finding ? (

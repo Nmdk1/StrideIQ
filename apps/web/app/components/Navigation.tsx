@@ -87,6 +87,7 @@ export default function Navigation() {
     { href: '/home', label: 'Home', icon: '🏠' },
     { href: '/coach', label: 'Coach', icon: '🤖' },
     { href: '/calendar', label: 'Calendar', icon: '📅' },
+    { href: '/nutrition', label: 'Nutrition', icon: '🥗' },
     ...(user?.has_correlations ? [{ href: '/manual', label: 'Manual', icon: '📖' }] : []),
     { href: '/progress', label: 'Progress', icon: '📊' },
   ];
@@ -95,7 +96,6 @@ export default function Navigation() {
     { href: '/activities', label: 'Activities', icon: '🏃' },
     { href: '/analytics', label: 'Analytics', icon: '📈' },
     { href: '/training-load', label: 'Load', icon: '📈' },
-    { href: '/nutrition', label: 'Nutrition', icon: '🥗' },
     { href: '/tools', label: 'Tools', icon: '🧮' },
     ...(user?.has_correlations ? [
       { href: '/fingerprint', label: 'Fingerprint', icon: '🧬' },

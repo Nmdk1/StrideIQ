@@ -9,6 +9,7 @@ import {
   CalendarDays,
   TrendingUp,
   BookOpen,
+  UtensilsCrossed,
   MoreHorizontal,
 } from "lucide-react";
 import { useAuth } from "@/lib/hooks/useAuth";
@@ -17,7 +18,7 @@ const TABS = [
   { href: "/home", label: "Home", icon: Home, accent: false },
   { href: "/calendar", label: "Calendar", icon: CalendarDays, accent: false },
   { href: "/coach", label: "Coach", icon: MessageSquare, accent: true },
-  { href: "/progress", label: "Progress", icon: TrendingUp, accent: false },
+  { href: "/nutrition", label: "Nutrition", icon: UtensilsCrossed, accent: false },
 ] as const;
 
 const TABS_WITH_MANUAL = [
@@ -25,12 +26,12 @@ const TABS_WITH_MANUAL = [
   { href: "/calendar", label: "Calendar", icon: CalendarDays, accent: false },
   { href: "/coach", label: "Coach", icon: MessageSquare, accent: true },
   { href: "/manual", label: "Manual", icon: BookOpen, accent: false },
-  { href: "/progress", label: "Progress", icon: TrendingUp, accent: false },
+  { href: "/nutrition", label: "Nutrition", icon: UtensilsCrossed, accent: false },
 ] as const;
 
 const BASE_MORE_ITEMS = [
+  { href: "/progress", label: "Progress" },
   { href: "/activities", label: "Activities" },
-  { href: "/nutrition", label: "Nutrition" },
   { href: "/reports", label: "Reports" },
   { href: "/tools", label: "Tools" },
   { href: "/settings", label: "Settings" },
