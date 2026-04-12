@@ -32,6 +32,7 @@ import { GoingInStrip } from '@/components/activities/GoingInStrip';
 import { GoingInCard } from '@/components/activities/GoingInCard';
 import { FindingsCards } from '@/components/activities/FindingsCards';
 import { WhyThisRun } from '@/components/activities/WhyThisRun';
+import { RunIntelligence } from '@/components/activities/RunIntelligence';
 import { AnalysisTabPanel } from '@/components/activities/AnalysisTabPanel';
 
 interface Activity {
@@ -572,6 +573,7 @@ export default function ActivityDetailPage() {
             ),
             context: (
               <div className="space-y-4">
+                <RunIntelligence activityId={activityId} />
                 <GoingInCard
                   preRecoveryHrv={activity.pre_recovery_hrv}
                   preOvernightHrv={activity.pre_overnight_hrv}

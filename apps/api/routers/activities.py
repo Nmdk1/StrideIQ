@@ -873,6 +873,45 @@ def get_activity_attribution(
     return run_attribution_to_dict(result)
 
 
+@router.get("/{activity_id}/intelligence")
+def get_activity_intelligence(
+    activity_id: str,
+    current_user: Athlete = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Synthesized coaching summary for a single run.
+    Assembles stream analysis, attribution, splits, classification,
+    pre-state, and historical comparison into a headline + body.
+    """
+    from services.run_intelligence import generate_run_intelligence
+
+    try:
+        UUID(activity_id)
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid activity ID format",
+        )
+
+    result = generate_run_intelligence(activity_id, str(current_user.id), db)
+
+    if not result:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No intelligence available for this activity",
+        )
+
+    return {
+        "headline": result.headline,
+        "body": result.body,
+        "highlights": [
+            {"label": h.label, "value": h.value, "color": h.color}
+            for h in result.highlights
+        ],
+    }
+
+
 class FindingAnnotation(BaseModel):
     """A correlation finding relevant to a specific activity."""
     text: str
