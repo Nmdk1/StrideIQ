@@ -177,14 +177,11 @@ function FitBounds({ bounds }: { bounds: LatLngBoundsExpression }) {
   const didFit = useRef(false);
   useEffect(() => {
     if (!didFit.current) {
-      // Delay fit until after CSS layout settles so the container has
-      // its final dimensions — otherwise bounds are calculated against
-      // the wrong viewport and the route ends up tiny.
+      didFit.current = true;
       const timer = setTimeout(() => {
         map.invalidateSize();
-        map.fitBounds(bounds, { padding: [20, 20], maxZoom: 17 });
-      }, 200);
-      didFit.current = true;
+        map.fitBounds(bounds, { padding: [12, 12] });
+      }, 150);
       return () => clearTimeout(timer);
     }
   }, [map, bounds]);
