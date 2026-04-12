@@ -177,7 +177,7 @@ export default function ActivityDetailPage() {
   const streamAnalysis = useStreamAnalysis(activityId);
   const analysisData = isAnalysisData(streamAnalysis.data) ? streamAnalysis.data : null;
   const [showDetails, setShowDetails] = useState(false);
-  const [activeTab, setActiveTab] = useState<ActivityTabId>('splits');
+  const [activeTab, setActiveTab] = useState<ActivityTabId>('overview');
   /** Mobile: user toggles map; desktop (md+): always show — do not mount Leaflet while `display:none` (zero-size fit). */
   const [routeMapOpen, setRouteMapOpen] = useState(false);
   /** Avoid SSR/client mismatch from matchMedia; first paint matches server (no map), then client commits. */
@@ -503,60 +503,67 @@ export default function ActivityDetailPage() {
 
         <GoingInCompactStrip activity={activity} />
 
-        {/* Chart — always visible above tabs */}
-        <div className="mb-4 -mx-4 sm:mx-0">
-          <RunShapeCanvas
-            activityId={activityId}
-            splits={splits ?? null}
-            intervalSummary={intervalSummary}
-            provider={activity.provider}
-            deviceName={activity.device_name}
-            heatAdjustmentPct={activity.heat_adjustment_pct}
-            temperatureF={activity.temperature_f}
-            splitTableRowRefs={splitTableRowRefs}
-          />
-        </div>
-
-        {/* Map — always visible, hover-linked to chart */}
-        {activity.gps_track && activity.gps_track.length > 1 && (
-          <div className="mb-4">
-            <div className="flex items-center justify-between md:hidden mb-2 px-0">
-              <span className="text-xs font-medium text-slate-500 uppercase tracking-wide">Route</span>
-              <button
-                type="button"
-                onClick={() => setRouteMapOpen((v) => !v)}
-                className="text-sm text-orange-400/90 hover:text-orange-300"
-              >
-                {routeMapOpen ? 'Hide map' : 'Show map'}
-              </button>
-            </div>
-            {showRouteMap && (
-              <RouteContext
-                activityId={activityId}
-                track={activity.gps_track}
-                startCoords={activity.start_coords}
-                sportType={activity.sport_type || 'run'}
-                startTime={activity.start_time}
-                streamPoints={analysisData?.stream}
-                weather={{
-                  temperature_f: activity.temperature_f,
-                  weather_condition: activity.weather_condition,
-                  humidity_pct: activity.humidity_pct,
-                  heat_adjustment_pct: activity.heat_adjustment_pct,
-                }}
-                distanceM={activity.distance_m}
-                durationS={activity.moving_time_s || activity.elapsed_time_s}
-                heatAdjustmentPct={activity.heat_adjustment_pct}
-                mapAspectRatio="16 / 9"
-              />
-            )}
-          </div>
-        )}
-
         <ActivityTabs
           activeTab={activeTab}
           onTabChange={setActiveTab}
           panels={{
+            overview: (
+              <>
+                <div className="mb-4 -mx-4 sm:mx-0">
+                  <RunShapeCanvas
+                    activityId={activityId}
+                    splits={splits ?? null}
+                    intervalSummary={intervalSummary}
+                    provider={activity.provider}
+                    deviceName={activity.device_name}
+                    heatAdjustmentPct={activity.heat_adjustment_pct}
+                    temperatureF={activity.temperature_f}
+                    splitTableRowRefs={splitTableRowRefs}
+                  />
+                </div>
+                <div
+                  className="min-h-[88px] rounded-lg border border-dashed border-slate-600/40 bg-slate-800/20 mb-4 px-4 py-3"
+                  aria-label="Insights for this chart"
+                />
+                {activity.gps_track && activity.gps_track.length > 1 && (
+                  <div className="mb-4">
+                    <div className="flex items-center justify-between md:hidden mb-2 px-0">
+                      <span className="text-xs font-medium text-slate-500 uppercase tracking-wide">Route</span>
+                      <button
+                        type="button"
+                        onClick={() => setRouteMapOpen((v) => !v)}
+                        className="text-sm text-orange-400/90 hover:text-orange-300"
+                      >
+                        {routeMapOpen ? 'Hide map' : 'Show map'}
+                      </button>
+                    </div>
+                    {showRouteMap && (
+                      <RouteContext
+                        activityId={activityId}
+                        track={activity.gps_track}
+                        startCoords={activity.start_coords}
+                        sportType={activity.sport_type || 'run'}
+                        startTime={activity.start_time}
+                        streamPoints={analysisData?.stream}
+                        weather={{
+                          temperature_f: activity.temperature_f,
+                          weather_condition: activity.weather_condition,
+                          humidity_pct: activity.humidity_pct,
+                          heat_adjustment_pct: activity.heat_adjustment_pct,
+                        }}
+                        distanceM={activity.distance_m}
+                        durationS={activity.moving_time_s || activity.elapsed_time_s}
+                        heatAdjustmentPct={activity.heat_adjustment_pct}
+                        mapAspectRatio="16 / 9"
+                      />
+                    )}
+                  </div>
+                )}
+                <div className="mb-2">
+                  <RuntoonCard activityId={activityId} />
+                </div>
+              </>
+            ),
             splits: (
               <ActivitySplitsTabPanel
                 activityId={activityId}
@@ -659,10 +666,6 @@ export default function ActivityDetailPage() {
             ),
           }}
         />
-
-        <div className="mt-4 mb-2">
-          <RuntoonCard activityId={activityId} />
-        </div>
 
         {/* ── Plan vs actual (stays until Analysis tab consolidation in Step 4) ── */}
         <div className="mb-6 mt-8">
