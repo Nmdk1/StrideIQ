@@ -31,6 +31,7 @@ import { ActivitySplitsTabPanel } from '@/components/activities/ActivitySplitsTa
 import { GoingInStrip } from '@/components/activities/GoingInStrip';
 import { GoingInCard } from '@/components/activities/GoingInCard';
 import { FindingsCards } from '@/components/activities/FindingsCards';
+import { AnalysisTabPanel } from '@/components/activities/AnalysisTabPanel';
 
 interface Activity {
   id: string;
@@ -179,7 +180,6 @@ export default function ActivityDetailPage() {
   // Must be called before any conditional returns (React hooks rules)
   const streamAnalysis = useStreamAnalysis(activityId);
   const analysisData = isAnalysisData(streamAnalysis.data) ? streamAnalysis.data : null;
-  const [showDetails, setShowDetails] = useState(false);
   const [activeTab, setActiveTab] = useState<ActivityTabId>('overview');
   /** Mobile: user toggles map; desktop (md+): always show — do not mount Leaflet while `display:none` (zero-size fit). */
   const [routeMapOpen, setRouteMapOpen] = useState(false);
@@ -328,12 +328,6 @@ export default function ActivityDetailPage() {
       return `${hrs}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
     }
     return `${mins}:${secs.toString().padStart(2, '0')}`;
-  };
-
-  // Format minutes (from backend PlanComparison) to h:mm:ss display
-  const formatMinutesToDuration = (minutes: number): string => {
-    const totalSeconds = Math.round(minutes * 60);
-    return formatDuration(totalSeconds);
   };
 
   // Calculate pace in seconds/km from activity data
@@ -594,9 +588,10 @@ export default function ActivityDetailPage() {
               />
             ),
             analysis: (
-              <p className="text-slate-500 text-sm py-10 px-2 rounded-lg border border-dashed border-slate-700/40 bg-slate-800/10">
-                Drift, pace distribution, and plan vs actual — Step 4–5.
-              </p>
+              <AnalysisTabPanel
+                drift={analysisData?.drift ?? null}
+                planComparison={analysisData?.plan_comparison ?? null}
+              />
             ),
             context: (
               <div className="space-y-4">
@@ -631,60 +626,6 @@ export default function ActivityDetailPage() {
           }}
         />
 
-        {/* ── Plan vs actual (stays until Analysis tab consolidation in Step 4) ── */}
-        <div className="mb-6 mt-8">
-          <button
-            onClick={() => setShowDetails((v) => !v)}
-            className="flex items-center gap-1.5 text-sm text-slate-400 hover:text-slate-200 transition-colors"
-            data-testid="show-details-toggle"
-          >
-            <svg
-              className={`w-3.5 h-3.5 transition-transform ${showDetails ? 'rotate-90' : ''}`}
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-            >
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-            </svg>
-            {showDetails ? 'Hide details' : 'Show details'}
-          </button>
-        </div>
-
-        {showDetails && analysisData?.plan_comparison && (
-          <div className="mb-6 rounded-lg bg-slate-800/30 border border-slate-700/30 p-4">
-            <h3 className="text-sm font-medium text-slate-400 mb-3">Plan vs Actual</h3>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
-              {analysisData.plan_comparison.planned_duration_min != null && analysisData.plan_comparison.actual_duration_min != null && (
-                <PlanComparisonCell
-                  label="Duration"
-                  planned={formatMinutesToDuration(analysisData.plan_comparison.planned_duration_min)}
-                  actual={formatMinutesToDuration(analysisData.plan_comparison.actual_duration_min)}
-                />
-              )}
-              {analysisData.plan_comparison.planned_distance_km != null && analysisData.plan_comparison.actual_distance_km != null && (
-                <PlanComparisonCell
-                  label="Distance"
-                  planned={formatDistance(analysisData.plan_comparison.planned_distance_km * 1000)}
-                  actual={formatDistance(analysisData.plan_comparison.actual_distance_km * 1000)}
-                />
-              )}
-              {analysisData.plan_comparison.planned_pace_s_km != null && analysisData.plan_comparison.actual_pace_s_km != null && (
-                <PlanComparisonCell
-                  label="Pace"
-                  planned={formatPace(analysisData.plan_comparison.planned_pace_s_km)}
-                  actual={formatPace(analysisData.plan_comparison.actual_pace_s_km)}
-                />
-              )}
-              {analysisData.plan_comparison.planned_interval_count != null && analysisData.plan_comparison.detected_work_count != null && (
-                <PlanComparisonCell
-                  label="Intervals"
-                  planned={String(analysisData.plan_comparison.planned_interval_count)}
-                  actual={String(analysisData.plan_comparison.detected_work_count)}
-                />
-              )}
-            </div>
-          </div>
-        )}
         </StreamHoverProvider>
         )}
       </div>
@@ -727,21 +668,3 @@ function MetricPill({
   );
 }
 
-/** Plan comparison cell (planned vs actual) */
-function PlanComparisonCell({
-  label,
-  planned,
-  actual,
-}: {
-  label: string;
-  planned: string;
-  actual: string;
-}) {
-  return (
-    <div>
-      <p className="text-xs text-slate-500 mb-1">{label}</p>
-      <p className="text-sm text-white">{actual}</p>
-      <p className="text-xs text-slate-500">planned: {planned}</p>
-    </div>
-  );
-}
