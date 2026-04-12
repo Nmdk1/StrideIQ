@@ -358,76 +358,61 @@ export default function NutritionPage() {
     setScannerOpen(true);
     setScannerLoading(true);
     try {
-      // Verify camera API exists
-      if (!navigator.mediaDevices?.getUserMedia) {
-        throw new Error('Camera not supported on this browser');
-      }
-
       const { Html5Qrcode } = await import('html5-qrcode');
 
       // Wait for the DOM element to render
-      let el: HTMLElement | null = null;
-      for (let i = 0; i < 30 && !el; i++) {
-        await new Promise((r) => setTimeout(r, 50));
-        el = document.getElementById('barcode-live-reader');
+      await new Promise((r) => setTimeout(r, 300));
+      if (!document.getElementById('barcode-live-reader')) {
+        throw new Error('Scanner container not found');
       }
-      if (!el) throw new Error('Scanner container not found');
 
       const scanner = new Html5Qrcode('barcode-live-reader', { verbose: false });
       scannerRef.current = scanner;
 
-      // Try rear camera first, fall back to front camera, then any camera
-      const cameraConfigs: MediaTrackConstraints[] = [
-        { facingMode: 'environment' },
-        { facingMode: 'user' },
-        {},
-      ];
-
-      let started = false;
-      for (const camConfig of cameraConfigs) {
-        if (started) break;
+      const onScanSuccess = async (decodedText: string) => {
         try {
-          await scanner.start(
-            camConfig,
-            { fps: 10, qrbox: { width: 280, height: 120 } },
-            async (decodedText: string) => {
-              try {
-                const state = (scanner as unknown as { getState?: () => number }).getState?.();
-                if (state === 2) await scanner.stop();
-              } catch { /* ignore */ }
-              await scanner.clear();
-              scannerRef.current = null;
-              setScannerOpen(false);
-              setScannerLoading(false);
+          const state = (scanner as unknown as { getState?: () => number }).getState?.();
+          if (state === 2) await scanner.stop();
+        } catch { /* ignore */ }
+        await scanner.clear();
+        scannerRef.current = null;
+        setScannerOpen(false);
+        setScannerLoading(false);
 
-              try {
-                const scan = await scanBarcode.mutateAsync(decodedText);
-                if (scan.found && scan.food_name) {
-                  setBarcodeResult({
-                    food_name: scan.food_name,
-                    calories: scan.calories || 0,
-                    protein_g: scan.protein_g || 0,
-                    carbs_g: scan.carbs_g || 0,
-                    fat_g: scan.fat_g || 0,
-                    servings: 1,
-                    fdc_id: scan.fdc_id,
-                  });
-                } else {
-                  showToast('Product not found — try a photo instead');
-                }
-              } catch {
-                showToast('Lookup failed — try again');
-              }
-            },
-            () => {},
-          );
-          started = true;
+        try {
+          const scan = await scanBarcode.mutateAsync(decodedText);
+          if (scan.found && scan.food_name) {
+            setBarcodeResult({
+              food_name: scan.food_name,
+              calories: scan.calories || 0,
+              protein_g: scan.protein_g || 0,
+              carbs_g: scan.carbs_g || 0,
+              fat_g: scan.fat_g || 0,
+              servings: 1,
+              fdc_id: scan.fdc_id,
+            });
+          } else {
+            showToast('Product not found — try a photo instead');
+          }
         } catch {
-          // Try next camera config
+          showToast('Lookup failed — try again');
         }
-      }
+      };
 
-      if (!started) throw new Error('No camera available');
+      const scanConfig = { fps: 10, qrbox: { width: 280, height: 120 } };
+
+      // Use the library's camera enumeration which properly handles
+      // permission prompts on mobile browsers
+      const cameras = await Html5Qrcode.getCameras();
+      if (cameras.length === 0) throw new Error('No camera found on this device');
+
+      // Prefer back/rear camera, fall back to first available
+      const backCam = cameras.find(
+        (c) => /back|rear|environment/i.test(c.label),
+      );
+      const cameraId = backCam ? backCam.id : cameras[cameras.length - 1].id;
+
+      await scanner.start(cameraId, scanConfig, onScanSuccess, () => {});
       setScannerLoading(false);
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Could not access camera';
@@ -646,7 +631,7 @@ export default function NutritionPage() {
                       <span className="ml-2 text-xs text-slate-400">Starting camera...</span>
                     </div>
                   )}
-                  <div id="barcode-live-reader" className="rounded-lg overflow-hidden" style={{ minHeight: 300, width: '100%' }} />
+                  <div id="barcode-live-reader" className="rounded-lg overflow-hidden" />
                   <p className="text-xs text-slate-500 text-center">Point camera at the barcode — it will scan automatically</p>
                 </div>
               </div>
