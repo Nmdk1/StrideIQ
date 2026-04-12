@@ -174,7 +174,7 @@ export const nutritionService = {
   },
 
   async updateEntry(id: string, updates: NutritionEntryUpdate): Promise<NutritionEntry> {
-    return apiClient.put<NutritionEntry>(`/v1/nutrition/${id}`, updates);
+    return apiClient.patch<NutritionEntry>(`/v1/nutrition/${id}`, updates);
   },
 
   async deleteEntry(id: string): Promise<void> {

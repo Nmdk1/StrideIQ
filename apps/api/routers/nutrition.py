@@ -40,6 +40,7 @@ from schemas import (
     FuelingProfileResponse,
     NutritionEntryCreate,
     NutritionEntryResponse,
+    NutritionEntryUpdate,
     PhotoParseResponse,
     PhotoParseItemResponse,
 )
@@ -900,6 +901,35 @@ def update_nutrition_entry(
     db_entry.fueling_product_id = nutrition.fueling_product_id
     db_entry.timing = nutrition.timing
     db_entry.notes = nutrition.notes
+
+    db.commit()
+    db.refresh(db_entry)
+
+    invalidate_athlete_cache(str(current_user.id))
+    invalidate_correlation_cache(str(current_user.id))
+
+    return db_entry
+
+
+@router.patch("/nutrition/{id}", response_model=NutritionEntryResponse)
+def patch_nutrition_entry(
+    id: UUID,
+    updates: NutritionEntryUpdate,
+    current_user: Athlete = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    db_entry = db.query(NutritionEntry).filter(NutritionEntry.id == id).first()
+    if not db_entry:
+        raise HTTPException(status_code=404, detail="Nutrition entry not found")
+    if db_entry.athlete_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    patch_data = updates.model_dump(exclude_unset=True)
+    for field, value in patch_data.items():
+        if field in ("calories", "protein_g", "carbs_g", "fat_g", "fiber_g"):
+            setattr(db_entry, field, Decimal(str(value)) if value is not None else None)
+        else:
+            setattr(db_entry, field, value)
 
     db.commit()
     db.refresh(db_entry)

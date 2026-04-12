@@ -207,6 +207,20 @@ class NutritionEntryCreate(BaseModel):
     fueling_product_id: Optional[int] = None
 
 
+class NutritionEntryUpdate(BaseModel):
+    """Schema for partial update of a nutrition entry (all fields optional)."""
+    calories: Optional[float] = None
+    protein_g: Optional[float] = None
+    carbs_g: Optional[float] = None
+    fat_g: Optional[float] = None
+    fiber_g: Optional[float] = None
+    notes: Optional[str] = None
+    caffeine_mg: Optional[float] = None
+    fluid_ml: Optional[float] = None
+    carb_source: Optional[str] = None
+    macro_source: Optional[str] = None
+
+
 class NutritionEntryResponse(BaseModel):
     """Schema for nutrition entry response"""
     id: UUID

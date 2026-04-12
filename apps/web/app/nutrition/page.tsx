@@ -359,9 +359,17 @@ export default function NutritionPage() {
     setScannerLoading(true);
     try {
       const { Html5Qrcode } = await import('html5-qrcode');
-      await new Promise((r) => setTimeout(r, 100));
+      // Wait for React to commit the #barcode-live-reader div to the DOM
+      let attempts = 0;
+      while (!document.getElementById('barcode-live-reader') && attempts < 20) {
+        await new Promise((r) => setTimeout(r, 50));
+        attempts++;
+      }
+      if (!document.getElementById('barcode-live-reader')) {
+        throw new Error('Scanner container not found');
+      }
       const scanner = new Html5Qrcode('barcode-live-reader', {
-        formatsToSupport: [0, 2, 3, 4, 5, 10],
+        formatsToSupport: [0, 2, 3, 4, 5, 6, 7, 8, 10, 11],
         verbose: false,
       });
       scannerRef.current = scanner;
