@@ -221,6 +221,8 @@ Opt-in feature: StrideIQ appends a one-line insight to the athlete's Strava acti
 
 The free calculators (pace, age-grading, heat adjustment, race equivalency, Boston qualifying) already exist and work. They need dedicated, SEO-optimized standalone pages targeting search queries like "marathon training pace calculator," "age grading calculator running," "heat adjusted running pace." These pages exist but may not be optimally structured for search ranking. The tools are the top of funnel — every calculator user is a potential subscriber.
 
+**Phased scope (build order, metrics, influencer as Phase 4):** see [`docs/GROWTH_PHASED_PLAN.md`](GROWTH_PHASED_PLAN.md).
+
 ---
 
 ## PART 5: YOUR MISSION

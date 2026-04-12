@@ -1,0 +1,209 @@
+# StrideIQ — Phased Growth Plan (Scoped)
+
+**Status:** Planning document — not implementation commitment  
+**Read first:** [`docs/SESSION_HANDOFF_2026-03-28_GROWTH_AGENT_ONBOARDING.md`](SESSION_HANDOFF_2026-03-28_GROWTH_AGENT_ONBOARDING.md), [`docs/FOUNDER_OPERATING_CONTRACT.md`](FOUNDER_OPERATING_CONTRACT.md)  
+**Context:** Phases assume **product-led / automated / user-assisted** growth; founder does not run outbound or personal-brand marketing. Influencer is **Phase 4** only with a **product-first brief** (prior ad-hoc promotion without naming StrideIQ is not treated as a disproof of the channel).
+
+---
+
+## Phase dependency (order)
+
+```mermaid
+flowchart LR
+  P1[Phase1_SEO_Tools]
+  P2[Phase2_ShareCards]
+  P3[Phase3_StravaLine]
+  P4[Phase4_Influencer]
+  P1 --> P2
+  P1 --> P4
+  P2 --> P4
+  P2 --> P3
+```
+
+- **Phase 4** should not run before **Phase 1** at minimum: influencers need a sharp URL and, ideally, shareable proof.  
+- **Phase 3** (Strava) can ship after **Phase 2** so “what to say” in the line is grounded in real, shareable findings—not generic text.
+
+---
+
+## Phase 1 — Search intent and tool funnel
+
+**Objective:** Capture runners who already search for calculators and pacing help; move them from anonymous tool use toward signup/trial with clear, honest positioning.
+
+### In scope
+
+- **Metadata and structure:** Unique `title` / `description` / Open Graph per high-value routes; canonical URLs; consistent H1 + short runner-native intro copy where missing (`apps/web/app/tools/**`, `apps/web/app/tools/page.tsx`).
+- **Internal linking:** From landing (`page.tsx`, `FreeTools`, `Hero`) and between related tools (pace ↔ BQ ↔ heat ↔ equivalency) so crawlers and users see a coherent “free tools” cluster.
+- **Technical SEO baseline:** `sitemap.xml` / `robots.txt` review if present; ensure tool routes are included and not accidentally noindexed.
+- **Measurement:** UTM convention for any manual link-outs later; first-party telemetry already in place — define **events** for tool page view, CTA click, signup start (see [`apps/web/lib/hooks/usePageTracking.ts`](../apps/web/lib/hooks/usePageTracking.ts), [`apps/api/routers/telemetry.py`](../apps/api/routers/telemetry.py)) so Phase 1 success is measurable without third-party analytics.
+
+### Out of scope
+
+- A new blog or content calendar.
+- Paid ads.
+- Rewriting onboarding flows (traffic is the bottleneck, not onboarding copy for unseen users).
+
+### Deliverables (checklist)
+
+1. Inventory of all public tool URLs (including dynamic segments) with target queries per page.  
+2. Metadata + copy pass per route cluster (minimum: index + one exemplar sub-route per calculator).  
+3. Internal linking map (10–20 intentional links).  
+4. Documented primary metrics and review cadence (e.g. weekly: tool views, CTA clicks, new accounts).
+
+### Dependencies
+
+- None (uses existing Next.js app and tools).
+
+### Success / kill criteria (90 days)
+
+- **Proceed:** Meaningful upward movement in **tool → signup** rate or **branded/niche organic** sessions (even small N), with stable Core Web Vitals.  
+- **Reassess:** Zero movement after technical fixes + copy pass; shift effort to Phase 2 artifacts driving direct referral.
+
+### Effort (order of magnitude)
+
+- **Small–medium:** Mostly web app + sitemap; 1–2 focused iterations with agents.
+
+### Risks
+
+- SEO lag; success is judged on **leading** indicators (impressions/clicks) early, conversions as data arrives.
+
+---
+
+## Phase 2 — Shareable finding cards
+
+**Objective:** Turn confirmed N=1 outputs (Manual, briefing, high-trust findings) into **one-tap share images** with StrideIQ branding and a link—distribution as a side effect of value.
+
+### In scope
+
+- **Surface selection:** Which finding types are allowed (e.g. from Personal Operating Manual V2, morning briefing) with **Athlete Trust Safety** and suppression rules unchanged — only share what the product would already show (`apps/api/services/operating_manual.py`, [`apps/web/app/manual/page.tsx`](../apps/web/app/manual/page.tsx), home briefing paths).
+- **UI:** “Share” on a vetted finding → generate image (client canvas or server image API) + Web Share API / download, pattern aligned with Runtoon ([`apps/web/components/runtoon/`](../apps/web/components/runtoon/), [`apps/api/routers/runtoon.py`](../apps/api/routers/runtoon.py) as reference for share flow).
+- **Brand:** Fixed footer: product name + URL; optional short finding headline + “confirmed N times” if present in data.
+- **Telemetry:** Share initiated, share completed, destination if available.
+
+### Out of scope
+
+- Sharing raw activity data or anything that violates privacy or trust contract.
+- Auto-posting to social networks without explicit user action.
+
+### Deliverables
+
+1. Spec: allowed finding types + redaction rules.  
+2. Card design (one mobile aspect ratio first).  
+3. API or client pipeline for image generation + stable share URL (landing with UTM).  
+4. Manual + home integration points (start with one surface if needed for scope control).
+
+### Dependencies
+
+- Phase 1 **nice-to-have** for landing URL quality when new users arrive from a card; not blocking MVP share.
+
+### Success / kill criteria (90 days)
+
+- **Proceed:** Non-zero shares/week with measurable **incoming visits** or signups attributed (UTM/ref).  
+- **Kill:** Shares happen but zero downstream traffic—iterate card CTA and landing before building more surfaces.
+
+### Effort
+
+- **Medium:** New UX + image pipeline + trust review.
+
+### Risks
+
+- Over-sharing weak findings; mitigate with strict eligibility and copy review.
+
+---
+
+## Phase 3 — Strava activity description line (opt-in)
+
+**Objective:** Optional one-line insight appended to the athlete’s **Strava activity description** so followers see StrideIQ in context—passive distribution to 50–500 follower lists per user.
+
+### In scope
+
+- **OAuth:** Request `activity:write` (and document why) — extend [`apps/api/services/strava_service.py`](../apps/api/services/strava_service.py), [`apps/api/routers/strava.py`](../apps/api/routers/strava.py); migration/relink flow for existing Strava users.
+- **Product rules:** Opt-in toggle; frequency cap (e.g. max once per activity or only when a “shareable” insight exists); user preview before upload; **athlete approves** final text.
+- **Content:** Short, non-spammy line referencing StrideIQ + link; must respect trust/suppression (no directional medical claims).
+- **Failure handling:** Strava API errors, rate limits, rollback.
+
+### Out of scope
+
+- Silent posting without preview.
+- Posting for users who have not connected Strava or granted write scope.
+
+### Deliverables
+
+1. Scope change documentation and consent copy.  
+2. Settings UI + preview + post path.  
+3. Server job or synchronous post after activity sync (architecture TBD against existing Celery/sync).  
+4. Metrics: opt-in rate, posts succeeded, click-through.
+
+### Dependencies
+
+- **Phase 2 strongly recommended** so the “line” can mirror real finding quality, not generic marketing.
+
+### Success / kill criteria (90 days)
+
+- **Proceed:** Healthy opt-in among Strava users + non-zero link clicks from Strava referrers.  
+- **Kill:** Strava rejects, users churn, or support burden exceeds value—disable feature flag.
+
+### Effort
+
+- **Medium–large:** OAuth relink, API surface, compliance with Strava brand/API policies.
+
+### Risks
+
+- Strava policy and user perception (“spam”); mitigate with opt-in, preview, caps, and elite copy discipline.
+
+---
+
+## Phase 4 — Product-led influencer experiments
+
+**Objective:** Run **1–2 controlled tests** where the **product** is the story (Garmin + Strava, depth of history, N=1 findings), not founder celebrity. Corrects earlier “influencer failed” conflation: prior promotion did not name StrideIQ or target product-fit audiences.
+
+### In scope
+
+- **Creator fit:** Garmin-native or platform-agnostic “data / coaching / serious runner” micro-creators; avoid **watch-brand-exclusive** partnerships where the audience identity conflicts with “connect Garmin” (understanding COROS etc. as positioning friction, not moral judgment).
+- **Brief:** Screen-led demo: connect → insight within minutes; CTA to strideiq.run with **UTM**; clear disclosure if gifted access.
+- **Measurement:** Trials, connects, not follower counts; compare to baseline weeks.
+
+### Out of scope
+
+- Large spend or long-term ambassador deals before Phase 1–2 proof.
+- Creators whose primary asset is **lifestyle** with no alignment to data depth.
+
+### Deliverables
+
+1. One-page brief (messaging dos/don’ts, legal/disclosure, metrics).  
+2. Shortlist of 5–15 candidates and selection criteria.  
+3. Post-mortem template (what worked, what didn’t, kill decision).
+
+### Dependencies
+
+- **Phase 1** live (landing + tools credible).  
+- **Phase 2** strongly preferred (shareable proof creators can point to).
+
+### Success / kill criteria (90 days)
+
+- **Proceed:** Cost-per-qualified-signup or connect beats a defined threshold vs organic baseline.  
+- **Kill:** Views without product actions—do not scale; revert to organic + product loops only.
+
+### Effort
+
+- **Low execution time, high coordination:** Mostly founder time + one outreach cycle; optional small access/gift cost.
+
+### Risks
+
+- Mismatch (audience wants simplicity, product is depth); brief must qualify viewers up front.
+
+---
+
+## Summary table
+
+| Phase | Focus                         | Primary metric              | Build heaviest?      |
+|-------|-------------------------------|-----------------------------|-------------------------|
+| 1     | SEO + tools + telemetry hooks | Tool → signup / organic CTR | Web + sitemap           |
+| 2     | Shareable finding cards       | Shares → site visits        | Web + API + design      |
+| 3     | Strava description line       | Opt-in, posts, referrals    | API + OAuth + settings  |
+| 4     | Influencer (product-first)    | Connects / trials (UTM)     | Process + brief         |
+
+---
+
+## Document maintenance
+
+When a phase ships or is cancelled, update this file (status line + date). Optional: link from [`SESSION_HANDOFF_2026-03-28_GROWTH_AGENT_ONBOARDING.md`](SESSION_HANDOFF_2026-03-28_GROWTH_AGENT_ONBOARDING.md) Part 4 as the canonical phased plan.
