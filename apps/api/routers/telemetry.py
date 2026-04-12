@@ -40,7 +40,13 @@ class PageExitEvent(BaseModel):
 
 
 TOOL_FUNNEL_EVENT_TYPES = frozenset(
-    {"tool_page_view", "tool_result_view", "signup_cta_click"}
+    {
+        "tool_page_view",
+        "tool_result_view",
+        "signup_cta_click",
+        "finding_share_initiated",
+        "finding_share_completed",
+    }
 )
 
 
@@ -97,6 +103,9 @@ def record_tool_funnel_event(
     if event.event_type in ("tool_page_view", "tool_result_view"):
         if not event.path.startswith("/tools"):
             raise HTTPException(status_code=400, detail="path must start with /tools")
+    elif event.event_type in ("finding_share_initiated", "finding_share_completed"):
+        if not event.path.startswith("/manual"):
+            raise HTTPException(status_code=400, detail="path must start with /manual")
     row = ToolTelemetryEvent(
         event_type=event.event_type,
         path=event.path,
