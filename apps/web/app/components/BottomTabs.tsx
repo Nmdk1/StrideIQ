@@ -25,8 +25,8 @@ const TABS_WITH_MANUAL = [
   { href: "/home", label: "Home", icon: Home, accent: false },
   { href: "/calendar", label: "Calendar", icon: CalendarDays, accent: false },
   { href: "/coach", label: "Coach", icon: MessageSquare, accent: true },
-  { href: "/manual", label: "Manual", icon: BookOpen, accent: false },
   { href: "/nutrition", label: "Nutrition", icon: UtensilsCrossed, accent: false },
+  { href: "/manual", label: "Manual", icon: BookOpen, accent: false },
 ] as const;
 
 const BASE_MORE_ITEMS = [
