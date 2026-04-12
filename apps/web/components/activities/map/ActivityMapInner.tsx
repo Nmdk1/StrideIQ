@@ -163,28 +163,37 @@ function weatherIcon(condition: string | null): string {
   return '🌡️';
 }
 
-function InvalidateOnResize() {
-  const map = useMap();
-  useEffect(() => {
-    const timer = setTimeout(() => map.invalidateSize(), 100);
-    return () => clearTimeout(timer);
-  });
-  return null;
-}
-
 function FitBounds({ bounds }: { bounds: LatLngBoundsExpression }) {
   const map = useMap();
   const didFit = useRef(false);
+
   useEffect(() => {
-    if (!didFit.current) {
-      didFit.current = true;
-      const timer = setTimeout(() => {
+    if (didFit.current) return;
+
+    const container = map.getContainer();
+
+    const doFit = () => {
+      if (didFit.current) return;
+      const { clientWidth, clientHeight } = container;
+      if (clientWidth > 0 && clientHeight > 0) {
+        didFit.current = true;
         map.invalidateSize();
         map.fitBounds(bounds, { padding: [12, 12] });
-      }, 150);
-      return () => clearTimeout(timer);
-    }
+      }
+    };
+
+    doFit();
+    if (didFit.current) return;
+
+    const observer = new ResizeObserver(doFit);
+    observer.observe(container);
+    const fallback = setTimeout(doFit, 800);
+    return () => {
+      observer.disconnect();
+      clearTimeout(fallback);
+    };
   }, [map, bounds]);
+
   return null;
 }
 
@@ -340,7 +349,6 @@ export default function ActivityMapInner({
           >
             <TileLayer url={CARTO_VOYAGER} attribution={CARTO_ATTRIBUTION} />
             <FitBounds bounds={bounds} />
-            <InvalidateOnResize />
 
             {/* Route glow layer — uses hi-res stream coords to avoid angular artifacts */}
             {glowTrack.length > 1 && (
