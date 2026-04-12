@@ -1,6 +1,6 @@
 # StrideIQ — Deep Research Memo (Growth)
 
-**Date:** April 12, 2026  
+**Date:** April 12, 2026 (expanded second pass: Intervals.icu, Elevate, Strava–Runna market, SEO technical depth, Reddit, measurement, behavioral wedge)  
 **Purpose:** Independent desk research to ground [`docs/GROWTH_PHASED_PLAN.md`](GROWTH_PHASED_PLAN.md) in evidence, analogs, and channel mechanics—not to replace founder judgment or primary research with users.
 
 **Methodology**
@@ -66,6 +66,8 @@ StrideIQ is **not** starting from a fax problem in 1994; the parallel is: **wedg
 
 **Positioning:** Runalyze emphasizes **device-independent analysis**, sports science, **Effective VO2max**, age grading—**analyst** lane, not “get couch to 5K.” StrideIQ’s **N=1 correlations + Manual** are a **superset narrative** (relationships in data), not the same feature set.
 
+**Infrastructure as proof of scale (primary source):** Runalyze’s *Our major background migration* [blog.runalyze.com](https://blog.runalyze.com/allgemein-en/our-major-background-migration/) states the stack originally assumed **single-user** origins; by migration they must handle **“over 30,000 users”** and **~seven million activities** with GPS and sensor data—driving a **file-based** cold-store architecture because **~80%** of activities are “uploaded once” then rarely read (but must remain available for recalculation, posters, backup). **Inference:** sustained **organic load** forced **real engineering investment**—analogous to StrideIQ’s Timescale/correlation depth: **serious analyst products create serious data gravity.**
+
 ---
 
 ### 2.3 Smashrun — motivation through context; long build before scale
@@ -98,7 +100,62 @@ StrideIQ is **not** starting from a fax problem in 1994; the parallel is: **wedg
 
 ---
 
-### 2.5 Indie / fitness acquisition patterns (non-running-specific but behavioral)
+### 2.5 Intervals.icu — Strava-adjacent analysis → standalone; organic scale without venture story
+
+**Primary source:** [Intervals.icu — About](https://www.intervals.icu/about/) (accessed 2026).
+
+**Facts from the source (quoted narrative)**
+
+- Started **mid-2018** as a **side project** (David Tinker, Cape Town) to learn a new framework while exploring road-bike training.
+- **“Originally built as an analysis extension for Strava”** — then “took on a life of its own” as athletes found analytics that **“rivalled expensive paid platforms.”**
+- **“Word spread through cycling and triathlon communities, and the user base grew organically.”**
+- By **2024**: **“over 100,000 athletes”** who had collectively analyzed **“over 111 million activities.”** David went **full-time in September 2024**.
+- **Community:** Volunteer moderators, active **forum**, translations into **20+ languages** via GitHub.
+
+**Inference for StrideIQ**
+
+- **Organic word-of-mouth** at **six-figure athlete** scale is **documented** for an **analyst-first** product that **started** as **Strava-layer** software—closest public analog to “serious people tell serious people” without a celebrity budget.
+- **Overlap:** multisport **calendar + workout tooling** is Intervals’ center of gravity; StrideIQ’s center is **retrospective N=1 intelligence + Manual + coach**. Same **ICP overlap** (data-heavy endurance), **different wedge**—StrideIQ should **not** try to out-**calendar** Intervals; it should win on **“it found something true in my history.”**
+- **Hiring moment (full-time 2024)** suggests **revenue or runway** crossed a threshold after **years** of side-project growth—sets **expectations** for **timeline** vs overnight SEO.
+
+---
+
+### 2.6 Elevate for Strava — Chrome extension as acquisition channel (parallel mechanic)
+
+**Sources:** Open repository [`thomaschampagne/elevate`](https://github.com/thomaschampagne/elevate) (Elevate for Strava); Chrome Web Store listing **Elevate for Strava** ([Chrome Web Store](https://chromewebstore.google.com/detail/elevate-for-strava/dhiaggccakkgdfcadnklkbljcgicpckn)).
+
+**Observed pattern (desk research, verify before marketing use)**
+
+- Third-party aggregators and store listings cite **large install bases** (order **10⁵** users) and **strong star ratings** for this **free** extension that **adds analytics** on top of Strava’s web experience.
+- **Acquisition mechanics** historically used by extension authors: **answer power-user questions** in forums/Reddit/Strava communities where people complain about missing metrics, link **only when helpful**; **Chrome Web Store** keyword + description hygiene.
+
+**Inference for StrideIQ**
+
+- Demonstrates **demand for deeper metrics** than Strava’s default surface—consistent with StrideIQ’s **analyst** positioning.
+- **Not** a recommendation to build an extension now: it is a **parallel funnel** that trades **engineering surface area** (browser + Strava DOM) for **distribution**. File under **optional future** if web SEO + cards plateau—**Phase 1–4** in [`GROWTH_PHASED_PLAN.md`](GROWTH_PHASED_PLAN.md) remain the scoped path.
+
+---
+
+### 2.7 Market structure — Strava × Runna (2025) and the “training app” lane
+
+**Primary source:** Strava press release [Strava to Acquire Runna, A Leading Running Training App](https://press.strava.com/articles/strava-to-acquire-runna-a-leading-running-training-app), **April 17, 2025**.
+
+**Facts stated for the market (use as category context, not StrideIQ forecasting)**
+
+- Strava cites **150+ million** registered users; **“nearly 1 billion runs”** on Strava in **2024**.
+- **Year In Sport** narrative: running as **fastest-growing sport** globally; **43%** of Strava users wanting to **“conquer a big race or event in 2025”** (Strava survey framing).
+- Strategic: **“Over 100 training apps”** connect to Strava’s API; Strava emphasizes **continuing** as an **open platform** for developers while investing in Runna.
+- Product: **“Keep the apps separate for the foreseeable future”** — Runna remains its own subscription surface.
+
+**Inference for StrideIQ**
+
+- **M&A validates** the **personalized training plan** category as **strategically valuable** to the **dominant social graph**. StrideIQ is **not** primarily a **plan library** company—**consolidation** strengthens the case for **differentiation on intelligence + compounding athlete model**, not on **another static plan**.
+- **Demand for races** (Strava’s 43% stat) supports **SEO** around **pace, BQ, equivalency**—your **tool stack** maps to **documented mass intent**.
+- **Developer ecosystem** rhetoric from Strava is **aligned** with building **API-backed** value—but **Phase 3** still requires **legal/product** review of **API Terms** + **brand guidelines** (not fetched in full here; review before shipping).
+
+---
+
+### 2.8 Indie / fitness acquisition patterns (non-running-specific but behavioral)
 
 **Indie Hackers (summaries from interview index):**
 
@@ -118,6 +175,20 @@ StrideIQ is **not** starting from a fax problem in 1994; the parallel is: **wedg
 **Patrick McKenzie (“patio11”) lineage:** Kalzumeus writing since **2006** emphasizes **SEO, landing experiments, and marketing for builders who dislike marketing**—[Kalzumeus](https://www.kalzumeus.com) (e.g. *Marketing For People Who Would Rather Be Building Stuff*, 2013). StrideIQ’s Phase 1 (metadata, internal links, sitemap discipline, measurement) matches this **craft** tradition: **measurable pages**, not hope.
 
 **Timeline:** Organic search commonly shows **multi-month** lag before meaningful impressions move—Phase 1 **must** pair **Search Console + telemetry** so “failure” is diagnosed as **query mismatch vs technical vs CTA**, not vibes.
+
+**Technical depth (what “SEO” means in Phase 1 beyond a title tag)**
+
+| Layer | Why it matters | StrideIQ application |
+|-------|----------------|----------------------|
+| **Indexation** | Pages not in sitemap or blocked by `robots`/noindex never compete | Audit `app/robots.ts` or static robots, route-level `metadata.robots`, ensure `/tools/**` discoverable |
+| **Canonical & dupes** | Calculator **slug** variants (distance, goal, conversion) can **cannibalize** or dilute | One **primary** URL per intent; `rel=canonical` where params/slugs overlap; internal links point to **preferred** URL |
+| **Title/H1/query alignment** | Google matches **query language** to visible H1 + title | Map **target queries** per cluster (e.g. “Boston qualifying calculator” vs “BQ pace”)—one **dominant** phrase per page, not keyword stuffing |
+| **Structured data** | Rich results for **FAQ**, **HowTo**, **SoftwareApplication** (where honest) can lift CTR | Add only **truthful** schema; no fake reviews |
+| **Core Web Vitals / INP** | Ranking tie-breaker; tools often client-heavy | Next.js: watch **bundle** on tool pages; defer non-critical chart code |
+| **Internal PageRank** | Orphan tool pages **don’t rank** | Hub from `/tools`, home **Free tools**, cross-links between related calculators (already in phased plan) |
+| **E-E-A-T signals** | YMYL less strict for pace calcs than medical; still **trust** helps | About/support/privacy visible; authoritativeness via **correct formulas** (you already care about correctness in product) |
+
+**Diagnosis workflow (90-day loop):** Weekly: **Search Console** impressions/clicks/queries per **landing URL**; **telemetry** sessions tool_view → cta_click → signup_start. If impressions ↑ but clicks flat → **SERP snippet / title**; if clicks ↑ but signup flat → **landing CTA / value prop**; if neither ↑ → **query mismatch** or **technical indexation**.
 
 ---
 
@@ -171,27 +242,90 @@ This **supports** the phased plan’s **de-emphasis of outbound** and **emphasis
 
 ---
 
+### 3.6 Reddit — site-wide norms and subreddit variance
+
+**Platform rule of thumb (long-standing Reddit culture):** Reddit Inc. and moderator guidance have historically described **self-promotion** as acceptable only when **a small fraction** of submissions link to your own site/product—the often-cited heuristic is **~90% neutral participation / ~10% self-link** (see [reddit.com/wiki/selfpromotion](https://www.reddit.com/wiki/selfpromotion) — **read current version**; rules evolve).
+
+**Inference**
+
+- **Drive-by “check out my app”** posts in **r/running**, **r/AdvancedRunning**, etc. are **high-ban-risk** and **low-trust**.
+- **Viable pattern:** years-long **identity as a helpful athlete** (or separate persona) with **occasional** deep posts that include a link **when the subreddit asks**—contradicts founder **no-community-job** constraint unless delegated or **earned over years**.
+- **Practical conclusion for StrideIQ:** treat Reddit as **earned media** (someone else posts your tool/findings) or **paid** (Reddit ads—out of current scope unless approved), **not** as a **primary outbound** lever. Aligns with phased plan.
+
+---
+
+### 3.7 Measurement, attribution, and experiment discipline (deeper)
+
+**Minimum viable instrumentation (Phase 1)**
+
+- **Per-tool URL** (or route template) as dimension — not aggregate “/tools” only.
+- **Funnel:** `tool_page_view` → `tool_result_view` (if applicable) → `signup_cta_click` → `account_created` (server-side if possible).
+- **UTM standard** for any **manual** link (influencer Phase 4, newsletter, podcast): `utm_source`, `utm_medium`, `utm_campaign` — store on signup if schema allows.
+
+**Attribution limits (honesty)**
+
+- **Organic search:** last-click in first-party analytics undercounts **assist** channels; **Search Console** shows queries, not **users**.
+- **Share cards (Phase 2):** use **UTM on shared URL** + **short link** domain you control to separate **share** from **SEO**.
+
+**Experiment hygiene**
+
+- Change **one** major variable per 2–4 weeks on a **single** landing (title vs CTA vs above-fold proof) — avoid changing **five** things and guessing what worked.
+
+---
+
+### 3.8 Behavioral wedge — compounding data as switching cost (StrideIQ-specific)
+
+**Mechanism (product strategy doc alignment, not external study):** StrideIQ’s moat narrative—**the longer you use it, the less replaceable it becomes**—maps to **loss aversion** and **sunk expertise** in the athlete’s mental model: leaving means losing **relational** insight, not just **rows** of CSV.
+
+**Growth implication**
+
+- **Acquisition copy** should **not** lead with “AI coach” parity—lead with **specificity**: “something true about **your** history in the first session” (matches [`PRODUCT_STRATEGY_2026-03-03.md`](PRODUCT_STRATEGY_2026-03-03.md) first-session hook).
+- **Shareable cards** work when they **evidence** that compounding (“confirmed **N** times”)—**social proof of intelligence**, not vanity.
+
+---
+
 ## 4. Synthesis: what this research adds beyond “three proposals + process”
 
 | Theme | Evidence | Implication for StrideIQ |
 |--------|-----------|---------------------------|
 | **Analyst lane** | Runalyze/TrainingPeaks/Smashrun histories | Buyers tolerate **complexity** if **trust + device sync** deliver; StrideIQ should **not** dumb down the pitch—**clarity** beats **simplicity**. |
+| **Six-figure organic (analyst)** | Intervals.icu **100k+ athletes / 111M+ activities** by 2024; started as **Strava analysis extension** | **Word-of-mouth** can carry **deep** product to large scale **without** celebrity marketing—StrideIQ’s **first-session truth** hook must be **demonstrable** in onboarding. |
+| **Infrastructure gravity** | Runalyze **30k+ users**, **7M activities**, file-based migration | Real scale creates **real** infra cost—StrideIQ’s engine depth is **feature + moat**, not “lite” analytics. |
 | **Share graphics** | Runalyze 2018 social sharing feature; Strava-adjacent stat apps | **Shareable proof** is a **proven** category behavior; **finding cards** are differentiated if they carry **N=1 truth**, not vanity stats. |
+| **Extension distribution** | Elevate for Strava — **Chrome Web Store** + forum help pattern | **Optional** parallel funnel; validates hunger for **more metrics** than Strava default UI. |
+| **Market consolidation** | Strava **acquiring Runna** (2025); **100+** training apps on API | **Plan** lane is **strategically crowded**; StrideIQ wins on **retrospective intelligence + Manual**, not “another plan.” |
 | **Coach / B2B2C** | TrainingPeaks origin | Optional **future** channel; **not** required for D2C Phase 1–2. |
-| **SEO craft** | patio11-era landing discipline + programmatic SEO practice | Phase 1 is **legitimate** bootstrap work—success is **measured**, not assumed after two weeks. |
-| **Forums** | LetsRun explicit anti-ad rule | **Do not** substitute “post more” for **product-mediated** discovery. |
-| **Strava** | API scale + stat-sharing tools | **Phase 3** is **plausible** only with **trust UX** and **OAuth discipline**; **Phase 2** strengthens **what** to say. |
+| **SEO craft** | Technical SEO table + patio11-era discipline | Phase 1 = **indexation + canonical + query fit + CWV + internal links**—measurable; **90-day** diagnosis workflow. |
+| **Forums** | LetsRun anti-ad rule; Reddit self-promo norms | **Earned** only; no **drive-by** spam strategy. |
+| **Strava** | API scale + stat-sharing tools + **open platform** press narrative | **Phase 3** plausible with **trust UX** + **terms** review; **Phase 2** supplies **what** to say. |
+| **Attribution** | Funnel + UTM + GSC limits (section 3.7) | Ship **telemetry first** so Phase 2–4 are **judged**, not narrated. |
 
-**Novel strategic point (research-backed, not in the original three bullets):** The **convergence** of (a) **Runalyze-style share graphics**, (b) **Strava ecosystem stat-sharing startups**, and (c) **TrainingPeaks-style depth** suggests StrideIQ’s **combined** story—**depth + shareable N=1 proof**—is **differentiated** if execution is **quietly excellent** and **trust-safe**, not if it chases **Runna-class** simplicity marketing.
+**Novel strategic point (research-backed, not in the original three bullets):** The **convergence** of (a) **Runalyze-style share graphics**, (b) **Intervals-style organic analyst growth**, (c) **Strava ecosystem** distribution surfaces, and (d) **TrainingPeaks-style depth**—against a backdrop of **Strava buying a plan company**—suggests StrideIQ’s **differentiated** lane is **“intelligence + compounding N=1 model,”** not **plan parity** or **generic AI coach** copy.
+
+---
+
+### 4.1 Competitive framing matrix (where StrideIQ sits)
+
+| Product archetype | Primary promise | StrideIQ overlap | StrideIQ non-overlap |
+|-------------------|-----------------|------------------|----------------------|
+| **Social graph** (Strava) | Belonging, segments, kudos | Strava sync, share | Not building **the** graph |
+| **Adaptive planner** (Runna-class, Athletica) | Plan follows schedule/fitness | Plans exist | Moat is **not** static plan PDF |
+| **Analyst workbench** (Runalyze, Intervals) | Depth, charts, zones | Serious athlete | StrideIQ adds **correlation + Manual + voice** |
+| **Coach platform** (TrainingPeaks) | Coach-athlete workflow | Future coach tier possible | D2C first |
+| **Augment Strava** (Elevate) | Better metrics in feed | Metaphor: “more insight” | StrideIQ is **full app**, not extension |
+
+Use this matrix in **messaging** to avoid **unfavorable** comparison (“vs Runna plans”) and favor **orthogonal** comparison (“vs generic charts”).
 
 ---
 
 ## 5. Recommended primary follow-ups (outrank desk research)
 
 1. **Google Search Console:** Export **queries, pages, CTR** for `/tools/*` over **12 months**; identify **query–page mismatch**.
-2. **5–10 semi-structured interviews** with **masters + data-heavy** runners who use **Garmin + Strava** (not necessarily StrideIQ users): *how* they found Runalyze, TrainingPeaks, Smashrun, Athletica; **what** triggered signup.
-3. **Competitive teardown matrix** (same script for each): connect flow, time-to-first-insight, pricing, **trust moments** on site.
+2. **5–10 semi-structured interviews** with **masters + data-heavy** runners who use **Garmin + Strava** (not necessarily StrideIQ users): *how* they found **Intervals.icu**, Runalyze, TrainingPeaks, Athletica; **what** triggered signup; **whether** they pay for **multiple** tools (substitutes vs complements).
+3. **Competitive teardown matrix** (same script for each): connect flow, **time-to-first surprising insight**, pricing, **trust moments** on site, **export/portability** narrative.
 4. **Reddit / r/AdvancedRunning:** **Read-only** thematic coding of “how I chose my training app” threads (no posting)—**manual** or tool-assisted scrape with **privacy ethics** respected.
+5. **Strava API Terms / Brand Guidelines:** Founder or counsel **read-through** of current **API Agreement** and **developer brand rules** before **Phase 3** implementation (not substituted by this memo).
+6. **Chrome Web Store:** If an extension path is ever evaluated—**live** install snapshot for Elevate (desk research cites **aggregators**; marketing claims need **primary** store data).
 
 ---
 
@@ -201,8 +335,14 @@ This **supports** the phased plan’s **de-emphasis of outbound** and **emphasis
 |--------|-----|
 | Joe Friel — How TrainingPeaks Came to Be (2009) | https://trainingbible.com/joesblog/2009/10/how-trainingpeaks-came-to-be.html |
 | Runalyze — Year in review 2018 | https://blog.runalyze.com/allgemein-en/year-in-review-2018/ |
+| Runalyze — Major background migration (30k users, 7M activities) | https://blog.runalyze.com/allgemein-en/our-major-background-migration/ |
 | Smashrun — Story | https://smashrun.com/about/story |
+| Intervals.icu — About | https://www.intervals.icu/about/ |
+| Elevate for Strava — GitHub | https://github.com/thomaschampagne/elevate |
+| Elevate — Chrome Web Store | https://chromewebstore.google.com/detail/elevate-for-strava/dhiaggccakkgdfcadnklkbljcgicpckn |
+| Strava — Press: Acquire Runna (Apr 2025) | https://press.strava.com/articles/strava-to-acquire-runna-a-leading-running-training-app |
 | LetsRun — Community guidelines (spam/ad rule) | https://www.letsrun.com/forum/moderation-information-and-community-guidelines |
+| Reddit — Self-promotion wiki | https://www.reddit.com/wiki/selfpromotion |
 | Strava Developers — Authentication / API | https://developers.strava.com/docs/authentication/ |
 | Kalzumeus Software (patio11) | https://www.kalzumeus.com |
 | Garmin Connect IQ — Developer hub | https://developer.garmin.com/connect-iq/ |
