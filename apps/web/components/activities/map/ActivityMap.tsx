@@ -6,7 +6,7 @@ import { ComponentProps } from 'react';
 const ActivityMapInner = dynamic(() => import('./ActivityMapInner'), {
   ssr: false,
   loading: () => (
-    <div className="rounded-lg overflow-hidden border border-slate-700/30 bg-slate-800/30 animate-pulse" style={{ aspectRatio: '4 / 3' }} />
+    <div className="rounded-lg overflow-hidden border border-slate-700/30 bg-slate-800/30 animate-pulse" style={{ aspectRatio: '2.2 / 1' }} />
   ),
 });
 

@@ -186,7 +186,6 @@ export default function ActivityDetailPage() {
   // Must be called before any conditional returns (React hooks rules)
   const streamAnalysis = useStreamAnalysis(activityId);
   const analysisData = isAnalysisData(streamAnalysis.data) ? streamAnalysis.data : null;
-  const [showSecondaryMetrics, setShowSecondaryMetrics] = useState(false);
   const [showDetails, setShowDetails] = useState(false);
 
   // Title editing
@@ -454,59 +453,31 @@ export default function ActivityDetailPage() {
           </div>
         ) : (
         <StreamHoverProvider>
-        {/* ── 2. Run Shape Canvas (Hero) + Route Map (inside, between chart and splits) ── */}
-        <div className="mb-6">
-          <RunShapeCanvas
-            activityId={activityId}
-            splits={splits ?? null}
-            intervalSummary={intervalSummary}
-            provider={activity.provider}
-            deviceName={activity.device_name}
-            heatAdjustmentPct={activity.heat_adjustment_pct}
-            temperatureF={activity.temperature_f}
-          >
-            {activity.gps_track && activity.gps_track.length > 1 && (
-              <div className="mt-3">
-                <RouteContext
-                  activityId={activityId}
-                  track={activity.gps_track}
-                  startCoords={activity.start_coords}
-                  sportType={activity.sport_type || 'run'}
-                  startTime={activity.start_time}
-                  streamPoints={analysisData?.stream}
-                  weather={{
-                    temperature_f: activity.temperature_f,
-                    weather_condition: activity.weather_condition,
-                    humidity_pct: activity.humidity_pct,
-                    heat_adjustment_pct: activity.heat_adjustment_pct,
-                  }}
-                  distanceM={activity.distance_m}
-                  durationS={activity.moving_time_s || activity.elapsed_time_s}
-                  heatAdjustmentPct={activity.heat_adjustment_pct}
-                />
-              </div>
-            )}
-          </RunShapeCanvas>
-        </div>
+        {/* ── 2. Route Map (top of page — compact, wide) ── */}
+        {activity.gps_track && activity.gps_track.length > 1 && (
+          <div className="mb-4">
+            <RouteContext
+              activityId={activityId}
+              track={activity.gps_track}
+              startCoords={activity.start_coords}
+              sportType={activity.sport_type || 'run'}
+              startTime={activity.start_time}
+              streamPoints={analysisData?.stream}
+              weather={{
+                temperature_f: activity.temperature_f,
+                weather_condition: activity.weather_condition,
+                humidity_pct: activity.humidity_pct,
+                heat_adjustment_pct: activity.heat_adjustment_pct,
+              }}
+              distanceM={activity.distance_m}
+              durationS={activity.moving_time_s || activity.elapsed_time_s}
+              heatAdjustmentPct={activity.heat_adjustment_pct}
+            />
+          </div>
+        )}
 
-        {/* ── 4. Reflection Prompt (quick 3-tap) ── */}
-        <ReflectionPrompt activityId={activityId} className="mb-4" />
-
-        {/* ── 4b. Full Feedback: RPE, Leg Feel, Notes ── */}
-        <PerceptionPrompt
-          activityId={activityId}
-          className="mb-4"
-          workoutType={activity.workout_type ?? undefined}
-          expectedRpeRange={activity.expected_rpe_range ?? undefined}
-        />
-
-        {/* ── 4c. Workout Type (compact) ── */}
-        <div className="mb-6">
-          <WorkoutTypeSelector activityId={activityId} compact />
-        </div>
-
-        {/* ── 5. Metrics Ribbon (compact horizontal strip) ── */}
-        <div className="mb-6">
+        {/* ── 3. Stats Banner (compact horizontal strip below map) ── */}
+        <div className="mb-4">
           <div className="flex items-center gap-4 overflow-x-auto pb-1">
             <MetricPill label="Distance" value={formatDistance(activity.distance_m)} />
             <MetricPill label="Duration" value={formatDuration(activity.moving_time_s)} />
@@ -533,27 +504,40 @@ export default function ActivityDetailPage() {
               unit="spm"
             />
           </div>
-          {/* Secondary metrics expand */}
-          <button
-            onClick={() => setShowSecondaryMetrics(!showSecondaryMetrics)}
-            className="text-xs text-slate-500 hover:text-slate-300 mt-2 transition-colors"
-          >
-            {showSecondaryMetrics ? 'Hide details ▲' : 'More details ▼'}
-          </button>
-          {showSecondaryMetrics && (
-            <div className="flex items-center gap-4 mt-2 overflow-x-auto pb-1">
-              <MetricPill label="Max HR" value={activity.max_hr?.toString() || '--'} unit="bpm" secondary />
-              <MetricPill label="Temp" value={activity.temperature_f?.toFixed(0) || '--'} unit="°F" secondary />
-              <MetricPill label="Workout" value={activity.workout_type?.replace(/_/g, ' ') || '--'} secondary />
-            </div>
-          )}
-          {/* Garmin attribution is shown above the fold in the header — not repeated here */}
-
           {activity.heat_adjustment_pct != null && activity.heat_adjustment_pct > 3 && (
-            <p className="text-xs text-amber-400/80 mt-2">
+            <p className="text-xs text-amber-400/80 mt-1.5">
               🌡️ Heat slowed this run ~{activity.heat_adjustment_pct.toFixed(1)}% — your effort was better than the pace shows
             </p>
           )}
+        </div>
+
+        {/* ── 4. Run Shape Canvas + Splits (together — screenshottable) ── */}
+        <div className="mb-4">
+          <RunShapeCanvas
+            activityId={activityId}
+            splits={splits ?? null}
+            intervalSummary={intervalSummary}
+            provider={activity.provider}
+            deviceName={activity.device_name}
+            heatAdjustmentPct={activity.heat_adjustment_pct}
+            temperatureF={activity.temperature_f}
+          />
+        </div>
+
+        {/* ── 5. Reflection Prompt (quick 3-tap) ── */}
+        <ReflectionPrompt activityId={activityId} className="mb-4" />
+
+        {/* ── 5b. Full Feedback: RPE, Leg Feel, Notes ── */}
+        <PerceptionPrompt
+          activityId={activityId}
+          className="mb-4"
+          workoutType={activity.workout_type ?? undefined}
+          expectedRpeRange={activity.expected_rpe_range ?? undefined}
+        />
+
+        {/* ── 5c. Workout Type (compact) ── */}
+        <div className="mb-6">
+          <WorkoutTypeSelector activityId={activityId} compact />
         </div>
 
         {/* ── Pre-activity wellness context ── */}
