@@ -394,6 +394,56 @@ def _get_cached_cardiac_decoupling(activity_id, db: Session) -> Optional[float]:
     return drift.get("cardiac_pct")
 
 
+def _get_drift_history(
+    activity: Activity,
+    db: Session,
+) -> List[Dict[str, Any]]:
+    """
+    Fetch cardiac decoupling history for controlled-steady runs over the last 90 days.
+    Returns list of {date, drift_pct, distance_m} sorted by date ascending.
+    Empty list if fewer than 3 comparable runs exist.
+    """
+    from services.stream_analysis_cache import CURRENT_ANALYSIS_VERSION
+
+    end_date = activity.start_time
+    start_date = end_date - timedelta(days=90)
+
+    rows = (
+        db.query(
+            Activity.start_time,
+            Activity.distance_m,
+            CachedStreamAnalysis.result_json,
+        )
+        .join(CachedStreamAnalysis, CachedStreamAnalysis.activity_id == Activity.id)
+        .filter(
+            Activity.athlete_id == activity.athlete_id,
+            Activity.id != activity.id,
+            Activity.start_time >= start_date,
+            Activity.start_time < end_date,
+            Activity.workout_type.in_(CONTROLLED_STEADY_TYPES),
+            CachedStreamAnalysis.analysis_version == CURRENT_ANALYSIS_VERSION,
+        )
+        .order_by(Activity.start_time.asc())
+        .all()
+    )
+
+    history = []
+    for start_time, distance_m, result_json in rows:
+        drift = result_json.get("drift") if result_json else None
+        cardiac_pct = drift.get("cardiac_pct") if drift else None
+        if cardiac_pct is not None:
+            history.append({
+                "date": start_time.date().isoformat(),
+                "drift_pct": round(cardiac_pct, 1),
+                "distance_m": distance_m,
+            })
+
+    if len(history) < 3:
+        return []
+
+    return history
+
+
 def _get_decoupling_attribution(
     activity: Activity,
     db: Session,
@@ -436,6 +486,31 @@ def _get_decoupling_attribution(
         color = "orange"
         confidence = AttributionConfidence.HIGH
 
+    data: Dict[str, Any] = {
+        "cardiac_decoupling_pct": round(decoupling, 1),
+        "method": "cardiac_decoupling",
+    }
+
+    history = _get_drift_history(activity, db)
+    if history:
+        avg_drift = sum(h["drift_pct"] for h in history) / len(history)
+        diff = decoupling - avg_drift
+
+        if diff < -1.5:
+            trend = "trending_down"
+            insight += f" Your last {len(history)} similar efforts averaged {avg_drift:.1f}% — trending down."
+        elif diff > 1.5:
+            trend = "trending_up"
+            insight += f" Your last {len(history)} similar efforts averaged {avg_drift:.1f}% — trending up."
+        else:
+            trend = "stable"
+            insight += f" Your similar efforts have been stable around {avg_drift:.0f}% drift."
+
+        data["trend"] = trend
+        data["trend_avg_pct"] = round(avg_drift, 1)
+        data["trend_sample_size"] = len(history)
+        data["trend_oldest_date"] = history[0]["date"]
+
     return RunAttribution(
         source=AttributionSource.EFFICIENCY.value,
         priority=PRIORITY_EFFICIENCY,
@@ -444,10 +519,7 @@ def _get_decoupling_attribution(
         insight=insight,
         icon="heart-pulse",
         color=color,
-        data={
-            "cardiac_decoupling_pct": round(decoupling, 1),
-            "method": "cardiac_decoupling",
-        },
+        data=data,
     )
 
 
@@ -570,6 +642,43 @@ def get_efficiency_attribution(
             color = "orange"
             confidence = AttributionConfidence.MODERATE
 
+        data: Dict[str, Any] = {
+            "efficiency": round(efficiency, 4),
+            "avg_efficiency": round(avg_efficiency, 4),
+            "diff_percent": round(diff_pct, 1),
+            "sample_size": len(similar_activities),
+            "comparison": comparison_label,
+            "method": "gap" if used_gap else "raw_pace",
+        }
+
+        # Longitudinal trend when enough peers exist.
+        # Neutral language only — efficiency polarity is ambiguous per
+        # Athlete Trust Safety Contract.
+        if len(similar_activities) >= 5:
+            sorted_peers = sorted(similar_activities, key=lambda a: a.start_time)
+            oldest_3 = sorted_peers[:3]
+            newest_3 = sorted_peers[-3:]
+
+            oldest_avg = sum(_compute_gap_efficiency(a, db)[0] for a in oldest_3) / 3
+            newest_avg = sum(_compute_gap_efficiency(a, db)[0] for a in newest_3) / 3
+
+            if oldest_avg > 0:
+                trend_pct = ((newest_avg - oldest_avg) / oldest_avg) * 100
+                wt_label = (activity.workout_type or "").lower().replace("_", " ")
+                peer_label = f"{wt_label}s" if wt_label else "runs"
+
+                if trend_pct > 3:
+                    trend = "trending_higher"
+                    insight += f" Efficiency trending higher over your last {len(similar_activities)} {peer_label}."
+                elif trend_pct < -3:
+                    trend = "trending_lower"
+                    insight += f" Efficiency trending lower over your last {len(similar_activities)} {peer_label}."
+                else:
+                    trend = "stable"
+
+                data["trend"] = trend
+                data["trend_sample_size"] = len(similar_activities)
+
         return RunAttribution(
             source=AttributionSource.EFFICIENCY.value,
             priority=PRIORITY_EFFICIENCY,
@@ -578,14 +687,7 @@ def get_efficiency_attribution(
             insight=insight,
             icon="gauge",
             color=color,
-            data={
-                "efficiency": round(efficiency, 4),
-                "avg_efficiency": round(avg_efficiency, 4),
-                "diff_percent": round(diff_pct, 1),
-                "sample_size": len(similar_activities),
-                "comparison": comparison_label,
-                "method": "gap" if used_gap else "raw_pace",
-            }
+            data=data,
         )
 
     except Exception as e:

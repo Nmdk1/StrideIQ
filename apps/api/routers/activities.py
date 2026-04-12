@@ -881,6 +881,70 @@ class FindingAnnotation(BaseModel):
     evidence_summary: Optional[str] = None
 
 
+_INPUT_TO_CHECKIN_FIELD = {
+    "sleep_hours": "sleep_h",
+    "sleep_quality_1_5": "sleep_quality_1_5",
+    "hrv_rmssd": "hrv_rmssd",
+    "stress_1_5": "stress_1_5",
+    "readiness_1_5": "readiness_1_5",
+    "soreness_1_5": "soreness_1_5",
+    "motivation_1_5": "motivation_1_5",
+    "resting_hr": "resting_hr",
+}
+
+_INPUT_TO_ACTIVITY_FIELD = {
+    "sleep_hours": "pre_sleep_h",
+    "hrv_rmssd": "pre_recovery_hrv",
+}
+
+
+def _build_prestate(activity: Activity, db: Session) -> dict:
+    """Build actual pre-state values for this activity from checkin + activity fields."""
+    from models import DailyCheckin
+
+    values: dict = {}
+
+    if activity.start_time:
+        checkin = (
+            db.query(DailyCheckin)
+            .filter(
+                DailyCheckin.athlete_id == activity.athlete_id,
+                DailyCheckin.date == activity.start_time.date(),
+            )
+            .first()
+        )
+        if checkin:
+            for input_name, field in _INPUT_TO_CHECKIN_FIELD.items():
+                val = getattr(checkin, field, None)
+                if val is not None:
+                    values[input_name] = float(val)
+
+    for input_name, field in _INPUT_TO_ACTIVITY_FIELD.items():
+        if input_name not in values:
+            val = getattr(activity, field, None)
+            if val is not None:
+                values[input_name] = float(val)
+
+    return values
+
+
+def _finding_relevant(finding, actual_values: dict) -> bool:
+    """Check if a finding's input condition was met for this activity's pre-state."""
+    if finding.input_name not in actual_values:
+        return False
+
+    if finding.threshold_value is None:
+        return True
+
+    actual = actual_values[finding.input_name]
+    if finding.threshold_direction == "below_matters":
+        return actual < finding.threshold_value
+    elif finding.threshold_direction == "above_matters":
+        return actual > finding.threshold_value
+
+    return True
+
+
 @router.get("/{activity_id}/findings", response_model=List[FindingAnnotation])
 def get_activity_findings(
     activity_id: UUID,
@@ -888,7 +952,8 @@ def get_activity_findings(
     db: Session = Depends(get_db),
 ):
     """
-    Return up to 3 relevant active findings for this activity.
+    Return up to 3 active findings relevant to this activity's actual pre-state.
+    Zero findings is a valid answer — means no known patterns were triggered today.
     """
     from models import CorrelationFinding as _CF
     from services.fingerprint_context import _SUPPRESSED_SIGNALS, _ENVIRONMENT_SIGNALS
@@ -901,8 +966,10 @@ def get_activity_findings(
     if not activity:
         raise HTTPException(status_code=404, detail="Activity not found")
 
+    actual_values = _build_prestate(activity, db)
+
     _suppressed = _SUPPRESSED_SIGNALS | _ENVIRONMENT_SIGNALS
-    findings = (
+    candidates = (
         db.query(_CF)
         .filter(
             _CF.athlete_id == current_user.id,
@@ -911,12 +978,14 @@ def get_activity_findings(
             ~_CF.input_name.in_(_suppressed),
         )
         .order_by(_CF.times_confirmed.desc())
-        .limit(3)
         .all()
     )
 
     result = []
-    for f in findings:
+    for f in candidates:
+        if not _finding_relevant(f, actual_values):
+            continue
+
         tier = "strong" if f.times_confirmed >= 8 else "confirmed"
         text = f.insight_text or f"{friendly_signal_name(f.input_name)} affects your {friendly_signal_name(f.output_metric)}"
         evidence = f"Confirmed {f.times_confirmed} times" if f.times_confirmed else None
@@ -926,5 +995,8 @@ def get_activity_findings(
             confidence_tier=tier,
             evidence_summary=evidence,
         ))
+
+        if len(result) >= 3:
+            break
 
     return result
