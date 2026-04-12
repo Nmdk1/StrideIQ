@@ -3,15 +3,25 @@
 import { MapContainer, TileLayer, Polyline, CircleMarker, Marker, useMap } from 'react-leaflet';
 import L, { LatLngBoundsExpression } from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import { useEffect, useMemo, useState, useCallback, useRef } from 'react';
+import { useEffect, useMemo, useState, useCallback } from 'react';
 import { Maximize2, Minimize2, X } from 'lucide-react';
 import type { StreamPoint } from '@/components/activities/rsi/hooks/useStreamAnalysis';
+import { prepareBoundsForFit } from '@/lib/map/prepareBoundsForFit';
 
 const CARTO_VOYAGER = 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png';
 const CARTO_ATTRIBUTION = '&copy; <a href="https://carto.com/">CARTO</a> &copy; <a href="https://www.openstreetmap.org/copyright">OSM</a>';
 
 /** When tiles don’t cover the viewport to the pixel (Leaflet + rounded corners), this shows through — must match basemap, not app chrome, or you get a “padding” ring. */
 const LEAFLET_BASEMAP_FALLBACK_BG = '#dce8e6';
+
+/** Carto Voyager supports zoom ~19; tight fit needs headroom so small loops aren’t left as a dot in a huge frame. */
+const MAP_MAX_ZOOM = 20;
+
+const FIT_BOUNDS_OPTIONS: L.FitBoundsOptions = {
+  padding: [2, 2],
+  maxZoom: 19,
+  animate: false,
+};
 
 interface MileMarker {
   position: [number, number];
@@ -168,31 +178,46 @@ function weatherIcon(condition: string | null): string {
 
 function FitBounds({ bounds }: { bounds: LatLngBoundsExpression }) {
   const map = useMap();
-  const didFit = useRef(false);
 
   useEffect(() => {
-    if (didFit.current) return;
-
     const container = map.getContainer();
+    let debounce = 0;
 
-    const doFit = () => {
-      if (didFit.current) return;
+    const apply = () => {
       const { clientWidth, clientHeight } = container;
-      if (clientWidth > 0 && clientHeight > 0) {
-        didFit.current = true;
-        map.invalidateSize();
-        map.fitBounds(bounds, { padding: [12, 12] });
-      }
+      if (clientWidth <= 0 || clientHeight <= 0) return;
+      const prepared = prepareBoundsForFit(bounds);
+      map.invalidateSize();
+      map.fitBounds(prepared, FIT_BOUNDS_OPTIONS);
     };
 
-    doFit();
-    if (didFit.current) return;
+    const schedule = () => {
+      clearTimeout(debounce);
+      debounce = window.setTimeout(apply, 0);
+    };
 
-    const observer = new ResizeObserver(doFit);
-    observer.observe(container);
-    const fallback = setTimeout(doFit, 800);
+    const ro = new ResizeObserver(() => {
+      clearTimeout(debounce);
+      debounce = window.setTimeout(apply, 80);
+    });
+    ro.observe(container);
+
+    const io = new IntersectionObserver(
+      entries => {
+        if (entries.some(e => e.isIntersecting && e.intersectionRect.width > 0)) {
+          schedule();
+        }
+      },
+      { threshold: [0, 0.01] },
+    );
+    io.observe(container);
+
+    schedule();
+    const fallback = setTimeout(apply, 500);
     return () => {
-      observer.disconnect();
+      ro.disconnect();
+      io.disconnect();
+      clearTimeout(debounce);
       clearTimeout(fallback);
     };
   }, [map, bounds]);
@@ -228,18 +253,33 @@ export default function ActivityMapInner({
     [streamPoints, hasPaceData, showEffort],
   );
 
+  // Hi-res stream points (must be before bounds so fit uses the same geometry as the drawn line)
+  const hiResTrack = useMemo<[number, number][]>(() => {
+    if (!streamPoints) return [];
+    const pts: [number, number][] = [];
+    for (const p of streamPoints) {
+      if (p.lat != null && p.lng != null) pts.push([p.lat, p.lng]);
+    }
+    return pts;
+  }, [streamPoints]);
+
   const bounds = useMemo(() => {
-    if (trackLatLng.length === 0 && startLatLng) return [startLatLng, startLatLng] as LatLngBoundsExpression;
-    if (trackLatLng.length === 0) return [[0, 0], [0, 0]] as LatLngBoundsExpression;
+    const points: [number, number][] = [];
+    for (const p of trackLatLng) points.push(p);
+    if (hiResTrack.length > 1) {
+      for (const p of hiResTrack) points.push(p);
+    }
+    if (points.length === 0 && startLatLng) return [startLatLng, startLatLng] as LatLngBoundsExpression;
+    if (points.length === 0) return [[0, 0], [0, 0]] as LatLngBoundsExpression;
     let minLat = Infinity, maxLat = -Infinity, minLng = Infinity, maxLng = -Infinity;
-    for (const [lat, lng] of trackLatLng) {
+    for (const [lat, lng] of points) {
       if (lat < minLat) minLat = lat;
       if (lat > maxLat) maxLat = lat;
       if (lng < minLng) minLng = lng;
       if (lng > maxLng) maxLng = lng;
     }
     return [[minLat, minLng], [maxLat, maxLng]] as LatLngBoundsExpression;
-  }, [trackLatLng, startLatLng]);
+  }, [trackLatLng, hiResTrack, startLatLng]);
 
   const mileMarkersAll = useMemo(() => computeMileMarkers(trackLatLng, unitSystem), [trackLatLng, unitSystem]);
   const mileMarkers = useMemo(() => {
@@ -280,16 +320,6 @@ export default function ActivityMapInner({
   }, [isFullscreen, handleEscape]);
 
   const usePaceColoring = paceSegments.length > 0;
-
-  // High-res coordinate array from stream data (for glow + bounds when available)
-  const hiResTrack = useMemo<[number, number][]>(() => {
-    if (!streamPoints) return [];
-    const pts: [number, number][] = [];
-    for (const p of streamPoints) {
-      if (p.lat != null && p.lng != null) pts.push([p.lat, p.lng]);
-    }
-    return pts;
-  }, [streamPoints]);
 
   // Use hi-res track for glow when available, fallback to coarse gps_track
   const glowTrack = hiResTrack.length > 1 ? hiResTrack : trackLatLng;
@@ -344,6 +374,7 @@ export default function ActivityMapInner({
           <MapContainer
             center={isPin ? startLatLng! : trackLatLng[0] || [0, 0]}
             zoom={14}
+            maxZoom={MAP_MAX_ZOOM}
             scrollWheelZoom={true}
             zoomControl={true}
             attributionControl={true}

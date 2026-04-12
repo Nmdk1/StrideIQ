@@ -16,7 +16,7 @@
  *   7. "Show details" → plan comparison, Why This Run, etc.
  */
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useSyncExternalStore } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/lib/hooks/useAuth';
@@ -184,17 +184,24 @@ export default function ActivityDetailPage() {
   const streamAnalysis = useStreamAnalysis(activityId);
   const analysisData = isAnalysisData(streamAnalysis.data) ? streamAnalysis.data : null;
   const [showDetails, setShowDetails] = useState(false);
-  /** Mobile: map starts collapsed so run shape stays above the fold; desktop: expanded */
+  /** Mobile: user toggles map; desktop (md+): always show — do not mount Leaflet while `display:none` (zero-size fit). */
   const [routeMapOpen, setRouteMapOpen] = useState(false);
-
+  /** Avoid SSR/client mismatch from matchMedia; first paint matches server (no map), then client commits. */
+  const [clientReady, setClientReady] = useState(false);
   useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const mq = window.matchMedia('(min-width: 768px)');
-    const sync = () => setRouteMapOpen(mq.matches);
-    sync();
-    mq.addEventListener('change', sync);
-    return () => mq.removeEventListener('change', sync);
+    setClientReady(true);
   }, []);
+  const isMdUp = useSyncExternalStore(
+    onStoreChange => {
+      if (typeof window === 'undefined') return () => {};
+      const mq = window.matchMedia('(min-width: 768px)');
+      mq.addEventListener('change', onStoreChange);
+      return () => mq.removeEventListener('change', onStoreChange);
+    },
+    () => window.matchMedia('(min-width: 768px)').matches,
+    () => false,
+  );
+  const showRouteMap = clientReady && (isMdUp || routeMapOpen);
 
   // Title editing
   const queryClient = useQueryClient();
@@ -522,7 +529,7 @@ export default function ActivityDetailPage() {
                 {routeMapOpen ? 'Hide map' : 'Show map'}
               </button>
             </div>
-            <div className={routeMapOpen ? 'block' : 'hidden md:block'}>
+            {showRouteMap && (
               <RouteContext
                 activityId={activityId}
                 track={activity.gps_track}
@@ -540,7 +547,7 @@ export default function ActivityDetailPage() {
                 durationS={activity.moving_time_s || activity.elapsed_time_s}
                 heatAdjustmentPct={activity.heat_adjustment_pct}
               />
-            </div>
+            )}
           </div>
         )}
 

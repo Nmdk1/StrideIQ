@@ -262,6 +262,7 @@ jobs:
           CI: "true"
         run: |
           npm test --silent -- \
+            prepareBoundsForFit.test.ts \
             admin-access-guard.test.tsx \
             admin-ops-visibility.test.tsx \
             home-latency-bridge.test.tsx \
