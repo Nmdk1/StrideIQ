@@ -177,7 +177,7 @@ function FitBounds({ bounds }: { bounds: LatLngBoundsExpression }) {
   const didFit = useRef(false);
   useEffect(() => {
     if (!didFit.current) {
-      map.fitBounds(bounds, { padding: [15, 15], maxZoom: 17 });
+      map.fitBounds(bounds, { padding: [30, 30], maxZoom: 16 });
       didFit.current = true;
     }
   }, [map, bounds]);
@@ -284,8 +284,9 @@ export default function ActivityMapInner({
         className={
           isFullscreen
             ? 'fixed inset-0 z-50 bg-slate-900'
-            : 'relative rounded-lg overflow-hidden border border-slate-700/30 h-[200px] md:h-[280px]'
+            : 'relative rounded-lg overflow-hidden border border-slate-700/30'
         }
+        style={isFullscreen ? undefined : { aspectRatio: '4 / 3', maxHeight: 340 }}
       >
         {/* Fullscreen toggle */}
         <button
