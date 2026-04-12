@@ -28,6 +28,9 @@ import RouteContext from '@/components/activities/map/RouteContext';
 import { StreamHoverProvider } from '@/lib/context/StreamHoverContext';
 import { ActivityTabs, type ActivityTabId } from '@/components/activities/ActivityTabs';
 import { ActivitySplitsTabPanel } from '@/components/activities/ActivitySplitsTabPanel';
+import { GoingInStrip } from '@/components/activities/GoingInStrip';
+import { GoingInCard } from '@/components/activities/GoingInCard';
+import { FindingsCards } from '@/components/activities/FindingsCards';
 
 interface Activity {
   id: string;
@@ -501,7 +504,11 @@ export default function ActivityDetailPage() {
           )}
         </div>
 
-        <GoingInCompactStrip activity={activity} />
+        <GoingInStrip
+          preRecoveryHrv={activity.pre_recovery_hrv}
+          preRestingHr={activity.pre_resting_hr}
+          preSleepH={activity.pre_sleep_h}
+        />
 
         <ActivityTabs
           activeTab={activeTab}
@@ -593,57 +600,14 @@ export default function ActivityDetailPage() {
             ),
             context: (
               <div className="space-y-4">
-                {(activity.pre_recovery_hrv != null || activity.pre_resting_hr != null || activity.pre_sleep_h != null) && (
-                  <div className="rounded-lg border border-slate-700/30 bg-slate-800/30 px-4 py-3">
-                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-2">Going In</p>
-                    <div className="flex flex-wrap gap-x-6 gap-y-1">
-                      {activity.pre_recovery_hrv != null && (
-                        <span className="text-sm text-slate-300">
-                          <span className="text-slate-500">Recovery HRV</span>{' '}
-                          <span className="font-medium">{activity.pre_recovery_hrv}</span>
-                          <span className="text-slate-500 text-xs ml-0.5">ms</span>
-                          {activity.pre_overnight_hrv != null && (
-                            <span className="text-xs text-slate-500 ml-2">(overnight avg {activity.pre_overnight_hrv})</span>
-                          )}
-                        </span>
-                      )}
-                      {activity.pre_resting_hr != null && (
-                        <span className="text-sm text-slate-300">
-                          <span className="text-slate-500">RHR</span>{' '}
-                          <span className="font-medium">{activity.pre_resting_hr}</span>
-                          <span className="text-slate-500 text-xs ml-0.5">bpm</span>
-                        </span>
-                      )}
-                      {activity.pre_sleep_h != null && (
-                        <span className="text-sm text-slate-300">
-                          <span className="text-slate-500">Sleep</span>{' '}
-                          <span className="font-medium">{activity.pre_sleep_h.toFixed(1)}</span>
-                          <span className="text-slate-500 text-xs ml-0.5">h</span>
-                          {activity.pre_sleep_score != null && (
-                            <span className="text-xs text-slate-500 ml-1">({activity.pre_sleep_score})</span>
-                          )}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                )}
-                {findings && findings.length > 0 && (
-                  <div className="space-y-2">
-                    {findings.map((f, i) => (
-                      <div key={i} className="rounded-lg border border-slate-700/30 bg-slate-800/20 px-4 py-3">
-                        <div className="flex items-start gap-2">
-                          <span className="text-sm flex-shrink-0">🔬</span>
-                          <div>
-                            <p className="text-sm text-slate-300">{f.text}</p>
-                            <p className="text-xs text-slate-500 mt-0.5">
-                              {f.confidence_tier === 'strong' ? 'Strong' : 'Confirmed'} · {f.domain.replace(/_/g, ' ')}
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
+                <GoingInCard
+                  preRecoveryHrv={activity.pre_recovery_hrv}
+                  preOvernightHrv={activity.pre_overnight_hrv}
+                  preRestingHr={activity.pre_resting_hr}
+                  preSleepH={activity.pre_sleep_h}
+                  preSleepScore={activity.pre_sleep_score}
+                />
+                <FindingsCards findings={findings} />
                 {activity.narrative && (
                   <div className="px-4 py-3 bg-slate-800/30 border border-slate-700/30 rounded-lg">
                     <p className="text-sm text-slate-400 italic leading-relaxed">
@@ -739,42 +703,6 @@ function formatDeviceName(raw: string): string {
 
 // ============ Sub-Components ============
 
-/** One-line Going In summary below stats (full card lives on Context tab). */
-function GoingInCompactStrip({ activity }: { activity: Activity }) {
-  if (
-    activity.pre_recovery_hrv == null &&
-    activity.pre_resting_hr == null &&
-    activity.pre_sleep_h == null
-  ) {
-    return null;
-  }
-  return (
-    <div className="mb-4 flex flex-wrap items-baseline gap-x-5 gap-y-1 text-sm border-b border-slate-700/30 pb-3">
-      <span className="text-xs font-medium text-slate-500 uppercase tracking-wide w-full sm:w-auto">Going In</span>
-      {activity.pre_recovery_hrv != null && (
-        <span className="text-slate-300">
-          <span className="text-slate-500">HRV</span>{' '}
-          <span className="font-medium tabular-nums">{activity.pre_recovery_hrv}</span>
-          <span className="text-slate-500 text-xs">ms</span>
-        </span>
-      )}
-      {activity.pre_resting_hr != null && (
-        <span className="text-slate-300">
-          <span className="text-slate-500">RHR</span>{' '}
-          <span className="font-medium tabular-nums">{activity.pre_resting_hr}</span>
-          <span className="text-slate-500 text-xs">bpm</span>
-        </span>
-      )}
-      {activity.pre_sleep_h != null && (
-        <span className="text-slate-300">
-          <span className="text-slate-500">Sleep</span>{' '}
-          <span className="font-medium tabular-nums">{activity.pre_sleep_h.toFixed(1)}</span>
-          <span className="text-slate-500 text-xs">h</span>
-        </span>
-      )}
-    </div>
-  );
-}
 
 /** Compact metric pill for the horizontal ribbon */
 function MetricPill({
