@@ -358,62 +358,79 @@ export default function NutritionPage() {
     setScannerOpen(true);
     setScannerLoading(true);
     try {
-      const { Html5Qrcode } = await import('html5-qrcode');
-      // Wait for React to commit the #barcode-live-reader div to the DOM
-      let attempts = 0;
-      while (!document.getElementById('barcode-live-reader') && attempts < 20) {
-        await new Promise((r) => setTimeout(r, 50));
-        attempts++;
+      // Verify camera API exists
+      if (!navigator.mediaDevices?.getUserMedia) {
+        throw new Error('Camera not supported on this browser');
       }
-      if (!document.getElementById('barcode-live-reader')) {
-        throw new Error('Scanner container not found');
-      }
-      const scanner = new Html5Qrcode('barcode-live-reader', {
-        formatsToSupport: [0, 2, 3, 4, 5, 6, 7, 8, 10, 11],
-        verbose: false,
-      });
-      scannerRef.current = scanner;
-      await scanner.start(
-        { facingMode: 'environment' },
-        {
-          fps: 10,
-          qrbox: { width: 280, height: 120 },
-          aspectRatio: 1.0,
-        },
-        async (decodedText: string) => {
-          try {
-            const state = scanner.getState?.();
-            if (state === 2) await scanner.stop();
-          } catch { /* ignore */ }
-          await scanner.clear();
-          scannerRef.current = null;
-          setScannerOpen(false);
-          setScannerLoading(false);
 
-          try {
-            const scan = await scanBarcode.mutateAsync(decodedText);
-            if (scan.found && scan.food_name) {
-              setBarcodeResult({
-                food_name: scan.food_name,
-                calories: scan.calories || 0,
-                protein_g: scan.protein_g || 0,
-                carbs_g: scan.carbs_g || 0,
-                fat_g: scan.fat_g || 0,
-                servings: 1,
-                fdc_id: scan.fdc_id,
-              });
-            } else {
-              showToast('Product not found — try a photo instead');
-            }
-          } catch {
-            showToast('Lookup failed — try again');
-          }
-        },
-        () => { /* ignore scan errors (frames without barcode) */ },
-      );
+      const { Html5Qrcode } = await import('html5-qrcode');
+
+      // Wait for the DOM element to render
+      let el: HTMLElement | null = null;
+      for (let i = 0; i < 30 && !el; i++) {
+        await new Promise((r) => setTimeout(r, 50));
+        el = document.getElementById('barcode-live-reader');
+      }
+      if (!el) throw new Error('Scanner container not found');
+
+      const scanner = new Html5Qrcode('barcode-live-reader', { verbose: false });
+      scannerRef.current = scanner;
+
+      // Try rear camera first, fall back to front camera, then any camera
+      const cameraConfigs: Array<{ facingMode: string } | boolean> = [
+        { facingMode: 'environment' },
+        { facingMode: 'user' },
+      ];
+
+      let started = false;
+      for (const camConfig of cameraConfigs) {
+        if (started) break;
+        try {
+          await scanner.start(
+            camConfig,
+            { fps: 10, qrbox: { width: 280, height: 120 } },
+            async (decodedText: string) => {
+              try {
+                const state = (scanner as unknown as { getState?: () => number }).getState?.();
+                if (state === 2) await scanner.stop();
+              } catch { /* ignore */ }
+              await scanner.clear();
+              scannerRef.current = null;
+              setScannerOpen(false);
+              setScannerLoading(false);
+
+              try {
+                const scan = await scanBarcode.mutateAsync(decodedText);
+                if (scan.found && scan.food_name) {
+                  setBarcodeResult({
+                    food_name: scan.food_name,
+                    calories: scan.calories || 0,
+                    protein_g: scan.protein_g || 0,
+                    carbs_g: scan.carbs_g || 0,
+                    fat_g: scan.fat_g || 0,
+                    servings: 1,
+                    fdc_id: scan.fdc_id,
+                  });
+                } else {
+                  showToast('Product not found — try a photo instead');
+                }
+              } catch {
+                showToast('Lookup failed — try again');
+              }
+            },
+            () => {},
+          );
+          started = true;
+        } catch {
+          // Try next camera config
+        }
+      }
+
+      if (!started) throw new Error('No camera available');
       setScannerLoading(false);
-    } catch {
-      showToast('Could not access camera');
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Could not access camera';
+      showToast(msg);
       setScannerOpen(false);
       setScannerLoading(false);
     }
@@ -628,7 +645,7 @@ export default function NutritionPage() {
                       <span className="ml-2 text-xs text-slate-400">Starting camera...</span>
                     </div>
                   )}
-                  <div id="barcode-live-reader" className="rounded-lg overflow-hidden" />
+                  <div id="barcode-live-reader" className="rounded-lg overflow-hidden" style={{ minHeight: 300, width: '100%' }} />
                   <p className="text-xs text-slate-500 text-center">Point camera at the barcode — it will scan automatically</p>
                 </div>
               </div>
