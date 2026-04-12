@@ -7,7 +7,7 @@ import {
   renderFindingShareCardPng,
   type FindingShareCardInput,
 } from '@/components/manual/findingShareCanvas';
-import { sendToolTelemetry } from '@/lib/hooks/useToolTelemetry';
+// Telemetry (finding_share_*) removed from API 2026-04-12 — restore when this modal is wired again.
 
 export type FindingShareTelemetryType =
   | 'race_character'
@@ -30,18 +30,13 @@ export function FindingShareModal({
   findingType,
   findingRef,
 }: FindingShareModalProps) {
+  void findingType;
+  void findingRef;
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const blobRef = useRef<Blob | null>(null);
   const cardKeyRef = useRef<string>('');
-
-  const metaBase = {
-    finding_type: findingType,
-    ...(findingRef ? { finding_ref: findingRef } : {}),
-  };
-
-  const manualPath = { path: '/manual' as const };
 
   const regenerate = useCallback(async () => {
     setGenerating(true);
@@ -98,7 +93,6 @@ export function FindingShareModal({
           title: 'StrideIQ finding',
           text: caption,
         });
-        void sendToolTelemetry('finding_share_completed', metaBase, manualPath);
       } else {
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
@@ -110,7 +104,6 @@ export function FindingShareModal({
         URL.revokeObjectURL(url);
         await navigator.clipboard.writeText(caption).catch(() => {});
         setToast('Image saved — paste the link wherever you share');
-        void sendToolTelemetry('finding_share_completed', metaBase, manualPath);
       }
     } catch (err) {
       if ((err as Error).name !== 'AbortError') {

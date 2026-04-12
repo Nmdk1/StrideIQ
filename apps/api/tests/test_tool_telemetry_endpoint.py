@@ -29,27 +29,3 @@ def test_signup_cta_accepts_non_tools_path():
         json={"event_type": "signup_cta_click", "path": "/", "metadata": {"cta": "hero_primary"}},
     )
     assert r.status_code == 204
-
-
-def test_finding_share_requires_manual_path():
-    r = client.post(
-        "/v1/telemetry/tool-event",
-        json={
-            "event_type": "finding_share_initiated",
-            "path": "/tools/x",
-            "metadata": {"finding_type": "highlighted_finding"},
-        },
-    )
-    assert r.status_code == 400
-
-
-def test_finding_share_accepts_manual_path():
-    r = client.post(
-        "/v1/telemetry/tool-event",
-        json={
-            "event_type": "finding_share_completed",
-            "path": "/manual",
-            "metadata": {"finding_type": "cascade_story", "finding_ref": "abc"},
-        },
-    )
-    assert r.status_code == 204

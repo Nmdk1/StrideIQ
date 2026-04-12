@@ -20,12 +20,7 @@ function getToken(): string | null {
   return localStorage.getItem('auth_token');
 }
 
-export type ToolFunnelEventType =
-  | 'tool_page_view'
-  | 'tool_result_view'
-  | 'signup_cta_click'
-  | 'finding_share_initiated'
-  | 'finding_share_completed';
+export type ToolFunnelEventType = 'tool_page_view' | 'tool_result_view' | 'signup_cta_click';
 
 /**
  * First-party funnel events for public tools (and signup CTAs that include pathname).
@@ -34,10 +29,9 @@ export type ToolFunnelEventType =
 export async function sendToolTelemetry(
   eventType: ToolFunnelEventType,
   extra?: Record<string, unknown>,
-  options?: { path?: string },
 ): Promise<void> {
   if (typeof window === 'undefined') return;
-  const path = options?.path ?? window.location.pathname;
+  const path = window.location.pathname;
   try {
     const baseUrl = await getBaseUrl();
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };

@@ -25,11 +25,8 @@ import {
 import {
   Moon, Heart, Zap, Sun, TrendingUp, Target, Brain, Repeat,
   Activity, ChevronDown, ChevronRight, MessageSquare, Footprints,
-  Trophy, GitBranch, Sparkles, Clock, Share2,
+  Trophy, GitBranch, Sparkles, Clock,
 } from 'lucide-react';
-import { FindingShareModal, type FindingShareTelemetryType } from '@/components/manual/FindingShareModal';
-import type { FindingShareCardInput } from '@/components/manual/findingShareCanvas';
-import { sendToolTelemetry } from '@/lib/hooks/useToolTelemetry';
 
 const DOMAIN_ICONS: Record<string, React.ReactNode> = {
   recovery: <Zap className="w-5 h-5" />,
@@ -80,79 +77,9 @@ function formatDate(iso: string | null | undefined): string {
   }
 }
 
-const SHARE_TRUNC = 520;
-const TELEMETRY_MANUAL = { path: '/manual' as const };
-
-function truncateForShare(s: string, max: number): string {
-  const t = s.trim();
-  if (t.length <= max) return t;
-  return `${t.slice(0, max - 1).trimEnd()}…`;
-}
-
-function canShareRaceCharacter(data: RaceCharacter): boolean {
-  if (data.narrative?.trim()) return true;
-  return Boolean(data.has_gap_data && data.race_count > 0);
-}
-
-function raceCharacterShareCard(data: RaceCharacter): FindingShareCardInput {
-  if (data.narrative?.trim()) {
-    return {
-      headline: 'Race character',
-      subline: truncateForShare(data.narrative, SHARE_TRUNC),
-    };
-  }
-  const parts: string[] = [];
-  if (data.has_gap_data && data.avg_gap_pct != null) {
-    parts.push(`Avg. ${data.avg_gap_pct.toFixed(0)}% faster on race day`);
-  }
-  parts.push(`${data.race_count} races analyzed`);
-  return { headline: 'Race character', subline: parts.join(' · ') };
-}
-
-function canShareCascadeStory(story: CascadeStory): boolean {
-  return Boolean(story.narrative?.trim() || story.title?.trim());
-}
-
-function cascadeStoryShareCard(story: CascadeStory): FindingShareCardInput {
-  return {
-    headline: story.title?.trim() || 'How your body connects',
-    subline: truncateForShare(story.narrative, SHARE_TRUNC),
-    confirmedTimes: story.times_confirmed > 0 ? story.times_confirmed : undefined,
-  };
-}
-
-function canShareHighlighted(entry: ManualEntry): boolean {
-  return Boolean(entry.headline?.trim());
-}
-
-function highlightedShareCard(entry: ManualEntry): FindingShareCardInput {
-  return {
-    headline: entry.headline.trim(),
-    confirmedTimes:
-      entry.times_confirmed != null && entry.times_confirmed > 0
-        ? entry.times_confirmed
-        : undefined,
-  };
-}
-
-type ManualShareTarget = {
-  modalKey: string;
-  card: FindingShareCardInput;
-  findingType: FindingShareTelemetryType;
-  findingRef?: string;
-};
-
 // ─── Race Character ─────────────────────────────────────────────────────
 
-function RaceCharacterSection({
-  data,
-  shareEnabled,
-  onShareClick,
-}: {
-  data: RaceCharacter;
-  shareEnabled: boolean;
-  onShareClick: () => void;
-}) {
+function RaceCharacterSection({ data }: { data: RaceCharacter }) {
   const [expanded, setExpanded] = useState(false);
 
   if (!data.has_gap_data && data.race_count === 0) return null;
@@ -161,26 +88,14 @@ function RaceCharacterSection({
     <section className="mb-12">
       <div className="rounded-2xl border border-amber-500/20 bg-gradient-to-br from-[#1a1c2e] to-[#141c2e] overflow-hidden">
         <div className="px-6 py-5">
-          <div className="flex items-start justify-between gap-3 mb-4">
-            <div className="flex items-center gap-3 min-w-0">
-              <div className="w-10 h-10 rounded-full bg-amber-500/10 flex items-center justify-center flex-shrink-0">
-                <Trophy className="w-5 h-5 text-amber-400" />
-              </div>
-              <div className="min-w-0">
-                <h2 className="text-lg font-semibold text-white">Race Character</h2>
-                <p className="text-xs text-slate-500">{data.race_count} races analyzed</p>
-              </div>
+          <div className="flex items-center gap-3 mb-4">
+            <div className="w-10 h-10 rounded-full bg-amber-500/10 flex items-center justify-center">
+              <Trophy className="w-5 h-5 text-amber-400" />
             </div>
-            {shareEnabled && (
-              <button
-                type="button"
-                onClick={onShareClick}
-                className="flex-shrink-0 p-2 rounded-lg text-amber-400/80 hover:text-amber-300 hover:bg-amber-500/10 transition-colors"
-                aria-label="Share race character"
-              >
-                <Share2 className="w-5 h-5" />
-              </button>
-            )}
+            <div>
+              <h2 className="text-lg font-semibold text-white">Race Character</h2>
+              <p className="text-xs text-slate-500">{data.race_count} races analyzed</p>
+            </div>
           </div>
 
           {data.narrative && (
@@ -307,15 +222,7 @@ function CascadeChainVisual({ chain, mediators }: {
   );
 }
 
-function CascadeStoryCard({
-  story,
-  shareEnabled,
-  onShareClick,
-}: {
-  story: CascadeStory;
-  shareEnabled: boolean;
-  onShareClick: () => void;
-}) {
+function CascadeStoryCard({ story }: { story: CascadeStory }) {
   return (
     <div className="rounded-xl border border-indigo-500/15 bg-[#141c2e] p-5 mb-3">
       <div className="flex items-start gap-3 mb-3">
@@ -334,16 +241,7 @@ function CascadeStoryCard({
         </div>
       </div>
       <CascadeChainVisual chain={story.chain} mediators={story.mediators} />
-      <div className="mt-3 flex justify-end items-center gap-4">
-        {shareEnabled && (
-          <button
-            type="button"
-            onClick={onShareClick}
-            className="flex items-center gap-1 text-xs text-indigo-400/90 hover:text-indigo-300 transition-colors"
-          >
-            <Share2 className="w-3 h-3" /> Share
-          </button>
-        )}
+      <div className="mt-3 flex justify-end">
         <Link
           href={`/coach?q=How does my ${story.input} affect my running through ${story.mediators[0]?.name || 'other factors'}?`}
           className="flex items-center gap-1 text-xs text-orange-500/60 hover:text-orange-400 transition-colors"
@@ -357,15 +255,7 @@ function CascadeStoryCard({
 
 // ─── Highlighted Findings ────────────────────────────────────────────────
 
-function HighlightedFindingCard({
-  entry,
-  shareEnabled,
-  onShareClick,
-}: {
-  entry: ManualEntry;
-  shareEnabled: boolean;
-  onShareClick: () => void;
-}) {
+function HighlightedFindingCard({ entry }: { entry: ManualEntry }) {
   const [expanded, setExpanded] = useState(false);
   const hasDetails = !!(entry.threshold || entry.asymmetry || entry.timing);
 
@@ -444,16 +334,7 @@ function HighlightedFindingCard({
             </div>
           )}
 
-          <div className="mt-2 flex justify-end items-center gap-4">
-            {shareEnabled && (
-              <button
-                type="button"
-                onClick={onShareClick}
-                className="flex items-center gap-1 text-xs text-blue-400/90 hover:text-blue-300 transition-colors"
-              >
-                <Share2 className="w-3 h-3" /> Share
-              </button>
-            )}
+          <div className="mt-2 flex justify-end">
             <Link
               href={`/coach?q=${encodeURIComponent(coachQuestion)}`}
               className="flex items-center gap-1 text-xs text-orange-500/60 hover:text-orange-400 transition-colors"
@@ -689,7 +570,6 @@ function EmptyManual() {
 export default function ManualPage() {
   const { data, isLoading, error } = useOperatingManual();
   const [lastVisit, setLastVisit] = useState<string | null>(null);
-  const [shareTarget, setShareTarget] = useState<ManualShareTarget | null>(null);
 
   useEffect(() => {
     try {
@@ -755,25 +635,7 @@ export default function ManualPage() {
               </div>
 
               {/* 1. Race Character */}
-              {race_character && (
-                <RaceCharacterSection
-                  data={race_character}
-                  shareEnabled={canShareRaceCharacter(race_character)}
-                  onShareClick={() => {
-                    if (!canShareRaceCharacter(race_character)) return;
-                    void sendToolTelemetry(
-                      'finding_share_initiated',
-                      { finding_type: 'race_character' },
-                      TELEMETRY_MANUAL,
-                    );
-                    setShareTarget({
-                      modalKey: 'race-character',
-                      card: raceCharacterShareCard(race_character),
-                      findingType: 'race_character',
-                    });
-                  }}
-                />
-              )}
+              {race_character && <RaceCharacterSection data={race_character} />}
 
               {/* 2. Cascade Stories */}
               {cascade_stories.length > 0 && (
@@ -790,25 +652,7 @@ export default function ManualPage() {
                     </div>
                   </div>
                   {cascade_stories.map((story) => (
-                    <CascadeStoryCard
-                      key={story.id}
-                      story={story}
-                      shareEnabled={canShareCascadeStory(story)}
-                      onShareClick={() => {
-                        if (!canShareCascadeStory(story)) return;
-                        void sendToolTelemetry(
-                          'finding_share_initiated',
-                          { finding_type: 'cascade_story', finding_ref: story.id },
-                          TELEMETRY_MANUAL,
-                        );
-                        setShareTarget({
-                          modalKey: `cascade-${story.id}`,
-                          card: cascadeStoryShareCard(story),
-                          findingType: 'cascade_story',
-                          findingRef: story.id,
-                        });
-                      }}
-                    />
+                    <CascadeStoryCard key={story.id} story={story} />
                   ))}
                 </section>
               )}
@@ -831,25 +675,7 @@ export default function ManualPage() {
                     </div>
                   </div>
                   {highlighted_findings.map((entry) => (
-                    <HighlightedFindingCard
-                      key={entry.id}
-                      entry={entry}
-                      shareEnabled={canShareHighlighted(entry)}
-                      onShareClick={() => {
-                        if (!canShareHighlighted(entry)) return;
-                        void sendToolTelemetry(
-                          'finding_share_initiated',
-                          { finding_type: 'highlighted_finding', finding_ref: entry.id },
-                          TELEMETRY_MANUAL,
-                        );
-                        setShareTarget({
-                          modalKey: `highlighted-${entry.id}`,
-                          card: highlightedShareCard(entry),
-                          findingType: 'highlighted_finding',
-                          findingRef: entry.id,
-                        });
-                      }}
-                    />
+                    <HighlightedFindingCard key={entry.id} entry={entry} />
                   ))}
                 </section>
               )}
@@ -886,17 +712,6 @@ export default function ManualPage() {
             </>
           )}
         </div>
-
-        {shareTarget && (
-          <FindingShareModal
-            key={shareTarget.modalKey}
-            open
-            onClose={() => setShareTarget(null)}
-            card={shareTarget.card}
-            findingType={shareTarget.findingType}
-            findingRef={shareTarget.findingRef}
-          />
-        )}
       </div>
     </ProtectedRoute>
   );
