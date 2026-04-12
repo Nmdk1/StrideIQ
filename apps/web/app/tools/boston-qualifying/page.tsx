@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { JsonLd } from '@/components/seo/JsonLd'
+import { SignupCtaLink } from '@/components/tools/SignupCtaLink'
 
 export const metadata: Metadata = {
   title: 'Boston Marathon Qualifying Times 2026 — All Age Groups',
@@ -8,8 +9,18 @@ export const metadata: Metadata = {
     'Official 2026 BAA Boston qualifying standards for all age groups, with training paces and WMA age-grade equivalents. Men and women 18–80+.',
   alternates: { canonical: 'https://strideiq.run/tools/boston-qualifying' },
   openGraph: {
+    title: 'Boston Marathon Qualifying Times 2026 — All Age Groups',
+    description:
+      'Official 2026 BAA Boston qualifying standards by age and gender, with Daniels/Gilbert training paces for each standard.',
     url: 'https://strideiq.run/tools/boston-qualifying',
+    siteName: 'StrideIQ',
+    type: 'website',
     images: [{ url: '/og-image.png', width: 1200, height: 630, alt: 'Boston Qualifying Times 2026' }],
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'Boston Marathon Qualifying Times 2026',
+    description: 'Full BQ standards table plus per age-group training paces and equivalencies.',
   },
 }
 
@@ -177,9 +188,9 @@ export default function BQHubPage() {
               <Link href="/tools/training-pace-calculator" className="px-5 py-2.5 bg-slate-800 hover:bg-slate-700 border border-slate-700/50 rounded-lg text-slate-200 font-semibold text-sm transition-colors">
                 Training pace calculator →
               </Link>
-              <Link href="/register" className="px-5 py-2.5 bg-orange-600 hover:bg-orange-500 text-white rounded-lg font-semibold text-sm shadow-lg shadow-orange-500/20 transition-colors">
+              <SignupCtaLink className="px-5 py-2.5 bg-orange-600 hover:bg-orange-500 text-white rounded-lg font-semibold text-sm shadow-lg shadow-orange-500/20 transition-colors" telemetry={{ cta: 'bq_hub_hook' }}>
                 Start free trial
-              </Link>
+              </SignupCtaLink>
             </div>
           </div>
         </section>
@@ -194,6 +205,24 @@ export default function BQHubPage() {
                 <p className="text-slate-300 text-sm leading-relaxed">{item.a}</p>
               </div>
             ))}
+          </div>
+        </section>
+
+        <section className="border-t border-slate-800 pt-8 mb-10">
+          <h2 className="text-xl font-bold mb-4">Related calculators</h2>
+          <div className="flex flex-wrap gap-3">
+            <Link href="/tools/training-pace-calculator" className="px-4 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700/50 rounded-lg text-sm text-slate-200 transition-colors">
+              Training Pace Calculator →
+            </Link>
+            <Link href="/tools/race-equivalency/marathon-to-5k" className="px-4 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700/50 rounded-lg text-sm text-slate-200 transition-colors">
+              Race Equivalency →
+            </Link>
+            <Link href="/tools/heat-adjusted-pace" className="px-4 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700/50 rounded-lg text-sm text-slate-200 transition-colors">
+              Heat-Adjusted Pace →
+            </Link>
+            <Link href="/tools/age-grading-calculator" className="px-4 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700/50 rounded-lg text-sm text-slate-200 transition-colors">
+              Age-Grading Calculator →
+            </Link>
           </div>
         </section>
 

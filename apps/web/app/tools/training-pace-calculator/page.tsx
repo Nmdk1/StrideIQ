@@ -12,8 +12,19 @@ export const metadata: Metadata = {
     canonical: 'https://strideiq.run/tools/training-pace-calculator',
   },
   openGraph: {
+    title: 'Training Pace Calculator - Running Pace Zones from Race Time',
+    description:
+      'Free training pace calculator. Enter any race result to get your personalized Easy, Marathon, Threshold, Interval, and Repetition pace zones. Based on Daniels/Gilbert exercise science equations.',
     url: 'https://strideiq.run/tools/training-pace-calculator',
+    siteName: 'StrideIQ',
+    type: 'website',
     images: [{ url: '/og-image.png', width: 1200, height: 630, alt: 'StrideIQ Training Pace Calculator' }],
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'Training Pace Calculator - Running Pace Zones from Race Time',
+    description:
+      'Free training pace calculator with Daniels/Gilbert VDOT zones — easy through repetition paces from any race result.',
   },
 }
 
@@ -177,6 +188,12 @@ export default function TrainingPaceCalculatorPage() {
             </Link>
             <Link href="/tools/heat-adjusted-pace" className="px-4 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700/50 rounded-lg text-sm text-slate-200 transition-colors">
               Heat-Adjusted Pace →
+            </Link>
+            <Link href="/tools/race-equivalency/10k-to-half-marathon" className="px-4 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700/50 rounded-lg text-sm text-slate-200 transition-colors">
+              Race Equivalency →
+            </Link>
+            <Link href="/tools/boston-qualifying" className="px-4 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700/50 rounded-lg text-sm text-slate-200 transition-colors">
+              Boston Qualifying Times →
             </Link>
             <Link href="/tools" className="px-4 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700/50 rounded-lg text-sm text-slate-200 transition-colors">
               All Tools →

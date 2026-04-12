@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { JsonLd } from '@/components/seo/JsonLd'
+import { SignupCtaLink } from '@/components/tools/SignupCtaLink'
 import equivalencyData from '@/data/equivalency-tables.json'
 
 // ============================================================================
@@ -346,8 +347,17 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
       canonical: `https://strideiq.run/tools/race-equivalency/${params.conversion}`,
     },
     openGraph: {
+      title: config.title,
+      description: config.description,
       url: `https://strideiq.run/tools/race-equivalency/${params.conversion}`,
+      siteName: 'StrideIQ',
+      type: 'website',
       images: [{ url: '/og-image.png', width: 1200, height: 630, alt: config.title }],
+    },
+    twitter: {
+      card: 'summary_large_image',
+      title: config.title,
+      description: config.description,
     },
   }
 }
@@ -487,9 +497,9 @@ export default function ConversionPage({ params }: Props) {
               <Link href="/tools/training-pace-calculator" className="px-5 py-2.5 bg-slate-800 hover:bg-slate-700 border border-slate-700/50 rounded-lg text-slate-200 font-semibold text-sm transition-colors">
                 Find your training paces →
               </Link>
-              <Link href="/register" className="px-5 py-2.5 bg-orange-600 hover:bg-orange-500 text-white rounded-lg font-semibold text-sm shadow-lg shadow-orange-500/20 transition-colors">
+              <SignupCtaLink className="px-5 py-2.5 bg-orange-600 hover:bg-orange-500 text-white rounded-lg font-semibold text-sm shadow-lg shadow-orange-500/20 transition-colors" telemetry={{ cta: 'race_equiv_conversion_hook' }}>
                 Start free trial
-              </Link>
+              </SignupCtaLink>
             </div>
           </div>
         </section>
@@ -527,6 +537,15 @@ export default function ConversionPage({ params }: Props) {
               ))}
             <Link href="/tools/training-pace-calculator" className="px-4 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700/50 rounded-lg text-sm text-slate-200 transition-colors">
               Training Pace Calculator →
+            </Link>
+            <Link href="/tools/boston-qualifying" className="px-4 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700/50 rounded-lg text-sm text-slate-200 transition-colors">
+              Boston Qualifying Times →
+            </Link>
+            <Link href="/tools/heat-adjusted-pace" className="px-4 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700/50 rounded-lg text-sm text-slate-200 transition-colors">
+              Heat-Adjusted Pace →
+            </Link>
+            <Link href="/tools/age-grading-calculator" className="px-4 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700/50 rounded-lg text-sm text-slate-200 transition-colors">
+              Age-Grading Calculator →
             </Link>
           </div>
         </section>

@@ -1,6 +1,8 @@
 "use client";
 
 import React from 'react';
+import Link from "next/link";
+import { sendToolTelemetry } from "@/lib/hooks/useToolTelemetry";
 
 export default function Hero() {
   const handleHashClick = (e: React.MouseEvent<HTMLAnchorElement>, hash: string) => {
@@ -95,9 +97,10 @@ export default function Hero() {
         </div>
 
         {/* Primary CTAs */}
-        <div className="flex flex-col sm:flex-row gap-4 justify-center items-center mb-16">
+        <div className="flex flex-col sm:flex-row gap-4 justify-center items-center mb-8">
           <a
             href="/register"
+            onClick={() => void sendToolTelemetry("signup_cta_click", { cta: "hero_primary" })}
             className="group inline-flex items-center gap-2 bg-orange-500 hover:bg-orange-600 text-white font-semibold px-8 py-4 rounded-xl text-lg transition-all duration-300 shadow-lg shadow-orange-500/25 hover:shadow-xl hover:shadow-orange-500/30 hover:-translate-y-0.5"
           >
             Get Started Free
@@ -113,6 +116,29 @@ export default function Hero() {
             Try Our Calculators
           </a>
         </div>
+
+        <p className="text-sm text-slate-500 mb-16 max-w-2xl mx-auto">
+          Popular tools:{" "}
+          <Link href="/tools/training-pace-calculator" className="text-orange-400/90 hover:text-orange-300 underline-offset-2 hover:underline">
+            training paces
+          </Link>
+          {" · "}
+          <Link href="/tools/boston-qualifying" className="text-orange-400/90 hover:text-orange-300 underline-offset-2 hover:underline">
+            Boston qualifying times
+          </Link>
+          {" · "}
+          <Link href="/tools/heat-adjusted-pace" className="text-orange-400/90 hover:text-orange-300 underline-offset-2 hover:underline">
+            heat-adjusted pace
+          </Link>
+          {" · "}
+          <Link href="/tools/race-equivalency/10k-to-half-marathon" className="text-orange-400/90 hover:text-orange-300 underline-offset-2 hover:underline">
+            race equivalency
+          </Link>
+          {" · "}
+          <Link href="/tools/age-grading-calculator" className="text-orange-400/90 hover:text-orange-300 underline-offset-2 hover:underline">
+            age grading
+          </Link>
+        </p>
 
         {/* Founder quote */}
         <blockquote className="max-w-xl mx-auto">

@@ -3,6 +3,7 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import TrainingPaceCalculator from '@/app/components/tools/TrainingPaceCalculator'
 import { JsonLd } from '@/components/seo/JsonLd'
+import { SignupCtaLink } from '@/components/tools/SignupCtaLink'
 import goalPaceData from '@/data/goal-pace-tables.json'
 
 // ============================================================================
@@ -726,8 +727,17 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
       canonical: `https://strideiq.run/tools/training-pace-calculator/goals/${params.slug}`,
     },
     openGraph: {
+      title: config.title,
+      description: config.description,
       url: `https://strideiq.run/tools/training-pace-calculator/goals/${params.slug}`,
+      siteName: 'StrideIQ',
+      type: 'website',
       images: [{ url: '/og-image.png', width: 1200, height: 630, alt: config.title }],
+    },
+    twitter: {
+      card: 'summary_large_image',
+      title: config.title,
+      description: config.description,
     },
   }
 }
@@ -889,9 +899,9 @@ export default function GoalPacePage({ params }: Props) {
               <Link href="/tools/training-pace-calculator" className="px-5 py-2.5 bg-slate-800 hover:bg-slate-700 border border-slate-700/50 rounded-lg text-slate-200 font-semibold text-sm transition-colors">
                 Training pace tables →
               </Link>
-              <Link href="/register" className="px-5 py-2.5 bg-orange-600 hover:bg-orange-500 text-white rounded-lg font-semibold text-sm shadow-lg shadow-orange-500/20 transition-colors">
+              <SignupCtaLink className="px-5 py-2.5 bg-orange-600 hover:bg-orange-500 text-white rounded-lg font-semibold text-sm shadow-lg shadow-orange-500/20 transition-colors" telemetry={{ cta: 'goal_pace_hook' }}>
                 Start free trial
-              </Link>
+              </SignupCtaLink>
             </div>
           </div>
         </section>

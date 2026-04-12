@@ -11,8 +11,18 @@ export const metadata: Metadata = {
     canonical: 'https://strideiq.run/tools/heat-adjusted-pace',
   },
   openGraph: {
+    title: 'Heat-Adjusted Running Pace Calculator - Hot Weather Running',
+    description:
+      'Free heat-adjusted running pace calculator. Adjust your training paces for temperature and humidity. Maintain true physiological effort in hot conditions using research-backed heat stress formulas.',
     url: 'https://strideiq.run/tools/heat-adjusted-pace',
+    siteName: 'StrideIQ',
+    type: 'website',
     images: [{ url: '/og-image.png', width: 1200, height: 630, alt: 'StrideIQ Heat-Adjusted Pace Calculator' }],
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'Heat-Adjusted Running Pace Calculator',
+    description: 'Adjust training paces for heat and humidity — same effort, safer summer running.',
   },
 }
 
@@ -135,6 +145,12 @@ export default function HeatAdjustedPacePage() {
             </Link>
             <Link href="/tools/age-grading-calculator" className="px-4 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700/50 rounded-lg text-sm text-slate-200 transition-colors">
               Age-Grading Calculator →
+            </Link>
+            <Link href="/tools/race-equivalency" className="px-4 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700/50 rounded-lg text-sm text-slate-200 transition-colors">
+              Race Equivalency →
+            </Link>
+            <Link href="/tools/boston-qualifying" className="px-4 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700/50 rounded-lg text-sm text-slate-200 transition-colors">
+              Boston Qualifying Times →
             </Link>
             <Link href="/tools" className="px-4 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700/50 rounded-lg text-sm text-slate-200 transition-colors">
               All Tools →

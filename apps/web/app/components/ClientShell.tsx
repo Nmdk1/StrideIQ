@@ -4,6 +4,7 @@ import BottomTabs from "./BottomTabs";
 import StravaBanner from "./StravaBanner";
 import { useAutoSync } from "@/lib/hooks/useAutoSync";
 import { usePageTracking } from "@/lib/hooks/usePageTracking";
+import { useToolPageViewTelemetry } from "@/lib/hooks/useToolTelemetry";
 import { Toaster } from "sonner";
 
 /**
@@ -17,6 +18,7 @@ export default function ClientShell({
 }) {
   useAutoSync();
   usePageTracking();
+  useToolPageViewTelemetry();
 
   return (
     <>

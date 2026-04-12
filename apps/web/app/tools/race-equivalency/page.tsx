@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { JsonLd } from '@/components/seo/JsonLd'
+import { SignupCtaLink } from '@/components/tools/SignupCtaLink'
 
 export const metadata: Metadata = {
   title: 'Race Equivalency Calculator — Predict Times Across Distances',
@@ -10,8 +11,18 @@ export const metadata: Metadata = {
     canonical: 'https://strideiq.run/tools/race-equivalency',
   },
   openGraph: {
+    title: 'Race Equivalency Calculator — Predict Times Across Distances',
+    description:
+      'Cross-distance race predictions using the Daniels/Gilbert oxygen cost equation — with clear limits for marathon-specific training.',
     url: 'https://strideiq.run/tools/race-equivalency',
+    siteName: 'StrideIQ',
+    type: 'website',
     images: [{ url: '/og-image.png', width: 1200, height: 630, alt: 'Race Equivalency' }],
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'Race Equivalency Calculator — Predict Times Across Distances',
+    description: 'Equivalent times across distances from Daniels/Gilbert RPI — tables for every major pair.',
   },
 }
 
@@ -91,8 +102,21 @@ export default function RaceEquivalencyHubPage() {
     })),
   }
 
+  const toolJsonLd = {
+    '@context': 'https://schema.org',
+    '@type': 'SoftwareApplication',
+    name: 'StrideIQ Race Equivalency Reference',
+    url: 'https://strideiq.run/tools/race-equivalency',
+    applicationCategory: 'HealthApplication',
+    operatingSystem: 'Web',
+    description:
+      'Cross-distance race time equivalency tables using the Daniels/Gilbert oxygen cost equation (RPI).',
+    offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
+  }
+
   return (
     <div className="min-h-screen bg-slate-900 text-slate-100">
+      <JsonLd data={toolJsonLd} />
       <JsonLd data={breadcrumbJsonLd} />
       <JsonLd data={faqJsonLd} />
 
@@ -213,9 +237,9 @@ export default function RaceEquivalencyHubPage() {
               <Link href="/tools" className="px-5 py-2.5 bg-slate-800 hover:bg-slate-700 border border-slate-700/50 rounded-lg text-slate-200 font-semibold text-sm transition-colors">
                 All calculators →
               </Link>
-              <Link href="/register" className="px-5 py-2.5 bg-orange-600 hover:bg-orange-500 text-white rounded-lg font-semibold text-sm shadow-lg shadow-orange-500/20 transition-colors">
+              <SignupCtaLink className="px-5 py-2.5 bg-orange-600 hover:bg-orange-500 text-white rounded-lg font-semibold text-sm shadow-lg shadow-orange-500/20 transition-colors" telemetry={{ cta: 'race_equiv_hub_hook' }}>
                 Start free trial
-              </Link>
+              </SignupCtaLink>
             </div>
           </div>
         </section>
@@ -229,6 +253,12 @@ export default function RaceEquivalencyHubPage() {
             </Link>
             <Link href="/tools/age-grading-calculator" className="px-4 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700/50 rounded-lg text-sm text-slate-200 transition-colors">
               Age-Grading Calculator →
+            </Link>
+            <Link href="/tools/heat-adjusted-pace" className="px-4 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700/50 rounded-lg text-sm text-slate-200 transition-colors">
+              Heat-Adjusted Pace →
+            </Link>
+            <Link href="/tools/boston-qualifying" className="px-4 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700/50 rounded-lg text-sm text-slate-200 transition-colors">
+              Boston Qualifying Times →
             </Link>
           </div>
         </section>
