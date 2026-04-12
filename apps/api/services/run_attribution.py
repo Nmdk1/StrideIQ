@@ -22,7 +22,8 @@ import logging
 
 from sqlalchemy.orm import Session
 
-from models import Activity, DailyCheckin, ActivitySplit
+from models import Activity, DailyCheckin, ActivitySplit, CachedStreamAnalysis
+from services.run_analysis_engine import CONTROLLED_STEADY_TYPES
 
 logger = logging.getLogger(__name__)
 
@@ -370,6 +371,92 @@ def _compute_gap_efficiency(activity: Activity, db: Session) -> tuple:
     return speed_mps / avg_hr, False
 
 
+def _get_cached_cardiac_decoupling(activity_id, db: Session) -> Optional[float]:
+    """Fetch cardiac decoupling % from cached stream analysis. Returns None if unavailable."""
+    from services.stream_analysis_cache import CURRENT_ANALYSIS_VERSION
+
+    row = (
+        db.query(CachedStreamAnalysis.result_json)
+        .filter(
+            CachedStreamAnalysis.activity_id == activity_id,
+            CachedStreamAnalysis.analysis_version == CURRENT_ANALYSIS_VERSION,
+        )
+        .first()
+    )
+    if row is None:
+        return None
+
+    result = row[0]
+    drift = result.get("drift") if result else None
+    if drift is None:
+        return None
+
+    return drift.get("cardiac_pct")
+
+
+def _get_decoupling_attribution(
+    activity: Activity,
+    db: Session,
+) -> Optional[RunAttribution]:
+    """
+    Evaluate controlled-steady runs by cardiac decoupling instead of speed/HR.
+
+    Cardiac decoupling measures whether HR drifted upward relative to pace.
+    Low decoupling = aerobic system handled the effort well.
+    High decoupling = body was working harder over time to maintain pace.
+
+    This is the right metric for easy, recovery, pacing, and marathon-pace runs
+    regardless of how hard the effort was. A pacer at 7:00/mi and 9:30/mi
+    should both be evaluated on "did HR stay stable relative to pace?"
+    """
+    decoupling = _get_cached_cardiac_decoupling(activity.id, db)
+    if decoupling is None:
+        return None
+
+    abs_decouple = abs(decoupling)
+
+    if abs_decouple <= 3.0:
+        title = "Well Coupled"
+        insight = f"HR stayed stable relative to pace ({decoupling:+.1f}% drift). Aerobically controlled."
+        color = "emerald"
+        confidence = AttributionConfidence.HIGH
+    elif abs_decouple <= 5.0:
+        title = "Normal Coupling"
+        insight = f"HR drifted {decoupling:+.1f}% — typical for this effort length."
+        color = "green"
+        confidence = AttributionConfidence.MODERATE
+    elif abs_decouple <= 8.0:
+        title = "Moderate Drift"
+        insight = f"HR drifted {decoupling:+.1f}% relative to pace. May indicate cumulative fatigue or heat."
+        color = "yellow"
+        confidence = AttributionConfidence.MODERATE
+    else:
+        title = "Significant Drift"
+        insight = f"HR drifted {decoupling:+.1f}% — body worked progressively harder to hold pace."
+        color = "orange"
+        confidence = AttributionConfidence.HIGH
+
+    return RunAttribution(
+        source=AttributionSource.EFFICIENCY.value,
+        priority=PRIORITY_EFFICIENCY,
+        confidence=confidence.value,
+        title=title,
+        insight=insight,
+        icon="heart-pulse",
+        color=color,
+        data={
+            "cardiac_decoupling_pct": round(decoupling, 1),
+            "method": "cardiac_decoupling",
+        },
+    )
+
+
+def _is_controlled_steady(activity: Activity) -> bool:
+    """Check if this activity's stored workout_type is a controlled-steady effort."""
+    wt = getattr(activity, "workout_type", None)
+    return bool(wt and wt.lower() in CONTROLLED_STEADY_TYPES)
+
+
 def get_efficiency_attribution(
     activity: Activity,
     db: Session
@@ -377,21 +464,14 @@ def get_efficiency_attribution(
     """
     Get efficiency attribution — was this run more/less efficient than trend?
 
-    Compares against SIMILAR runs (same distance range & workout type) rather
-    than all runs. An 18-mile long run should not be compared to a 5K tempo;
-    efficiency naturally varies by distance due to cardiac drift, glycogen
-    depletion, and cumulative fatigue.
+    For CONTROLLED-STEADY runs (easy, recovery, pacing, marathon pace, long):
+      Uses cardiac decoupling — did HR stay stable relative to pace?
+      If decoupling data unavailable, suppress entirely (silence > wrong).
 
-    Tiered fallback:
-      1. Same workout type + similar distance (±30%) — best apples-to-apples
-      2. Same workout type, any distance (still type-matched)
-      3. Similar distance only (±30%) — meaningful, lower confidence
-      4. All recent runs — last resort, lowest confidence
-
-    Uses GAP (Grade Adjusted Pace) when available so hilly runs aren't
-    penalized for slower raw pace. A 20-miler at 122 bpm with 2300ft
-    of climbing is exceptional efficiency, not "below average."
-    GAP is computed from splits (where it lives in the data model).
+    For STRUCTURED-QUALITY / RACE / other runs:
+      Uses speed/HR efficiency compared against similar runs (same type + distance).
+      Only falls through to Tier 1 or Tier 2 comparisons. Tiers 3/4 (distance-only
+      or all-recent-runs) are suppressed — apples-to-oranges is worse than silence.
     """
     try:
         if not activity.avg_hr or not activity.distance_m or not activity.duration_s:
@@ -400,23 +480,18 @@ def get_efficiency_attribution(
         if activity.avg_hr < 100 or activity.distance_m < 1000:
             return None
 
-        # Calculate this run's efficiency using GAP when available.
-        # GAP (Grade Adjusted Pace) normalizes for elevation — a hilly run
-        # gets credited for the extra work the athlete did at low HR.
-        # GAP lives on splits, so we compute a distance-weighted average.
+        # Route controlled-steady runs to cardiac decoupling evaluation
+        if _is_controlled_steady(activity):
+            return _get_decoupling_attribution(activity, db)
+
         efficiency, used_gap = _compute_gap_efficiency(activity, db)
 
-        # Distance band: ±30% of this run's distance
         dist_lo = activity.distance_m * 0.70
         dist_hi = activity.distance_m * 1.30
 
-        # Look back 90 days for similar runs (28 days is often too few for
-        # long runs — most athletes only do 1-2 long runs per month)
         end_date = activity.start_time.date()
         start_date_similar = end_date - timedelta(days=90)
-        start_date_all = end_date - timedelta(days=28)
 
-        # Base filter: same athlete, not this run, valid HR/distance
         base_filter = [
             Activity.athlete_id == activity.athlete_id,
             Activity.id != activity.id,
@@ -427,12 +502,8 @@ def get_efficiency_attribution(
         ]
 
         # ---- Tier 1: Same workout type + similar distance (90 days) ----
-        # Minimum of 2 (not 3) — long runs are infrequent (1-2/month).
-        # This is the best comparison: same workout type = same physiological
-        # demand. A long run should only be compared to other long runs.
         similar_activities = []
         comparison_label = "similar runs"
-        tier_confidence_boost = 0  # Tiers 1/2 get normal confidence
 
         if activity.workout_type:
             similar_activities = db.query(Activity).filter(
@@ -448,8 +519,6 @@ def get_efficiency_attribution(
                 comparison_label = f"your recent {wt_label}s"
 
         # ---- Tier 2: Same workout type, any distance (90 days) ----
-        # Still better than mixing types — a long run at ANY distance is
-        # more comparable than mixing tempos, races, and easy runs.
         if len(similar_activities) < 2 and activity.workout_type:
             similar_activities = db.query(Activity).filter(
                 *base_filter,
@@ -461,37 +530,10 @@ def get_efficiency_attribution(
                 wt_label = activity.workout_type.lower().replace('_', ' ')
                 comparison_label = f"your recent {wt_label}s"
 
-        # ---- Tier 3: Similar distance only (90 days) ----
+        # Tiers 3/4 suppressed: comparing across workout types or all runs
+        # produces misleading efficiency claims. Silence > wrong.
         if len(similar_activities) < 2:
-            similar_activities = db.query(Activity).filter(
-                *base_filter,
-                Activity.start_time >= start_date_similar,
-                Activity.start_time < end_date,
-                Activity.distance_m >= dist_lo,
-                Activity.distance_m <= dist_hi,
-            ).all()
-            if len(similar_activities) >= 3:
-                dist_km = activity.distance_m / 1000
-                comparison_label = f"runs of similar distance (~{dist_km:.0f}km)"
-                tier_confidence_boost = -1  # Less reliable without type matching
-            elif len(similar_activities) >= 2 and activity.distance_m >= 24000:
-                # Long runs are often 1x/week. Accept 2 comparable long efforts
-                # before falling back to all-recent apples-to-oranges comparison.
-                dist_km = activity.distance_m / 1000
-                comparison_label = f"runs of similar distance (~{dist_km:.0f}km)"
-                tier_confidence_boost = -1
-
-        # ---- Tier 4: All recent runs (28 days, lowest confidence) ----
-        if len(similar_activities) < 2:
-            similar_activities = db.query(Activity).filter(
-                *base_filter,
-                Activity.start_time >= start_date_all,
-                Activity.start_time < end_date,
-            ).all()
-            if len(similar_activities) < 5:
-                return None  # Not enough data for any comparison
-            comparison_label = "recent runs"
-            tier_confidence_boost = -1  # Apples-to-oranges
+            return None
 
         recent_efficiencies = []
         for act in similar_activities:
@@ -500,7 +542,6 @@ def get_efficiency_attribution(
 
         avg_efficiency = sum(recent_efficiencies) / len(recent_efficiencies)
 
-        # EF = speed / HR. Higher = better (more distance per heartbeat).
         diff_pct = ((efficiency - avg_efficiency) / avg_efficiency) * 100
 
         if diff_pct > 5:
@@ -519,22 +560,15 @@ def get_efficiency_attribution(
             color = "slate"
             confidence = AttributionConfidence.LOW
         elif diff_pct >= -5:
-            title = "Below Average"
-            insight = f"Efficiency {abs(diff_pct):.1f}% worse than {comparison_label}. May indicate fatigue."
+            title = "Slightly Below Average"
+            insight = f"Efficiency {abs(diff_pct):.1f}% below {comparison_label}."
             color = "yellow"
             confidence = AttributionConfidence.MODERATE
         else:
-            title = "Low Efficiency"
-            insight = f"Efficiency {abs(diff_pct):.1f}% worse than {comparison_label}. Check for fatigue or illness."
+            title = "Below Average"
+            insight = f"Efficiency {abs(diff_pct):.1f}% below {comparison_label}."
             color = "orange"
-            confidence = AttributionConfidence.HIGH
-
-        # Downgrade confidence if we fell back to all-runs comparison
-        if tier_confidence_boost == -1:
-            if confidence == AttributionConfidence.HIGH:
-                confidence = AttributionConfidence.MODERATE
-            elif confidence == AttributionConfidence.MODERATE:
-                confidence = AttributionConfidence.LOW
+            confidence = AttributionConfidence.MODERATE
 
         return RunAttribution(
             source=AttributionSource.EFFICIENCY.value,

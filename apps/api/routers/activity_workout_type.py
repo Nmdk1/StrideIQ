@@ -43,6 +43,7 @@ WORKOUT_TYPE_OPTIONS = [
     {"value": "race", "label": "Race", "zone": "race_specific", "description": "Competition or time trial"},
     {"value": "tune_up_race", "label": "Tune-up Race", "zone": "race_specific", "description": "Training race"},
     {"value": "shakeout", "label": "Shakeout", "zone": "recovery", "description": "Pre-race easy jog"},
+    {"value": "pacing", "label": "Pacing", "zone": "endurance", "description": "Holding steady pace for someone else"},
 ]
 
 # Map value to zone

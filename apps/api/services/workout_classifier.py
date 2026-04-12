@@ -159,6 +159,9 @@ class WorkoutType(str, Enum):
     FAST_FINISH_LONG = "fast_finish_long_run"
     NEGATIVE_SPLIT_RUN = "negative_split_run"
 
+    # Zone 8: Purpose-specific (effort determined by HR, not name)
+    PACING = "pacing"
+
     # Unknown
     UNCLASSIFIED = "unclassified"
 
@@ -376,6 +379,22 @@ class WorkoutClassifierService:
 
         # Keywords mapped to workout types
         # Order matters - more specific patterns first
+
+        # Pacing (before race detection — "pacing at the marathon" is NOT a race)
+        pacing_keywords = ['pacer', 'pacing']
+        if any(_matches_keyword(kw, name) and not _has_negation_context(kw, name)
+               for kw in pacing_keywords):
+            return WorkoutClassification(
+                workout_type=WorkoutType.PACING,
+                workout_zone=WorkoutZone.ENDURANCE,
+                confidence=0.85,
+                reasoning=f"Name indicates pacing duty: '{activity.name}'",
+                detected_intervals=False,
+                detected_progression=False,
+                avg_hr_zone=None,
+                intensity_score=50.0,
+                expected_rpe_range=None,
+            )
 
         # Race indicators (strongest signal)
         race_keywords = ['race', 'marathon', '5k', '10k', 'half marathon', 'pr ', 'personal best',
