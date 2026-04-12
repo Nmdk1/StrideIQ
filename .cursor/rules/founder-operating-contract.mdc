@@ -58,3 +58,13 @@ non-negotiable. Violating any of them costs trust immediately.
    the full migration chain. If CI is green, the code is correct.
 
 10. **Tree clean, tests green, production healthy** at end of every session.
+
+11. **No `git push` without founder approval.** Do not push to `origin` or
+    publish to the shared remote until the founder explicitly approves that
+    batch for publication. See `docs/FOUNDER_OPERATING_CONTRACT.md` —
+    **Remote publish and permission scopes (binding)**.
+
+12. **No new OAuth or API permission scopes without founder approval.** Do not
+    implement, merge, or deploy widened OAuth scopes or new third-party
+    permissions without explicit sign-off for those exact scopes. Specs may
+    describe future scopes; code waits.

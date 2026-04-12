@@ -52,7 +52,10 @@ Builder notes must be authored from `docs/BUILDER_NOTE_TEMPLATE.md`.
 │     Commit message follows repo conventions.         │
 ├─────────────────────────────────────────────────────┤
 │  7. CI                                               │
-│     Push. Verify CI green. Local pass is not enough. │
+│     Do not push to origin until the founder approves │
+│     publication (`docs/FOUNDER_OPERATING_CONTRACT.md`). │
+│     After approved push (or founder-run CI): verify  │
+│     CI green. Local pass is not enough for merge.    │
 │     If CI red, fix before moving on.                 │
 ├─────────────────────────────────────────────────────┤
 │  8. SITE AUDIT UPDATE (MANDATORY)                    │
@@ -303,7 +306,7 @@ way with the `scipy` dependency addition.
 ### CI Verification
 
 ```bash
-# Check CI status after push
+# After an approved push to the remote, check CI status
 gh run list --branch main --limit 3
 gh run view <run-id>
 
