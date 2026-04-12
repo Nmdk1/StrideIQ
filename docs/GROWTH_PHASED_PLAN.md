@@ -1,7 +1,7 @@
 # StrideIQ — Phased Growth Plan (Scoped)
 
 **Status:** Planning document — implementation starts only on **checked approval** below  
-**Read first:** [`docs/SESSION_HANDOFF_2026-03-28_GROWTH_AGENT_ONBOARDING.md`](SESSION_HANDOFF_2026-03-28_GROWTH_AGENT_ONBOARDING.md), [`docs/FOUNDER_OPERATING_CONTRACT.md`](FOUNDER_OPERATING_CONTRACT.md)  
+**Read first:** [`docs/SESSION_HANDOFF_2026-03-28_GROWTH_AGENT_ONBOARDING.md`](SESSION_HANDOFF_2026-03-28_GROWTH_AGENT_ONBOARDING.md), [`docs/FOUNDER_OPERATING_CONTRACT.md`](FOUNDER_OPERATING_CONTRACT.md), **[`docs/GROWTH_DEEP_RESEARCH.md`](GROWTH_DEEP_RESEARCH.md)** (analog products, channels, citations—desk research, April 2026)  
 **Context:** Phases assume **product-led / automated / user-assisted** growth; founder does not run outbound or personal-brand marketing. Influencer is **Phase 4** only with a **product-first brief** (prior ad-hoc promotion without naming StrideIQ is not treated as a disproof of the channel).
 
 ---
@@ -10,7 +10,7 @@
 
 **Lineage (no pretending otherwise).** The three product levers—**shareable finding artifacts**, **Strava-visible distribution**, **SEO around existing free tools**—were articulated in prior advisor/founder conversation before this document. What was added here is **process**: dependency order, per-phase success/kill criteria, global out-of-scope boundaries, OAuth gating, and the **approval checkboxes**. That is **execution architecture**, not a claim of net-new strategic invention.
 
-**What this doc did *not* originally contain (fair critique).** A full **primary** research pass: scraped forum threads, structured competitor teardowns, cohort interviews, or a written evidence appendix with citations. Those remain **follow-up work** if you want the strategy layer to match the rigor of the engineering layer.
+**Research artifact (added April 12, 2026).** [`docs/GROWTH_DEEP_RESEARCH.md`](GROWTH_DEEP_RESEARCH.md) contains **multi-source desk research**: primary quotes (Friel/TrainingPeaks, Smashrun, Runalyze 2018 stats, LetsRun ad rules), analog products (Runalyze, TrainingPeaks, Smashrun, Athletica), channels (SEO craft lineage, Strava ecosystem, HN variance, Garmin CIQ as long-term surface), and **explicit gaps** (Search Console export, user interviews still recommended). That memo **does not** replace **primary** research (interviews, your own GSC data, structured forum coding).
 
 **Desk-level patterns (secondary sources / industry common knowledge)** that nevertheless support the *shape* of the plan—not StrideIQ-specific proof:
 
