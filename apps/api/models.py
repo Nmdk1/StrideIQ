@@ -2873,6 +2873,27 @@ class PageView(Base):
     )
 
 
+class ToolTelemetryEvent(Base):
+    """
+    Anonymous or authenticated funnel events for public /tools/* pages.
+    Does not replace authenticated PageView — supplements acquisition analytics.
+    """
+
+    __tablename__ = "tool_telemetry_event"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    event_type = Column(Text, nullable=False, index=True)
+    path = Column(Text, nullable=False)
+    athlete_id = Column(UUID(as_uuid=True), ForeignKey("athlete.id"), nullable=True, index=True)
+    event_metadata = Column("metadata", JSONB, nullable=True)
+
+    __table_args__ = (
+        Index("ix_tool_telemetry_event_type_created", "event_type", "created_at"),
+        Index("ix_tool_telemetry_event_path_created", "path", "created_at"),
+    )
+
+
 # ---------------------------------------------------------------------------
 # Runtoon MVP Models
 # ---------------------------------------------------------------------------

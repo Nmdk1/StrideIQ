@@ -11,13 +11,13 @@ from typing import Any, Dict, List, Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import func, text
 from sqlalchemy.orm import Session
 
-from core.auth import get_current_user, require_admin
+from core.auth import get_current_user, require_admin, get_current_athlete_optional
 from core.database import get_db
-from models import Athlete, PageView
+from models import Athlete, PageView, ToolTelemetryEvent
 
 logger = logging.getLogger(__name__)
 
@@ -40,6 +40,31 @@ class PageExitEvent(BaseModel):
     pass  # body intentionally empty; ID is in the path
 
 
+TOOL_FUNNEL_EVENT_TYPES = frozenset(
+    {"tool_page_view", "tool_result_view", "signup_cta_click"}
+)
+
+
+class ToolFunnelEvent(BaseModel):
+    event_type: str
+    path: str
+    metadata: Optional[Dict[str, Any]] = Field(default=None)
+
+    @field_validator("event_type")
+    @classmethod
+    def validate_event_type(cls, v: str) -> str:
+        if v not in TOOL_FUNNEL_EVENT_TYPES:
+            raise ValueError("invalid event_type")
+        return v
+
+    @field_validator("path")
+    @classmethod
+    def validate_path(cls, v: str) -> str:
+        if not v or len(v) > 2048:
+            raise ValueError("invalid path")
+        return v
+
+
 # ── Athlete endpoints ─────────────────────────────────────────────────
 
 @router.post("/page-view", response_model=PageViewResponse, status_code=201)
@@ -58,6 +83,29 @@ def record_page_view(
     db.commit()
     db.refresh(pv)
     return PageViewResponse(id=str(pv.id))
+
+
+@router.post("/tool-event", status_code=204)
+def record_tool_funnel_event(
+    event: ToolFunnelEvent,
+    db: Session = Depends(get_db),
+    current_athlete: Optional[Athlete] = Depends(get_current_athlete_optional),
+) -> None:
+    """
+    Public funnel telemetry for /tools and signup CTAs. Fire-and-forget; failures are ignored client-side.
+    Authenticated users are correlated via optional Bearer token.
+    """
+    if event.event_type in ("tool_page_view", "tool_result_view"):
+        if not event.path.startswith("/tools"):
+            raise HTTPException(status_code=400, detail="path must start with /tools")
+    row = ToolTelemetryEvent(
+        event_type=event.event_type,
+        path=event.path,
+        athlete_id=current_athlete.id if current_athlete else None,
+        event_metadata=event.metadata,
+    )
+    db.add(row)
+    db.commit()
 
 
 @router.patch("/page-view/{page_view_id}/exit", status_code=204)
