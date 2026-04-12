@@ -9,9 +9,10 @@
  *   5. HR unreliable note does NOT appear when hr_reliable === true
  */
 import React from 'react';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { screen, fireEvent } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { mockTier1Result, generateTestStreamData, mockUnitsImperial } from './rsi-fixtures';
+import { renderWithStreamHover } from '@/test-utils/renderWithStreamHover';
 
 import { RunShapeCanvas } from '@/components/activities/rsi/RunShapeCanvas';
 
@@ -40,26 +41,26 @@ describe('A2: HR Sanity Check — Frontend', () => {
     });
 
     test('HR toggle button always exists', () => {
-      render(<RunShapeCanvas activityId="test-123" />);
+      renderWithStreamHover(<RunShapeCanvas activityId="test-123" />);
       const hrToggle = screen.getByTestId('hr-toggle');
       expect(hrToggle).toBeInTheDocument();
       expect(hrToggle).toHaveTextContent('HR');
     });
 
     test('HR trace visible by default when reliable', () => {
-      render(<RunShapeCanvas activityId="test-123" />);
+      renderWithStreamHover(<RunShapeCanvas activityId="test-123" />);
       expect(screen.getByTestId('trace-hr')).toBeInTheDocument();
     });
 
     test('toggling HR OFF hides HR trace', () => {
-      render(<RunShapeCanvas activityId="test-123" />);
+      renderWithStreamHover(<RunShapeCanvas activityId="test-123" />);
       const hrToggle = screen.getByTestId('hr-toggle');
       fireEvent.click(hrToggle);
       expect(screen.queryByTestId('trace-hr')).not.toBeInTheDocument();
     });
 
     test('toggling HR OFF then ON restores HR trace', () => {
-      render(<RunShapeCanvas activityId="test-123" />);
+      renderWithStreamHover(<RunShapeCanvas activityId="test-123" />);
       const hrToggle = screen.getByTestId('hr-toggle');
       fireEvent.click(hrToggle); // OFF
       expect(screen.queryByTestId('trace-hr')).not.toBeInTheDocument();
@@ -84,17 +85,17 @@ describe('A2: HR Sanity Check — Frontend', () => {
     });
 
     test('HR toggle button still exists when unreliable', () => {
-      render(<RunShapeCanvas activityId="test-123" />);
+      renderWithStreamHover(<RunShapeCanvas activityId="test-123" />);
       expect(screen.getByTestId('hr-toggle')).toBeInTheDocument();
     });
 
     test('HR trace hidden by default when unreliable', () => {
-      render(<RunShapeCanvas activityId="test-123" />);
+      renderWithStreamHover(<RunShapeCanvas activityId="test-123" />);
       expect(screen.queryByTestId('trace-hr')).not.toBeInTheDocument();
     });
 
     test('athlete can toggle HR ON even when unreliable', () => {
-      render(<RunShapeCanvas activityId="test-123" />);
+      renderWithStreamHover(<RunShapeCanvas activityId="test-123" />);
       expect(screen.queryByTestId('trace-hr')).not.toBeInTheDocument();
       const hrToggle = screen.getByTestId('hr-toggle');
       fireEvent.click(hrToggle); // ON
@@ -116,7 +117,7 @@ describe('A2: HR Sanity Check — Frontend', () => {
         refetch: jest.fn(),
       } as any);
 
-      render(<RunShapeCanvas activityId="test-123" />);
+      renderWithStreamHover(<RunShapeCanvas activityId="test-123" />);
       const note = screen.getByTestId('hr-unreliable-note');
       expect(note).toBeInTheDocument();
       expect(note).toHaveTextContent(/HR data flagged as unreliable/i);
@@ -135,7 +136,7 @@ describe('A2: HR Sanity Check — Frontend', () => {
         refetch: jest.fn(),
       } as any);
 
-      render(<RunShapeCanvas activityId="test-123" />);
+      renderWithStreamHover(<RunShapeCanvas activityId="test-123" />);
       expect(screen.queryByTestId('hr-unreliable-note')).not.toBeInTheDocument();
     });
   });

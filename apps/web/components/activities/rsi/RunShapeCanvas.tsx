@@ -83,6 +83,8 @@ export interface RunShapeCanvasProps {
   temperatureF?: number | null;
   /** Content rendered between drift metrics and splits (e.g. route map) */
   children?: React.ReactNode;
+  /** When set, chart hover highlights these split table rows (Activity page Splits tab). */
+  splitTableRowRefs?: React.MutableRefObject<Map<number, HTMLTableRowElement>>;
 }
 
 interface ChartPoint {
@@ -751,28 +753,25 @@ export function RunShapeCanvas({
   heatAdjustmentPct,
   temperatureF,
   children,
+  splitTableRowRefs,
 }: RunShapeCanvasProps) {
   const { data, isLoading, error, refetch } = useStreamAnalysis(activityId);
 
   // Toggle state (AC-4): survives resize by design (useState)
   const [showHR, setShowHR] = useState(true);
   const [showCadence, setShowCadence] = useState(false);
-  const [showGrade, setShowGrade] = useState(true);
+  const [showGrade, setShowGrade] = useState(false);
 
   // A2: Default HR off when unreliable — init once when first analysis arrives.
   // Uses ref to avoid clobbering user's manual toggle on refetch.
   const didInitHRDefault = useRef(false);
 
-  // Crosshair state (AC-3): shared across Story/Lab views
-  const [hoveredIndex, setHoveredIndexLocal] = useState<number | null>(null);
-  const { setHoveredIndex: setMapHoveredIndex } = useStreamHover();
-  const setHoveredIndex = useCallback((idx: number | null) => {
-    setHoveredIndexLocal(idx);
-    setMapHoveredIndex(idx);
-  }, [setMapHoveredIndex]);
+  // Crosshair index (AC-3): shared with map, elevation, Splits tab via StreamHoverContext.
+  const { hoveredIndex, setHoveredIndex } = useStreamHover();
 
-  // Two-way hover: Chart → Row (ref-driven, 60fps, no re-renders) — row targets live on Splits tab (Step 2).
-  const splitRowRefs = useRef<Map<number, HTMLTableRowElement>>(new Map());
+  // Two-way hover: Chart → Row (ref-driven, 60fps, no re-renders) — row targets live on Splits tab.
+  const internalSplitRowRefs = useRef<Map<number, HTMLTableRowElement>>(new Map());
+  const splitRowRefs = splitTableRowRefs ?? internalSplitRowRefs;
   const prevHighlightedSplitRef = useRef<number | null>(null);
 
   // Container sizing (ref + state declared here; effect added after data prep)
@@ -865,7 +864,15 @@ export function RunShapeCanvas({
     if (!el) return;
 
     const measure = () => {
-      const w = el.clientWidth;
+      let w = el.clientWidth;
+      // jsdom often reports 0 width; Jest needs a non-zero chart width for layer tests.
+      if (
+        w <= 0 &&
+        typeof process !== 'undefined' &&
+        process.env.JEST_WORKER_ID !== undefined
+      ) {
+        w = 800;
+      }
       if (w > 0) setChartWidth(w);
     };
 

@@ -31,9 +31,19 @@ export interface IntervalsViewProps {
   intervalSummary: IntervalSummary;
   provider?: string | null;
   deviceName?: string | null;
+  /** Same convention as SplitsTable: 0-based split index (split_number − 1). */
+  onRowHover?: (index: number | null) => void;
+  rowRefs?: React.MutableRefObject<Map<number, HTMLTableRowElement>>;
 }
 
-export function IntervalsView({ splits, intervalSummary, provider, deviceName }: IntervalsViewProps) {
+export function IntervalsView({
+  splits,
+  intervalSummary,
+  provider,
+  deviceName,
+  onRowHover,
+  rowRefs,
+}: IntervalsViewProps) {
   const { formatDistance, formatPace } = useUnits();
 
   if (!splits?.length || !intervalSummary?.is_structured) return null;
@@ -83,9 +93,15 @@ export function IntervalsView({ splits, intervalSummary, provider, deviceName }:
               const isFastest = isWork && r.interval_number === intervalSummary.fastest_interval;
               const typeLabel = TYPE_LABELS[r.lap_type || ''] || '—';
 
+              const rowKey = r.split_number - 1;
               return (
                 <tr
                   key={r.split_number}
+                  ref={(el) => {
+                    if (el && rowRefs) rowRefs.current.set(rowKey, el);
+                  }}
+                  onMouseEnter={() => onRowHover?.(rowKey)}
+                  onMouseLeave={() => onRowHover?.(null)}
                   className={
                     isWork
                       ? 'text-white'

@@ -1,8 +1,9 @@
 import React from 'react';
-import { render, screen } from '@testing-library/react';
+import { screen } from '@testing-library/react';
 import '@testing-library/jest-dom';
 
 import { mockTier1Result, generateTestStreamData, mockUnitsImperial } from './rsi-fixtures';
+import { renderWithStreamHover } from '@/test-utils/renderWithStreamHover';
 import { RunShapeCanvas } from '@/components/activities/rsi/RunShapeCanvas';
 
 jest.mock('@/lib/context/UnitsContext', () => ({
@@ -27,14 +28,14 @@ describe('RunShapeCanvas adjusted pace overlay', () => {
   });
 
   test('shows overlay and label when heat adjustment is above threshold', () => {
-    render(<RunShapeCanvas activityId="a1" heatAdjustmentPct={8} temperatureF={86} />);
+    renderWithStreamHover(<RunShapeCanvas activityId="a1" heatAdjustmentPct={8} temperatureF={86} />);
     expect(screen.getByTestId('trace-adjusted-pace')).toBeInTheDocument();
     expect(screen.getByTestId('trace-adjusted-pace')).toHaveAttribute('data-adjustment-factor', '1.0800');
     expect(screen.getByTestId('adjusted-pace-label')).toBeInTheDocument();
   });
 
   test('hides overlay when heat adjustment is 3 or below', () => {
-    render(<RunShapeCanvas activityId="a2" heatAdjustmentPct={3} />);
+    renderWithStreamHover(<RunShapeCanvas activityId="a2" heatAdjustmentPct={3} />);
     expect(screen.queryByTestId('trace-adjusted-pace')).not.toBeInTheDocument();
     expect(screen.queryByTestId('adjusted-pace-label')).not.toBeInTheDocument();
   });

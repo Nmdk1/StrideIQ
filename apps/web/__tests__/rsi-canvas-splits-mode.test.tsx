@@ -3,10 +3,11 @@
  * Splits render on the activity page Splits tab (see BUILDER_INSTRUCTIONS_2026-04-12_ACTIVITY_PAGE_TABBED_LAYOUT).
  */
 import React from 'react';
-import { render, screen } from '@testing-library/react';
+import { screen } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { mockTier1Result, generateTestStreamData, mockUnitsImperial } from './rsi-fixtures';
 import type { Split } from '@/lib/types/splits';
+import { renderWithStreamHover } from '@/test-utils/renderWithStreamHover';
 
 import { RunShapeCanvas } from '@/components/activities/rsi/RunShapeCanvas';
 
@@ -35,7 +36,7 @@ function renderCanvas(splits: Split[] | null = mockSplits) {
     error: null,
     refetch: jest.fn(),
   } as never);
-  return render(<RunShapeCanvas activityId="test-123" splits={splits} />);
+  return renderWithStreamHover(<RunShapeCanvas activityId="test-123" splits={splits} />);
 }
 
 describe('RunShapeCanvas: legacy Story/Splits/Lab tabs', () => {

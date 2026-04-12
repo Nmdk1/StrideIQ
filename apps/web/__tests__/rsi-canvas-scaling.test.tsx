@@ -2,9 +2,10 @@
  * RSI chart scaling honesty — pace domain, altitude domain, separate cadence/grade axes.
  */
 import React from 'react';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { screen, fireEvent } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { mockTier1Result, mockUnitsImperial, type StreamPoint } from './rsi-fixtures';
+import { renderWithStreamHover } from '@/test-utils/renderWithStreamHover';
 
 import { RunShapeCanvas } from '@/components/activities/rsi/RunShapeCanvas';
 
@@ -82,7 +83,7 @@ describe('RSI canvas scaling honesty', () => {
       refetch: jest.fn(),
     } as any);
 
-    render(<RunShapeCanvas activityId="bimodal-pace" />);
+    renderWithStreamHover(<RunShapeCanvas activityId="bimodal-pace" />);
 
     const marker = screen.getByTestId('pace-domain-marker');
     const lo = parseFloat(marker.getAttribute('data-min') || '0');
@@ -101,7 +102,7 @@ describe('RSI canvas scaling honesty', () => {
       refetch: jest.fn(),
     } as any);
 
-    render(<RunShapeCanvas activityId="steady-pace" />);
+    renderWithStreamHover(<RunShapeCanvas activityId="steady-pace" />);
 
     const marker = screen.getByTestId('pace-domain-marker');
     const dMin = parseFloat(marker.getAttribute('data-min') || '0');
@@ -119,7 +120,7 @@ describe('RSI canvas scaling honesty', () => {
       refetch: jest.fn(),
     } as any);
 
-    render(<RunShapeCanvas activityId="alt-relief" />);
+    renderWithStreamHover(<RunShapeCanvas activityId="alt-relief" />);
 
     expect(screen.getByTestId('terrain-fill')).toBeInTheDocument();
 
@@ -138,7 +139,7 @@ describe('RSI canvas scaling honesty', () => {
       refetch: jest.fn(),
     } as any);
 
-    render(<RunShapeCanvas activityId="axes" />);
+    renderWithStreamHover(<RunShapeCanvas activityId="axes" />);
 
     fireEvent.click(screen.getByRole('button', { name: /cadence/i }));
     fireEvent.click(screen.getByRole('button', { name: /grade/i }));
@@ -161,7 +162,7 @@ describe('RSI canvas scaling honesty', () => {
       refetch: jest.fn(),
     } as any);
 
-    render(<RunShapeCanvas activityId="baseval" />);
+    renderWithStreamHover(<RunShapeCanvas activityId="baseval" />);
 
     const marker = screen.getByTestId('terrain-basevalue-marker');
     expect(marker.getAttribute('data-basevalue')).toBe('dataMin');

@@ -10,9 +10,10 @@
  * the tooltip from state.
  */
 import React from 'react';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { screen, fireEvent } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { mockTier1Result, generateTestStreamData, mockUnitsImperial } from './rsi-fixtures';
+import { renderWithStreamHover } from '@/test-utils/renderWithStreamHover';
 
 import { RunShapeCanvas } from '@/components/activities/rsi/RunShapeCanvas';
 
@@ -63,7 +64,7 @@ describe('AC-3: Unified Crosshair', () => {
   });
 
   test('hovering shows values for all visible channels', () => {
-    render(<RunShapeCanvas activityId="test-123" />);
+    renderWithStreamHover(<RunShapeCanvas activityId="test-123" />);
 
     const overlay = screen.getByTestId('chart-overlay');
     hoverAtFraction(overlay, 0.5);
@@ -75,7 +76,7 @@ describe('AC-3: Unified Crosshair', () => {
   });
 
   test('crosshair shows values for toggled-on secondary channels', () => {
-    render(<RunShapeCanvas activityId="test-123" />);
+    renderWithStreamHover(<RunShapeCanvas activityId="test-123" />);
 
     // Toggle cadence ON
     const cadenceToggle = screen.getByRole('button', { name: /cadence/i });
@@ -91,7 +92,7 @@ describe('AC-3: Unified Crosshair', () => {
   });
 
   test('crosshair hides values for toggled-off channels', () => {
-    render(<RunShapeCanvas activityId="test-123" />);
+    renderWithStreamHover(<RunShapeCanvas activityId="test-123" />);
 
     // Hover without toggling cadence
     const overlay = screen.getByTestId('chart-overlay');
@@ -103,7 +104,7 @@ describe('AC-3: Unified Crosshair', () => {
   });
 
   test('crosshair line persists while hovering (no view switching needed)', () => {
-    render(<RunShapeCanvas activityId="test-123" />);
+    renderWithStreamHover(<RunShapeCanvas activityId="test-123" />);
 
     const overlay = screen.getByTestId('chart-overlay');
     hoverAtFraction(overlay, 0.5);

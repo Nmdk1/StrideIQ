@@ -7,9 +7,10 @@
  * Test strategy: query data-testid markers, not Recharts internal classes.
  */
 import React from 'react';
-import { render, screen } from '@testing-library/react';
+import { screen } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { mockTier1Result, generateTestStreamData, mockUnitsImperial } from './rsi-fixtures';
+import { renderWithStreamHover } from '@/test-utils/renderWithStreamHover';
 
 import { RunShapeCanvas } from '@/components/activities/rsi/RunShapeCanvas';
 
@@ -37,12 +38,12 @@ describe('AC-5: Terrain Fill', () => {
   });
 
   test('elevation profile renders as filled area', () => {
-    render(<RunShapeCanvas activityId="test-123" />);
+    renderWithStreamHover(<RunShapeCanvas activityId="test-123" />);
     expect(screen.getByTestId('terrain-fill')).toBeInTheDocument();
   });
 
   test('terrain renders behind traces (lower z-index)', () => {
-    render(<RunShapeCanvas activityId="test-123" />);
+    renderWithStreamHover(<RunShapeCanvas activityId="test-123" />);
 
     // In our architecture:
     //   - effort-gradient canvas is z-auto (behind)
@@ -79,7 +80,7 @@ describe('AC-5: Terrain Fill', () => {
       refetch: jest.fn(),
     } as any);
 
-    render(<RunShapeCanvas activityId="test-123" />);
+    renderWithStreamHover(<RunShapeCanvas activityId="test-123" />);
 
     // Terrain should render — grade-aware coloring is visual (verified in browser),
     // but structural test confirms the terrain fill is present with grade data loaded.

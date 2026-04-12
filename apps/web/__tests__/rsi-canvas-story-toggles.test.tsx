@@ -8,9 +8,10 @@
  * not Recharts internal class names.
  */
 import React from 'react';
-import { render, screen, fireEvent, act } from '@testing-library/react';
+import { screen, fireEvent, act } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { mockTier1Result, generateTestStreamData, mockUnitsImperial } from './rsi-fixtures';
+import { renderWithStreamHover } from '@/test-utils/renderWithStreamHover';
 
 import { RunShapeCanvas } from '@/components/activities/rsi/RunShapeCanvas';
 
@@ -38,7 +39,7 @@ describe('AC-4: Story-Layer Toggles', () => {
   });
 
   test('default state: HR + pace + elevation visible, cadence and grade OFF', () => {
-    render(<RunShapeCanvas activityId="test-123" />);
+    renderWithStreamHover(<RunShapeCanvas activityId="test-123" />);
 
     // Default-visible traces
     expect(screen.getByTestId('trace-hr')).toBeInTheDocument();
@@ -51,7 +52,7 @@ describe('AC-4: Story-Layer Toggles', () => {
   });
 
   test('toggling cadence ON makes cadence trace visible', () => {
-    render(<RunShapeCanvas activityId="test-123" />);
+    renderWithStreamHover(<RunShapeCanvas activityId="test-123" />);
 
     const cadenceToggle = screen.getByRole('button', { name: /cadence/i });
     fireEvent.click(cadenceToggle);
@@ -60,7 +61,7 @@ describe('AC-4: Story-Layer Toggles', () => {
   });
 
   test('toggling grade ON makes grade trace visible', () => {
-    render(<RunShapeCanvas activityId="test-123" />);
+    renderWithStreamHover(<RunShapeCanvas activityId="test-123" />);
 
     const gradeToggle = screen.getByRole('button', { name: /grade/i });
     fireEvent.click(gradeToggle);
@@ -69,7 +70,7 @@ describe('AC-4: Story-Layer Toggles', () => {
   });
 
   test('toggle state persists across rerender (no reset on resize)', () => {
-    render(<RunShapeCanvas activityId="test-123" />);
+    renderWithStreamHover(<RunShapeCanvas activityId="test-123" />);
 
     const cadenceToggle = screen.getByRole('button', { name: /cadence/i });
     fireEvent.click(cadenceToggle);
@@ -84,7 +85,7 @@ describe('AC-4: Story-Layer Toggles', () => {
   });
 
   test('multiple toggles can be active simultaneously', () => {
-    render(<RunShapeCanvas activityId="test-123" />);
+    renderWithStreamHover(<RunShapeCanvas activityId="test-123" />);
 
     fireEvent.click(screen.getByRole('button', { name: /cadence/i }));
     fireEvent.click(screen.getByRole('button', { name: /grade/i }));

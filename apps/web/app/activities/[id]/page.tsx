@@ -27,6 +27,7 @@ import type { CrossTrainingActivity } from '@/components/activities/cross-traini
 import RouteContext from '@/components/activities/map/RouteContext';
 import { StreamHoverProvider } from '@/lib/context/StreamHoverContext';
 import { ActivityTabs, type ActivityTabId } from '@/components/activities/ActivityTabs';
+import { ActivitySplitsTabPanel } from '@/components/activities/ActivitySplitsTabPanel';
 
 interface Activity {
   id: string;
@@ -195,6 +196,10 @@ export default function ActivityDetailPage() {
     () => false,
   );
   const showRouteMap = clientReady && (isMdUp || routeMapOpen);
+  /** Splits tab: show map on mobile even when Overview map is collapsed. */
+  const showSplitsMap = clientReady && (isMdUp || routeMapOpen || activeTab === 'splits');
+
+  const splitTableRowRefs = useRef<Map<number, HTMLTableRowElement>>(new Map());
 
   // Title editing
   const queryClient = useQueryClient();
@@ -513,6 +518,7 @@ export default function ActivityDetailPage() {
                     deviceName={activity.device_name}
                     heatAdjustmentPct={activity.heat_adjustment_pct}
                     temperatureF={activity.temperature_f}
+                    splitTableRowRefs={splitTableRowRefs}
                   />
                 </div>
                 <div
@@ -559,9 +565,26 @@ export default function ActivityDetailPage() {
               </>
             ),
             splits: (
-              <p className="text-slate-500 text-sm py-10 px-2 rounded-lg border border-dashed border-slate-700/40 bg-slate-800/10">
-                Splits and elevation — Step 2.
-              </p>
+              <ActivitySplitsTabPanel
+                activityId={activityId}
+                gpsTrack={activity.gps_track}
+                startCoords={activity.start_coords}
+                sportType={activity.sport_type || 'run'}
+                startTime={activity.start_time}
+                distanceM={activity.distance_m}
+                durationS={activity.moving_time_s || activity.elapsed_time_s}
+                temperatureF={activity.temperature_f}
+                weatherCondition={activity.weather_condition}
+                humidityPct={activity.humidity_pct}
+                heatAdjustmentPct={activity.heat_adjustment_pct}
+                splits={splits}
+                intervalSummary={intervalSummary}
+                provider={activity.provider}
+                deviceName={activity.device_name}
+                stream={analysisData?.stream}
+                splitTableRowRefs={splitTableRowRefs}
+                showMap={showSplitsMap}
+              />
             ),
             analysis: (
               <p className="text-slate-500 text-sm py-10 px-2 rounded-lg border border-dashed border-slate-700/40 bg-slate-800/10">
