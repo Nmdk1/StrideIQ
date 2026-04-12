@@ -42,7 +42,7 @@ discuss → scope → plan → test design → build → evidence → commit →
 |---|----------|-------------------|
 | 1 | `docs/FOUNDER_OPERATING_CONTRACT.md` | How to work. Non-negotiable rules. Anti-patterns that killed previous agents. |
 | 2 | `docs/PRODUCT_MANIFESTO.md` | The soul. "The chart makes you open the app. The intelligence makes you trust it. The voice makes you need it." StrideIQ gives an athlete's body a voice — 150+ intelligence tools studying YOU. |
-| 3 | `docs/PRODUCT_STRATEGY_2026-03-03.md` | The moat. 10 priority-ranked product concepts. Pre-Race Fingerprint, Proactive Coach, Injury Fingerprint, Personal Operating Manual. Every feature flows from the correlation engine. |
+| 3 | `docs/PRODUCT_STRATEGY_2026-03-03.md` | The moat. 16 priority-ranked product concepts. Pre-Race Fingerprint, Proactive Coach, Injury Fingerprint, Personal Operating Manual. Every feature flows from the correlation engine. |
 | 4 | `docs/specs/CORRELATION_ENGINE_ROADMAP.md` | The 12-layer engine roadmap. Layers 1-4 are built. Know what exists before proposing what to build next. |
 | 5 | `docs/FINGERPRINT_VISIBILITY_ROADMAP.md` | How built backend intelligence connects to product strategy. |
 | 6 | `docs/DESIGN_PHILOSOPHY_AND_SITE_ROADMAP.md` | How every screen should feel. What's agreed. **What's been rejected** — do NOT re-propose rejected decisions. |

@@ -421,7 +421,7 @@ immediately.
    StrideIQ IS and what "done" looks like. "The chart makes you open the
    app. The intelligence makes you trust it. The voice makes you need it."
 2. **This document** — operating contract (how to work)
-3. **`docs/PRODUCT_STRATEGY_2026-03-03.md`** — the moat. 10 priority-ranked
+3. **`docs/PRODUCT_STRATEGY_2026-03-03.md`** — the moat. 16 priority-ranked
    product concepts: Pre-Race Fingerprint, Proactive Coach, Injury
    Fingerprint, Deep Backfill, Personal Operating Manual, and more. Every
    feature, every acquisition hook, every retention mechanism flows from

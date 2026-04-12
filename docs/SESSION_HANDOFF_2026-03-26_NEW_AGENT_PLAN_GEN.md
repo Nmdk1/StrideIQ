@@ -14,7 +14,7 @@ Before you touch a single file or write a single line of code, read these docume
 |-------|------|-------------------|
 | 1 | `docs/FOUNDER_OPERATING_CONTRACT.md` | How to work with this founder. The rules that keep you alive. Read every word. |
 | 2 | `docs/PRODUCT_MANIFESTO.md` | What this product is and why it exists. "The chart makes you open the app. The intelligence makes you trust it. The voice makes you need it." |
-| 3 | `docs/PRODUCT_STRATEGY_2026-03-03.md` | The 10 priority-ranked product concepts. The Pre-Race Fingerprint. The Proactive Coach. Every feature flows from the correlation engine producing true, specific, actionable findings about a single human. |
+| 3 | `docs/PRODUCT_STRATEGY_2026-03-03.md` | The 16 priority-ranked product concepts. The Pre-Race Fingerprint. The Proactive Coach. Every feature flows from the correlation engine producing true, specific, actionable findings about a single human. |
 | 4 | `docs/SESSION_HANDOFF_2026-03-11_NEW_BUILDER_ONBOARDING.md` | Full codebase architecture — stack, services, data model, how sync works, how CI works, how to deploy. Written by a previous agent after ~15 sessions. Still accurate. |
 | 5 | `docs/TRAINING_PLAN_REBUILD_PLAN.md` | The phase summary table. T0-T5 has been executed. What passed, what failed, what's gated. |
 | 6 | `_AI_CONTEXT_/KNOWLEDGE_BASE/PLAN_GENERATION_FRAMEWORK.md` | The governing rules for plan generation. This is what the code is SUPPOSED to implement. Read it before you look at any code. |

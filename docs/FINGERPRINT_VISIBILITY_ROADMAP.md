@@ -11,7 +11,7 @@
 
 The backend intelligence is built. The product vision is documented. The gap is between them.
 
-The founder's product strategy defines 10 priority-ranked concepts, all powered by the correlation engine. The correlation engine roadmap defines 12 capability layers. Layers 1-4 are shipped. The Living Fingerprint — weather normalization, shape extraction, 15 investigations, finding persistence — is shipped. The Training Story Engine is shipped.
+The founder's product strategy defines 16 priority-ranked concepts, all powered by the correlation engine. The correlation engine roadmap defines 12 capability layers. Layers 1-4 are shipped. The Living Fingerprint — weather normalization, shape extraction, 15 investigations, finding persistence — is shipped. The Training Story Engine is shipped.
 
 None of it speaks to the athlete.
 

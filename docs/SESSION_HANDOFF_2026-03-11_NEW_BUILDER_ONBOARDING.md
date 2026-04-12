@@ -39,7 +39,7 @@ Read these in order. Each builds on the last.
 |---|----------|-----|
 | 1 | `docs/FOUNDER_OPERATING_CONTRACT.md` | How to work. Non-negotiable rules. Anti-patterns that killed previous agents. |
 | 2 | `docs/PRODUCT_MANIFESTO.md` | The soul. "The chart makes you open the app. The intelligence makes you trust it. The voice makes you need it." |
-| 3 | `docs/PRODUCT_STRATEGY_2026-03-03.md` | The moat. 10 priority-ranked product concepts. Every feature flows from here. |
+| 3 | `docs/PRODUCT_STRATEGY_2026-03-03.md` | The moat. 16 priority-ranked product concepts. Every feature flows from here. |
 | 4 | `docs/BUILD_ROADMAP_2026-03-09.md` | The build north star. Horizons, gates, dependency graph. Know which horizon item you're building before writing code. |
 | 5 | `docs/DESIGN_PHILOSOPHY_AND_SITE_ROADMAP.md` | How every screen should feel. What's been agreed. **What's been rejected** — do NOT re-propose rejected decisions. |
 | 6 | `docs/TRAINING_PLAN_REBUILD_PLAN.md` | Phase summary table: what's complete, what's gated, what's contract-only. 119 xfail tests waiting for gates to clear. |

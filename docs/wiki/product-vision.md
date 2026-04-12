@@ -58,7 +58,7 @@ Always show both values:
 
 ## Strategic Priorities
 
-From `docs/PRODUCT_STRATEGY_2026-03-03.md` (13 priorities, ranked):
+From `docs/PRODUCT_STRATEGY_2026-03-03.md` (16 priority-ranked concepts). Rows 17–22 below are wiki extensions beyond that document:
 
 1. **Pre-Race Fingerprint** — full race signature; acquisition + retention
 2. **Proactive Coach** — word-of-mouth moments
@@ -75,18 +75,26 @@ From `docs/PRODUCT_STRATEGY_2026-03-03.md` (13 priorities, ranked):
 13. **Cohort Intelligence** — build at ~500 users
 14. **Compound Recovery Signals** — HRV÷RHR ratio as derived correlation input (scoped, 1 session)
 15. **Personal Coach Tier** — service model (founder coaches using StrideIQ) vs platform model (coaches bring athletes). Requires dedicated planning.
-16. **AI Nutrition Intelligence** — nutrition data into the correlation engine, not a standalone food logger. Integration (MFP/Cronometer) or native AI path.
+16. **AI Nutrition Intelligence** — **SHIPPED** (Apr 9-10). Photo/barcode/NL parsing, USDA integration, fueling shelf, load-adaptive planning, correlation engine wiring.
+17. **Usage Telemetry** — **SHIPPED** (Apr 10). First-party page tracking. Evidence-based product decisions for native app spec.
+18. **Unified Reports** — **SHIPPED** (Apr 10). Cross-domain reporting for athletes, coaches, clinicians.
+19. **Training Lifecycle Product** — **SPECIFIED** (Apr 10). Build/Maintain/Custom plan modes, auto-renewal, post-race transitions. Builder instructions at `docs/BUILDER_INSTRUCTIONS_2026-04-10_TRAINING_LIFECYCLE.md`.
+20. **Plan Generator Algorithm V2** — **SPECIFIED** (Apr 10). Full algorithm spec with 13 coaching science KB documents (Davis, Green, Roche), extension-based progression, build-over-build memory, unified segments schema, effort-based descriptions. Spec at `docs/specs/PLAN_GENERATOR_ALGORITHM_SPEC.md`.
+21. **Native Mobile App** — **PRELIMINARY** (Apr 10). React Native + Expo vision. Blocked on usage telemetry data. Spec at `docs/specs/NATIVE_APP_SPEC.md`.
+22. **Real-Time Audio Coach** — **SCOPED** (Apr 10). Full real-time audio coaching during runs. Spec at `docs/specs/AUDIO_COACHING_SPEC.md`.
 
 ## What's Built (Apr 2026)
 
-- **Intelligence engine complete:** N=1 correlation engine (4 layers), temporal weighting, lifecycle classifier (6 states), AutoDiscovery, fingerprint bridge
-- **Plan engine complete:** Diagnosis-first, KB-grounded (76 rules, 445 PASS), 14 archetypes, 38 workout variants
-- **Athlete experience:** Personal Operating Manual V2, morning briefing, AI coach (Kimi K2.5), activity calendar with variant selection, cross-training (6 sports), Runtoons, maps
+- **Intelligence engine complete:** N=1 correlation engine (4 layers + nutrition inputs), temporal weighting, lifecycle classifier (6 states), AutoDiscovery, fingerprint bridge
+- **Plan engine complete:** Diagnosis-first, KB-grounded (76 rules, 445 PASS), 14 archetypes, 38 workout variants. V2 algorithm spec written with Build/Maintain/Custom modes, extension-based progression, 13 coaching science KB documents (Davis, Green, Roche)
+- **Nutrition intelligence:** Photo/barcode/NL parsing, USDA integration (1.8M foods), fueling shelf (97 products), load-adaptive daily targets, 9 correlation inputs. Elevated to first-class metric (#3 in hierarchy)
+- **Athlete experience:** Personal Operating Manual V2, morning briefing, AI coach (Kimi K2.5), activity calendar, cross-training (6 sports), Runtoons, maps, unified reports
+- **Telemetry:** First-party usage tracking, admin dashboard — no third-party analytics
 - **Business:** Stripe integration, 30-day trial, 2-tier monetization ($24.99/mo or $199/yr), RUNTHEDIST promo code
 
 ### Scale (as of Apr 2026)
 
-~53 models, 55 routers, ~120 services, 14 task modules, 175+ test files, 4,036+ passing tests, 95 migrations, 70 correlation inputs, 63 pages, 70 components, 21 TanStack hooks, 8 intelligence rules.
+~85 models, 60+ routers, ~120 services, 14 task modules, 175+ test files, 4,036+ passing tests, 113 migrations, 79 correlation inputs (incl. 9 nutrition), 65+ pages, 70+ components, 23+ TanStack hooks, 8 intelligence rules.
 
 ## Founder Context
 
@@ -95,6 +103,6 @@ The founder is a BQ runner (Boston Qualifier), masters athlete, has produced six
 ## Sources
 
 - `docs/PRODUCT_MANIFESTO.md` — soul of the product
-- `docs/PRODUCT_STRATEGY_2026-03-03.md` — strategic moat, 13 priorities
+- `docs/PRODUCT_STRATEGY_2026-03-03.md` — strategic moat, 16 priority-ranked concepts
 - `docs/DESIGN_PHILOSOPHY_AND_SITE_ROADMAP.md` — visual → narrative loop, HRV standard
 - `docs/FOUNDER_OPERATING_CONTRACT.md` — how to work with the founder

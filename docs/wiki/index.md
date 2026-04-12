@@ -42,7 +42,7 @@ Before writing any code, understand these five things:
 | Page | What it covers |
 |------|---------------|
 | **[Quality & Trust Principles](./quality-trust.md)** | Five non-negotiable rules, KB registry, anti-hallucination, OutputMetricMeta, coach guardrails |
-| **[Product Vision](./product-vision.md)** | Manifesto, strategy, 13 priorities, design philosophy, competitive frame, founder context |
+| **[Product Vision](./product-vision.md)** | Manifesto, strategy, 16 priority-ranked concepts, design philosophy, competitive frame, founder context |
 | **[Coach Architecture](./coach-architecture.md)** | AI coach system — Kimi K2.5 routing, context builders, system prompt, tools, KB scanner, budget caps |
 | **[Briefing System](./briefing-system.md)** | Morning briefing — Lane 2A, prompt assembly, 8 intelligence sources, workout structure detection, guardrails |
 | **[Correlation Engine](./correlation-engine.md)** | N=1 intelligence pipeline — Layers 1-4, AutoDiscovery, finding lifecycle, limiter taxonomy, cross-training inputs, fingerprint bridge |

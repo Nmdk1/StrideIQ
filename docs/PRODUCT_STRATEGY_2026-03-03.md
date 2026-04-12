@@ -43,6 +43,8 @@ hook that converts.
 
 ## Priority-Ranked Product Concepts
 
+There are **16** numbered concepts below (1–16). Other docs should cite this count when referring to the strategy document.
+
 ### 1. Pre-Race Fingerprint (full block signature)
 
 Mine every race in an athlete's Garmin history. For each one, extract
