@@ -1,15 +1,19 @@
 'use client';
 
 import React from 'react';
-import type { DriftAnalysis, PlanComparison } from '@/components/activities/rsi/hooks/useStreamAnalysis';
+import type { DriftAnalysis, PlanComparison, StreamPoint } from '@/components/activities/rsi/hooks/useStreamAnalysis';
 import { useUnits } from '@/lib/context/UnitsContext';
+import { PaceDistribution } from '@/components/activities/PaceDistribution';
 
 interface AnalysisTabPanelProps {
   drift: DriftAnalysis | null;
   planComparison: PlanComparison | null;
+  stream: StreamPoint[] | null;
+  effortIntensity: number[] | null;
+  movingTimeS: number;
 }
 
-export function AnalysisTabPanel({ drift, planComparison }: AnalysisTabPanelProps) {
+export function AnalysisTabPanel({ drift, planComparison, stream, effortIntensity, movingTimeS }: AnalysisTabPanelProps) {
   const { formatDistance, formatPace, distanceUnitShort } = useUnits();
 
   const hasDrift = drift && (
@@ -27,7 +31,9 @@ export function AnalysisTabPanel({ drift, planComparison }: AnalysisTabPanelProp
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
-  if (!hasDrift && !planComparison) {
+  const hasEffort = stream && stream.length > 0 && effortIntensity && effortIntensity.length > 0;
+
+  if (!hasDrift && !planComparison && !hasEffort) {
     return (
       <p className="text-slate-500 text-sm py-10 px-2">
         No analysis data available for this activity.
@@ -61,6 +67,14 @@ export function AnalysisTabPanel({ drift, planComparison }: AnalysisTabPanelProp
             )}
           </div>
         </div>
+      )}
+
+      {hasEffort && stream && effortIntensity && (
+        <PaceDistribution
+          stream={stream}
+          effortIntensity={effortIntensity}
+          movingTimeS={movingTimeS}
+        />
       )}
 
       {planComparison && (

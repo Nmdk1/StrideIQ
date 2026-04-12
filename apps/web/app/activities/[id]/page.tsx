@@ -591,6 +591,9 @@ export default function ActivityDetailPage() {
               <AnalysisTabPanel
                 drift={analysisData?.drift ?? null}
                 planComparison={analysisData?.plan_comparison ?? null}
+                stream={analysisData?.stream ?? null}
+                effortIntensity={analysisData?.effort_intensity ?? null}
+                movingTimeS={activity.moving_time_s}
               />
             ),
             context: (
