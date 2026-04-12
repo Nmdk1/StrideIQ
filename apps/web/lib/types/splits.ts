@@ -1,5 +1,5 @@
 /**
- * Shared Split type — used by activity page, SplitsTable, and RunShapeCanvas SplitsModePanel.
+ * Shared Split type — used by activity page Splits tab, SplitsTable, and RunShapeCanvas (split boundary math).
  *
  * Matches the backend /v1/activities/{id}/splits response shape.
  */

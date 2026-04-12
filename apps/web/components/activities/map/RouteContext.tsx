@@ -40,6 +40,8 @@ interface Props {
   distanceM?: number;
   durationS?: number;
   heatAdjustmentPct?: number | null;
+  /** Passed to map frame (default 4:3). Overview uses 16:9. */
+  mapAspectRatio?: string;
 }
 
 export default function RouteContext({
@@ -54,6 +56,7 @@ export default function RouteContext({
   distanceM,
   durationS,
   heatAdjustmentPct,
+  mapAspectRatio,
 }: Props) {
   const { units } = useUnits();
   const { hoveredIndex } = useStreamHover();
@@ -83,6 +86,7 @@ export default function RouteContext({
         streamPoints={streamPoints}
         weather={weather}
         hoveredIndex={hoveredIndex}
+        mapAspectRatio={mapAspectRatio}
       />
 
       {/* Route History — summary always visible when siblings exist, expands to pace chart */}

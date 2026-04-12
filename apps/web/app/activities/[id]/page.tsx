@@ -6,14 +6,7 @@
  * Restructured around the Run Shape Canvas as the centerpiece.
  * Spec: docs/specs/RSI_WIRING_SPEC.md (Layer 2)
  *
- * Layout (top to bottom) — runs:
- *   1. Header
- *   2. Stats strip
- *   3. Run Shape Canvas (full bleed on narrow viewports)
- *   4. Route map (short; collapsed on small screens until "Show map")
- *   5. Reflection, perception, workout type, wellness
- *   6. Findings, then Runtoon
- *   7. "Show details" → plan comparison, Why This Run, etc.
+ * Runs: tabbed layout (Overview default) — see BUILDER_INSTRUCTIONS_2026-04-12_ACTIVITY_PAGE_TABBED_LAYOUT.md
  */
 
 import React, { useState, useRef, useEffect, useSyncExternalStore } from 'react';
@@ -25,9 +18,7 @@ import { API_CONFIG } from '@/lib/api/config';
 import { RunShapeCanvas } from '@/components/activities/rsi/RunShapeCanvas';
 import { useStreamAnalysis, isAnalysisData } from '@/components/activities/rsi/hooks/useStreamAnalysis';
 import { ReflectionPrompt } from '@/components/activities/ReflectionPrompt';
-import RunContextAnalysis from '@/components/activities/RunContextAnalysis';
 import { WorkoutTypeSelector } from '@/components/activities/WorkoutTypeSelector';
-import { WhyThisRun } from '@/components/activities/WhyThisRun';
 import { PerceptionPrompt } from '@/components/activities/PerceptionPrompt';
 import { GarminBadge } from '@/components/integrations/GarminBadge';
 import { RuntoonCard } from '@/components/activities/RuntoonCard';
@@ -35,6 +26,7 @@ import { CyclingDetail, StrengthDetail, HikingDetail, FlexibilityDetail } from '
 import type { CrossTrainingActivity } from '@/components/activities/cross-training';
 import RouteContext from '@/components/activities/map/RouteContext';
 import { StreamHoverProvider } from '@/lib/context/StreamHoverContext';
+import { ActivityTabs, type ActivityTabId } from '@/components/activities/ActivityTabs';
 
 interface Activity {
   id: string;
@@ -184,6 +176,7 @@ export default function ActivityDetailPage() {
   const streamAnalysis = useStreamAnalysis(activityId);
   const analysisData = isAnalysisData(streamAnalysis.data) ? streamAnalysis.data : null;
   const [showDetails, setShowDetails] = useState(false);
+  const [activeTab, setActiveTab] = useState<ActivityTabId>('overview');
   /** Mobile: user toggles map; desktop (md+): always show — do not mount Leaflet while `display:none` (zero-size fit). */
   const [routeMapOpen, setRouteMapOpen] = useState(false);
   /** Avoid SSR/client mismatch from matchMedia; first paint matches server (no map), then client commits. */
@@ -359,7 +352,7 @@ export default function ActivityDetailPage() {
 
   return (
     <div className="min-h-screen bg-slate-900 text-slate-100">
-      <div className="max-w-4xl mx-auto px-4 py-8">
+      <div className="max-w-7xl mx-auto px-4 py-8">
         {/* ── 1. Header ── */}
         <div className="mb-6">
           <button
@@ -468,8 +461,8 @@ export default function ActivityDetailPage() {
           </div>
         ) : (
         <StreamHoverProvider>
-        {/* ── 2. Stats Banner (compact) — above run shape so the chart is visible first on mobile ── */}
-        <div className="mb-4">
+        {/* ── 2. Stats Banner — persistent header ── */}
+        <div className="mb-3">
           <div className="flex items-center gap-4 overflow-x-auto pb-1">
             <MetricPill label="Distance" value={formatDistance(activity.distance_m)} />
             <MetricPill label="Duration" value={formatDuration(activity.moving_time_s)} />
@@ -503,132 +496,156 @@ export default function ActivityDetailPage() {
           )}
         </div>
 
-        {/* ── 3. Run Shape Canvas + Splits — hero; cancel horizontal padding on small screens ── */}
-        <div className="mb-4 -mx-4 sm:mx-0">
-          <RunShapeCanvas
-            activityId={activityId}
-            splits={splits ?? null}
-            intervalSummary={intervalSummary}
-            provider={activity.provider}
-            deviceName={activity.device_name}
-            heatAdjustmentPct={activity.heat_adjustment_pct}
-            temperatureF={activity.temperature_f}
-          />
-        </div>
+        <GoingInCompactStrip activity={activity} />
 
-        {/* ── 4. Route map — short; on mobile collapsed by default (Show map) ── */}
-        {activity.gps_track && activity.gps_track.length > 1 && (
-          <div className="mb-4">
-            <div className="flex items-center justify-between md:hidden mb-2 px-0">
-              <span className="text-xs font-medium text-slate-500 uppercase tracking-wide">Route</span>
-              <button
-                type="button"
-                onClick={() => setRouteMapOpen((v) => !v)}
-                className="text-sm text-orange-400/90 hover:text-orange-300"
-              >
-                {routeMapOpen ? 'Hide map' : 'Show map'}
-              </button>
-            </div>
-            {showRouteMap && (
-              <RouteContext
-                activityId={activityId}
-                track={activity.gps_track}
-                startCoords={activity.start_coords}
-                sportType={activity.sport_type || 'run'}
-                startTime={activity.start_time}
-                streamPoints={analysisData?.stream}
-                weather={{
-                  temperature_f: activity.temperature_f,
-                  weather_condition: activity.weather_condition,
-                  humidity_pct: activity.humidity_pct,
-                  heat_adjustment_pct: activity.heat_adjustment_pct,
-                }}
-                distanceM={activity.distance_m}
-                durationS={activity.moving_time_s || activity.elapsed_time_s}
-                heatAdjustmentPct={activity.heat_adjustment_pct}
-              />
-            )}
-          </div>
-        )}
-
-        {/* ── 5. Reflection Prompt (quick 3-tap) ── */}
-        <ReflectionPrompt activityId={activityId} className="mb-4" />
-
-        {/* ── 5b. Full Feedback: RPE, Leg Feel, Notes ── */}
-        <PerceptionPrompt
-          activityId={activityId}
-          className="mb-4"
-          workoutType={activity.workout_type ?? undefined}
-          expectedRpeRange={activity.expected_rpe_range ?? undefined}
-        />
-
-        {/* ── 5c. Workout Type (compact) ── */}
-        <div className="mb-6">
-          <WorkoutTypeSelector activityId={activityId} compact />
-        </div>
-
-        {/* ── Pre-activity wellness context ── */}
-        {(activity.pre_recovery_hrv != null || activity.pre_resting_hr != null || activity.pre_sleep_h != null) && (
-          <div className="rounded-lg border border-slate-700/30 bg-slate-800/30 px-4 py-3 mb-4">
-            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-2">Going In</p>
-            <div className="flex flex-wrap gap-x-6 gap-y-1">
-              {activity.pre_recovery_hrv != null && (
-                <span className="text-sm text-slate-300">
-                  <span className="text-slate-500">Recovery HRV</span>{' '}
-                  <span className="font-medium">{activity.pre_recovery_hrv}</span>
-                  <span className="text-slate-500 text-xs ml-0.5">ms</span>
-                  {activity.pre_overnight_hrv != null && (
-                    <span className="text-xs text-slate-500 ml-2">(overnight avg {activity.pre_overnight_hrv})</span>
-                  )}
-                </span>
-              )}
-              {activity.pre_resting_hr != null && (
-                <span className="text-sm text-slate-300">
-                  <span className="text-slate-500">RHR</span>{' '}
-                  <span className="font-medium">{activity.pre_resting_hr}</span>
-                  <span className="text-slate-500 text-xs ml-0.5">bpm</span>
-                </span>
-              )}
-              {activity.pre_sleep_h != null && (
-                <span className="text-sm text-slate-300">
-                  <span className="text-slate-500">Sleep</span>{' '}
-                  <span className="font-medium">{activity.pre_sleep_h.toFixed(1)}</span>
-                  <span className="text-slate-500 text-xs ml-0.5">h</span>
-                  {activity.pre_sleep_score != null && (
-                    <span className="text-xs text-slate-500 ml-1">({activity.pre_sleep_score})</span>
-                  )}
-                </span>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* ── Finding annotations (above Runtoon — chart/splits are the hero) ── */}
-        {findings && findings.length > 0 && (
-          <div className="mb-6 space-y-2">
-            {findings.map((f, i) => (
-              <div key={i} className="rounded-lg border border-slate-700/30 bg-slate-800/20 px-4 py-3">
-                <div className="flex items-start gap-2">
-                  <span className="text-sm flex-shrink-0">🔬</span>
-                  <div>
-                    <p className="text-sm text-slate-300">{f.text}</p>
-                    <p className="text-xs text-slate-500 mt-0.5">
-                      {f.confidence_tier === 'strong' ? 'Strong' : 'Confirmed'} · {f.domain.replace(/_/g, ' ')}
+        <ActivityTabs
+          activeTab={activeTab}
+          onTabChange={setActiveTab}
+          panels={{
+            overview: (
+              <>
+                <div className="mb-4 -mx-4 sm:mx-0">
+                  <RunShapeCanvas
+                    activityId={activityId}
+                    splits={splits ?? null}
+                    intervalSummary={intervalSummary}
+                    provider={activity.provider}
+                    deviceName={activity.device_name}
+                    heatAdjustmentPct={activity.heat_adjustment_pct}
+                    temperatureF={activity.temperature_f}
+                  />
+                </div>
+                <div
+                  className="min-h-[88px] rounded-lg border border-dashed border-slate-600/40 bg-slate-800/20 mb-4 px-4 py-3"
+                  aria-label="Insights for this chart"
+                />
+                {activity.gps_track && activity.gps_track.length > 1 && (
+                  <div className="mb-4">
+                    <div className="flex items-center justify-between md:hidden mb-2 px-0">
+                      <span className="text-xs font-medium text-slate-500 uppercase tracking-wide">Route</span>
+                      <button
+                        type="button"
+                        onClick={() => setRouteMapOpen((v) => !v)}
+                        className="text-sm text-orange-400/90 hover:text-orange-300"
+                      >
+                        {routeMapOpen ? 'Hide map' : 'Show map'}
+                      </button>
+                    </div>
+                    {showRouteMap && (
+                      <RouteContext
+                        activityId={activityId}
+                        track={activity.gps_track}
+                        startCoords={activity.start_coords}
+                        sportType={activity.sport_type || 'run'}
+                        startTime={activity.start_time}
+                        streamPoints={analysisData?.stream}
+                        weather={{
+                          temperature_f: activity.temperature_f,
+                          weather_condition: activity.weather_condition,
+                          humidity_pct: activity.humidity_pct,
+                          heat_adjustment_pct: activity.heat_adjustment_pct,
+                        }}
+                        distanceM={activity.distance_m}
+                        durationS={activity.moving_time_s || activity.elapsed_time_s}
+                        heatAdjustmentPct={activity.heat_adjustment_pct}
+                        mapAspectRatio="16 / 9"
+                      />
+                    )}
+                  </div>
+                )}
+                <div className="mb-2">
+                  <RuntoonCard activityId={activityId} />
+                </div>
+              </>
+            ),
+            splits: (
+              <p className="text-slate-500 text-sm py-10 px-2 rounded-lg border border-dashed border-slate-700/40 bg-slate-800/10">
+                Splits and elevation — Step 2.
+              </p>
+            ),
+            analysis: (
+              <p className="text-slate-500 text-sm py-10 px-2 rounded-lg border border-dashed border-slate-700/40 bg-slate-800/10">
+                Drift, pace distribution, and plan vs actual — Step 4–5.
+              </p>
+            ),
+            context: (
+              <div className="space-y-4">
+                {(activity.pre_recovery_hrv != null || activity.pre_resting_hr != null || activity.pre_sleep_h != null) && (
+                  <div className="rounded-lg border border-slate-700/30 bg-slate-800/30 px-4 py-3">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-2">Going In</p>
+                    <div className="flex flex-wrap gap-x-6 gap-y-1">
+                      {activity.pre_recovery_hrv != null && (
+                        <span className="text-sm text-slate-300">
+                          <span className="text-slate-500">Recovery HRV</span>{' '}
+                          <span className="font-medium">{activity.pre_recovery_hrv}</span>
+                          <span className="text-slate-500 text-xs ml-0.5">ms</span>
+                          {activity.pre_overnight_hrv != null && (
+                            <span className="text-xs text-slate-500 ml-2">(overnight avg {activity.pre_overnight_hrv})</span>
+                          )}
+                        </span>
+                      )}
+                      {activity.pre_resting_hr != null && (
+                        <span className="text-sm text-slate-300">
+                          <span className="text-slate-500">RHR</span>{' '}
+                          <span className="font-medium">{activity.pre_resting_hr}</span>
+                          <span className="text-slate-500 text-xs ml-0.5">bpm</span>
+                        </span>
+                      )}
+                      {activity.pre_sleep_h != null && (
+                        <span className="text-sm text-slate-300">
+                          <span className="text-slate-500">Sleep</span>{' '}
+                          <span className="font-medium">{activity.pre_sleep_h.toFixed(1)}</span>
+                          <span className="text-slate-500 text-xs ml-0.5">h</span>
+                          {activity.pre_sleep_score != null && (
+                            <span className="text-xs text-slate-500 ml-1">({activity.pre_sleep_score})</span>
+                          )}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                )}
+                {findings && findings.length > 0 && (
+                  <div className="space-y-2">
+                    {findings.map((f, i) => (
+                      <div key={i} className="rounded-lg border border-slate-700/30 bg-slate-800/20 px-4 py-3">
+                        <div className="flex items-start gap-2">
+                          <span className="text-sm flex-shrink-0">🔬</span>
+                          <div>
+                            <p className="text-sm text-slate-300">{f.text}</p>
+                            <p className="text-xs text-slate-500 mt-0.5">
+                              {f.confidence_tier === 'strong' ? 'Strong' : 'Confirmed'} · {f.domain.replace(/_/g, ' ')}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {activity.narrative && (
+                  <div className="px-4 py-3 bg-slate-800/30 border border-slate-700/30 rounded-lg">
+                    <p className="text-sm text-slate-400 italic leading-relaxed">
+                      &ldquo;{activity.narrative}&rdquo;
                     </p>
                   </div>
-                </div>
+                )}
               </div>
-            ))}
-          </div>
-        )}
+            ),
+            feedback: (
+              <div className="space-y-4">
+                <ReflectionPrompt activityId={activityId} />
+                <PerceptionPrompt
+                  activityId={activityId}
+                  workoutType={activity.workout_type ?? undefined}
+                  expectedRpeRange={activity.expected_rpe_range ?? undefined}
+                />
+                <WorkoutTypeSelector activityId={activityId} compact />
+              </div>
+            ),
+          }}
+        />
 
-        {/* ── Runtoon (below findings — not above fold) ── */}
-        <div className="mb-6">
-          <RuntoonCard activityId={activityId} />
-        </div>
-
-        {/* ── A6: Collapsible details (Plan Comparison through Narrative Context) ── */}
-        <div className="mb-6">
+        {/* ── Plan vs actual (stays until Analysis tab consolidation in Step 4) ── */}
+        <div className="mb-6 mt-8">
           <button
             onClick={() => setShowDetails((v) => !v)}
             className="flex items-center gap-1.5 text-sm text-slate-400 hover:text-slate-200 transition-colors"
@@ -646,60 +663,40 @@ export default function ActivityDetailPage() {
           </button>
         </div>
 
-        {showDetails && (
-          <>
-            {/* ── 7. Plan Comparison (conditional — from stream analysis) ── */}
-            {analysisData?.plan_comparison && (
-              <div className="mb-6 rounded-lg bg-slate-800/30 border border-slate-700/30 p-4">
-                <h3 className="text-sm font-medium text-slate-400 mb-3">Plan vs Actual</h3>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
-                  {analysisData.plan_comparison.planned_duration_min != null && analysisData.plan_comparison.actual_duration_min != null && (
-                    <PlanComparisonCell
-                      label="Duration"
-                      planned={formatMinutesToDuration(analysisData.plan_comparison.planned_duration_min)}
-                      actual={formatMinutesToDuration(analysisData.plan_comparison.actual_duration_min)}
-                    />
-                  )}
-                  {analysisData.plan_comparison.planned_distance_km != null && analysisData.plan_comparison.actual_distance_km != null && (
-                    <PlanComparisonCell
-                      label="Distance"
-                      planned={formatDistance(analysisData.plan_comparison.planned_distance_km * 1000)}
-                      actual={formatDistance(analysisData.plan_comparison.actual_distance_km * 1000)}
-                    />
-                  )}
-                  {analysisData.plan_comparison.planned_pace_s_km != null && analysisData.plan_comparison.actual_pace_s_km != null && (
-                    <PlanComparisonCell
-                      label="Pace"
-                      planned={formatPace(analysisData.plan_comparison.planned_pace_s_km)}
-                      actual={formatPace(analysisData.plan_comparison.actual_pace_s_km)}
-                    />
-                  )}
-                  {analysisData.plan_comparison.planned_interval_count != null && analysisData.plan_comparison.detected_work_count != null && (
-                    <PlanComparisonCell
-                      label="Intervals"
-                      planned={String(analysisData.plan_comparison.planned_interval_count)}
-                      actual={String(analysisData.plan_comparison.detected_work_count)}
-                    />
-                  )}
-                </div>
-              </div>
-            )}
-
-            {/* ── 8. "Why This Run?" + Context Analysis ── */}
-            <div className="mb-6">
-              <WhyThisRun activityId={activityId} className="mb-4" />
-              <RunContextAnalysis activityId={activityId} />
+        {showDetails && analysisData?.plan_comparison && (
+          <div className="mb-6 rounded-lg bg-slate-800/30 border border-slate-700/30 p-4">
+            <h3 className="text-sm font-medium text-slate-400 mb-3">Plan vs Actual</h3>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+              {analysisData.plan_comparison.planned_duration_min != null && analysisData.plan_comparison.actual_duration_min != null && (
+                <PlanComparisonCell
+                  label="Duration"
+                  planned={formatMinutesToDuration(analysisData.plan_comparison.planned_duration_min)}
+                  actual={formatMinutesToDuration(analysisData.plan_comparison.actual_duration_min)}
+                />
+              )}
+              {analysisData.plan_comparison.planned_distance_km != null && analysisData.plan_comparison.actual_distance_km != null && (
+                <PlanComparisonCell
+                  label="Distance"
+                  planned={formatDistance(analysisData.plan_comparison.planned_distance_km * 1000)}
+                  actual={formatDistance(analysisData.plan_comparison.actual_distance_km * 1000)}
+                />
+              )}
+              {analysisData.plan_comparison.planned_pace_s_km != null && analysisData.plan_comparison.actual_pace_s_km != null && (
+                <PlanComparisonCell
+                  label="Pace"
+                  planned={formatPace(analysisData.plan_comparison.planned_pace_s_km)}
+                  actual={formatPace(analysisData.plan_comparison.actual_pace_s_km)}
+                />
+              )}
+              {analysisData.plan_comparison.planned_interval_count != null && analysisData.plan_comparison.detected_work_count != null && (
+                <PlanComparisonCell
+                  label="Intervals"
+                  planned={String(analysisData.plan_comparison.planned_interval_count)}
+                  actual={String(analysisData.plan_comparison.detected_work_count)}
+                />
+              )}
             </div>
-
-            {/* ── Narrative Context (secondary — canvas is now the hero) ── */}
-            {activity.narrative && (
-              <div className="mb-6 px-4 py-3 bg-slate-800/30 border border-slate-700/30 rounded-lg">
-                <p className="text-sm text-slate-400 italic leading-relaxed">
-                  &ldquo;{activity.narrative}&rdquo;
-                </p>
-              </div>
-            )}
-          </>
+          </div>
         )}
         </StreamHoverProvider>
         )}
@@ -718,6 +715,43 @@ function formatDeviceName(raw: string): string {
 }
 
 // ============ Sub-Components ============
+
+/** One-line Going In summary below stats (full card lives on Context tab). */
+function GoingInCompactStrip({ activity }: { activity: Activity }) {
+  if (
+    activity.pre_recovery_hrv == null &&
+    activity.pre_resting_hr == null &&
+    activity.pre_sleep_h == null
+  ) {
+    return null;
+  }
+  return (
+    <div className="mb-4 flex flex-wrap items-baseline gap-x-5 gap-y-1 text-sm border-b border-slate-700/30 pb-3">
+      <span className="text-xs font-medium text-slate-500 uppercase tracking-wide w-full sm:w-auto">Going In</span>
+      {activity.pre_recovery_hrv != null && (
+        <span className="text-slate-300">
+          <span className="text-slate-500">HRV</span>{' '}
+          <span className="font-medium tabular-nums">{activity.pre_recovery_hrv}</span>
+          <span className="text-slate-500 text-xs">ms</span>
+        </span>
+      )}
+      {activity.pre_resting_hr != null && (
+        <span className="text-slate-300">
+          <span className="text-slate-500">RHR</span>{' '}
+          <span className="font-medium tabular-nums">{activity.pre_resting_hr}</span>
+          <span className="text-slate-500 text-xs">bpm</span>
+        </span>
+      )}
+      {activity.pre_sleep_h != null && (
+        <span className="text-slate-300">
+          <span className="text-slate-500">Sleep</span>{' '}
+          <span className="font-medium tabular-nums">{activity.pre_sleep_h.toFixed(1)}</span>
+          <span className="text-slate-500 text-xs">h</span>
+        </span>
+      )}
+    </div>
+  );
+}
 
 /** Compact metric pill for the horizontal ribbon */
 function MetricPill({

@@ -30,6 +30,23 @@ if (typeof global.Response === 'undefined') {
   };
 }
 
+// matchMedia (RunShapeCanvas and activity page use responsive hooks)
+if (typeof window !== 'undefined' && typeof window.matchMedia !== 'function') {
+  Object.defineProperty(window, 'matchMedia', {
+    writable: true,
+    value: (query) => ({
+      matches: false,
+      media: query,
+      onchange: null,
+      addListener: () => {},
+      removeListener: () => {},
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      dispatchEvent: () => false,
+    }),
+  });
+}
+
 // Polyfill ResizeObserver for jsdom (used by RSI canvas)
 if (typeof global.ResizeObserver === 'undefined') {
   global.ResizeObserver = class ResizeObserver {

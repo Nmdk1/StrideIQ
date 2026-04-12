@@ -48,6 +48,8 @@ export interface Props {
   streamPoints?: StreamPoint[];
   weather?: WeatherData | null;
   hoveredIndex?: number | null;
+  /** Outer frame aspect ratio (non-fullscreen). Default 4:3; Overview tab uses 16:9. */
+  mapAspectRatio?: string;
 }
 
 /** Leaflet expects [lat, lng]. Some sources store [lng, lat]; detect via first coordinate. */
@@ -233,6 +235,7 @@ export default function ActivityMapInner({
   streamPoints,
   weather,
   hoveredIndex,
+  mapAspectRatio = '4 / 3',
 }: Props) {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [showEffort, setShowEffort] = useState(false);
@@ -332,7 +335,7 @@ export default function ActivityMapInner({
             ? 'fixed inset-0 z-50 bg-slate-900'
             : 'route-map-surface relative rounded-lg overflow-hidden border border-slate-700/30'
         }
-        style={isFullscreen ? undefined : { aspectRatio: '4 / 3' }}
+        style={isFullscreen ? undefined : { aspectRatio: mapAspectRatio }}
       >
         {/* Fullscreen toggle */}
         <button

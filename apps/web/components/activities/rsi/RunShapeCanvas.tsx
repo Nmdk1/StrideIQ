@@ -61,8 +61,7 @@ import { effortToColor } from '@/components/activities/rsi/utils/effortColor';
 import { useStreamHover } from '@/lib/context/StreamHoverContext';
 import { useUnits } from '@/lib/context/UnitsContext';
 import type { Split, IntervalSummary } from '@/lib/types/splits';
-import { SplitsTable, normalizeCadenceToSpm } from '@/components/activities/SplitsTable';
-import { IntervalsView } from '@/components/activities/IntervalsView';
+import { normalizeCadenceToSpm } from '@/components/activities/SplitsTable';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -637,107 +636,6 @@ function DriftMetrics({ drift }: { drift: DriftAnalysis }) {
 }
 
 // ---------------------------------------------------------------------------
-// SplitsModePanel — Splits tab panel (reuses SplitsTable with scroll container)
-// ---------------------------------------------------------------------------
-
-function SplitsModePanel({
-  splits,
-  intervalSummary,
-  provider,
-  deviceName,
-  onRowHover,
-  rowRefs,
-}: {
-  splits: Split[];
-  intervalSummary?: IntervalSummary | null;
-  provider?: string | null;
-  deviceName?: string | null;
-  onRowHover?: (index: number | null) => void;
-  rowRefs?: React.MutableRefObject<Map<number, HTMLTableRowElement>>;
-}) {
-  const [showFlat, setShowFlat] = React.useState(false);
-
-  if (!splits || splits.length === 0) {
-    return (
-      <div className="mt-3 text-sm text-slate-500" data-testid="splits-panel-empty">
-        No splits data available for this activity.
-      </div>
-    );
-  }
-
-  const isStructured = intervalSummary?.is_structured === true;
-
-  return (
-    <div className="mt-3" data-testid="splits-panel">
-      {isStructured && (
-        <div className="flex items-center gap-2 mb-1 px-1">
-          <button
-            onClick={() => setShowFlat(false)}
-            className={`text-xs px-2.5 py-1 rounded-md transition-colors ${
-              !showFlat ? 'bg-slate-700 text-white' : 'text-slate-400 hover:text-slate-300'
-            }`}
-          >
-            Intervals
-          </button>
-          <button
-            onClick={() => setShowFlat(true)}
-            className={`text-xs px-2.5 py-1 rounded-md transition-colors ${
-              showFlat ? 'bg-slate-700 text-white' : 'text-slate-400 hover:text-slate-300'
-            }`}
-          >
-            Mile Splits
-          </button>
-        </div>
-      )}
-
-      {isStructured && !showFlat ? (
-        <IntervalsView
-          splits={splits}
-          intervalSummary={intervalSummary!}
-          provider={provider}
-          deviceName={deviceName}
-        />
-      ) : (
-        <SplitsTable splits={splits} provider={provider} deviceName={deviceName} onRowHover={onRowHover} rowRefs={rowRefs} />
-      )}
-    </div>
-  );
-}
-
-
-// ---------------------------------------------------------------------------
-// HighlightOverlay — transient hover highlight on the chart (distinct from segment bands)
-// ---------------------------------------------------------------------------
-
-function HighlightOverlay({
-  startPct,
-  endPct,
-}: {
-  startPct: number;
-  endPct: number;
-}) {
-  return (
-    <div
-      data-testid="highlight-overlay"
-      style={{
-        position: 'absolute',
-        top: 0,
-        height: '100%',
-        left: `${startPct}%`,
-        width: `${endPct - startPct}%`,
-        // Distinct from segment bands: border lines + very faint fill
-        borderLeft: '1px solid rgba(255,255,255,0.4)',
-        borderRight: '1px solid rgba(255,255,255,0.4)',
-        backgroundColor: 'rgba(255,255,255,0.05)',
-        pointerEvents: 'none',
-        zIndex: 2,
-      }}
-    />
-  );
-}
-
-
-// ---------------------------------------------------------------------------
 // LabModePanel (AC-9: zone overlay, segment table, drift metrics)
 // ---------------------------------------------------------------------------
 
@@ -873,9 +771,7 @@ export function RunShapeCanvas({
     setMapHoveredIndex(idx);
   }, [setMapHoveredIndex]);
 
-  // Two-way hover: Row → Chart (state-driven, infrequent)
-  const [highlightRange, setHighlightRange] = useState<{ startTime: number; endTime: number } | null>(null);
-  // Two-way hover: Chart → Row (ref-driven, 60fps, no re-renders)
+  // Two-way hover: Chart → Row (ref-driven, 60fps, no re-renders) — row targets live on Splits tab (Step 2).
   const splitRowRefs = useRef<Map<number, HTMLTableRowElement>>(new Map());
   const prevHighlightedSplitRef = useRef<number | null>(null);
 
@@ -1114,15 +1010,6 @@ export function RunShapeCanvas({
     }
   }, []);
 
-  // Row → Chart: when hovering a split row, highlight the corresponding time range
-  const handleSplitRowHover = useCallback((index: number | null) => {
-    if (index == null || index < 0 || index >= splitBoundaries.length) {
-      setHighlightRange(null);
-      return;
-    }
-    setHighlightRange(splitBoundaries[index]);
-  }, [splitBoundaries]);
-
   // --- ADR-063 lifecycle state handling (AC-10) ---
   // The hook may return a lifecycle response ({ status: 'pending' | 'unavailable' })
   // instead of a full analysis result. Detect and handle before data extraction.
@@ -1253,14 +1140,6 @@ export function RunShapeCanvas({
 
         {/* Layer 1: Segment overlay bands (AC-6, behind traces) */}
         <SegmentBands segments={analysis.segments} maxTime={maxTime} />
-
-        {/* Layer 1b: Transient hover highlight (splits/lab row hover → chart) */}
-        {highlightRange && maxTime > 0 && (
-          <HighlightOverlay
-            startPct={(highlightRange.startTime / maxTime) * 100}
-            endPct={(highlightRange.endTime / maxTime) * 100}
-          />
-        )}
 
         {/* Layer 2: Recharts SVG (terrain + traces) */}
         <div
@@ -1505,18 +1384,6 @@ export function RunShapeCanvas({
 
       {/* Slot for content that should be visually adjacent to the chart (e.g. route map) */}
       {children}
-
-      {/* Splits — always visible when splits data exists */}
-      {splits && (
-        <SplitsModePanel
-          splits={splits}
-          intervalSummary={intervalSummary}
-          provider={provider}
-          deviceName={deviceName}
-          onRowHover={handleSplitRowHover}
-          rowRefs={splitRowRefs}
-        />
-      )}
 
       {/* Plan comparison card (AC-7: conditional on plan_comparison presence) */}
       {analysis.plan_comparison && (
