@@ -82,8 +82,65 @@ def _workout_label(wt: Optional[str]) -> str:
     return labels.get(wt.lower(), wt.lower().replace("_", " "))
 
 
+def _is_interval_workout(activity: Activity) -> bool:
+    wt = getattr(activity, "workout_type", None)
+    if not wt:
+        return False
+    return wt.lower() in {"interval", "intervals", "track", "track_workout"}
+
+
+def _get_interval_analysis(activity: Activity, db: Session) -> Optional[Dict[str, Any]]:
+    """Analyze work intervals specifically: consistency, paces, HR response."""
+    splits = (
+        db.query(ActivitySplit)
+        .filter(ActivitySplit.activity_id == activity.id)
+        .order_by(ActivitySplit.split_number)
+        .all()
+    )
+
+    work_splits = [
+        s for s in splits
+        if s.lap_type == "work"
+        and s.distance and float(s.distance) > 0
+        and s.elapsed_time and float(s.elapsed_time) > 0
+    ]
+
+    if len(work_splits) < 2:
+        return None
+
+    paces = [float(s.elapsed_time) / (float(s.distance) / 1000) for s in work_splits]
+    avg_pace = sum(paces) / len(paces)
+    distances = [float(s.distance) for s in work_splits]
+    avg_dist = sum(distances) / len(distances)
+
+    spreads = [(p - avg_pace) / avg_pace * 100 for p in paces]
+    max_spread = max(abs(s) for s in spreads)
+    slowest_idx = paces.index(max(paces))
+    fastest_idx = paces.index(min(paces))
+
+    hrs = [int(s.average_heartrate) for s in work_splits if s.average_heartrate]
+    avg_hr = sum(hrs) / len(hrs) if hrs else None
+
+    return {
+        "type": "interval",
+        "rep_count": len(work_splits),
+        "avg_distance_m": round(avg_dist),
+        "paces_s_km": paces,
+        "avg_pace_s_km": avg_pace,
+        "max_spread_pct": round(max_spread, 1),
+        "slowest_rep": slowest_idx + 1,
+        "fastest_rep": fastest_idx + 1,
+        "avg_hr": avg_hr,
+    }
+
+
 def _get_split_pacing(activity: Activity, db: Session) -> Optional[Dict[str, Any]]:
-    """Compute first-half / second-half pacing analysis from splits."""
+    """Compute first-half / second-half pacing analysis from splits.
+    Only used for continuous runs — intervals use _get_interval_analysis.
+    """
+    if _is_interval_workout(activity):
+        return None
+
     splits = (
         db.query(ActivitySplit)
         .filter(ActivitySplit.activity_id == activity.id)
@@ -104,6 +161,7 @@ def _get_split_pacing(activity: Activity, db: Session) -> Optional[Dict[str, Any
     decay_pct = ((second_avg - first_avg) / first_avg) * 100 if first_avg > 0 else 0
 
     return {
+        "type": "continuous",
         "decay_pct": round(decay_pct, 1),
         "first_half_pace": first_avg,
         "second_half_pace": second_avg,
@@ -262,24 +320,32 @@ def _assemble_intelligence(activity: Activity, db: Session) -> Optional[RunIntel
 
     # Gather all available data
     drift = _get_stream_drift(activity.id, db)
+    interval_data = _get_interval_analysis(activity, db) if _is_interval_workout(activity) else None
     pacing = _get_split_pacing(activity, db)
     efficiency = _get_efficiency_vs_peers(activity, db)
     drift_history = _get_drift_history_avg(activity, db)
 
     # --- Build headline ---
     headline = _build_headline(
-        dist_str, pace_str, duration_str, wt_label, dist_mi, activity
+        dist_str, pace_str, duration_str, wt_label, dist_mi, activity,
+        interval_data,
     )
 
     # --- Build body sentences ---
     sentences: List[str] = []
 
-    # 1. Pacing sentence
-    pacing_sent = _pacing_sentence(pacing)
-    if pacing_sent:
-        sentences.append(pacing_sent)
+    if interval_data:
+        # Interval-specific: rep consistency and paces
+        interval_sent = _interval_sentence(interval_data)
+        if interval_sent:
+            sentences.append(interval_sent)
+    else:
+        # Continuous run: half-half pacing
+        pacing_sent = _pacing_sentence(pacing)
+        if pacing_sent:
+            sentences.append(pacing_sent)
 
-    # 2. Cardiac coupling / drift sentence
+    # 2. Cardiac coupling / drift sentence (controlled-steady only)
     coupling_sent = _coupling_sentence(drift, drift_history, activity)
     if coupling_sent:
         sentences.append(coupling_sent)
@@ -302,7 +368,7 @@ def _assemble_intelligence(activity: Activity, db: Session) -> Optional[RunIntel
     body = " ".join(sentences) if sentences else ""
 
     # --- Highlights ---
-    highlights = _build_highlights(activity, drift, pacing, efficiency)
+    highlights = _build_highlights(activity, drift, pacing, efficiency, interval_data)
 
     if not body and not highlights:
         return None
@@ -324,23 +390,55 @@ def _build_headline(
     wt_label: str,
     dist_mi: float,
     activity: Activity,
+    interval_data: Optional[Dict] = None,
 ) -> str:
     """One-line opening: distance, pace, and what kind of run."""
     is_race = getattr(activity, "is_race_candidate", False) or (
         activity.workout_type and activity.workout_type.lower() == "race"
     )
 
+    if interval_data:
+        n = interval_data["rep_count"]
+        avg_dist = interval_data["avg_distance_m"]
+        avg_pace = _fmt_pace_per_mile(interval_data["avg_pace_s_km"])
+        return f"{n}x{avg_dist}m at {avg_pace} avg — {wt_label}."
+
     if is_race and dist_mi >= 13.0:
         return f"{dist_str} mi in {duration_str} — {wt_label}."
     return f"{dist_str} mi at {pace_str} — {wt_label}."
 
 
+def _interval_sentence(interval_data: Optional[Dict]) -> Optional[str]:
+    """Describe interval rep consistency — the metric that matters for quality work."""
+    if not interval_data:
+        return None
+
+    n = interval_data["rep_count"]
+    spread = interval_data["max_spread_pct"]
+    slowest = interval_data["slowest_rep"]
+    paces = interval_data["paces_s_km"]
+
+    pace_strs = [_fmt_pace_per_mile(p) for p in paces]
+    pace_list = ", ".join(pace_strs)
+
+    if spread <= 2.0:
+        consistency = f"Very consistent across {n} reps (max {spread:.1f}% spread)."
+    elif spread <= 5.0:
+        consistency = f"Consistent across {n} reps ({spread:.1f}% max spread)."
+    elif spread <= 10.0:
+        consistency = f"Some variation across {n} reps — rep {slowest} was the slowest ({spread:.1f}% off avg)."
+    else:
+        consistency = f"Wide variation — rep {slowest} was {spread:.1f}% off the average."
+
+    return f"Reps: {pace_list}. {consistency}"
+
+
 def _pacing_sentence(pacing: Optional[Dict]) -> Optional[str]:
     if not pacing:
         return None
-    d = pacing["decay_pct"]
+    d = pacing.get("decay_pct", 0)
     if d < -2:
-        return f"Strong negative split — pace improved {abs(d):.1f}% in the second half."
+        return f"Negative split — second half {abs(d):.1f}% faster."
     elif d <= 2:
         return "Even pacing throughout."
     elif d <= 5:
@@ -460,13 +558,28 @@ def _build_highlights(
     drift: Optional[Dict],
     pacing: Optional[Dict],
     efficiency: Optional[Dict],
+    interval_data: Optional[Dict] = None,
 ) -> List[IntelligenceHighlight]:
     hl: List[IntelligenceHighlight] = []
 
-    if activity.avg_hr:
+    if interval_data:
+        spread = interval_data["max_spread_pct"]
+        color = "emerald" if spread <= 2 else "green" if spread <= 5 else "yellow" if spread <= 10 else "orange"
         hl.append(IntelligenceHighlight(
-            label="Avg HR", value=f"{int(activity.avg_hr)} bpm"
+            label="Rep Consistency", value=f"{spread:.1f}% spread", color=color
         ))
+        hl.append(IntelligenceHighlight(
+            label="Reps", value=str(interval_data["rep_count"])
+        ))
+        if interval_data.get("avg_hr"):
+            hl.append(IntelligenceHighlight(
+                label="Avg HR (work)", value=f"{int(interval_data['avg_hr'])} bpm"
+            ))
+    else:
+        if activity.avg_hr:
+            hl.append(IntelligenceHighlight(
+                label="Avg HR", value=f"{int(activity.avg_hr)} bpm"
+            ))
 
     if drift and drift.get("cardiac_pct") is not None:
         cp = drift["cardiac_pct"]
@@ -475,7 +588,7 @@ def _build_highlights(
             label="Cardiac Drift", value=f"{cp:+.1f}%", color=color
         ))
 
-    if pacing:
+    if pacing and pacing.get("decay_pct") is not None:
         d = pacing["decay_pct"]
         color = "emerald" if d < -1 else "green" if d <= 3 else "yellow" if d <= 6 else "orange"
         hl.append(IntelligenceHighlight(
