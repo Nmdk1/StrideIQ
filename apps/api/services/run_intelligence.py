@@ -245,6 +245,14 @@ def generate_run_intelligence(
     if not activity.distance_m or not activity.duration_s:
         return None
 
+    try:
+        return _assemble_intelligence(activity, db)
+    except Exception:
+        logger.exception("Failed to generate run intelligence for %s", activity_id)
+        return None
+
+
+def _assemble_intelligence(activity: Activity, db: Session) -> Optional[RunIntelligenceResult]:
     dist_mi = activity.distance_m / 1609.34
     pace_s_km = activity.duration_s / (activity.distance_m / 1000)
     pace_str = _fmt_pace_per_mile(pace_s_km)
@@ -318,7 +326,7 @@ def _build_headline(
     activity: Activity,
 ) -> str:
     """One-line opening: distance, pace, and what kind of run."""
-    is_race = getattr(activity, "is_race", False) or (
+    is_race = getattr(activity, "is_race_candidate", False) or (
         activity.workout_type and activity.workout_type.lower() == "race"
     )
 
@@ -435,7 +443,8 @@ def _conditions_sentence(activity: Activity) -> Optional[str]:
     if heat and heat > 3 and temp:
         return f"Heat ({int(temp)}°F) slowed this effort ~{heat:.0f}% — real effort was better than the pace."
 
-    elev = getattr(activity, "total_elevation_gain_m", None)
+    elev = getattr(activity, "total_elevation_gain", None)
+    elev = float(elev) if elev is not None else None
     if elev and elev > 100:
         ft = int(elev * 3.28084)
         return f"{ft:,}ft of climbing."
@@ -480,8 +489,9 @@ def _build_highlights(
             label="Efficiency", value=f"{d:+.1f}% vs recent", color=color
         ))
 
-    if activity.total_elevation_gain_m and activity.total_elevation_gain_m > 30:
-        ft = int(activity.total_elevation_gain_m * 3.28084)
+    elev = getattr(activity, "total_elevation_gain", None)
+    if elev and float(elev) > 30:
+        ft = int(float(elev) * 3.28084)
         hl.append(IntelligenceHighlight(
             label="Elevation", value=f"{ft:,}ft"
         ))

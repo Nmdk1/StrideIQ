@@ -36,7 +36,7 @@ def _make_activity(**overrides):
     a.workout_type = overrides.get("workout_type", "easy_run")
     a.is_race = overrides.get("is_race", False)
     a.start_time = overrides.get("start_time", datetime(2026, 4, 10, 7, 0))
-    a.total_elevation_gain_m = overrides.get("total_elevation_gain_m", 50)
+    a.total_elevation_gain = overrides.get("total_elevation_gain", 50)
     a.pre_sleep_h = overrides.get("pre_sleep_h", 7.2)
     a.pre_resting_hr = overrides.get("pre_resting_hr", 52)
     a.pre_recovery_hrv = overrides.get("pre_recovery_hrv", 55)
@@ -166,13 +166,13 @@ class TestConditionsSentence:
         assert "5%" in s
 
     def test_elevation(self):
-        activity = _make_activity(total_elevation_gain_m=200, heat_adjustment_pct=None)
+        activity = _make_activity(total_elevation_gain=200, heat_adjustment_pct=None)
         s = _conditions_sentence(activity)
         assert "ft" in s
 
     def test_nothing(self):
         activity = _make_activity(
-            total_elevation_gain_m=30,
+            total_elevation_gain=30,
             heat_adjustment_pct=None,
             temperature_f=None,
         )
@@ -195,7 +195,7 @@ class TestBuildHeadline:
 
 class TestBuildHighlights:
     def test_basic_highlights(self):
-        activity = _make_activity(avg_hr=142, total_elevation_gain_m=200)
+        activity = _make_activity(avg_hr=142, total_elevation_gain=200)
         hl = _build_highlights(
             activity,
             {"cardiac_pct": 2.5},
