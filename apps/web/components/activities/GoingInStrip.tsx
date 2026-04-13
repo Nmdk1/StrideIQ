@@ -18,27 +18,27 @@ export function GoingInStrip({
   }
 
   return (
-    <div className="mb-4 flex flex-wrap items-baseline gap-x-5 gap-y-1 text-sm border-b border-slate-700/30 pb-3">
-      <span className="text-xs font-medium text-slate-500 uppercase tracking-wide w-full sm:w-auto">Going In</span>
+    <div className="mb-5 flex flex-wrap items-baseline gap-x-6 gap-y-1.5 border-b border-slate-700/30 pb-4">
+      <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider w-full sm:w-auto">Going In</span>
       {preRecoveryHrv != null && (
-        <span className="text-slate-300">
-          <span className="text-slate-500">HRV</span>{' '}
-          <span className="font-medium tabular-nums">{preRecoveryHrv}</span>
-          <span className="text-slate-500 text-xs">ms</span>
+        <span className="text-slate-200">
+          <span className="text-slate-400 text-sm">HRV</span>{' '}
+          <span className="font-semibold text-lg tabular-nums">{preRecoveryHrv}</span>
+          <span className="text-slate-400 text-sm ml-0.5">ms</span>
         </span>
       )}
       {preRestingHr != null && (
-        <span className="text-slate-300">
-          <span className="text-slate-500">RHR</span>{' '}
-          <span className="font-medium tabular-nums">{preRestingHr}</span>
-          <span className="text-slate-500 text-xs">bpm</span>
+        <span className="text-slate-200">
+          <span className="text-slate-400 text-sm">RHR</span>{' '}
+          <span className="font-semibold text-lg tabular-nums">{preRestingHr}</span>
+          <span className="text-slate-400 text-sm ml-0.5">bpm</span>
         </span>
       )}
       {preSleepH != null && (
-        <span className="text-slate-300">
-          <span className="text-slate-500">Sleep</span>{' '}
-          <span className="font-medium tabular-nums">{preSleepH.toFixed(1)}</span>
-          <span className="text-slate-500 text-xs">h</span>
+        <span className="text-slate-200">
+          <span className="text-slate-400 text-sm">Sleep</span>{' '}
+          <span className="font-semibold text-lg tabular-nums">{preSleepH.toFixed(1)}</span>
+          <span className="text-slate-400 text-sm ml-0.5">h</span>
         </span>
       )}
     </div>

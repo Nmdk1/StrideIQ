@@ -342,76 +342,79 @@ export default function ActivityDetailPage() {
   return (
     <div className="min-h-screen bg-slate-900 text-slate-100">
       <div className="max-w-7xl mx-auto px-4 py-8">
-        {/* ── 1. Header ── */}
-        <div className="mb-6">
-          <button
-            onClick={() => router.back()}
-            className="text-slate-400 hover:text-white mb-4 flex items-center gap-2 transition-colors"
-          >
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-            </svg>
-            Back
-          </button>
-          
-          {isEditingTitle ? (
-            <div className="mb-1">
-              <input
-                ref={titleInputRef}
-                type="text"
-                value={editTitleValue}
-                onChange={(e) => setEditTitleValue(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') handleSaveTitle();
-                  if (e.key === 'Escape') handleCancelEdit();
-                }}
-                maxLength={200}
-                className="w-full text-2xl font-bold bg-slate-800 text-white border border-slate-600 rounded-lg px-3 py-1.5 focus:outline-none focus:border-emerald-500"
-              />
-              <div className="flex items-center gap-2 mt-2">
-                <button
-                  onClick={handleSaveTitle}
-                  disabled={titleMutation.isPending}
-                  className="px-3 py-1 text-sm bg-emerald-600 hover:bg-emerald-700 text-white rounded-md transition-colors disabled:opacity-50"
-                >
-                  Save
-                </button>
-                <button
-                  onClick={handleCancelEdit}
-                  className="px-3 py-1 text-sm text-slate-400 hover:text-white transition-colors"
-                >
-                  Cancel
-                </button>
-                {activity.athlete_title && activity.shape_sentence && (
+        {/* ── 1. Header — compact: back + title + date on one row ── */}
+        <div className="mb-4">
+          <div className="flex items-center gap-3 mb-1">
+            <button
+              onClick={() => router.back()}
+              className="text-slate-400 hover:text-white transition-colors flex-shrink-0"
+            >
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+              </svg>
+            </button>
+            {isEditingTitle ? (
+              <div className="flex-1 min-w-0">
+                <input
+                  ref={titleInputRef}
+                  type="text"
+                  value={editTitleValue}
+                  onChange={(e) => setEditTitleValue(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') handleSaveTitle();
+                    if (e.key === 'Escape') handleCancelEdit();
+                  }}
+                  maxLength={200}
+                  className="w-full text-xl font-bold bg-slate-800 text-white border border-slate-600 rounded-lg px-3 py-1 focus:outline-none focus:border-emerald-500"
+                />
+                <div className="flex items-center gap-2 mt-1.5">
                   <button
-                    onClick={handleResetTitle}
-                    className="px-3 py-1 text-sm text-slate-500 hover:text-emerald-400 transition-colors ml-auto"
+                    onClick={handleSaveTitle}
+                    disabled={titleMutation.isPending}
+                    className="px-3 py-1 text-sm bg-emerald-600 hover:bg-emerald-700 text-white rounded-md transition-colors disabled:opacity-50"
                   >
-                    Reset to auto-detected
+                    Save
                   </button>
-                )}
+                  <button
+                    onClick={handleCancelEdit}
+                    className="px-3 py-1 text-sm text-slate-400 hover:text-white transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  {activity.athlete_title && activity.shape_sentence && (
+                    <button
+                      onClick={handleResetTitle}
+                      className="px-3 py-1 text-sm text-slate-500 hover:text-emerald-400 transition-colors ml-auto"
+                    >
+                      Reset to auto-detected
+                    </button>
+                  )}
+                </div>
               </div>
-            </div>
-          ) : (
-            <div className="group flex items-center gap-2 mb-1">
-              <h1 className="text-3xl font-bold text-white">{displayTitle}</h1>
-              <button
-                onClick={handleStartEdit}
-                className="text-slate-500 hover:text-emerald-400 transition-colors opacity-100 md:opacity-0 md:group-hover:opacity-100"
-                aria-label="Edit title"
-              >
-                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                </svg>
-              </button>
-            </div>
-          )}
-          <p className="text-slate-400 text-sm">
+            ) : (
+              <div className="group flex items-baseline gap-3 flex-1 min-w-0">
+                <h1 className="text-xl md:text-2xl font-bold text-white truncate">{displayTitle}</h1>
+                <button
+                  onClick={handleStartEdit}
+                  className="text-slate-500 hover:text-emerald-400 transition-colors opacity-100 md:opacity-0 md:group-hover:opacity-100 flex-shrink-0"
+                  aria-label="Edit title"
+                >
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                  </svg>
+                </button>
+                <span className="text-slate-500 text-sm whitespace-nowrap flex-shrink-0 hidden md:inline">
+                  {formatDate(activity.start_time)} at {formatTime(activity.start_time)}
+                </span>
+              </div>
+            )}
+            {activity.provider === 'garmin' && (
+              <GarminBadge deviceName={activity.device_name} size="md" className="flex-shrink-0" />
+            )}
+          </div>
+          <p className="text-slate-500 text-sm pl-8 md:hidden">
             {formatDate(activity.start_time)} at {formatTime(activity.start_time)}
           </p>
-          {activity.provider === 'garmin' && (
-            <GarminBadge deviceName={activity.device_name} size="md" className="mt-2" />
-          )}
         </div>
 
         {/* ── Sport branching: non-run activities get dedicated layouts ── */}
