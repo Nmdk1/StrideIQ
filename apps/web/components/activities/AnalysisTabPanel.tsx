@@ -42,27 +42,27 @@ export function AnalysisTabPanel({ drift, planComparison, stream, effortIntensit
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
       {hasDrift && drift && (
-        <div className="rounded-lg border border-slate-700/30 bg-slate-800/30 px-4 py-3">
-          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-2">Drift</p>
-          <div className="space-y-1">
+        <div className="rounded-lg border border-slate-700/30 bg-slate-800/30 px-5 py-4">
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-3">Drift</p>
+          <div className="space-y-1.5">
             {drift.cardiac_pct != null && (
-              <div className="flex justify-between text-sm text-slate-300 bg-slate-800/30 rounded px-2 py-1.5">
+              <div className="flex justify-between text-sm text-slate-300 bg-slate-800/40 rounded-md px-3 py-2">
                 <span className="text-slate-400">Cardiac Drift</span>
-                <span className="font-medium tabular-nums">{drift.cardiac_pct.toFixed(1)}%</span>
+                <span className="font-semibold tabular-nums">{drift.cardiac_pct.toFixed(1)}%</span>
               </div>
             )}
             {drift.pace_pct != null && (
-              <div className="flex justify-between text-sm text-slate-300 bg-slate-800/30 rounded px-2 py-1.5">
+              <div className="flex justify-between text-sm text-slate-300 bg-slate-800/40 rounded-md px-3 py-2">
                 <span className="text-slate-400">Pace Drift</span>
-                <span className="font-medium tabular-nums">{drift.pace_pct.toFixed(1)}%</span>
+                <span className="font-semibold tabular-nums">{drift.pace_pct.toFixed(1)}%</span>
               </div>
             )}
             {drift.cadence_trend_bpm_per_km != null && (
-              <div className="flex justify-between text-sm text-slate-300 bg-slate-800/30 rounded px-2 py-1.5">
+              <div className="flex justify-between text-sm text-slate-300 bg-slate-800/40 rounded-md px-3 py-2">
                 <span className="text-slate-400">Cadence Trend</span>
-                <span className="font-medium tabular-nums">{drift.cadence_trend_bpm_per_km.toFixed(1)} spm/{distanceUnitShort}</span>
+                <span className="font-semibold tabular-nums">{drift.cadence_trend_bpm_per_km.toFixed(1)} spm/{distanceUnitShort}</span>
               </div>
             )}
           </div>
@@ -78,9 +78,9 @@ export function AnalysisTabPanel({ drift, planComparison, stream, effortIntensit
       )}
 
       {planComparison && (
-        <div className="rounded-lg border border-slate-700/30 bg-slate-800/30 px-4 py-3">
-          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-2">Plan vs Actual</p>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+        <div className="rounded-lg border border-slate-700/30 bg-slate-800/30 px-5 py-4">
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-3">Plan vs Actual</p>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
             {planComparison.planned_duration_min != null && planComparison.actual_duration_min != null && (
               <PlanCell
                 label="Duration"

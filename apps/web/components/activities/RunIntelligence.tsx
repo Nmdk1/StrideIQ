@@ -51,22 +51,22 @@ export function RunIntelligence({ activityId }: { activityId: string }) {
   if (!data || (!data.headline && !data.body)) return null;
 
   return (
-    <div className="rounded-lg border border-indigo-500/20 bg-gradient-to-br from-slate-800/60 to-indigo-950/20 px-4 py-4">
+    <div className="rounded-lg border-l-4 border-l-emerald-500 border border-slate-700/40 bg-slate-800/50 px-5 py-4">
       <div className="flex items-center gap-2 mb-2">
-        <Brain className="w-4 h-4 text-indigo-400" />
-        <span className="text-xs font-semibold uppercase tracking-wide text-indigo-400/80">
-          Run Intelligence
+        <Brain className="w-4 h-4 text-emerald-400" />
+        <span className="text-xs font-semibold uppercase tracking-wide text-emerald-400/80">
+          Athlete Intelligence
         </span>
       </div>
 
       {data.headline && (
-        <p className="text-sm font-medium text-slate-200 leading-snug">
+        <p className="text-[15px] font-medium text-slate-100 leading-snug">
           {data.headline}
         </p>
       )}
 
       {data.body && (
-        <p className="text-sm text-slate-400 leading-relaxed mt-1.5">
+        <p className="text-sm text-slate-400 leading-relaxed mt-2">
           {data.body}
         </p>
       )}

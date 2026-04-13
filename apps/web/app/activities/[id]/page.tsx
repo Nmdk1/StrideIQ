@@ -450,11 +450,11 @@ export default function ActivityDetailPage() {
           </div>
         ) : (
         <StreamHoverProvider>
-        {/* ── 2. Stats Banner — persistent header ── */}
-        <div className="mb-3">
-          <div className="flex items-center gap-4 overflow-x-auto pb-1">
+        {/* ── 2. Stats Banner ── */}
+        <div className="mb-6 pb-5 border-b border-slate-700/40">
+          <div className="grid grid-cols-3 gap-x-6 gap-y-4 md:grid-cols-6 md:gap-x-8">
             <MetricPill label="Distance" value={formatDistance(activity.distance_m)} />
-            <MetricPill label="Duration" value={formatDuration(activity.moving_time_s)} />
+            <MetricPill label="Moving Time" value={formatDuration(activity.moving_time_s)} />
             <MetricPill
               label="Pace"
               value={formatPace(getPaceSecondsPerKm(activity.moving_time_s, activity.distance_m))}
@@ -479,8 +479,8 @@ export default function ActivityDetailPage() {
             />
           </div>
           {activity.heat_adjustment_pct != null && activity.heat_adjustment_pct > 3 && (
-            <p className="text-xs text-amber-400/80 mt-1.5">
-              🌡️ Heat slowed this run ~{activity.heat_adjustment_pct.toFixed(1)}% — your effort was better than the pace shows
+            <p className="text-xs text-amber-400/80 mt-3">
+              Heat slowed this run ~{activity.heat_adjustment_pct.toFixed(1)}% — your effort was better than the pace shows
             </p>
           )}
         </div>
@@ -497,7 +497,8 @@ export default function ActivityDetailPage() {
           panels={{
             overview: (
               <>
-                <div className="mb-4 -mx-4 sm:mx-0">
+                {/* Hero: RunShapeCanvas full width */}
+                <div className="mb-5 -mx-4 sm:mx-0">
                   <RunShapeCanvas
                     activityId={activityId}
                     splits={splits ?? null}
@@ -509,32 +510,67 @@ export default function ActivityDetailPage() {
                     splitTableRowRefs={splitTableRowRefs}
                   />
                 </div>
-                {/* Intelligence slot — empty until backend insights land */}
-                <div id="intelligence-slot" />
-                {activity.gps_track && activity.gps_track.length > 1 && (
-                  <div className="mb-4">
-                    {clientReady && (
-                      <RouteContext
+
+                {/* Intelligence card — directly below the chart it describes */}
+                <div className="mb-5">
+                  <RunIntelligence activityId={activityId} />
+                </div>
+
+                {/* Two-column on desktop: splits left, map right. Stacked on mobile. */}
+                <div className="flex flex-col md:flex-row md:gap-5 md:items-start mb-5">
+                  {/* Splits */}
+                  {splits && splits.length > 0 && (
+                    <div className="w-full md:w-[55%] min-w-0 mb-4 md:mb-0">
+                      <ActivitySplitsTabPanel
                         activityId={activityId}
-                        track={activity.gps_track}
+                        gpsTrack={null}
                         startCoords={activity.start_coords}
                         sportType={activity.sport_type || 'run'}
                         startTime={activity.start_time}
-                        streamPoints={analysisData?.stream}
-                        weather={{
-                          temperature_f: activity.temperature_f,
-                          weather_condition: activity.weather_condition,
-                          humidity_pct: activity.humidity_pct,
-                          heat_adjustment_pct: activity.heat_adjustment_pct,
-                        }}
                         distanceM={activity.distance_m}
                         durationS={activity.moving_time_s || activity.elapsed_time_s}
+                        temperatureF={activity.temperature_f}
+                        weatherCondition={activity.weather_condition}
+                        humidityPct={activity.humidity_pct}
                         heatAdjustmentPct={activity.heat_adjustment_pct}
-                        mapAspectRatio="16 / 9"
+                        splits={splits}
+                        intervalSummary={intervalSummary}
+                        provider={activity.provider}
+                        deviceName={activity.device_name}
+                        stream={analysisData?.stream}
+                        splitTableRowRefs={splitTableRowRefs}
+                        showMap={false}
                       />
-                    )}
-                  </div>
-                )}
+                    </div>
+                  )}
+
+                  {/* Map */}
+                  {activity.gps_track && activity.gps_track.length > 1 && (
+                    <div className={`w-full ${splits && splits.length > 0 ? 'md:w-[45%]' : ''} shrink-0`}>
+                      {clientReady && (
+                        <RouteContext
+                          activityId={activityId}
+                          track={activity.gps_track}
+                          startCoords={activity.start_coords}
+                          sportType={activity.sport_type || 'run'}
+                          startTime={activity.start_time}
+                          streamPoints={analysisData?.stream}
+                          weather={{
+                            temperature_f: activity.temperature_f,
+                            weather_condition: activity.weather_condition,
+                            humidity_pct: activity.humidity_pct,
+                            heat_adjustment_pct: activity.heat_adjustment_pct,
+                          }}
+                          distanceM={activity.distance_m}
+                          durationS={activity.moving_time_s || activity.elapsed_time_s}
+                          heatAdjustmentPct={activity.heat_adjustment_pct}
+                          mapAspectRatio="4 / 3"
+                        />
+                      )}
+                    </div>
+                  )}
+                </div>
+
                 <div className="mb-2">
                   <RuntoonCard activityId={activityId} />
                 </div>
@@ -572,7 +608,7 @@ export default function ActivityDetailPage() {
               />
             ),
             context: (
-              <div className="space-y-4">
+              <div className="space-y-5">
                 <RunIntelligence activityId={activityId} />
                 <GoingInCard
                   preRecoveryHrv={activity.pre_recovery_hrv}
@@ -584,7 +620,7 @@ export default function ActivityDetailPage() {
                 <WhyThisRun activityId={activityId} />
                 <FindingsCards findings={findings} />
                 {activity.narrative && (
-                  <div className="px-4 py-3 bg-slate-800/30 border border-slate-700/30 rounded-lg">
+                  <div className="px-5 py-4 bg-slate-800/30 border border-slate-700/30 rounded-lg">
                     <p className="text-sm text-slate-400 italic leading-relaxed">
                       &ldquo;{activity.narrative}&rdquo;
                     </p>
@@ -593,7 +629,7 @@ export default function ActivityDetailPage() {
               </div>
             ),
             feedback: (
-              <div className="space-y-4">
+              <div className="space-y-5">
                 <ReflectionPrompt activityId={activityId} />
                 <PerceptionPrompt
                   activityId={activityId}
@@ -625,25 +661,22 @@ function formatDeviceName(raw: string): string {
 // ============ Sub-Components ============
 
 
-/** Compact metric pill for the horizontal ribbon */
 function MetricPill({
   label,
   value,
   unit,
-  secondary = false,
 }: {
   label: string;
   value: string;
   unit?: string;
-  secondary?: boolean;
 }) {
   return (
-    <div className="flex-shrink-0">
-      <p className={`text-xs ${secondary ? 'text-slate-500' : 'text-slate-400'}`}>{label}</p>
-      <p className={`font-semibold whitespace-nowrap ${secondary ? 'text-sm text-slate-400' : 'text-base text-white'}`}>
+    <div className="min-w-0">
+      <p className="text-2xl md:text-3xl font-bold text-white tabular-nums leading-tight whitespace-nowrap">
         {value}
-        {unit && <span className="text-slate-500 text-xs font-normal ml-0.5">{unit}</span>}
+        {unit && <span className="text-slate-400 text-sm font-normal ml-1">{unit}</span>}
       </p>
+      <p className="text-[11px] text-slate-500 uppercase tracking-wide mt-0.5">{label}</p>
     </div>
   );
 }
