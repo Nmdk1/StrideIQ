@@ -92,12 +92,12 @@ def _get_split_pacing(activity: Activity, db: Session) -> Optional[Dict[str, Any
     )
     valid = [
         s for s in splits
-        if s.distance_m and s.elapsed_time_s and s.elapsed_time_s > 0
+        if s.distance and s.elapsed_time and float(s.elapsed_time) > 0
     ]
     if len(valid) < 3:
         return None
 
-    paces = [s.elapsed_time_s / (s.distance_m / 1000) for s in valid]
+    paces = [float(s.elapsed_time) / (float(s.distance) / 1000) for s in valid]
     mid = len(paces) // 2
     first_avg = sum(paces[:mid]) / mid
     second_avg = sum(paces[mid:]) / (len(paces) - mid)
