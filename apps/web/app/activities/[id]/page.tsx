@@ -577,26 +577,40 @@ export default function ActivityDetailPage() {
               </>
             ),
             splits: (
-              <ActivitySplitsTabPanel
-                activityId={activityId}
-                gpsTrack={activity.gps_track}
-                startCoords={activity.start_coords}
-                sportType={activity.sport_type || 'run'}
-                startTime={activity.start_time}
-                distanceM={activity.distance_m}
-                durationS={activity.moving_time_s || activity.elapsed_time_s}
-                temperatureF={activity.temperature_f}
-                weatherCondition={activity.weather_condition}
-                humidityPct={activity.humidity_pct}
-                heatAdjustmentPct={activity.heat_adjustment_pct}
-                splits={splits}
-                intervalSummary={intervalSummary}
-                provider={activity.provider}
-                deviceName={activity.device_name}
-                stream={analysisData?.stream}
-                splitTableRowRefs={splitTableRowRefs}
-                showMap={clientReady}
-              />
+              <>
+                <div className="mb-5 -mx-4 sm:mx-0">
+                  <RunShapeCanvas
+                    activityId={activityId}
+                    splits={splits ?? null}
+                    intervalSummary={intervalSummary}
+                    provider={activity.provider}
+                    deviceName={activity.device_name}
+                    heatAdjustmentPct={activity.heat_adjustment_pct}
+                    temperatureF={activity.temperature_f}
+                    splitTableRowRefs={splitTableRowRefs}
+                  />
+                </div>
+                <ActivitySplitsTabPanel
+                  activityId={activityId}
+                  gpsTrack={activity.gps_track}
+                  startCoords={activity.start_coords}
+                  sportType={activity.sport_type || 'run'}
+                  startTime={activity.start_time}
+                  distanceM={activity.distance_m}
+                  durationS={activity.moving_time_s || activity.elapsed_time_s}
+                  temperatureF={activity.temperature_f}
+                  weatherCondition={activity.weather_condition}
+                  humidityPct={activity.humidity_pct}
+                  heatAdjustmentPct={activity.heat_adjustment_pct}
+                  splits={splits}
+                  intervalSummary={intervalSummary}
+                  provider={activity.provider}
+                  deviceName={activity.device_name}
+                  stream={analysisData?.stream}
+                  splitTableRowRefs={splitTableRowRefs}
+                  showMap={clientReady}
+                />
+              </>
             ),
             analysis: (
               <AnalysisTabPanel
