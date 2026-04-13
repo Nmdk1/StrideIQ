@@ -90,7 +90,7 @@ def _is_interval_workout(activity: Activity) -> bool:
 
 
 def _get_interval_analysis(activity: Activity, db: Session) -> Optional[Dict[str, Any]]:
-    """Analyze work intervals specifically: consistency, paces, HR response."""
+    """Analyze work intervals: detect busted reps, consistency of clean reps, HR."""
     splits = (
         db.query(ActivitySplit)
         .filter(ActivitySplit.activity_id == activity.id)
@@ -108,30 +108,113 @@ def _get_interval_analysis(activity: Activity, db: Session) -> Optional[Dict[str
     if len(work_splits) < 2:
         return None
 
-    paces = [float(s.elapsed_time) / (float(s.distance) / 1000) for s in work_splits]
-    avg_pace = sum(paces) / len(paces)
+    all_paces = [float(s.elapsed_time) / (float(s.distance) / 1000) for s in work_splits]
     distances = [float(s.distance) for s in work_splits]
     avg_dist = sum(distances) / len(distances)
 
-    spreads = [(p - avg_pace) / avg_pace * 100 for p in paces]
-    max_spread = max(abs(s) for s in spreads)
-    slowest_idx = paces.index(max(paces))
-    fastest_idx = paces.index(min(paces))
+    # Detect busted/incomplete reps: median-based outlier detection.
+    # A rep >30% slower than the median is likely incomplete or had a stop.
+    sorted_paces = sorted(all_paces)
+    median_pace = sorted_paces[len(sorted_paces) // 2]
+
+    clean_indices = []
+    busted_indices = []
+    for i, p in enumerate(all_paces):
+        if p > median_pace * 1.30:
+            busted_indices.append(i)
+        else:
+            clean_indices.append(i)
+
+    clean_paces = [all_paces[i] for i in clean_indices]
+    if not clean_paces:
+        clean_paces = all_paces
+        busted_indices = []
+
+    avg_pace = sum(clean_paces) / len(clean_paces)
+    spreads = [abs((p - avg_pace) / avg_pace * 100) for p in clean_paces]
+    max_spread = max(spreads) if spreads else 0
 
     hrs = [int(s.average_heartrate) for s in work_splits if s.average_heartrate]
     avg_hr = sum(hrs) / len(hrs) if hrs else None
 
+    # Historical comparison: find previous interval sessions with similar rep distances
+    history = _get_interval_history(activity, avg_dist, db)
+
     return {
         "type": "interval",
-        "rep_count": len(work_splits),
+        "total_reps": len(work_splits),
+        "clean_reps": len(clean_paces),
+        "busted_reps": [i + 1 for i in busted_indices],
         "avg_distance_m": round(avg_dist),
-        "paces_s_km": paces,
-        "avg_pace_s_km": avg_pace,
+        "all_paces_s_km": all_paces,
+        "clean_avg_pace_s_km": avg_pace,
         "max_spread_pct": round(max_spread, 1),
-        "slowest_rep": slowest_idx + 1,
-        "fastest_rep": fastest_idx + 1,
         "avg_hr": avg_hr,
+        "history": history,
     }
+
+
+def _get_interval_history(
+    activity: Activity, rep_distance_m: float, db: Session
+) -> Optional[Dict[str, Any]]:
+    """Find the athlete's last interval session with similar rep distances."""
+    end_date = activity.start_time
+    start_date = end_date - timedelta(days=120)
+
+    prev_activities = (
+        db.query(Activity)
+        .filter(
+            Activity.athlete_id == activity.athlete_id,
+            Activity.id != activity.id,
+            Activity.start_time >= start_date,
+            Activity.start_time < end_date,
+            Activity.workout_type.in_(["interval", "intervals", "track", "track_workout"]),
+        )
+        .order_by(Activity.start_time.desc())
+        .limit(10)
+        .all()
+    )
+
+    dist_lo = rep_distance_m * 0.80
+    dist_hi = rep_distance_m * 1.20
+
+    for prev in prev_activities:
+        prev_work = (
+            db.query(ActivitySplit)
+            .filter(
+                ActivitySplit.activity_id == prev.id,
+                ActivitySplit.lap_type == "work",
+                ActivitySplit.distance.isnot(None),
+                ActivitySplit.elapsed_time.isnot(None),
+            )
+            .all()
+        )
+        if len(prev_work) < 2:
+            continue
+
+        prev_dists = [float(s.distance) for s in prev_work]
+        prev_avg_dist = sum(prev_dists) / len(prev_dists)
+        if not (dist_lo <= prev_avg_dist <= dist_hi):
+            continue
+
+        prev_paces = [
+            float(s.elapsed_time) / (float(s.distance) / 1000)
+            for s in prev_work
+        ]
+        sorted_pp = sorted(prev_paces)
+        prev_median = sorted_pp[len(sorted_pp) // 2]
+        prev_clean = [p for p in prev_paces if p <= prev_median * 1.30]
+        if not prev_clean:
+            continue
+
+        prev_avg = sum(prev_clean) / len(prev_clean)
+        return {
+            "prev_avg_pace_s_km": prev_avg,
+            "prev_date": prev.start_time.date().isoformat(),
+            "prev_reps": len(prev_clean),
+        }
+
+    return None
 
 
 def _get_split_pacing(activity: Activity, db: Session) -> Optional[Dict[str, Any]]:
@@ -355,12 +438,9 @@ def _assemble_intelligence(activity: Activity, db: Session) -> Optional[RunIntel
     if eff_sent:
         sentences.append(eff_sent)
 
-    # 4. Pre-state sentence
-    pre_sent = _prestate_sentence(activity)
-    if pre_sent:
-        sentences.append(pre_sent)
+    # Pre-state is shown in the Going In card — don't duplicate it here.
 
-    # 5. Conditions sentence
+    # 4. Conditions sentence
     cond_sent = _conditions_sentence(activity)
     if cond_sent:
         sentences.append(cond_sent)
@@ -398,10 +478,14 @@ def _build_headline(
     )
 
     if interval_data:
-        n = interval_data["rep_count"]
+        clean = interval_data["clean_reps"]
+        total = interval_data["total_reps"]
         avg_dist = interval_data["avg_distance_m"]
-        avg_pace = _fmt_pace_per_mile(interval_data["avg_pace_s_km"])
-        return f"{n}x{avg_dist}m at {avg_pace} avg — {wt_label}."
+        avg_pace = _fmt_pace_per_mile(interval_data["clean_avg_pace_s_km"])
+        busted = interval_data["busted_reps"]
+        if busted:
+            return f"{clean} of {total} reps at {avg_dist}m, {avg_pace} avg — {wt_label}."
+        return f"{total}x{avg_dist}m at {avg_pace} avg — {wt_label}."
 
     if is_race and dist_mi >= 13.0:
         return f"{dist_str} mi in {duration_str} — {wt_label}."
@@ -409,28 +493,48 @@ def _build_headline(
 
 
 def _interval_sentence(interval_data: Optional[Dict]) -> Optional[str]:
-    """Describe interval rep consistency — the metric that matters for quality work."""
+    """Describe interval rep consistency, busted reps, and historical comparison."""
     if not interval_data:
         return None
 
-    n = interval_data["rep_count"]
+    all_paces = interval_data["all_paces_s_km"]
+    busted = interval_data["busted_reps"]
+    clean_reps = interval_data["clean_reps"]
     spread = interval_data["max_spread_pct"]
-    slowest = interval_data["slowest_rep"]
-    paces = interval_data["paces_s_km"]
+    history = interval_data.get("history")
 
-    pace_strs = [_fmt_pace_per_mile(p) for p in paces]
-    pace_list = ", ".join(pace_strs)
+    parts: List[str] = []
 
-    if spread <= 2.0:
-        consistency = f"Very consistent across {n} reps (max {spread:.1f}% spread)."
-    elif spread <= 5.0:
-        consistency = f"Consistent across {n} reps ({spread:.1f}% max spread)."
-    elif spread <= 10.0:
-        consistency = f"Some variation across {n} reps — rep {slowest} was the slowest ({spread:.1f}% off avg)."
-    else:
-        consistency = f"Wide variation — rep {slowest} was {spread:.1f}% off the average."
+    if busted:
+        busted_str = ", ".join(str(r) for r in busted)
+        s = "s" if len(busted) > 1 else ""
+        parts.append(f"Rep{s} {busted_str} incomplete/stopped.")
 
-    return f"Reps: {pace_list}. {consistency}"
+    if clean_reps >= 2:
+        if spread <= 2.0:
+            parts.append(f"Clean reps very consistent ({spread:.1f}% spread).")
+        elif spread <= 5.0:
+            parts.append(f"Clean reps consistent ({spread:.1f}% spread).")
+        elif spread <= 10.0:
+            parts.append(f"Some variation in clean reps ({spread:.1f}% spread).")
+
+    if history:
+        prev_pace = _fmt_pace_per_mile(history["prev_avg_pace_s_km"])
+        curr_pace = interval_data["clean_avg_pace_s_km"]
+        prev_pace_val = history["prev_avg_pace_s_km"]
+        diff_pct = ((prev_pace_val - curr_pace) / prev_pace_val) * 100
+        if abs(diff_pct) > 1.5:
+            direction = "faster" if diff_pct > 0 else "slower"
+            parts.append(
+                f"Last similar session ({history['prev_date']}): {prev_pace} avg — "
+                f"today {abs(diff_pct):.1f}% {direction}."
+            )
+        else:
+            parts.append(
+                f"In line with your last session ({history['prev_date']}, {prev_pace} avg)."
+            )
+
+    return " ".join(parts) if parts else None
 
 
 def _pacing_sentence(pacing: Optional[Dict]) -> Optional[str]:
@@ -564,13 +668,19 @@ def _build_highlights(
 
     if interval_data:
         spread = interval_data["max_spread_pct"]
-        color = "emerald" if spread <= 2 else "green" if spread <= 5 else "yellow" if spread <= 10 else "orange"
-        hl.append(IntelligenceHighlight(
-            label="Rep Consistency", value=f"{spread:.1f}% spread", color=color
-        ))
-        hl.append(IntelligenceHighlight(
-            label="Reps", value=str(interval_data["rep_count"])
-        ))
+        clean = interval_data["clean_reps"]
+        total = interval_data["total_reps"]
+        busted = interval_data["busted_reps"]
+
+        if clean >= 2:
+            color = "emerald" if spread <= 2 else "green" if spread <= 5 else "yellow" if spread <= 10 else "orange"
+            hl.append(IntelligenceHighlight(
+                label="Rep Consistency", value=f"{spread:.1f}% spread", color=color
+            ))
+
+        rep_label = f"{clean}/{total}" if busted else str(total)
+        hl.append(IntelligenceHighlight(label="Reps", value=rep_label))
+
         if interval_data.get("avg_hr"):
             hl.append(IntelligenceHighlight(
                 label="Avg HR (work)", value=f"{int(interval_data['avg_hr'])} bpm"
