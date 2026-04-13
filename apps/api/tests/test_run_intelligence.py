@@ -1,10 +1,10 @@
 """
-Unit tests for Run Intelligence Synthesis Service
+Unit tests for Run Intelligence Synthesis Service (LLM-powered)
 """
 
 import pytest
-from unittest.mock import MagicMock, patch
-from datetime import datetime
+from unittest.mock import MagicMock, patch, ANY
+from datetime import datetime, date
 from uuid import uuid4
 
 from services.run_intelligence import (
@@ -13,13 +13,11 @@ from services.run_intelligence import (
     _fmt_duration,
     _fmt_distance_mi,
     _workout_label,
-    _pacing_sentence,
-    _coupling_sentence,
-    _efficiency_sentence,
-    _prestate_sentence,
-    _conditions_sentence,
     _build_headline,
     _build_highlights,
+    _build_data_context,
+    _get_pre_state,
+    _is_interval_workout,
     IntelligenceHighlight,
 )
 
@@ -34,24 +32,25 @@ def _make_activity(**overrides):
     a.avg_hr = overrides.get("avg_hr", 140)
     a.max_hr = overrides.get("max_hr", 165)
     a.workout_type = overrides.get("workout_type", "easy_run")
-    a.is_race = overrides.get("is_race", False)
+    a.is_race_candidate = overrides.get("is_race_candidate", False)
     a.start_time = overrides.get("start_time", datetime(2026, 4, 10, 7, 0))
     a.total_elevation_gain = overrides.get("total_elevation_gain", 50)
     a.pre_sleep_h = overrides.get("pre_sleep_h", 7.2)
+    a.pre_sleep_score = overrides.get("pre_sleep_score", None)
     a.pre_resting_hr = overrides.get("pre_resting_hr", 52)
     a.pre_recovery_hrv = overrides.get("pre_recovery_hrv", 55)
-    a.pre_sleep_score = overrides.get("pre_sleep_score", None)
     a.pre_overnight_hrv = overrides.get("pre_overnight_hrv", None)
     a.temperature_f = overrides.get("temperature_f", None)
     a.humidity_pct = overrides.get("humidity_pct", None)
     a.heat_adjustment_pct = overrides.get("heat_adjustment_pct", None)
     a.weather_condition = overrides.get("weather_condition", None)
+    a.avg_cadence = overrides.get("avg_cadence", None)
     return a
 
 
 class TestFormatHelpers:
     def test_fmt_pace_per_mile(self):
-        result = _fmt_pace_per_mile(320)  # 5:20/km ≈ 8:35/mi
+        result = _fmt_pace_per_mile(320)
         assert "/mi" in result
         parts = result.replace("/mi", "").split(":")
         assert len(parts) == 2
@@ -77,120 +76,82 @@ class TestFormatHelpers:
         assert _workout_label(None) == "run"
 
 
-class TestPacingSentence:
-    def test_negative_split(self):
-        s = _pacing_sentence({"decay_pct": -3.5, "first_half_pace": 300, "second_half_pace": 290, "splits_count": 10})
-        assert "negative split" in s.lower()
-        assert "3.5%" in s
+class TestIsIntervalWorkout:
+    def test_interval(self):
+        a = _make_activity(workout_type="interval")
+        assert _is_interval_workout(a) is True
 
-    def test_even_pacing(self):
-        s = _pacing_sentence({"decay_pct": 1.0, "first_half_pace": 300, "second_half_pace": 303, "splits_count": 10})
-        assert "even" in s.lower()
+    def test_track(self):
+        a = _make_activity(workout_type="track")
+        assert _is_interval_workout(a) is True
 
-    def test_moderate_fade(self):
-        s = _pacing_sentence({"decay_pct": 6.0, "first_half_pace": 300, "second_half_pace": 318, "splits_count": 10})
-        assert "fade" in s.lower() or "slower" in s.lower()
+    def test_easy_run(self):
+        a = _make_activity(workout_type="easy_run")
+        assert _is_interval_workout(a) is False
 
-    def test_significant_fade(self):
-        s = _pacing_sentence({"decay_pct": 12.0, "first_half_pace": 300, "second_half_pace": 336, "splits_count": 10})
-        assert "significant" in s.lower() or "too fast" in s.lower()
-
-    def test_none_input(self):
-        assert _pacing_sentence(None) is None
+    def test_none(self):
+        a = _make_activity(workout_type=None)
+        assert _is_interval_workout(a) is False
 
 
-class TestCouplingSentence:
-    @patch("services.run_analysis_engine.CONTROLLED_STEADY_TYPES", {"easy_run", "recovery"})
-    def test_well_coupled(self):
-        activity = _make_activity(workout_type="easy_run")
-        s = _coupling_sentence({"cardiac_pct": 1.2}, None, activity)
-        assert "stable" in s.lower()
-        assert "+1.2%" in s
-
-    @patch("services.run_analysis_engine.CONTROLLED_STEADY_TYPES", {"easy_run", "recovery"})
-    def test_with_history_improving(self):
-        activity = _make_activity(workout_type="easy_run")
-        s = _coupling_sentence(
-            {"cardiac_pct": 2.0},
-            {"avg_drift": 5.0, "count": 7},
-            activity,
-        )
-        assert "tightening" in s.lower()
-        assert "7" in s
-
-    def test_non_steady_returns_none(self):
-        activity = _make_activity(workout_type="interval")
-        s = _coupling_sentence({"cardiac_pct": 2.0}, None, activity)
-        assert s is None
-
-
-class TestEfficiencySentence:
-    @patch("services.run_analysis_engine.CONTROLLED_STEADY_TYPES", {"easy_run", "recovery"})
-    def test_above_average(self):
-        activity = _make_activity(workout_type="tempo")
-        s = _efficiency_sentence({"diff_pct": 6.0, "sample_size": 5, "label": "tempo"}, activity)
-        assert "6.0%" in s
-        assert "tempo" in s
-
-    @patch("services.run_analysis_engine.CONTROLLED_STEADY_TYPES", {"easy_run", "recovery"})
-    def test_controlled_steady_suppressed(self):
-        activity = _make_activity(workout_type="easy_run")
-        s = _efficiency_sentence({"diff_pct": 6.0, "sample_size": 5, "label": "easy run"}, activity)
-        assert s is None
-
-
-class TestPrestateSentence:
+class TestGetPreState:
     def test_full_prestate(self):
-        activity = _make_activity(pre_sleep_h=7.2, pre_resting_hr=52, pre_recovery_hrv=55)
-        s = _prestate_sentence(activity)
-        assert "7.2h sleep" in s
-        assert "resting HR 52" in s
-        assert "HRV 55" in s
+        a = _make_activity(pre_sleep_h=7.2, pre_resting_hr=52, pre_recovery_hrv=55)
+        state = _get_pre_state(a)
+        assert state["sleep_hours"] == 7.2
+        assert state["resting_hr"] == 52
+        assert state["recovery_hrv"] == 55
 
     def test_partial_prestate(self):
-        activity = _make_activity(pre_sleep_h=6.5, pre_resting_hr=None, pre_recovery_hrv=None)
-        s = _prestate_sentence(activity)
-        assert "6.5h sleep" in s
-        assert "resting HR" not in s
+        a = _make_activity(pre_sleep_h=6.5, pre_resting_hr=None, pre_recovery_hrv=None)
+        state = _get_pre_state(a)
+        assert state["sleep_hours"] == 6.5
+        assert "resting_hr" not in state
 
     def test_no_prestate(self):
-        activity = _make_activity(pre_sleep_h=None, pre_resting_hr=None, pre_recovery_hrv=None)
-        assert _prestate_sentence(activity) is None
-
-
-class TestConditionsSentence:
-    def test_heat(self):
-        activity = _make_activity(heat_adjustment_pct=5.0, temperature_f=88)
-        s = _conditions_sentence(activity)
-        assert "88°F" in s
-        assert "5%" in s
-
-    def test_elevation(self):
-        activity = _make_activity(total_elevation_gain=200, heat_adjustment_pct=None)
-        s = _conditions_sentence(activity)
-        assert "ft" in s
-
-    def test_nothing(self):
-        activity = _make_activity(
-            total_elevation_gain=30,
-            heat_adjustment_pct=None,
-            temperature_f=None,
-        )
-        assert _conditions_sentence(activity) is None
+        a = _make_activity(pre_sleep_h=None, pre_resting_hr=None, pre_recovery_hrv=None)
+        assert _get_pre_state(a) is None
 
 
 class TestBuildHeadline:
     def test_normal_run(self):
         activity = _make_activity()
-        h = _build_headline("6.2", "8:42/mi", "52:30", "easy run", 6.2, activity)
-        assert "6.2 mi" in h
-        assert "8:42/mi" in h
+        h = _build_headline(activity, None)
+        assert "mi" in h
         assert "easy run" in h
 
     def test_race_long(self):
-        activity = _make_activity(workout_type="race", is_race=True)
-        h = _build_headline("13.1", "6:39/mi", "1:27:34", "race", 13.1, activity)
-        assert "13.1 mi in 1:27:34" in h
+        activity = _make_activity(
+            workout_type="race", is_race_candidate=True,
+            distance_m=21097, duration_s=5254,
+        )
+        h = _build_headline(activity, None)
+        assert "race" in h
+
+    def test_interval_headline_with_busted(self):
+        activity = _make_activity(workout_type="interval")
+        interval_data = {
+            "reps": [{"distance_m": 400}],
+            "clean_reps": 10,
+            "total_reps": 12,
+            "busted_reps": [3, 5],
+            "clean_avg_pace_per_mile": "6:15/mi",
+        }
+        h = _build_headline(activity, interval_data)
+        assert "10 of 12" in h
+        assert "400m" in h
+
+    def test_interval_headline_clean(self):
+        activity = _make_activity(workout_type="interval")
+        interval_data = {
+            "reps": [{"distance_m": 800}],
+            "clean_reps": 6,
+            "total_reps": 6,
+            "busted_reps": [],
+            "clean_avg_pace_per_mile": "5:45/mi",
+        }
+        h = _build_headline(activity, interval_data)
+        assert "6x800m" in h
 
 
 class TestBuildHighlights:
@@ -198,7 +159,7 @@ class TestBuildHighlights:
         activity = _make_activity(avg_hr=142, total_elevation_gain=200)
         hl = _build_highlights(
             activity,
-            {"cardiac_pct": 2.5},
+            {"cardiac_drift_pct": 2.5},
             {"decay_pct": 1.0},
             None,
         )
@@ -207,6 +168,74 @@ class TestBuildHighlights:
         assert "Cardiac Drift" in labels
         assert "Pacing" in labels
         assert "Elevation" in labels
+
+    def test_interval_highlights(self):
+        activity = _make_activity(workout_type="interval")
+        interval_data = {
+            "max_spread_pct": 3.2,
+            "clean_reps": 5,
+            "total_reps": 6,
+            "busted_reps": [3],
+            "avg_hr_work": 172,
+        }
+        hl = _build_highlights(activity, None, None, None, interval_data)
+        labels = [h.label for h in hl]
+        assert "Rep Consistency" in labels
+        assert "Reps" in labels
+        assert "Avg HR (work)" in labels
+        reps_hl = next(h for h in hl if h.label == "Reps")
+        assert reps_hl.value == "5/6"
+
+
+class TestBuildDataContext:
+    @patch("services.run_intelligence._get_athlete_notes", return_value=None)
+    @patch("services.run_intelligence._get_drift_history_avg", return_value=None)
+    @patch("services.run_intelligence._get_efficiency_vs_peers", return_value=None)
+    @patch("services.run_intelligence._get_stream_drift", return_value=None)
+    @patch("services.run_intelligence._get_split_pacing", return_value=None)
+    def test_basic_context(self, *mocks):
+        a = _make_activity()
+        db = MagicMock()
+        ctx = _build_data_context(a, db)
+        assert ctx["workout_type"] == "easy run"
+        assert ctx["avg_hr"] == 140
+        assert "distance_miles" in ctx
+        assert "duration" in ctx
+        assert "avg_pace_per_mile" in ctx
+
+    @patch("services.run_intelligence._get_athlete_notes", return_value=None)
+    @patch("services.run_intelligence._get_drift_history_avg", return_value=None)
+    @patch("services.run_intelligence._get_efficiency_vs_peers", return_value=None)
+    @patch("services.run_intelligence._get_stream_drift", return_value={"cardiac_drift_pct": 2.1})
+    @patch("services.run_intelligence._get_split_pacing", return_value=None)
+    def test_context_includes_drift(self, *mocks):
+        a = _make_activity()
+        db = MagicMock()
+        ctx = _build_data_context(a, db)
+        assert ctx["cardiac_drift"]["cardiac_drift_pct"] == 2.1
+
+    @patch("services.run_intelligence._get_athlete_notes", return_value=None)
+    @patch("services.run_intelligence._get_drift_history_avg", return_value=None)
+    @patch("services.run_intelligence._get_efficiency_vs_peers", return_value=None)
+    @patch("services.run_intelligence._get_stream_drift", return_value=None)
+    @patch("services.run_intelligence._get_split_pacing", return_value=None)
+    def test_context_includes_heat(self, *mocks):
+        a = _make_activity(temperature_f=92, heat_adjustment_pct=4.5)
+        db = MagicMock()
+        ctx = _build_data_context(a, db)
+        assert ctx["temperature_f"] == 92
+        assert ctx["heat_adjustment_pct"] == 4.5
+
+    @patch("services.run_intelligence._get_athlete_notes", return_value=None)
+    @patch("services.run_intelligence._get_drift_history_avg", return_value=None)
+    @patch("services.run_intelligence._get_efficiency_vs_peers", return_value=None)
+    @patch("services.run_intelligence._get_stream_drift", return_value=None)
+    @patch("services.run_intelligence._get_split_pacing", return_value=None)
+    def test_context_pre_state(self, *mocks):
+        a = _make_activity(pre_sleep_h=7.2, pre_resting_hr=52)
+        db = MagicMock()
+        ctx = _build_data_context(a, db)
+        assert ctx["pre_run_state"]["sleep_hours"] == 7.2
 
 
 class TestGenerateRunIntelligence:
@@ -222,3 +251,35 @@ class TestGenerateRunIntelligence:
         db.query.return_value.filter.return_value.first.return_value = activity
         result = generate_run_intelligence("id", "ath", db)
         assert result is None
+
+    @patch("services.run_intelligence._call_intelligence_llm", return_value="Your easy run showed stable HR throughout with only +1.2% cardiac drift.")
+    @patch("services.run_intelligence._get_athlete_notes", return_value=None)
+    @patch("services.run_intelligence._get_drift_history_avg", return_value=None)
+    @patch("services.run_intelligence._get_efficiency_vs_peers", return_value=None)
+    @patch("services.run_intelligence._get_stream_drift", return_value={"cardiac_drift_pct": 1.2})
+    @patch("services.run_intelligence._get_split_pacing", return_value=None)
+    def test_returns_result_with_llm_body(self, *mocks):
+        db = MagicMock()
+        activity = _make_activity()
+        db.query.return_value.filter.return_value.first.return_value = activity
+        result = generate_run_intelligence(str(activity.id), str(activity.athlete_id), db)
+        assert result is not None
+        assert "easy run" in result.headline
+        assert "cardiac drift" in result.body.lower()
+        assert len(result.highlights) > 0
+
+    @patch("services.run_intelligence._call_intelligence_llm", return_value=None)
+    @patch("services.run_intelligence._get_athlete_notes", return_value=None)
+    @patch("services.run_intelligence._get_drift_history_avg", return_value=None)
+    @patch("services.run_intelligence._get_efficiency_vs_peers", return_value=None)
+    @patch("services.run_intelligence._get_stream_drift", return_value={"cardiac_drift_pct": 1.2})
+    @patch("services.run_intelligence._get_split_pacing", return_value=None)
+    def test_returns_result_even_if_llm_returns_none(self, *mocks):
+        """Highlights still show even when LLM fails."""
+        db = MagicMock()
+        activity = _make_activity()
+        db.query.return_value.filter.return_value.first.return_value = activity
+        result = generate_run_intelligence(str(activity.id), str(activity.athlete_id), db)
+        assert result is not None
+        assert result.body == ""
+        assert len(result.highlights) > 0

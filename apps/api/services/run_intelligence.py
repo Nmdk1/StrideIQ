@@ -1,24 +1,50 @@
 """
-Run Intelligence Synthesis
+Run Intelligence Synthesis — LLM-powered coaching summary.
 
-Produces a coaching-quality summary for a single run by assembling
-data from stream analysis, attribution, splits, classification,
-pre-state, and historical comparison.
+Gathers structured data from stream analysis, attribution, splits,
+classification, pre-state, wellness, and historical comparison, then
+passes it to Kimi to produce a coaching-quality summary that reads
+like a knowledgeable human analyzed the run.
 
-Deterministic — no LLM. Every sentence is grounded in specific data
-from the athlete's own history.
+Data in, coaching voice out.
 """
 
 from dataclasses import dataclass, field
 from datetime import timedelta
 from typing import List, Dict, Optional, Any
+import json
 import logging
 
 from sqlalchemy.orm import Session
 
-from models import Activity, ActivitySplit, CachedStreamAnalysis
+from models import Activity, ActivitySplit, CachedStreamAnalysis, CalendarNote
 
 logger = logging.getLogger(__name__)
+
+INTELLIGENCE_MODEL = "kimi-k2.5"
+INTELLIGENCE_MAX_TOKENS = 400
+INTELLIGENCE_TIMEOUT_S = 30
+
+SYSTEM_PROMPT = """\
+You are the intelligence voice of a running analytics product. You write \
+2-4 sentences that a serious runner would find genuinely useful — the kind \
+of observation a coach who watched the whole run would make.
+
+Rules:
+- Never state the obvious (distance, duration, avg pace) — the athlete sees those.
+- Focus on what THIS run reveals: pacing execution, cardiac response, \
+rep quality, drift, fade, efficiency trends, conditions impact.
+- Reference specific data: rep numbers, pace values, HR numbers, percentages.
+- If reps were busted/incomplete, say which ones and why it matters.
+- If historical comparison data exists, USE it — that's the insight the athlete can't see.
+- If pre-state data exists (sleep, HRV, resting HR), connect it to the run \
+outcome ONLY if there's a plausible link. Don't force it.
+- Never use generic motivational language. No "great job" or "keep it up".
+- Never say "based on the data" or "analysis shows" — just say the thing.
+- If there's nothing meaningful to say, respond with exactly: NO_INSIGHT
+- Write in second person ("you", "your").
+- Be direct. Every word should carry information.\
+"""
 
 
 @dataclass
@@ -42,12 +68,6 @@ def _fmt_pace_per_mile(seconds_per_km: float) -> str:
     return f"{mins}:{secs:02d}/mi"
 
 
-def _fmt_pace_per_km(seconds_per_km: float) -> str:
-    mins = int(seconds_per_km // 60)
-    secs = int(seconds_per_km % 60)
-    return f"{mins}:{secs:02d}/km"
-
-
 def _fmt_duration(seconds: float) -> str:
     s = int(seconds)
     hrs = s // 3600
@@ -60,8 +80,6 @@ def _fmt_duration(seconds: float) -> str:
 
 def _fmt_distance_mi(meters: float) -> str:
     mi = meters / 1609.34
-    if mi >= 10:
-        return f"{mi:.1f}"
     return f"{mi:.1f}"
 
 
@@ -89,8 +107,10 @@ def _is_interval_workout(activity: Activity) -> bool:
     return wt.lower() in {"interval", "intervals", "track", "track_workout"}
 
 
+# ── Data gathering ─────────────────────────────────────────────────────
+
+
 def _get_interval_analysis(activity: Activity, db: Session) -> Optional[Dict[str, Any]]:
-    """Analyze work intervals: detect busted reps, consistency of clean reps, HR."""
     splits = (
         db.query(ActivitySplit)
         .filter(ActivitySplit.activity_id == activity.id)
@@ -108,48 +128,50 @@ def _get_interval_analysis(activity: Activity, db: Session) -> Optional[Dict[str
     if len(work_splits) < 2:
         return None
 
-    all_paces = [float(s.elapsed_time) / (float(s.distance) / 1000) for s in work_splits]
-    distances = [float(s.distance) for s in work_splits]
-    avg_dist = sum(distances) / len(distances)
+    reps = []
+    for i, s in enumerate(work_splits):
+        dist = float(s.distance)
+        elapsed = float(s.elapsed_time)
+        pace_s_km = elapsed / (dist / 1000)
+        hr = int(s.average_heartrate) if s.average_heartrate else None
+        reps.append({
+            "rep": i + 1,
+            "distance_m": round(dist),
+            "elapsed_s": round(elapsed, 1),
+            "pace_per_mile": _fmt_pace_per_mile(pace_s_km),
+            "pace_s_km": round(pace_s_km, 1),
+            "avg_hr": hr,
+        })
 
-    # Detect busted/incomplete reps: median-based outlier detection.
-    # A rep >30% slower than the median is likely incomplete or had a stop.
+    all_paces = [r["pace_s_km"] for r in reps]
     sorted_paces = sorted(all_paces)
     median_pace = sorted_paces[len(sorted_paces) // 2]
 
-    clean_indices = []
-    busted_indices = []
-    for i, p in enumerate(all_paces):
-        if p > median_pace * 1.30:
-            busted_indices.append(i)
-        else:
-            clean_indices.append(i)
+    for r in reps:
+        r["busted"] = r["pace_s_km"] > median_pace * 1.30
 
-    clean_paces = [all_paces[i] for i in clean_indices]
+    clean_paces = [r["pace_s_km"] for r in reps if not r["busted"]]
     if not clean_paces:
         clean_paces = all_paces
-        busted_indices = []
+        for r in reps:
+            r["busted"] = False
 
     avg_pace = sum(clean_paces) / len(clean_paces)
     spreads = [abs((p - avg_pace) / avg_pace * 100) for p in clean_paces]
     max_spread = max(spreads) if spreads else 0
 
-    hrs = [int(s.average_heartrate) for s in work_splits if s.average_heartrate]
-    avg_hr = sum(hrs) / len(hrs) if hrs else None
-
-    # Historical comparison: find previous interval sessions with similar rep distances
-    history = _get_interval_history(activity, avg_dist, db)
+    history = _get_interval_history(activity, reps[0]["distance_m"], db)
 
     return {
         "type": "interval",
-        "total_reps": len(work_splits),
-        "clean_reps": len(clean_paces),
-        "busted_reps": [i + 1 for i in busted_indices],
-        "avg_distance_m": round(avg_dist),
-        "all_paces_s_km": all_paces,
+        "reps": reps,
+        "clean_avg_pace_per_mile": _fmt_pace_per_mile(avg_pace),
         "clean_avg_pace_s_km": avg_pace,
         "max_spread_pct": round(max_spread, 1),
-        "avg_hr": avg_hr,
+        "total_reps": len(reps),
+        "clean_reps": len(clean_paces),
+        "busted_reps": [r["rep"] for r in reps if r["busted"]],
+        "avg_hr_work": round(sum(r["avg_hr"] for r in reps if r["avg_hr"]) / max(1, sum(1 for r in reps if r["avg_hr"]))) if any(r["avg_hr"] for r in reps) else None,
         "history": history,
     }
 
@@ -157,7 +179,6 @@ def _get_interval_analysis(activity: Activity, db: Session) -> Optional[Dict[str
 def _get_interval_history(
     activity: Activity, rep_distance_m: float, db: Session
 ) -> Optional[Dict[str, Any]]:
-    """Find the athlete's last interval session with similar rep distances."""
     end_date = activity.start_time
     start_date = end_date - timedelta(days=120)
 
@@ -209,18 +230,17 @@ def _get_interval_history(
 
         prev_avg = sum(prev_clean) / len(prev_clean)
         return {
+            "prev_avg_pace_per_mile": _fmt_pace_per_mile(prev_avg),
             "prev_avg_pace_s_km": prev_avg,
             "prev_date": prev.start_time.date().isoformat(),
             "prev_reps": len(prev_clean),
+            "prev_total_reps": len(prev_paces),
         }
 
     return None
 
 
 def _get_split_pacing(activity: Activity, db: Session) -> Optional[Dict[str, Any]]:
-    """Compute first-half / second-half pacing analysis from splits.
-    Only used for continuous runs — intervals use _get_interval_analysis.
-    """
     if _is_interval_workout(activity):
         return None
 
@@ -237,7 +257,19 @@ def _get_split_pacing(activity: Activity, db: Session) -> Optional[Dict[str, Any
     if len(valid) < 3:
         return None
 
-    paces = [float(s.elapsed_time) / (float(s.distance) / 1000) for s in valid]
+    per_split = []
+    for i, s in enumerate(valid):
+        dist = float(s.distance)
+        elapsed = float(s.elapsed_time)
+        pace_s_km = elapsed / (dist / 1000)
+        per_split.append({
+            "split": i + 1,
+            "distance_m": round(dist),
+            "pace_per_mile": _fmt_pace_per_mile(pace_s_km),
+            "pace_s_km": round(pace_s_km, 1),
+        })
+
+    paces = [s["pace_s_km"] for s in per_split]
     mid = len(paces) // 2
     first_avg = sum(paces[:mid]) / mid
     second_avg = sum(paces[mid:]) / (len(paces) - mid)
@@ -245,15 +277,14 @@ def _get_split_pacing(activity: Activity, db: Session) -> Optional[Dict[str, Any
 
     return {
         "type": "continuous",
+        "splits": per_split,
+        "first_half_avg_pace": _fmt_pace_per_mile(first_avg),
+        "second_half_avg_pace": _fmt_pace_per_mile(second_avg),
         "decay_pct": round(decay_pct, 1),
-        "first_half_pace": first_avg,
-        "second_half_pace": second_avg,
-        "splits_count": len(valid),
     }
 
 
 def _get_stream_drift(activity_id, db: Session) -> Optional[Dict[str, Any]]:
-    """Get cardiac decoupling from cached stream analysis."""
     from services.stream_analysis_cache import CURRENT_ANALYSIS_VERSION
 
     row = (
@@ -273,13 +304,12 @@ def _get_stream_drift(activity_id, db: Session) -> Optional[Dict[str, Any]]:
         return None
 
     return {
-        "cardiac_pct": drift.get("cardiac_pct"),
-        "pace_pct": drift.get("pace_pct"),
+        "cardiac_drift_pct": drift.get("cardiac_pct"),
+        "pace_drift_pct": drift.get("pace_pct"),
     }
 
 
 def _get_efficiency_vs_peers(activity: Activity, db: Session) -> Optional[Dict[str, Any]]:
-    """Compare efficiency against same workout-type runs in last 90 days."""
     if not activity.avg_hr or activity.avg_hr < 100:
         return None
     if not activity.distance_m or not activity.duration_s:
@@ -320,12 +350,11 @@ def _get_efficiency_vs_peers(activity: Activity, db: Session) -> Optional[Dict[s
     return {
         "diff_pct": round(diff_pct, 1),
         "sample_size": len(peers),
-        "label": activity.workout_type.lower().replace("_", " "),
+        "workout_type": activity.workout_type.lower().replace("_", " "),
     }
 
 
 def _get_drift_history_avg(activity: Activity, db: Session) -> Optional[Dict[str, Any]]:
-    """Average cardiac decoupling for recent controlled-steady runs."""
     from services.run_analysis_engine import CONTROLLED_STEADY_TYPES
     from services.stream_analysis_cache import CURRENT_ANALYSIS_VERSION
 
@@ -361,118 +390,136 @@ def _get_drift_history_avg(activity: Activity, db: Session) -> Optional[Dict[str
         return None
 
     return {
-        "avg_drift": round(sum(drifts) / len(drifts), 1),
+        "avg_cardiac_drift_pct": round(sum(drifts) / len(drifts), 1),
         "count": len(drifts),
     }
 
 
-def generate_run_intelligence(
-    activity_id: str,
-    athlete_id: str,
-    db: Session,
-) -> Optional[RunIntelligenceResult]:
-    """
-    Main entry point. Assembles all data sources and produces a coaching
-    summary for a single run.
-    """
-    activity = (
-        db.query(Activity)
-        .filter(Activity.id == activity_id, Activity.athlete_id == athlete_id)
-        .first()
+def _get_athlete_notes(activity: Activity, db: Session) -> Optional[str]:
+    """Fetch athlete's calendar notes for this activity's date."""
+    run_date = activity.start_time.date()
+    notes = (
+        db.query(CalendarNote)
+        .filter(
+            CalendarNote.athlete_id == activity.athlete_id,
+            CalendarNote.note_date == run_date,
+        )
+        .all()
     )
-    if not activity:
+    if not notes:
         return None
 
-    if not activity.distance_m or not activity.duration_s:
-        return None
+    parts = []
+    for n in notes:
+        if n.text_content:
+            parts.append(n.text_content)
+        if n.voice_memo_transcript:
+            parts.append(n.voice_memo_transcript)
+        if n.structured_data:
+            for k, v in n.structured_data.items():
+                if v:
+                    parts.append(f"{k}: {v}")
+    return " | ".join(parts) if parts else None
 
-    try:
-        return _assemble_intelligence(activity, db)
-    except Exception:
-        logger.exception("Failed to generate run intelligence for %s", activity_id)
-        return None
+
+def _get_pre_state(activity: Activity) -> Optional[Dict[str, Any]]:
+    state = {}
+    if activity.pre_sleep_h is not None:
+        state["sleep_hours"] = float(activity.pre_sleep_h)
+    if activity.pre_sleep_score is not None:
+        state["sleep_score"] = int(activity.pre_sleep_score)
+    if activity.pre_resting_hr is not None:
+        state["resting_hr"] = int(activity.pre_resting_hr)
+    if activity.pre_recovery_hrv is not None:
+        state["recovery_hrv"] = int(activity.pre_recovery_hrv)
+    if activity.pre_overnight_hrv is not None:
+        state["overnight_hrv"] = int(activity.pre_overnight_hrv)
+    return state if state else None
 
 
-def _assemble_intelligence(activity: Activity, db: Session) -> Optional[RunIntelligenceResult]:
-    dist_mi = activity.distance_m / 1609.34
+# ── Assembly & LLM call ────────────────────────────────────────────────
+
+
+def _build_data_context(activity: Activity, db: Session) -> Dict[str, Any]:
+    """Assemble all structured data into a single dict for the LLM prompt."""
+    pace_s_km = activity.duration_s / (activity.distance_m / 1000)
+    is_interval = _is_interval_workout(activity)
+
+    ctx: Dict[str, Any] = {
+        "activity_name": activity.name,
+        "date": activity.start_time.strftime("%Y-%m-%d"),
+        "workout_type": _workout_label(activity.workout_type),
+        "distance_miles": round(activity.distance_m / 1609.34, 2),
+        "duration": _fmt_duration(activity.duration_s),
+        "avg_pace_per_mile": _fmt_pace_per_mile(pace_s_km),
+        "avg_hr": int(activity.avg_hr) if activity.avg_hr else None,
+        "max_hr": int(activity.max_hr) if activity.max_hr else None,
+    }
+
+    elev = getattr(activity, "total_elevation_gain", None)
+    if elev and float(elev) > 30:
+        ctx["elevation_gain_ft"] = int(float(elev) * 3.28084)
+
+    is_race = getattr(activity, "is_race_candidate", False) or (
+        activity.workout_type and activity.workout_type.lower() == "race"
+    )
+    if is_race:
+        ctx["is_race"] = True
+
+    temp = getattr(activity, "temperature_f", None)
+    if temp:
+        ctx["temperature_f"] = round(float(temp))
+    humidity = getattr(activity, "humidity_pct", None)
+    if humidity:
+        ctx["humidity_pct"] = round(float(humidity))
+    heat_adj = getattr(activity, "heat_adjustment_pct", None)
+    if heat_adj and float(heat_adj) > 2:
+        ctx["heat_adjustment_pct"] = round(float(heat_adj), 1)
+
+    if is_interval:
+        interval_data = _get_interval_analysis(activity, db)
+        if interval_data:
+            ctx["intervals"] = interval_data
+    else:
+        pacing = _get_split_pacing(activity, db)
+        if pacing:
+            ctx["pacing"] = pacing
+
+    drift = _get_stream_drift(activity.id, db)
+    if drift:
+        ctx["cardiac_drift"] = drift
+
+    efficiency = _get_efficiency_vs_peers(activity, db)
+    if efficiency:
+        ctx["efficiency_vs_recent"] = efficiency
+
+    drift_hist = _get_drift_history_avg(activity, db)
+    if drift_hist:
+        ctx["drift_history"] = drift_hist
+
+    pre_state = _get_pre_state(activity)
+    if pre_state:
+        ctx["pre_run_state"] = pre_state
+
+    notes = _get_athlete_notes(activity, db)
+    if notes:
+        ctx["athlete_notes"] = notes
+
+    cadence = getattr(activity, "avg_cadence", None)
+    if cadence:
+        ctx["avg_cadence"] = int(cadence)
+
+    return ctx
+
+
+def _build_headline(activity: Activity, interval_data: Optional[Dict]) -> str:
     pace_s_km = activity.duration_s / (activity.distance_m / 1000)
     pace_str = _fmt_pace_per_mile(pace_s_km)
     dist_str = _fmt_distance_mi(activity.distance_m)
+    dist_mi = activity.distance_m / 1609.34
     duration_str = _fmt_duration(activity.duration_s)
     wt_label = _workout_label(activity.workout_type)
 
-    # Gather all available data
-    drift = _get_stream_drift(activity.id, db)
-    interval_data = _get_interval_analysis(activity, db) if _is_interval_workout(activity) else None
-    pacing = _get_split_pacing(activity, db)
-    efficiency = _get_efficiency_vs_peers(activity, db)
-    drift_history = _get_drift_history_avg(activity, db)
-
-    # --- Build headline ---
-    headline = _build_headline(
-        dist_str, pace_str, duration_str, wt_label, dist_mi, activity,
-        interval_data,
-    )
-
-    # --- Build body sentences ---
-    sentences: List[str] = []
-
-    if interval_data:
-        # Interval-specific: rep consistency and paces
-        interval_sent = _interval_sentence(interval_data)
-        if interval_sent:
-            sentences.append(interval_sent)
-    else:
-        # Continuous run: half-half pacing
-        pacing_sent = _pacing_sentence(pacing)
-        if pacing_sent:
-            sentences.append(pacing_sent)
-
-    # 2. Cardiac coupling / drift sentence (controlled-steady only)
-    coupling_sent = _coupling_sentence(drift, drift_history, activity)
-    if coupling_sent:
-        sentences.append(coupling_sent)
-
-    # 3. Efficiency sentence (non-controlled-steady only)
-    eff_sent = _efficiency_sentence(efficiency, activity)
-    if eff_sent:
-        sentences.append(eff_sent)
-
-    # Pre-state is shown in the Going In card — don't duplicate it here.
-
-    # 4. Conditions sentence
-    cond_sent = _conditions_sentence(activity)
-    if cond_sent:
-        sentences.append(cond_sent)
-
-    body = " ".join(sentences) if sentences else ""
-
-    # --- Highlights ---
-    highlights = _build_highlights(activity, drift, pacing, efficiency, interval_data)
-
-    if not body and not highlights:
-        return None
-
-    return RunIntelligenceResult(
-        headline=headline,
-        body=body,
-        highlights=highlights,
-    )
-
-
-# ── Sentence builders ──────────────────────────────────────────────────
-
-
-def _build_headline(
-    dist_str: str,
-    pace_str: str,
-    duration_str: str,
-    wt_label: str,
-    dist_mi: float,
-    activity: Activity,
-    interval_data: Optional[Dict] = None,
-) -> str:
-    """One-line opening: distance, pace, and what kind of run."""
     is_race = getattr(activity, "is_race_candidate", False) or (
         activity.workout_type and activity.workout_type.lower() == "race"
     )
@@ -480,181 +527,15 @@ def _build_headline(
     if interval_data:
         clean = interval_data["clean_reps"]
         total = interval_data["total_reps"]
-        avg_dist = interval_data["avg_distance_m"]
-        avg_pace = _fmt_pace_per_mile(interval_data["clean_avg_pace_s_km"])
-        busted = interval_data["busted_reps"]
-        if busted:
+        avg_dist = interval_data["reps"][0]["distance_m"] if interval_data["reps"] else 0
+        avg_pace = interval_data["clean_avg_pace_per_mile"]
+        if interval_data["busted_reps"]:
             return f"{clean} of {total} reps at {avg_dist}m, {avg_pace} avg — {wt_label}."
         return f"{total}x{avg_dist}m at {avg_pace} avg — {wt_label}."
 
     if is_race and dist_mi >= 13.0:
         return f"{dist_str} mi in {duration_str} — {wt_label}."
     return f"{dist_str} mi at {pace_str} — {wt_label}."
-
-
-def _interval_sentence(interval_data: Optional[Dict]) -> Optional[str]:
-    """Describe interval rep consistency, busted reps, and historical comparison."""
-    if not interval_data:
-        return None
-
-    all_paces = interval_data["all_paces_s_km"]
-    busted = interval_data["busted_reps"]
-    clean_reps = interval_data["clean_reps"]
-    spread = interval_data["max_spread_pct"]
-    history = interval_data.get("history")
-
-    parts: List[str] = []
-
-    if busted:
-        busted_str = ", ".join(str(r) for r in busted)
-        s = "s" if len(busted) > 1 else ""
-        parts.append(f"Rep{s} {busted_str} incomplete/stopped.")
-
-    if clean_reps >= 2:
-        if spread <= 2.0:
-            parts.append(f"Clean reps very consistent ({spread:.1f}% spread).")
-        elif spread <= 5.0:
-            parts.append(f"Clean reps consistent ({spread:.1f}% spread).")
-        elif spread <= 10.0:
-            parts.append(f"Some variation in clean reps ({spread:.1f}% spread).")
-
-    if history:
-        prev_pace = _fmt_pace_per_mile(history["prev_avg_pace_s_km"])
-        curr_pace = interval_data["clean_avg_pace_s_km"]
-        prev_pace_val = history["prev_avg_pace_s_km"]
-        diff_pct = ((prev_pace_val - curr_pace) / prev_pace_val) * 100
-        if abs(diff_pct) > 1.5:
-            direction = "faster" if diff_pct > 0 else "slower"
-            parts.append(
-                f"Last similar session ({history['prev_date']}): {prev_pace} avg — "
-                f"today {abs(diff_pct):.1f}% {direction}."
-            )
-        else:
-            parts.append(
-                f"In line with your last session ({history['prev_date']}, {prev_pace} avg)."
-            )
-
-    return " ".join(parts) if parts else None
-
-
-def _pacing_sentence(pacing: Optional[Dict]) -> Optional[str]:
-    if not pacing:
-        return None
-    d = pacing.get("decay_pct", 0)
-    if d < -2:
-        return f"Negative split — second half {abs(d):.1f}% faster."
-    elif d <= 2:
-        return "Even pacing throughout."
-    elif d <= 5:
-        return f"Slight fade in the second half ({d:.1f}% slower)."
-    elif d <= 8:
-        return f"Moderate pace fade ({d:.1f}%) — started faster than you finished."
-    else:
-        return f"Significant fade ({d:.1f}%) — may have gone out too fast."
-
-
-def _coupling_sentence(
-    drift: Optional[Dict],
-    drift_history: Optional[Dict],
-    activity: Activity,
-) -> Optional[str]:
-    from services.run_analysis_engine import CONTROLLED_STEADY_TYPES
-
-    wt = getattr(activity, "workout_type", None)
-    if not wt or wt.lower() not in CONTROLLED_STEADY_TYPES:
-        return None
-    if not drift or drift.get("cardiac_pct") is None:
-        return None
-
-    cp = drift["cardiac_pct"]
-    abs_cp = abs(cp)
-
-    if abs_cp <= 3:
-        base = f"HR stayed stable relative to pace ({cp:+.1f}% drift) — aerobically controlled."
-    elif abs_cp <= 5:
-        base = f"Normal cardiac drift ({cp:+.1f}%) for this effort length."
-    elif abs_cp <= 8:
-        base = f"Moderate HR drift ({cp:+.1f}%) — body worked harder to hold pace over the distance."
-    else:
-        base = f"Significant HR drift ({cp:+.1f}%) — cardiovascular demand rose progressively."
-
-    if drift_history:
-        avg = drift_history["avg_drift"]
-        n = drift_history["count"]
-        diff = cp - avg
-        if diff < -1.5:
-            base += f" Coupling is tightening — your last {n} similar runs averaged {avg:.1f}%."
-        elif diff > 1.5:
-            base += f" Higher than your recent average of {avg:.1f}% over {n} runs."
-
-    return base
-
-
-def _efficiency_sentence(
-    efficiency: Optional[Dict],
-    activity: Activity,
-) -> Optional[str]:
-    from services.run_analysis_engine import CONTROLLED_STEADY_TYPES
-
-    wt = getattr(activity, "workout_type", None)
-    if wt and wt.lower() in CONTROLLED_STEADY_TYPES:
-        return None
-    if not efficiency:
-        return None
-
-    d = efficiency["diff_pct"]
-    n = efficiency["sample_size"]
-    label = efficiency["label"]
-
-    if d > 5:
-        return f"Efficiency {d:.1f}% above your recent {label}s ({n} runs)."
-    elif d > 2:
-        return f"Slightly more efficient than your recent {label}s (+{d:.1f}%)."
-    elif d >= -2:
-        return f"Efficiency in line with your recent {label}s."
-    elif d >= -5:
-        return f"Efficiency {abs(d):.1f}% below your recent {label}s."
-    else:
-        return f"Efficiency notably below your recent {label}s ({d:.1f}%)."
-
-
-def _prestate_sentence(activity: Activity) -> Optional[str]:
-    parts = []
-    sleep = getattr(activity, "pre_sleep_h", None)
-    if sleep is not None:
-        parts.append(f"{float(sleep):.1f}h sleep")
-
-    rhr = getattr(activity, "pre_resting_hr", None)
-    if rhr is not None:
-        parts.append(f"resting HR {int(rhr)}")
-
-    hrv = getattr(activity, "pre_recovery_hrv", None)
-    if hrv is not None:
-        parts.append(f"HRV {int(hrv)}")
-
-    if not parts:
-        return None
-
-    return "Going in on " + ", ".join(parts) + "."
-
-
-def _conditions_sentence(activity: Activity) -> Optional[str]:
-    heat = getattr(activity, "heat_adjustment_pct", None)
-    temp = getattr(activity, "temperature_f", None)
-
-    if heat and heat > 3 and temp:
-        return f"Heat ({int(temp)}°F) slowed this effort ~{heat:.0f}% — real effort was better than the pace."
-
-    elev = getattr(activity, "total_elevation_gain", None)
-    elev = float(elev) if elev is not None else None
-    if elev and elev > 100:
-        ft = int(elev * 3.28084)
-        return f"{ft:,}ft of climbing."
-
-    return None
-
-
-# ── Highlights ──────────────────────────────────────────────────────────
 
 
 def _build_highlights(
@@ -681,9 +562,9 @@ def _build_highlights(
         rep_label = f"{clean}/{total}" if busted else str(total)
         hl.append(IntelligenceHighlight(label="Reps", value=rep_label))
 
-        if interval_data.get("avg_hr"):
+        if interval_data.get("avg_hr_work"):
             hl.append(IntelligenceHighlight(
-                label="Avg HR (work)", value=f"{int(interval_data['avg_hr'])} bpm"
+                label="Avg HR (work)", value=f"{int(interval_data['avg_hr_work'])} bpm"
             ))
     else:
         if activity.avg_hr:
@@ -691,8 +572,8 @@ def _build_highlights(
                 label="Avg HR", value=f"{int(activity.avg_hr)} bpm"
             ))
 
-    if drift and drift.get("cardiac_pct") is not None:
-        cp = drift["cardiac_pct"]
+    if drift and drift.get("cardiac_drift_pct") is not None:
+        cp = drift["cardiac_drift_pct"]
         color = "emerald" if abs(cp) <= 3 else "yellow" if abs(cp) <= 5 else "orange"
         hl.append(IntelligenceHighlight(
             label="Cardiac Drift", value=f"{cp:+.1f}%", color=color
@@ -720,3 +601,89 @@ def _build_highlights(
         ))
 
     return hl
+
+
+def _call_intelligence_llm(data_context: Dict[str, Any]) -> Optional[str]:
+    """Send structured data to Kimi and get coaching summary back."""
+    from core.llm_client import call_llm
+
+    user_prompt = (
+        "Here is the structured data for this run. Write a coaching-quality "
+        "summary (2-4 sentences). Reference specific numbers. "
+        "If reps were busted, explain what happened and what it means. "
+        "If there's historical data, compare. If conditions affected the run, say how.\n\n"
+        f"{json.dumps(data_context, indent=2, default=str)}"
+    )
+
+    try:
+        result = call_llm(
+            model=INTELLIGENCE_MODEL,
+            system=SYSTEM_PROMPT,
+            messages=[{"role": "user", "content": user_prompt}],
+            max_tokens=INTELLIGENCE_MAX_TOKENS,
+            temperature=0.4,
+            response_mode="text",
+            timeout_s=INTELLIGENCE_TIMEOUT_S,
+            disable_thinking=True,
+        )
+        text = (result["text"] or "").strip()
+        if not text or text == "NO_INSIGHT":
+            return None
+        logger.info(
+            "Run intelligence LLM: model=%s in=%d out=%d lat=%.0fms",
+            result["model"], result["input_tokens"],
+            result["output_tokens"], result["latency_ms"],
+        )
+        return text
+    except Exception:
+        logger.exception("Run intelligence LLM call failed")
+        return None
+
+
+# ── Public API ─────────────────────────────────────────────────────────
+
+
+def generate_run_intelligence(
+    activity_id: str,
+    athlete_id: str,
+    db: Session,
+) -> Optional[RunIntelligenceResult]:
+    """
+    Main entry point. Gathers structured data, calls Kimi for the
+    coaching summary, and returns headline + body + highlights.
+    """
+    activity = (
+        db.query(Activity)
+        .filter(Activity.id == activity_id, Activity.athlete_id == athlete_id)
+        .first()
+    )
+    if not activity:
+        return None
+
+    if not activity.distance_m or not activity.duration_s:
+        return None
+
+    try:
+        data_ctx = _build_data_context(activity, db)
+
+        interval_data = data_ctx.get("intervals")
+        pacing = data_ctx.get("pacing")
+        drift = data_ctx.get("cardiac_drift")
+        efficiency = data_ctx.get("efficiency_vs_recent")
+
+        headline = _build_headline(activity, interval_data)
+        highlights = _build_highlights(activity, drift, pacing, efficiency, interval_data)
+
+        body = _call_intelligence_llm(data_ctx)
+
+        if not body and not highlights:
+            return None
+
+        return RunIntelligenceResult(
+            headline=headline,
+            body=body or "",
+            highlights=highlights,
+        )
+    except Exception:
+        logger.exception("Failed to generate run intelligence for %s", activity_id)
+        return None
