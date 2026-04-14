@@ -3,8 +3,9 @@ Celery tasks for Strava synchronization.
 
 These tasks run in the background worker to prevent blocking the API.
 """
+
 from datetime import datetime, timezone
-from typing import Dict, Optional
+from typing import Dict, List, Optional
 from celery import Task
 from sqlalchemy.orm import Session
 from sqlalchemy import text
@@ -12,12 +13,21 @@ from core.database import get_db_sync
 from core.cache import get_redis_client
 from tasks import celery_app
 from models import Athlete, Activity, ActivitySplit, ActivityStream, CorrelationFinding
-from services.strava_service import poll_activities, poll_activities_page, get_activity_laps, get_activity_details, get_activity_streams, get_strava_read_budget_remaining
+from services.strava_service import (
+    poll_activities,
+    poll_activities_page,
+    get_activity_laps,
+    get_activity_details,
+    get_activity_streams,
+    get_strava_read_budget_remaining,
+)
 from services.strava_pbs import sync_strava_best_efforts
 from services.athlete_metrics import calculate_athlete_derived_signals
 from services.personal_best import update_personal_best
 from services.pace_normalization import calculate_ngp_from_split
 from services.insight_aggregator import generate_insights_for_athlete
+
+
 # Helper functions (moved from routers.strava to avoid circular imports)
 def _coerce_int(x):
     """Coerce value to int, returning None if not possible."""
@@ -55,11 +65,11 @@ def _gap_seconds_per_mile_from_lap(lap: dict) -> tuple[float | None, bool]:
         if distance_m and moving_time_s:
             return (
                 calculate_ngp_from_split(
-                distance_m=float(distance_m),
-                moving_time_s=int(moving_time_s),
-                elevation_gain_m=elevation_gain_m,
-            )
-                , False
+                    distance_m=float(distance_m),
+                    moving_time_s=int(moving_time_s),
+                    elevation_gain_m=elevation_gain_m,
+                ),
+                False,
             )
     except Exception:
         return (None, False)
@@ -178,7 +188,7 @@ def _calculate_performance_metrics(activity, athlete, db):
             age=age,
             sex=athlete.sex,
             distance_meters=float(activity.distance_m),
-            use_national=False
+            use_national=False,
         )
         if performance_pct_intl:
             activity.performance_percentage = performance_pct_intl
@@ -189,27 +199,32 @@ def _calculate_performance_metrics(activity, athlete, db):
             age=age,
             sex=athlete.sex,
             distance_meters=float(activity.distance_m),
-            use_national=True
+            use_national=True,
         )
         if performance_pct_nat:
             activity.performance_percentage_national = performance_pct_nat
 
     # Race detection
     if activity.user_verified_race is not True:
-        splits = db.query(ActivitySplit).filter(
-            ActivitySplit.activity_id == activity.id
-        ).order_by(ActivitySplit.split_number).all()
+        splits = (
+            db.query(ActivitySplit)
+            .filter(ActivitySplit.activity_id == activity.id)
+            .order_by(ActivitySplit.split_number)
+            .all()
+        )
 
         splits_data = []
         for split in splits:
-            splits_data.append({
-                'distance': float(split.distance) if split.distance else None,
-                'moving_time': split.moving_time,
-                'elapsed_time': split.elapsed_time,
-                'average_heartrate': split.average_heartrate,
-                'max_heartrate': split.max_heartrate,
-                'avg_hr': split.average_heartrate,
-            })
+            splits_data.append(
+                {
+                    "distance": float(split.distance) if split.distance else None,
+                    "moving_time": split.moving_time,
+                    "elapsed_time": split.elapsed_time,
+                    "average_heartrate": split.average_heartrate,
+                    "max_heartrate": split.max_heartrate,
+                    "avg_hr": split.average_heartrate,
+                }
+            )
 
         is_race, confidence = detect_race_candidate(
             activity_pace=activity.pace_per_mile,
@@ -224,6 +239,8 @@ def _calculate_performance_metrics(activity, athlete, db):
         if confidence > 0:
             activity.is_race_candidate = is_race
             activity.race_confidence = confidence
+
+
 from sqlalchemy import func, desc
 import time
 import traceback
@@ -311,7 +328,8 @@ def _fetch_and_store_stream(activity_id: str, athlete, db: Session) -> str:
         db.commit()
         logger.info(
             "stream_fetch_deferred activity_id=%s retry_after=%s",
-            activity_id, retry_after,
+            activity_id,
+            retry_after,
         )
         return "deferred"
     except Exception as e:
@@ -341,10 +359,16 @@ def _fetch_and_store_stream(activity_id: str, athlete, db: Session) -> str:
                     stream_fetch_error = :error
                 WHERE id = :id
             """),
-            {"id": str(activity_id), "error": fetch_result.error or "redis_unavailable"},
+            {
+                "id": str(activity_id),
+                "error": fetch_result.error or "redis_unavailable",
+            },
         )
         db.commit()
-        logger.info("stream_fetch_reverted_to_pending activity_id=%s reason=redis_down", activity_id)
+        logger.info(
+            "stream_fetch_reverted_to_pending activity_id=%s reason=redis_down",
+            activity_id,
+        )
         return "skipped_no_redis"
 
     if fetch_result.outcome == "failed":
@@ -362,7 +386,8 @@ def _fetch_and_store_stream(activity_id: str, athlete, db: Session) -> str:
         db.commit()
         logger.warning(
             "stream_fetch_failed activity_id=%s error=%s",
-            activity_id, fetch_result.error,
+            activity_id,
+            fetch_result.error,
         )
         return "failed"
 
@@ -385,9 +410,13 @@ def _fetch_and_store_stream(activity_id: str, athlete, db: Session) -> str:
     point_count = len(stream_data.get("time", []))
 
     # Upsert: if a stream row already exists (idempotency), skip insert
-    existing_stream = db.query(ActivityStream).filter(
-        ActivityStream.activity_id == activity_id,
-    ).first()
+    existing_stream = (
+        db.query(ActivityStream)
+        .filter(
+            ActivityStream.activity_id == activity_id,
+        )
+        .first()
+    )
 
     if not existing_stream:
         stream = ActivityStream(
@@ -411,7 +440,9 @@ def _fetch_and_store_stream(activity_id: str, athlete, db: Session) -> str:
 
     logger.info(
         "stream_fetch_success activity_id=%s channels=%s points=%s",
-        activity_id, channels, point_count,
+        activity_id,
+        channels,
+        point_count,
     )
     return "success"
 
@@ -459,17 +490,16 @@ def sync_strava_activities_task(self: Task, athlete_id: str) -> Dict:
         print(f"DEBUG: db.get returned: {athlete}")
         if not athlete:
             print(f"DEBUG: Athlete not found!")
-            return {
-                "status": "error",
-                "error": f"Athlete {athlete_id} not found"
-            }
+            return {"status": "error", "error": f"Athlete {athlete_id} not found"}
 
-        print(f"DEBUG: Found athlete email={athlete.email}, strava_id={athlete.strava_athlete_id}")
+        print(
+            f"DEBUG: Found athlete email={athlete.email}, strava_id={athlete.strava_athlete_id}"
+        )
         if not athlete.strava_access_token:
             print(f"DEBUG: No strava access token!")
             return {
                 "status": "error",
-                "error": f"Athlete {athlete_id} has no Strava access token"
+                "error": f"Athlete {athlete_id} has no Strava access token",
             }
 
         # CRITICAL: Use raw SQL to get last_strava_sync to bypass identity map cache
@@ -479,7 +509,7 @@ def sync_strava_activities_task(self: Task, athlete_id: str) -> Dict:
                 FROM athlete
                 WHERE id = :athlete_id
             """),
-            {"athlete_id": athlete_id}
+            {"athlete_id": athlete_id},
         ).first()
 
         last_sync_raw = result[0] if result else None
@@ -492,7 +522,9 @@ def sync_strava_activities_task(self: Task, athlete_id: str) -> Dict:
         # permanently miss runs that started before the click but were uploaded later.
         #
         # To avoid this, we always use an overlap window when polling.
-        SYNC_OVERLAP_SECONDS = 36 * 60 * 60  # 36h overlap (covers late uploads + timezone edges)
+        SYNC_OVERLAP_SECONDS = (
+            36 * 60 * 60
+        )  # 36h overlap (covers late uploads + timezone edges)
         if last_sync_raw is None:
             after_timestamp = 0
         else:
@@ -505,7 +537,9 @@ def sync_strava_activities_task(self: Task, athlete_id: str) -> Dict:
         # Poll activities from Strava (viral-safe: do not sleep on 429; defer + retry).
         print(f"DEBUG: Polling activities with after_timestamp={after_timestamp}")
         try:
-            strava_activities = poll_activities(athlete, after_timestamp, allow_rate_limit_sleep=False)
+            strava_activities = poll_activities(
+                athlete, after_timestamp, allow_rate_limit_sleep=False
+            )
         except StravaRateLimitError as e:
             retry_after_s = int(getattr(e, "retry_after_s", 900) or 900)
             countdown = max(60, min(retry_after_s, 60 * 60))
@@ -537,12 +571,12 @@ def sync_strava_activities_task(self: Task, athlete_id: str) -> Dict:
         for activity_idx, a in enumerate(strava_activities):
             # Report progress to Celery so frontend can show progress bar
             self.update_state(
-                state='PROGRESS',
+                state="PROGRESS",
                 meta={
-                    'current': activity_idx + 1,
-                    'total': total_from_api,
-                    'message': f"Syncing activity {activity_idx + 1} of {total_from_api}..."
-                }
+                    "current": activity_idx + 1,
+                    "total": total_from_api,
+                    "message": f"Syncing activity {activity_idx + 1} of {total_from_api}...",
+                },
             )
 
             # Strava uses a few run-like types; treat them as runs.
@@ -600,11 +634,17 @@ def sync_strava_activities_task(self: Task, athlete_id: str) -> Dict:
                     existing.max_hr = a.get("max_heartrate")
                     changed = True
 
-                if existing.total_elevation_gain is None and a.get("total_elevation_gain") is not None:
+                if (
+                    existing.total_elevation_gain is None
+                    and a.get("total_elevation_gain") is not None
+                ):
                     existing.total_elevation_gain = a.get("total_elevation_gain")
                     changed = True
 
-                if existing.average_speed is None and a.get("average_speed") is not None:
+                if (
+                    existing.average_speed is None
+                    and a.get("average_speed") is not None
+                ):
                     existing.average_speed = a.get("average_speed")
                     changed = True
 
@@ -632,11 +672,20 @@ def sync_strava_activities_task(self: Task, athlete_id: str) -> Dict:
                         # Fetch both: details (canonical GA speed) + laps (canonical segmentation)
                         # Viral-safe: do not sleep on 429; defer + retry.
                         try:
-                            details = get_activity_details(athlete, int(strava_activity_id), allow_rate_limit_sleep=False) or {}
+                            details = (
+                                get_activity_details(
+                                    athlete,
+                                    int(strava_activity_id),
+                                    allow_rate_limit_sleep=False,
+                                )
+                                or {}
+                            )
                         except StravaRateLimitError as e:
                             retry_after_s = int(getattr(e, "retry_after_s", 900) or 900)
                             countdown = max(60, min(retry_after_s, 60 * 60))
-                            until = datetime.now(timezone.utc) + timedelta(seconds=countdown)
+                            until = datetime.now(timezone.utc) + timedelta(
+                                seconds=countdown
+                            )
                             mark_ingestion_deferred(
                                 db,
                                 athlete.id,
@@ -657,11 +706,20 @@ def sync_strava_activities_task(self: Task, athlete_id: str) -> Dict:
                                 continue
 
                         try:
-                            laps = get_activity_laps(athlete, strava_activity_id, allow_rate_limit_sleep=False) or []
+                            laps = (
+                                get_activity_laps(
+                                    athlete,
+                                    strava_activity_id,
+                                    allow_rate_limit_sleep=False,
+                                )
+                                or []
+                            )
                         except StravaRateLimitError as e:
                             retry_after_s = int(getattr(e, "retry_after_s", 900) or 900)
                             countdown = max(60, min(retry_after_s, 60 * 60))
-                            until = datetime.now(timezone.utc) + timedelta(seconds=countdown)
+                            until = datetime.now(timezone.utc) + timedelta(
+                                seconds=countdown
+                            )
                             mark_ingestion_deferred(
                                 db,
                                 athlete.id,
@@ -687,12 +745,18 @@ def sync_strava_activities_task(self: Task, athlete_id: str) -> Dict:
                                         "distance": lap.get("distance"),
                                         "elapsed_time": lap.get("elapsed_time"),
                                         "moving_time": lap.get("moving_time"),
-                                        "average_heartrate": lap.get("average_heartrate"),
+                                        "average_heartrate": lap.get(
+                                            "average_heartrate"
+                                        ),
                                         "max_heartrate": lap.get("max_heartrate"),
                                         "average_cadence": lap.get("average_cadence"),
-                                        "average_grade_adjusted_speed": ms.get("average_grade_adjusted_speed")
+                                        "average_grade_adjusted_speed": ms.get(
+                                            "average_grade_adjusted_speed"
+                                        )
                                         or lap.get("average_grade_adjusted_speed"),
-                                        "total_elevation_gain": lap.get("total_elevation_gain"),
+                                        "total_elevation_gain": lap.get(
+                                            "total_elevation_gain"
+                                        ),
                                     }
                                 )
                         else:
@@ -705,9 +769,15 @@ def sync_strava_activities_task(self: Task, athlete_id: str) -> Dict:
                                 if not idx:
                                     continue
                                 try:
-                                    if s.get("distance") is not None and float(s.get("distance")) < 50:
+                                    if (
+                                        s.get("distance") is not None
+                                        and float(s.get("distance")) < 50
+                                    ):
                                         continue
-                                    if s.get("moving_time") is not None and int(s.get("moving_time")) < 10:
+                                    if (
+                                        s.get("moving_time") is not None
+                                        and int(s.get("moving_time")) < 10
+                                    ):
                                         continue
                                 except Exception:
                                     pass
@@ -732,8 +802,12 @@ def sync_strava_activities_task(self: Task, athlete_id: str) -> Dict:
                                         distance=s.get("distance"),
                                         elapsed_time=s.get("elapsed_time"),
                                         moving_time=s.get("moving_time"),
-                                        average_heartrate=_coerce_int(s.get("average_heartrate")),
-                                        max_heartrate=_coerce_int(s.get("max_heartrate")),
+                                        average_heartrate=_coerce_int(
+                                            s.get("average_heartrate")
+                                        ),
+                                        max_heartrate=_coerce_int(
+                                            s.get("max_heartrate")
+                                        ),
                                         average_cadence=s.get("average_cadence"),
                                         gap_seconds_per_mile=gap_val,
                                     )
@@ -744,7 +818,9 @@ def sync_strava_activities_task(self: Task, athlete_id: str) -> Dict:
                                 db.flush()
                                 splits_backfilled += 1
                     except Exception as e:
-                        print(f"ERROR: Could not fetch laps for existing activity {strava_activity_id}: {e}")
+                        print(
+                            f"ERROR: Could not fetch laps for existing activity {strava_activity_id}: {e}"
+                        )
                 else:
                     # Update existing splits with missing values
                     try:
@@ -752,7 +828,14 @@ def sync_strava_activities_task(self: Task, athlete_id: str) -> Dict:
                             time.sleep(LAP_FETCH_DELAY)
 
                         # Prefer laps as segmentation; enrich with canonical GA speed from details.
-                        details = get_activity_details(athlete, int(strava_activity_id), allow_rate_limit_sleep=True) or {}
+                        details = (
+                            get_activity_details(
+                                athlete,
+                                int(strava_activity_id),
+                                allow_rate_limit_sleep=True,
+                            )
+                            or {}
+                        )
                         mile_splits = _extract_strava_mile_splits_from_details(details)
                         mile_map: dict[int, dict] = {}
                         for ms in mile_splits:
@@ -770,22 +853,37 @@ def sync_strava_activities_task(self: Task, athlete_id: str) -> Dict:
                                     split_num = int(idx)
                                     ms = mile_map.get(split_num) or {}
                                     merged = dict(l)
-                                    if ms.get("average_grade_adjusted_speed") is not None:
-                                        merged["average_grade_adjusted_speed"] = ms.get("average_grade_adjusted_speed")
+                                    if (
+                                        ms.get("average_grade_adjusted_speed")
+                                        is not None
+                                    ):
+                                        merged["average_grade_adjusted_speed"] = ms.get(
+                                            "average_grade_adjusted_speed"
+                                        )
                                     split_map[split_num] = merged
                         else:
                             split_map = mile_map
 
-                        splits = db.query(ActivitySplit).filter(ActivitySplit.activity_id == existing.id).all()
+                        splits = (
+                            db.query(ActivitySplit)
+                            .filter(ActivitySplit.activity_id == existing.id)
+                            .all()
+                        )
 
                         for s in splits:
                             src = split_map.get(int(s.split_number))
                             if not src:
                                 continue
                             try:
-                                if src.get("distance") is not None and float(src.get("distance")) < 50:
+                                if (
+                                    src.get("distance") is not None
+                                    and float(src.get("distance")) < 50
+                                ):
                                     continue
-                                if src.get("moving_time") is not None and int(src.get("moving_time")) < 10:
+                                if (
+                                    src.get("moving_time") is not None
+                                    and int(src.get("moving_time")) < 10
+                                ):
                                     continue
                             except Exception:
                                 pass
@@ -794,7 +892,9 @@ def sync_strava_activities_task(self: Task, athlete_id: str) -> Dict:
                             if s.average_cadence is None:
                                 s.average_cadence = src.get("average_cadence")
                             if s.average_heartrate is None:
-                                s.average_heartrate = _coerce_int(src.get("average_heartrate"))
+                                s.average_heartrate = _coerce_int(
+                                    src.get("average_heartrate")
+                                )
 
                             # Overwrite GAP when we have authoritative grade-adjusted speed.
                             gap_val = None
@@ -816,15 +916,22 @@ def sync_strava_activities_task(self: Task, athlete_id: str) -> Dict:
                             elif s.gap_seconds_per_mile is None and gap_val is not None:
                                 s.gap_seconds_per_mile = gap_val
                     except Exception as e:
-                        print(f"Warning: Could not update splits for activity {strava_activity_id}: {e}")
+                        print(
+                            f"Warning: Could not update splits for activity {strava_activity_id}: {e}"
+                        )
 
                 # Backfill avg_hr from details if missing
                 if existing.avg_hr is None and details.get("average_heartrate"):
                     existing.avg_hr = _coerce_int(details.get("average_heartrate"))
 
                 # Backfill temperature from details if missing
-                if existing.temperature_f is None and details.get("average_temp") is not None:
-                    existing.temperature_f = round(details.get("average_temp") * 9 / 5 + 32, 1)
+                if (
+                    existing.temperature_f is None
+                    and details.get("average_temp") is not None
+                ):
+                    existing.temperature_f = round(
+                        details.get("average_temp") * 9 / 5 + 32, 1
+                    )
 
                 # Backfill lat/lng from details if missing
                 if existing.start_lat is None:
@@ -859,7 +966,7 @@ def sync_strava_activities_task(self: Task, athlete_id: str) -> Dict:
                 db.query(Activity)
                 .filter(
                     Activity.athlete_id == athlete.id,
-                    Activity.provider == 'garmin',
+                    Activity.provider == "garmin",
                     Activity.start_time >= window_start,
                     Activity.start_time <= window_end,
                 )
@@ -876,13 +983,18 @@ def sync_strava_activities_task(self: Task, athlete_id: str) -> Dict:
             for garmin_candidate in garmin_candidates:
                 candidate_dict = {
                     "start_time": garmin_candidate.start_time,
-                    "distance_m": float(garmin_candidate.distance_m) if garmin_candidate.distance_m is not None else None,
+                    "distance_m": (
+                        float(garmin_candidate.distance_m)
+                        if garmin_candidate.distance_m is not None
+                        else None
+                    ),
                     "avg_hr": garmin_candidate.avg_hr,
                 }
                 if match_activities(strava_dedup_dict, candidate_dict):
                     logger.info(
                         "Strava dedup: skipping %s — Garmin activity %s already exists",
-                        external_activity_id, garmin_candidate.id,
+                        external_activity_id,
+                        garmin_candidate.id,
                     )
                     skip_strava = True
                     break
@@ -891,7 +1003,9 @@ def sync_strava_activities_task(self: Task, athlete_id: str) -> Dict:
                 continue
 
             # Create new activity
-            print(f"DEBUG: Creating new activity {strava_activity_id} - {a.get('name')}")
+            print(
+                f"DEBUG: Creating new activity {strava_activity_id} - {a.get('name')}"
+            )
             # Convert Celsius to Fahrenheit if temperature available
             temp_f = None
             if a.get("average_temp") is not None:
@@ -924,7 +1038,9 @@ def sync_strava_activities_task(self: Task, athlete_id: str) -> Dict:
             try:
                 db.add(activity)
                 db.flush()
-                print(f"DEBUG: Activity {strava_activity_id} created with id={activity.id}")
+                print(
+                    f"DEBUG: Activity {strava_activity_id} created with id={activity.id}"
+                )
             except Exception as e:
                 print(f"ERROR: Failed to create activity {strava_activity_id}: {e}")
                 db.rollback()
@@ -935,7 +1051,12 @@ def sync_strava_activities_task(self: Task, athlete_id: str) -> Dict:
                 if activity_idx > 0:
                     time.sleep(LAP_FETCH_DELAY)
 
-                details = get_activity_details(athlete, int(strava_activity_id), allow_rate_limit_sleep=True) or {}
+                details = (
+                    get_activity_details(
+                        athlete, int(strava_activity_id), allow_rate_limit_sleep=True
+                    )
+                    or {}
+                )
                 mile_splits = _extract_strava_mile_splits_from_details(details)
                 mile_map = {}
                 for ms in mile_splits:
@@ -962,7 +1083,9 @@ def sync_strava_activities_task(self: Task, athlete_id: str) -> Dict:
                                 "average_heartrate": lap.get("average_heartrate"),
                                 "max_heartrate": lap.get("max_heartrate"),
                                 "average_cadence": lap.get("average_cadence"),
-                                "average_grade_adjusted_speed": ms.get("average_grade_adjusted_speed")
+                                "average_grade_adjusted_speed": ms.get(
+                                    "average_grade_adjusted_speed"
+                                )
                                 or lap.get("average_grade_adjusted_speed"),
                                 "total_elevation_gain": lap.get("total_elevation_gain"),
                             }
@@ -976,9 +1099,15 @@ def sync_strava_activities_task(self: Task, athlete_id: str) -> Dict:
                         if not idx:
                             continue
                         try:
-                            if s.get("distance") is not None and float(s.get("distance")) < 50:
+                            if (
+                                s.get("distance") is not None
+                                and float(s.get("distance")) < 50
+                            ):
                                 continue
-                            if s.get("moving_time") is not None and int(s.get("moving_time")) < 10:
+                            if (
+                                s.get("moving_time") is not None
+                                and int(s.get("moving_time")) < 10
+                            ):
                                 continue
                         except Exception:
                             pass
@@ -1004,7 +1133,9 @@ def sync_strava_activities_task(self: Task, athlete_id: str) -> Dict:
                                 distance=s.get("distance"),
                                 elapsed_time=s.get("elapsed_time"),
                                 moving_time=s.get("moving_time"),
-                                average_heartrate=_coerce_int(s.get("average_heartrate")),
+                                average_heartrate=_coerce_int(
+                                    s.get("average_heartrate")
+                                ),
                                 max_heartrate=_coerce_int(s.get("max_heartrate")),
                                 average_cadence=s.get("average_cadence"),
                                 gap_seconds_per_mile=gap_val,
@@ -1017,13 +1148,20 @@ def sync_strava_activities_task(self: Task, athlete_id: str) -> Dict:
                     activity.avg_hr = _coerce_int(details.get("average_heartrate"))
 
                 # Backfill temperature from details if missing
-                if activity.temperature_f is None and details.get("average_temp") is not None:
-                    activity.temperature_f = round(details.get("average_temp") * 9 / 5 + 32, 1)
+                if (
+                    activity.temperature_f is None
+                    and details.get("average_temp") is not None
+                ):
+                    activity.temperature_f = round(
+                        details.get("average_temp") * 9 / 5 + 32, 1
+                    )
 
                 db.flush()
 
             except Exception as e:
-                print(f"Warning: Could not fetch laps for activity {strava_activity_id}: {e}")
+                print(
+                    f"Warning: Could not fetch laps for activity {strava_activity_id}: {e}"
+                )
 
             # Calculate performance metrics
             try:
@@ -1045,6 +1183,7 @@ def sync_strava_activities_task(self: Task, athlete_id: str) -> Dict:
             # This drives the efficiency attribution's same-type comparison.
             try:
                 from services.workout_classifier import WorkoutClassifierService
+
                 classifier = WorkoutClassifierService(db)
                 classification = classifier.classify_activity(activity)
                 activity.workout_type = classification.workout_type.value
@@ -1058,16 +1197,23 @@ def sync_strava_activities_task(self: Task, athlete_id: str) -> Dict:
             # Stamp pre-activity wellness from GarminDay
             try:
                 from services.wellness_stamp import stamp_wellness
+
                 tz_name = getattr(athlete, "timezone", None)
                 stamp_wellness(activity, db, athlete_timezone=tz_name)
             except Exception as e:
-                logger.warning("Wellness stamp failed for strava activity %s — non-fatal: %s", strava_activity_id, e)
+                logger.warning(
+                    "Wellness stamp failed for strava activity %s — non-fatal: %s",
+                    strava_activity_id,
+                    e,
+                )
 
             # Fetch stream data (ADR-063: integrated into sync flow)
             try:
                 _fetch_and_store_stream(activity.id, athlete, db)
             except Exception as e:
-                logger.warning("stream_fetch_error_in_sync activity_id=%s error=%s", activity.id, e)
+                logger.warning(
+                    "stream_fetch_error_in_sync activity_id=%s error=%s", activity.id, e
+                )
 
             synced_new += 1
 
@@ -1115,10 +1261,7 @@ def sync_strava_activities_task(self: Task, athlete_id: str) -> Dict:
         error_msg = f"Error syncing activities: {str(e)}"
         print(f"ERROR: {error_msg}")
         traceback.print_exc()
-        return {
-            "status": "error",
-            "error": error_msg
-        }
+        return {"status": "error", "error": error_msg}
     finally:
         db.close()
 
@@ -1129,31 +1272,39 @@ def _update_shape_heat_paces(activity, heat_adj_pct: float):
     if not shape:
         return
     changed = False
-    for phase in shape.get('phases', []):
-        raw = phase.get('avg_pace_sec_per_mile')
-        if raw and raw > 0 and phase.get('avg_pace_heat_adjusted') is None:
-            phase['avg_pace_heat_adjusted'] = round(raw / (1 + heat_adj_pct), 1)
+    for phase in shape.get("phases", []):
+        raw = phase.get("avg_pace_sec_per_mile")
+        if raw and raw > 0 and phase.get("avg_pace_heat_adjusted") is None:
+            phase["avg_pace_heat_adjusted"] = round(raw / (1 + heat_adj_pct), 1)
             changed = True
-    for accel in shape.get('accelerations', []):
-        raw = accel.get('avg_pace_sec_per_mile')
-        if raw and raw > 0 and accel.get('avg_pace_heat_adjusted') is None:
-            accel['avg_pace_heat_adjusted'] = round(raw / (1 + heat_adj_pct), 1)
+    for accel in shape.get("accelerations", []):
+        raw = accel.get("avg_pace_sec_per_mile")
+        if raw and raw > 0 and accel.get("avg_pace_heat_adjusted") is None:
+            accel["avg_pace_heat_adjusted"] = round(raw / (1 + heat_adj_pct), 1)
             changed = True
     if changed:
         from sqlalchemy.orm.attributes import flag_modified
-        flag_modified(activity, 'run_shape')
+
+        flag_modified(activity, "run_shape")
 
 
 def _resolve_pace_profile(athlete, db):
     """Resolve athlete pace profile: training profile → threshold → RPI."""
     from services.shape_extractor import (
-        PaceProfile, pace_profile_from_training_paces, pace_profile_from_rpi,
+        PaceProfile,
+        pace_profile_from_training_paces,
+        pace_profile_from_rpi,
     )
     from models import AthleteTrainingPaceProfile
 
-    profile_row = db.query(AthleteTrainingPaceProfile).filter(
-        AthleteTrainingPaceProfile.athlete_id == athlete.id,
-    ).order_by(AthleteTrainingPaceProfile.created_at.desc()).first()
+    profile_row = (
+        db.query(AthleteTrainingPaceProfile)
+        .filter(
+            AthleteTrainingPaceProfile.athlete_id == athlete.id,
+        )
+        .order_by(AthleteTrainingPaceProfile.created_at.desc())
+        .first()
+    )
 
     if profile_row and profile_row.paces:
         pp = pace_profile_from_training_paces(profile_row.paces)
@@ -1183,13 +1334,18 @@ def _resolve_pace_profile(athlete, db):
 def _get_median_duration(athlete_id, db) -> Optional[float]:
     """Get 30-day rolling median activity duration for long run detection."""
     from datetime import datetime, timedelta
+
     cutoff = datetime.utcnow() - timedelta(days=30)
-    durations = db.query(Activity.duration_s).filter(
-        Activity.athlete_id == athlete_id,
-        Activity.start_time >= cutoff,
-        Activity.duration_s.isnot(None),
-        Activity.duration_s > 0,
-    ).all()
+    durations = (
+        db.query(Activity.duration_s)
+        .filter(
+            Activity.athlete_id == athlete_id,
+            Activity.start_time >= cutoff,
+            Activity.duration_s.isnot(None),
+            Activity.duration_s > 0,
+        )
+        .all()
+    )
     if len(durations) >= 3:
         vals = sorted([float(d[0]) for d in durations])
         mid = len(vals) // 2
@@ -1240,7 +1396,9 @@ def post_sync_processing_task(self: Task, athlete_id: str) -> Dict:
                 .order_by(sa_desc(Activity.start_time))
                 .first()
             )
-            insights = generate_insights_for_athlete(db, athlete, most_recent, persist=True)
+            insights = generate_insights_for_athlete(
+                db, athlete, most_recent, persist=True
+            )
             insights_generated = len(insights)
             print(f"DEBUG [post-sync] Generated {insights_generated} insights")
         except Exception as e:
@@ -1251,34 +1409,48 @@ def post_sync_processing_task(self: Task, athlete_id: str) -> Dict:
         # (device sensor sets temperature_f but never humidity/dew_point).
         try:
             from services.weather_backfill import enrich_activity_weather
-            needs_weather = db.query(Activity).filter(
-                Activity.athlete_id == athlete.id,
-                Activity.dew_point_f.is_(None),
-                Activity.start_lat.isnot(None),
-                Activity.sport.notin_(["strength", "flexibility"]),
-            ).all()
+
+            needs_weather = (
+                db.query(Activity)
+                .filter(
+                    Activity.athlete_id == athlete.id,
+                    Activity.dew_point_f.is_(None),
+                    Activity.start_lat.isnot(None),
+                    Activity.sport.notin_(["strength", "flexibility"]),
+                )
+                .all()
+            )
             enriched_count = 0
             for act in needs_weather:
                 if enrich_activity_weather(act, db):
                     enriched_count += 1
             if enriched_count:
                 db.flush()
-                print(f"DEBUG [post-sync] Weather enriched {enriched_count}/{len(needs_weather)} activities")
+                print(
+                    f"DEBUG [post-sync] Weather enriched {enriched_count}/{len(needs_weather)} activities"
+                )
         except Exception as e:
             print(f"Warning [post-sync] Weather enrichment failed: {e}")
 
         # 5. Living Fingerprint: extract shape + generate sentence
         try:
             from services.shape_extractor import (
-                extract_shape, generate_shape_sentence, PaceProfile,
-                pace_profile_from_training_paces, pace_profile_from_rpi,
+                extract_shape,
+                generate_shape_sentence,
+                PaceProfile,
+                pace_profile_from_training_paces,
+                pace_profile_from_rpi,
             )
             from models import AthleteTrainingPaceProfile
 
-            acts_needing_shape = db.query(Activity).filter(
-                Activity.athlete_id == athlete.id,
-                Activity.run_shape.is_(None),
-            ).all()
+            acts_needing_shape = (
+                db.query(Activity)
+                .filter(
+                    Activity.athlete_id == athlete.id,
+                    Activity.run_shape.is_(None),
+                )
+                .all()
+            )
 
             if acts_needing_shape:
                 pace_prof = _resolve_pace_profile(athlete, db)
@@ -1287,20 +1459,37 @@ def post_sync_processing_task(self: Task, athlete_id: str) -> Dict:
 
                 shaped = 0
                 for act in acts_needing_shape:
-                    stream = db.query(ActivityStream).filter(
-                        ActivityStream.activity_id == act.id,
-                    ).first()
+                    stream = (
+                        db.query(ActivityStream)
+                        .filter(
+                            ActivityStream.activity_id == act.id,
+                        )
+                        .first()
+                    )
                     if not stream or not stream.stream_data:
                         continue
-                    heat_adj = float(act.heat_adjustment_pct) if act.heat_adjustment_pct else None
-                    shape = extract_shape(stream.stream_data, pace_profile=pace_prof, heat_adjustment_pct=heat_adj, median_duration_s=median_dur)
+                    heat_adj = (
+                        float(act.heat_adjustment_pct)
+                        if act.heat_adjustment_pct
+                        else None
+                    )
+                    shape = extract_shape(
+                        stream.stream_data,
+                        pace_profile=pace_prof,
+                        heat_adjustment_pct=heat_adj,
+                        median_duration_s=median_dur,
+                    )
                     if shape:
                         act.run_shape = shape.to_dict()
                         total_dist = float(act.distance_m) if act.distance_m else 0
                         total_dur = float(act.duration_s or 0)
-                        use_km = getattr(athlete, 'preferred_units', 'imperial') == 'metric'
+                        use_km = (
+                            getattr(athlete, "preferred_units", "imperial") == "metric"
+                        )
                         act.shape_sentence = generate_shape_sentence(
-                            shape, total_dist, total_dur,
+                            shape,
+                            total_dist,
+                            total_dur,
                             pace_profile=pace_prof,
                             median_duration_s=median_dur,
                             use_km=use_km,
@@ -1317,6 +1506,7 @@ def post_sync_processing_task(self: Task, athlete_id: str) -> Dict:
         try:
             from services.race_input_analysis import mine_race_inputs
             from services.finding_persistence import store_all_findings
+
             findings, _gaps = mine_race_inputs(athlete.id, db)
             if findings:
                 totals = store_all_findings(athlete.id, findings, db)
@@ -1348,16 +1538,22 @@ def post_sync_processing_task(self: Task, athlete_id: str) -> Dict:
                     )
                     .all()
                 )
-                campaigns = build_campaigns(athlete.id, inflection_points, confirmed_events, db)
+                campaigns = build_campaigns(
+                    athlete.id, inflection_points, confirmed_events, db
+                )
                 if campaigns:
                     updated = store_campaign_data_on_events(athlete.id, campaigns, db)
                     db.commit()
                     logger.info(
                         "Campaign detection [post-sync] for %s: %d campaigns, %d events updated",
-                        athlete.id, len(campaigns), updated,
+                        athlete.id,
+                        len(campaigns),
+                        updated,
                     )
         except Exception as e:
-            logger.error("Campaign detection [post-sync] failed for %s: %s", athlete.id, e)
+            logger.error(
+                "Campaign detection [post-sync] failed for %s: %s", athlete.id, e
+            )
             try:
                 db.rollback()
             except Exception:
@@ -1401,7 +1597,9 @@ def post_sync_processing_task(self: Task, athlete_id: str) -> Dict:
 
 
 @celery_app.task(name="tasks.backfill_strava_activity_index", bind=True)
-def backfill_strava_activity_index_task(self: Task, athlete_id: str, pages: int = 5) -> Dict:
+def backfill_strava_activity_index_task(
+    self: Task, athlete_id: str, pages: int = 5
+) -> Dict:
     """
     Backfill the Strava activity index (Activity rows) using paged /athlete/activities.
 
@@ -1494,7 +1692,9 @@ def backfill_strava_activity_index_task(self: Task, athlete_id: str, pages: int 
         try:
             athlete = db.get(Athlete, athlete_id)
             if athlete:
-                mark_index_error(db, athlete.id, "strava", error=str(e), task_id=str(self.request.id))
+                mark_index_error(
+                    db, athlete.id, "strava", error=str(e), task_id=str(self.request.id)
+                )
                 db.commit()
         except Exception:
             db.rollback()
@@ -1508,42 +1708,82 @@ def backfill_strava_activity_index_task(self: Task, athlete_id: str, pages: int 
 # Stream Backfill + Stale Cleanup (ADR-063)
 # ===========================================================================
 
-@celery_app.task(name="tasks.backfill_strava_streams", bind=True)
-def backfill_strava_streams_task(self: Task, athlete_id: str, batch_size: int = 50) -> Dict:
+
+def _discover_strava_athletes_pending_stream_backfill(
+    db: Session, limit: int
+) -> List[str]:
     """
-    Backfill stream data for existing Strava activities (ADR-063 Decision 5).
-
-    Processes activities in oldest-first order. Respects the global rate budget.
-    When Redis is down, exits immediately (streams disabled per ADR-063).
-
-    Args:
-        athlete_id: UUID string of the athlete to backfill
-        batch_size: Max activities per invocation (default 50)
+    Athletes with Strava connected and at least one activity eligible for stream backfill.
+    Ordered by most recent eligible activity first (athletes viewing recent runs get priority).
     """
-    from core.cache import get_redis_client
+    rows = db.execute(
+        text("""
+            SELECT sub.athlete_id::text
+            FROM (
+                SELECT athlete_id, MAX(start_time) AS mx
+                FROM activity
+                WHERE provider = 'strava'
+                  AND external_activity_id IS NOT NULL
+                  AND (
+                    stream_fetch_status = 'pending'
+                    OR (stream_fetch_status = 'failed' AND stream_fetch_retry_count < 3)
+                    OR (stream_fetch_status = 'deferred' AND stream_fetch_deferred_until < NOW())
+                  )
+                GROUP BY athlete_id
+            ) sub
+            INNER JOIN athlete a ON a.id = sub.athlete_id
+            WHERE a.strava_access_token IS NOT NULL
+            ORDER BY sub.mx DESC
+            LIMIT :lim
+            """),
+        {"lim": limit},
+    ).fetchall()
+    return [r[0] for r in rows]
 
-    db: Session = get_db_sync()
+
+def _run_backfill_strava_streams_for_athlete(
+    athlete_id: str,
+    batch_size: int,
+    redis_client,
+    db: Session,
+) -> Dict:
+    """
+    Loop batches until global read budget is low, deferred, or no eligible rows remain.
+    """
+    athlete = db.get(Athlete, athlete_id)
+    if not athlete:
+        return {"status": "error", "error": f"Athlete {athlete_id} not found"}
+    if not athlete.strava_access_token:
+        return {"status": "error", "error": "No Strava connection"}
+
+    lock_key = f"strava:stream_backfill:{athlete_id}"
+    lock_acquired = redis_client.set(lock_key, "1", nx=True, ex=1200)
+    if not lock_acquired:
+        return {"status": "skipped", "reason": "backfill_already_running"}
+
+    processed = 0
+    success_count = 0
+    failed_count = 0
+    deferred_count = 0
+    unavailable_count = 0
+    batches = 0
+
     try:
-        athlete = db.get(Athlete, athlete_id)
-        if not athlete:
-            return {"status": "error", "error": f"Athlete {athlete_id} not found"}
-        if not athlete.strava_access_token:
-            return {"status": "error", "error": "No Strava connection"}
+        while True:
+            remaining = get_strava_read_budget_remaining()
+            if remaining is None:
+                logger.info(
+                    "stream_backfill_redis_died_mid_batch athlete_id=%s", athlete_id
+                )
+                break
+            if remaining < 20:
+                logger.info(
+                    "stream_backfill_yield_threshold remaining=%s athlete_id=%s",
+                    remaining,
+                    athlete_id,
+                )
+                break
 
-        # Redis-down guard: streams disabled entirely (ADR-063)
-        redis_client = get_redis_client()
-        if not redis_client:
-            logger.info("stream_backfill_skipped_no_redis athlete_id=%s", athlete_id)
-            return {"status": "skipped", "reason": "redis_unavailable"}
-
-        # Batch lock (ADR-063 Decision 5): 20min TTL, per-athlete
-        lock_key = f"strava:stream_backfill:{athlete_id}"
-        lock_acquired = redis_client.set(lock_key, "1", nx=True, ex=1200)
-        if not lock_acquired:
-            return {"status": "skipped", "reason": "backfill_already_running"}
-
-        try:
-            # ADR-063 Decision 5: FOR UPDATE SKIP LOCKED for concurrent worker safety
             rows = db.execute(
                 text("""
                     SELECT id, external_activity_id
@@ -1556,41 +1796,56 @@ def backfill_strava_streams_task(self: Task, athlete_id: str, batch_size: int = 
                         OR (stream_fetch_status = 'failed' AND stream_fetch_retry_count < 3)
                         OR (stream_fetch_status = 'deferred' AND stream_fetch_deferred_until < NOW())
                       )
-                    ORDER BY start_time ASC
+                    ORDER BY
+                      CASE
+                        WHEN COALESCE(user_verified_race, false)
+                          OR COALESCE(is_race_candidate, false) THEN 0
+                        ELSE 1
+                      END,
+                      start_time DESC
                     LIMIT :batch_size
                     FOR UPDATE SKIP LOCKED
-                """),
+                    """),
                 {"athlete_id": str(athlete_id), "batch_size": batch_size},
             ).fetchall()
 
             if not rows:
-                return {"status": "success", "processed": 0, "message": "no eligible activities"}
+                if batches == 0:
+                    return {
+                        "status": "success",
+                        "athlete_id": athlete_id,
+                        "processed": 0,
+                        "message": "no eligible activities",
+                        "success": 0,
+                        "failed": 0,
+                        "deferred": 0,
+                        "unavailable": 0,
+                        "batches": 0,
+                    }
+                break
 
-            processed = 0
-            success_count = 0
-            failed_count = 0
-            deferred_count = 0
-            unavailable_count = 0
+            batches += 1
+            stop_batches = False
 
             for row in rows:
                 activity_id = row[0]
 
-                # --- ADR-063 yield threshold: pause if budget < 20 ---
                 remaining = get_strava_read_budget_remaining()
                 if remaining is None:
-                    # Redis died mid-batch — exit immediately (streams disabled)
-                    logger.info("stream_backfill_redis_died_mid_batch athlete_id=%s", athlete_id)
+                    logger.info(
+                        "stream_backfill_redis_died_mid_batch athlete_id=%s", athlete_id
+                    )
+                    stop_batches = True
                     break
                 if remaining < 20:
-                    # Yield to live sync (higher priority) — stop backfill
                     logger.info(
                         "stream_backfill_yield_threshold remaining=%s athlete_id=%s",
-                        remaining, athlete_id,
+                        remaining,
+                        athlete_id,
                     )
+                    stop_batches = True
                     break
 
-                # Budget is consumed inside get_activity_streams() — single source of truth.
-                # _fetch_and_store_stream() returns "deferred" if budget is actually exhausted.
                 fetch_result = _fetch_and_store_stream(activity_id, athlete, db)
                 processed += 1
 
@@ -1600,13 +1855,11 @@ def backfill_strava_streams_task(self: Task, athlete_id: str, batch_size: int = 
                     failed_count += 1
                 elif fetch_result == "deferred":
                     deferred_count += 1
-                    # Deferred = rate limited or Redis down — stop batch
+                    stop_batches = True
                     break
                 elif fetch_result == "unavailable":
                     unavailable_count += 1
 
-                # --- ADR-063 pacing: even distribution across the window ---
-                # Formula: max(1.0, window_seconds_remaining / budget_remaining)
                 budget_now = get_strava_read_budget_remaining()
                 if budget_now and budget_now > 0:
                     window_seconds_remaining = 900 - (int(time.time()) % 900)
@@ -1615,20 +1868,99 @@ def backfill_strava_streams_task(self: Task, athlete_id: str, batch_size: int = 
                     pace_delay = 1.0
                 time.sleep(pace_delay)
 
+            if stop_batches:
+                break
+            if len(rows) < batch_size:
+                break
+    finally:
+        try:
+            redis_client.delete(lock_key)
+        except Exception:
+            pass
+
+    return {
+        "status": "success",
+        "athlete_id": athlete_id,
+        "processed": processed,
+        "success": success_count,
+        "failed": failed_count,
+        "deferred": deferred_count,
+        "unavailable": unavailable_count,
+        "batches": batches,
+    }
+
+
+@celery_app.task(name="tasks.backfill_strava_streams", bind=True)
+def backfill_strava_streams_task(
+    self: Task, athlete_id: Optional[str] = None, batch_size: int = 10
+) -> Dict:
+    """
+    Backfill stream data for existing Strava activities (ADR-063 Decision 5).
+
+    Processes multiple batches per invocation until the global read budget is nearly
+    exhausted (<20 remaining) or work is done. Eligible rows are ordered by race
+    signals first, then most recent start_time (athletes review recent runs first).
+
+    When ``athlete_id`` is None (Celery beat), discovers athletes with pending stream
+    work and processes each until budget yields.
+
+    When Redis is down, exits immediately (streams disabled per ADR-063).
+
+    Args:
+        athlete_id: UUID string of the athlete to backfill, or None for beat sweep
+        batch_size: Max activities per batch (default 10)
+    """
+    from core.cache import get_redis_client
+
+    redis_client = get_redis_client()
+    if not redis_client:
+        logger.info("stream_backfill_skipped_no_redis athlete_id=%s", athlete_id)
+        return {"status": "skipped", "reason": "redis_unavailable"}
+
+    db: Session = get_db_sync()
+    try:
+        if athlete_id is None:
+            candidates = _discover_strava_athletes_pending_stream_backfill(db, limit=25)
+            if not candidates:
+                return {
+                    "status": "success",
+                    "mode": "beat_sweep",
+                    "processed_athletes": 0,
+                    "message": "no athletes with pending stream work",
+                }
+
+            results = []
+            stopped = "completed"
+            for aid in candidates:
+                rem = get_strava_read_budget_remaining()
+                if rem is None or rem < 20:
+                    logger.info(
+                        "stream_backfill_beat_yield_before_next_athlete remaining=%s",
+                        rem,
+                    )
+                    stopped = "budget"
+                    break
+                one = _run_backfill_strava_streams_for_athlete(
+                    aid, batch_size, redis_client, db
+                )
+                results.append(one)
+                if one.get("status") == "error":
+                    continue
+                if one.get("deferred", 0) > 0:
+                    stopped = "deferred"
+                    break
+
             return {
                 "status": "success",
-                "athlete_id": athlete_id,
-                "processed": processed,
-                "success": success_count,
-                "failed": failed_count,
-                "deferred": deferred_count,
-                "unavailable": unavailable_count,
+                "mode": "beat_sweep",
+                "processed_athletes": len(results),
+                "stopped_reason": stopped,
+                "results": results,
             }
-        finally:
-            try:
-                redis_client.delete(lock_key)
-            except Exception:
-                pass
+
+        return _run_backfill_strava_streams_for_athlete(
+            athlete_id, batch_size, redis_client, db
+        )
 
     except Exception as e:
         db.rollback()
@@ -1650,8 +1982,7 @@ def cleanup_stale_stream_fetches_task() -> Dict:
     """
     db: Session = get_db_sync()
     try:
-        result = db.execute(
-            text("""
+        result = db.execute(text("""
                 UPDATE activity
                 SET stream_fetch_status = 'failed',
                     stream_fetch_error = 'fetching_timeout_cleanup',
@@ -1659,8 +1990,7 @@ def cleanup_stale_stream_fetches_task() -> Dict:
                 WHERE stream_fetch_status = 'fetching'
                   AND stream_fetch_attempted_at < NOW() - INTERVAL '10 minutes'
                 RETURNING id
-            """)
-        )
+            """))
         count = result.rowcount
         db.commit()
 
@@ -1674,4 +2004,3 @@ def cleanup_stale_stream_fetches_task() -> Dict:
         return {"status": "error", "error": str(e)}
     finally:
         db.close()
-
