@@ -744,6 +744,7 @@ def get_calendar(
     activities_by_date = {}
     activities = db.query(Activity).filter(
         Activity.athlete_id == current_user.id,
+        Activity.is_duplicate == False,  # noqa: E712
         func.date(Activity.start_time) >= start_date,
         func.date(Activity.start_time) <= end_date
     ).order_by(Activity.start_time).all()
@@ -905,6 +906,7 @@ def get_calendar_day(
     # Get activities for this day
     activities = db.query(Activity).filter(
         Activity.athlete_id == current_user.id,
+        Activity.is_duplicate == False,  # noqa: E712
         func.date(Activity.start_time) == calendar_date
     ).order_by(Activity.start_time).all()
     activities = dedupe_activities_for_calendar_display(activities)
@@ -1336,6 +1338,7 @@ def _build_coach_context(
         
         activities = db.query(Activity).filter(
             Activity.athlete_id == athlete.id,
+            Activity.is_duplicate == False,  # noqa: E712
             func.date(Activity.start_time) == context_date
         ).all()
         
@@ -1361,7 +1364,8 @@ def _build_coach_context(
     
     # Get recent workouts for context
     recent = db.query(Activity).filter(
-        Activity.athlete_id == athlete.id
+        Activity.athlete_id == athlete.id,
+        Activity.is_duplicate == False,  # noqa: E712
     ).order_by(Activity.start_time.desc()).limit(7).all()
     
     context["recent_workouts"] = [
@@ -1425,6 +1429,7 @@ def get_calendar_week(
     # Get activities for the week
     activities = db.query(Activity).filter(
         Activity.athlete_id == current_user.id,
+        Activity.is_duplicate == False,  # noqa: E712
         func.date(Activity.start_time) >= start_date,
         func.date(Activity.start_time) <= end_date
     ).all()
