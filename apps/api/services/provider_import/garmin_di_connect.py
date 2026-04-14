@@ -216,6 +216,18 @@ def _matches_existing_time_distance(
     return False
 
 
+def _garmin_activity_id_exists(db: Session, athlete_id: UUID, garmin_native_id: int) -> bool:
+    """
+    Check if an Activity with this garmin_activity_id already exists.
+    Catches the case where the webhook stored the activity with summaryId
+    as external_activity_id but garmin_activity_id holds the native ID.
+    """
+    return db.query(Activity.id).filter(
+        Activity.athlete_id == athlete_id,
+        Activity.garmin_activity_id == garmin_native_id,
+    ).first() is not None
+
+
 def import_garmin_di_connect_summaries(
     db: Session,
     *,
@@ -248,6 +260,11 @@ def import_garmin_di_connect_summaries(
                 continue
 
             if external_id_str in idx.garmin_external_ids:
+                already_present += 1
+                continue
+
+            garmin_native_id = int(external_id) if isinstance(external_id, (int, float)) else None
+            if garmin_native_id and _garmin_activity_id_exists(db, athlete_id, garmin_native_id):
                 already_present += 1
                 continue
 

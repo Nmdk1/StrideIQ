@@ -11,6 +11,7 @@ fetch per-activity details (cheap + rate-limit friendly).
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Dict, Any, List
@@ -18,6 +19,9 @@ from typing import Dict, Any, List
 from sqlalchemy.orm import Session
 
 from models import Athlete, Activity
+from services.activity_deduplication import match_activities
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -66,6 +70,18 @@ def upsert_strava_activity_summaries(athlete: Athlete, db: Session, summaries: L
         start_time = datetime.fromisoformat(start_time_str.replace("Z", "+00:00"))
 
         distance = a.get("distance")
+
+        cross_provider_match = _find_cross_provider_match(
+            db, athlete.id, start_time, distance, a.get("average_heartrate"),
+        )
+        if cross_provider_match:
+            logger.info(
+                "Strava index dedup: skipping %s, matches existing %s",
+                external_activity_id, cross_provider_match.id,
+            )
+            already += 1
+            continue
+
         moving_time = a.get("moving_time")
         avg_speed = a.get("average_speed")
         name = a.get("name")
@@ -97,4 +113,47 @@ def upsert_strava_activity_summaries(athlete: Athlete, db: Session, summaries: L
         created += 1
 
     return IndexUpsertResult(created=created, already_present=already, skipped_non_runs=skipped)
+
+
+def _find_cross_provider_match(
+    db: Session,
+    athlete_id,
+    start_time: datetime,
+    distance_m,
+    avg_hr,
+):
+    """
+    Check if any existing activity from another provider matches this
+    Strava activity by time/distance/HR.
+    """
+    from datetime import timedelta
+
+    window = timedelta(hours=8)
+    candidates = (
+        db.query(Activity)
+        .filter(
+            Activity.athlete_id == athlete_id,
+            Activity.provider != "strava",
+            Activity.start_time >= start_time - window,
+            Activity.start_time <= start_time + window,
+        )
+        .all()
+    )
+
+    strava_dict = {
+        "start_time": start_time,
+        "distance_m": float(distance_m) if distance_m else None,
+        "avg_hr": int(avg_hr) if avg_hr else None,
+    }
+
+    for candidate in candidates:
+        candidate_dict = {
+            "start_time": candidate.start_time,
+            "distance_m": float(candidate.distance_m) if candidate.distance_m else None,
+            "avg_hr": int(candidate.avg_hr) if candidate.avg_hr else None,
+        }
+        if match_activities(strava_dict, candidate_dict):
+            return candidate
+
+    return None
 

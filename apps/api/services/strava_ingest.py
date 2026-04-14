@@ -11,6 +11,7 @@ This is used for "surgical fixes" and for production backstops when an activity 
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Optional, Dict, Any
@@ -20,6 +21,9 @@ from sqlalchemy.orm import Session
 from models import Athlete, Activity
 from services.strava_service import get_activity_details
 from services.best_effort_service import extract_best_efforts_from_activity, regenerate_personal_bests
+from services.strava_index import _find_cross_provider_match
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -74,34 +78,45 @@ def ingest_strava_activity_by_id(
 
     created = False
     if not act:
-        latlng = details.get("start_latlng") or []
-        act = Activity(
-            athlete_id=athlete.id,
-            start_time=start_time,
-            provider="strava",
-            external_activity_id=str(strava_activity_id),
-            sport="run",
-            source="strava",
-            name=name,
-            distance_m=int(round(distance_m)) if distance_m else None,
-            duration_s=int(moving_time or elapsed_time) if (moving_time or elapsed_time) else None,
-            average_speed=avg_speed,
-            start_lat=latlng[0] if len(latlng) >= 2 else None,
-            start_lng=latlng[1] if len(latlng) >= 2 else None,
+        cross_match = _find_cross_provider_match(
+            db, athlete.id, start_time, distance_m,
+            details.get("average_heartrate"),
         )
-        db.add(act)
-        db.commit()
-        db.refresh(act)
-        try:
-            from services.wellness_stamp import stamp_wellness
-            tz_name = getattr(athlete, "timezone", None)
-            if stamp_wellness(act, db, athlete_timezone=tz_name):
-                db.commit()
-        except Exception:
-            pass
-        from core.cache import invalidate_athlete_cache
-        invalidate_athlete_cache(str(athlete.id))
-        created = True
+        if cross_match:
+            logger.info(
+                "Strava ingest dedup: skipping %s, matches existing %s",
+                strava_activity_id, cross_match.id,
+            )
+            act = cross_match
+        else:
+            latlng = details.get("start_latlng") or []
+            act = Activity(
+                athlete_id=athlete.id,
+                start_time=start_time,
+                provider="strava",
+                external_activity_id=str(strava_activity_id),
+                sport="run",
+                source="strava",
+                name=name,
+                distance_m=int(round(distance_m)) if distance_m else None,
+                duration_s=int(moving_time or elapsed_time) if (moving_time or elapsed_time) else None,
+                average_speed=avg_speed,
+                start_lat=latlng[0] if len(latlng) >= 2 else None,
+                start_lng=latlng[1] if len(latlng) >= 2 else None,
+            )
+            db.add(act)
+            db.commit()
+            db.refresh(act)
+            try:
+                from services.wellness_stamp import stamp_wellness
+                tz_name = getattr(athlete, "timezone", None)
+                if stamp_wellness(act, db, athlete_timezone=tz_name):
+                    db.commit()
+            except Exception:
+                pass
+            from core.cache import invalidate_athlete_cache
+            invalidate_athlete_cache(str(athlete.id))
+            created = True
     else:
         # Opportunistic field refresh for missing data (do not override user edits)
         if not act.name and name:
