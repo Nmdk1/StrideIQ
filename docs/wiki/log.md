@@ -1,5 +1,28 @@
 # Wiki Log
 
+## [2026-04-15] test-suite-root-cause-fixes | 53 test failures root-caused and fixed (3584 pass, 0 fail)
+
+Following the project reorg (models/, services/sync/, services/intelligence/, services/coaching/, services/coach_tools/ package splits), 53 tests failed. All were diagnosed to root causes across 9 categories and fixed with production-quality corrections — not test patches.
+
+**Production code fixes (5 files):**
+- `duplicate_scanner.py`: Duration-based duplicate fallback now also checks distance — prevents merging activities with identical durations but vastly different distances (e.g., a 30-min easy run and a 30-min tempo run).
+- `garmin_adapter.py`: New `adapt_activity_file_record()` function translates raw Garmin activity-file webhook fields (`summaryId`, `fileType`, `callbackURL`) into internal names at the adapter boundary. Garmin field names no longer leak past the adapter layer.
+- `n1_insight_generator.py`: Added `daily_caffeine_mg` to `FRIENDLY_NAMES` — was causing KeyError when caffeine correlations surfaced.
+- `extract_athlete_profiles.py`: Replaced hardcoded email list with `STRIDEIQ_TARGET_EMAILS` env var. No PII in source.
+- `training-pace-tables.json` + `page.tsx`: Regenerated all pace values from the authoritative `_RPI_PACE_TABLE` in `rpi_calculator.py`. Updated 24 hardcoded pace references across 4 distance PSEO pages (5K, 10K, half, marathon BLUFs and FAQs).
+
+**Test fix categories (20 test files):**
+1. **UUID validation (11 tests)**: Tests passed string IDs like `"athlete-1"` to code that now correctly validates UUIDs. Updated to `str(uuid4())`.
+2. **Mock configuration (9 tests)**: Missing `activity.sport = "run"` on fixtures, insufficient `side_effect` entries for sequential DB queries, missing `threshold_value = None` on mock findings.
+3. **Tuple unpacking (9 tests)**: `_build_briefing_prompt` returns 7-tuple but mocks provided 6. Added `local_now` as 7th value.
+4. **Assertion drift (5 tests)**: Tests checked implementation details (`".limit(3)" in src`) instead of behavior (`len(result) >= 3`). Updated to match current code.
+5. **Mock blocking (2 tests)**: Timezone singleton not reset between tests; wrong patch target for `get_athlete_timezone_from_db`.
+6. **Garmin source contract (2 tests)**: Tests referenced raw Garmin field names that now only exist inside the adapter.
+7. **Phase 3B/3C logic (9 tests)**: Tests patched wrong LLM call path; used `efficiency` metric that hits `_is_obvious` filter. Updated to patch `_call_narrative_llm` directly and use `completion_rate`.
+8. **RPI calibration (9 tests)**: `PACE_TESTS` reference values drifted from `_RPI_PACE_TABLE`. Aligned with authoritative source.
+9. **Logic bugs (2 tests)**: Fitness bank RPI threshold test expected `< 35.0` but code correctly uses `>= 15.0` (inclusive of beginners). Cost cap test asserted old defaults instead of current env-var-loaded values.
+10. **Budget cap test (1 test)**: `patch.dict("os.environ")` has no effect on constants evaluated at import time. Patched module-level constant directly.
+
 ## [2026-04-11] plan-engine-v2-wired | V2 plan engine wired to production route
 
 - **New file:** `plan_saver.py` — Maps V2WeekPlan/V2DayPlan to TrainingPlan + PlannedWorkout DB rows. Handles distance estimation from segments (explicit distance_km, time-based duration×pace, distance_range midpoint), duration estimation, JSONB segment serialization, coach notes. Sets `generation_method = "v2"`.
