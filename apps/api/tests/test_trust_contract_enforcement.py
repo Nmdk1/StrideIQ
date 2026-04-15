@@ -164,8 +164,8 @@ class TestCoachToolsEfficiencyNeutral:
     def test_zone_narrative_has_no_directional_claim(self):
         """The ez_narrative in get_efficiency_by_zone must not claim 'lower = better'."""
         import inspect
-        import services.coach_tools as ct
-        source = inspect.getsource(ct)
+        from services.coach_tools import get_efficiency_by_zone
+        source = inspect.getsource(get_efficiency_by_zone)
 
         assert "Lower = faster at same HR = better" not in source, (
             "Old directional claim still in coach_tools zone narrative"
