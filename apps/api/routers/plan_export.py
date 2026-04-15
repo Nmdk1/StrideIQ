@@ -86,7 +86,8 @@ def export_plan_pdf(
         raise HTTPException(status_code=500, detail="Failed to generate PDF.")
 
     safe_name = sanitize_pdf_filename(plan.name or "training_plan")
-    filename = f"{safe_name}_{date.today().strftime('%Y%m%d')}.pdf"
+    from services.timezone_utils import get_athlete_timezone, athlete_local_today
+    filename = f"{safe_name}_{athlete_local_today(get_athlete_timezone(current_user)).strftime('%Y%m%d')}.pdf"
 
     logger.info(
         "PDF export: user=%s plan=%s bytes=%d",

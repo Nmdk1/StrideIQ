@@ -23,6 +23,7 @@ from sqlalchemy.orm import Session
 from core.database import get_db
 from models import Athlete, Activity, DailyCheckin, CorrelationFinding, TrainingPlan, PerformanceEvent
 from services.n1_insight_generator import friendly_signal_name
+from services.timezone_utils import get_athlete_timezone, get_athlete_timezone_from_db, athlete_local_today
 from routers.auth import get_current_user
 from core.cache import get_cache, set_cache as _set_cache
 
@@ -600,10 +601,12 @@ async def get_progress_summary(
             .filter(TrainingPlan.athlete_id == athlete_id, TrainingPlan.status == "active")
             .first()
         )
-        if plan and plan.goal_race_date and plan.goal_race_date >= date.today():
+        _tz = get_athlete_timezone_from_db(db, athlete_id)
+        _lt = athlete_local_today(_tz)
+        if plan and plan.goal_race_date and plan.goal_race_date >= _lt:
             result.goal_race_name = plan.goal_race_name or plan.name
             result.goal_race_date = plan.goal_race_date.isoformat()
-            result.goal_race_days_remaining = (plan.goal_race_date - date.today()).days
+            result.goal_race_days_remaining = (plan.goal_race_date - _lt).days
             if plan.goal_time_seconds:
                 h = plan.goal_time_seconds // 3600
                 m = (plan.goal_time_seconds % 3600) // 60
@@ -1514,9 +1517,10 @@ def _assemble_looking_ahead(db: Session, athlete_id: UUID) -> LookingAheadRespon
             .first()
         )
 
-        if plan and plan.goal_race_date and plan.goal_race_date >= date.today():
-            # Race variant
-            days_remaining = (plan.goal_race_date - date.today()).days
+        _tz = get_athlete_timezone_from_db(db, athlete_id)
+        _lt = athlete_local_today(_tz)
+        if plan and plan.goal_race_date and plan.goal_race_date >= _lt:
+            days_remaining = (plan.goal_race_date - _lt).days
             race_name = plan.goal_race_name or plan.name or "Goal Race"
 
             # Get readiness score
@@ -2088,7 +2092,8 @@ def _assemble_knowledge(athlete_id, db: Session) -> KnowledgeResponse:
         TrainingPlan.status == "active",
     ).first()
 
-    today = date.today()
+    _tz = get_athlete_timezone_from_db(db, athlete_id)
+    today = athlete_local_today(_tz)
     day_name = today.strftime("%A")
     date_str = today.strftime("%b %-d") if os.name != "nt" else today.strftime("%b %d").replace(" 0", " ")
 

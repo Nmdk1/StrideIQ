@@ -23,6 +23,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy.orm import Session
+from services.timezone_utils import get_athlete_timezone, athlete_local_today
 
 from core.database import get_db
 from core.auth import get_current_user, require_tier
@@ -112,7 +113,8 @@ def get_today_intelligence(
     morning intelligence task.  If no insights exist yet (task hasn't run),
     returns empty.  The calendar card uses this to display daily intelligence.
     """
-    return _get_intelligence_for_date(current_user.id, date.today(), db)
+    local_today = athlete_local_today(get_athlete_timezone(current_user))
+    return _get_intelligence_for_date(current_user.id, local_today, db)
 
 
 @router.get("/{target_date}", response_model=DailyIntelligenceResponse)
@@ -127,8 +129,8 @@ def get_intelligence_for_date(
     Requires an active paid subscription. Useful for reviewing past days' insights
     in the calendar view.
     """
-    # Don't allow future dates
-    if target_date > date.today():
+    local_today = athlete_local_today(get_athlete_timezone(current_user))
+    if target_date > local_today:
         raise HTTPException(status_code=400, detail="Cannot get intelligence for future dates")
 
     return _get_intelligence_for_date(current_user.id, target_date, db)
@@ -152,7 +154,7 @@ def compute_intelligence_now(
     from services.readiness_score import ReadinessScoreCalculator
     from services.daily_intelligence import DailyIntelligenceEngine
 
-    today = date.today()
+    today = athlete_local_today(get_athlete_timezone(current_user))
 
     try:
         # Compute readiness
@@ -202,7 +204,7 @@ def get_recent_intelligence(
     analysis on the frontend.
     """
     results = []
-    today = date.today()
+    today = athlete_local_today(get_athlete_timezone(current_user))
     for i in range(days):
         d = today - timedelta(days=i)
         results.append(_get_intelligence_for_date(current_user.id, d, db))
@@ -224,7 +226,7 @@ def get_narration_quality(
     - Phase 3B gate check (90% for 4 weeks)
     - Identifying which criterion is weakest
     """
-    today = date.today()
+    today = athlete_local_today(get_athlete_timezone(current_user))
     window_start = today - timedelta(days=days)
 
     narrations = (
@@ -539,7 +541,7 @@ def founder_review_narratives(
     from sqlalchemy import desc as _desc
     from models import NarrationLog as _NarrationLog
 
-    cutoff = date.today() - timedelta(days=days)
+    cutoff = athlete_local_today(get_athlete_timezone(current_user)) - timedelta(days=days)
     q = db.query(_NarrationLog).filter(
         _NarrationLog.rule_id == "WORKOUT_NARRATIVE",
         _NarrationLog.trigger_date >= cutoff,

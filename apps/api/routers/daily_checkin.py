@@ -17,6 +17,7 @@ from uuid import UUID
 from core.database import get_db
 from core.auth import get_current_user
 from models import Athlete, DailyCheckin
+from services.timezone_utils import get_athlete_timezone, athlete_local_today
 
 logger = logging.getLogger(__name__)
 
@@ -130,7 +131,7 @@ async def get_today_checkin(
     """
     Get today's check-in if it exists.
     """
-    today = date.today()
+    today = athlete_local_today(get_athlete_timezone(current_user))
     checkin = db.query(DailyCheckin).filter(
         DailyCheckin.athlete_id == current_user.id,
         DailyCheckin.date == today

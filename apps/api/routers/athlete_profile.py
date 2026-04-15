@@ -18,6 +18,7 @@ from core.auth import get_current_athlete
 from models import Athlete, DailyCheckin
 from services.runner_typing import classify_runner_type, update_athlete_runner_type
 from services.consistency_streaks import calculate_streak, update_athlete_streak
+from services.timezone_utils import get_athlete_timezone, athlete_local_today
 
 router = APIRouter(prefix="/v1/athlete-profile", tags=["Athlete Profile"])
 
@@ -134,7 +135,7 @@ async def get_mindset_summary(
     """
     from datetime import timedelta
     
-    cutoff = date.today() - timedelta(days=days)
+    cutoff = athlete_local_today(get_athlete_timezone(athlete)) - timedelta(days=days)
     
     checkins = db.query(DailyCheckin).filter(
         DailyCheckin.athlete_id == athlete.id,
@@ -240,7 +241,7 @@ async def get_profile_summary(
     
     # Mindset (reuse the endpoint logic)
     from datetime import timedelta
-    cutoff = date.today() - timedelta(days=30)
+    cutoff = athlete_local_today(get_athlete_timezone(athlete)) - timedelta(days=30)
     checkins = db.query(DailyCheckin).filter(
         DailyCheckin.athlete_id == athlete.id,
         DailyCheckin.date >= cutoff

@@ -120,7 +120,9 @@ def _build_briefing_prompt(athlete_id: str, db: Session) -> Optional[tuple]:
     """
     from models import Activity, DailyCheckin, PlannedWorkout, TrainingPlan
 
-    today = date.today()
+    from services.timezone_utils import get_athlete_timezone_from_db, athlete_local_today
+    tz = get_athlete_timezone_from_db(db, UUID(athlete_id))
+    today = athlete_local_today(tz)
 
     try:
         active_plan = (
@@ -283,7 +285,7 @@ def _build_briefing_prompt(athlete_id: str, db: Session) -> Optional[tuple]:
             )
             return None  # Sentinel: already cached, normal skip
 
-        _, prompt, schema_fields, required_fields, _, garmin_sleep_h = prep
+        _, prompt, schema_fields, required_fields, _, garmin_sleep_h, _local_today = prep
         if garmin_sleep_h is not None:
             if checkin_data_dict is None:
                 checkin_data_dict = {}

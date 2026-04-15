@@ -22,6 +22,7 @@ from sqlalchemy.orm import Session
 from core.auth import get_current_user
 from core.cache import invalidate_athlete_cache, invalidate_correlation_cache
 from core.database import get_db
+from services.timezone_utils import get_athlete_timezone, athlete_local_today, to_athlete_local_date
 from models import (
     Activity,
     Athlete,
@@ -209,7 +210,7 @@ def get_daily_target(
     db: Session = Depends(get_db),
 ):
     from datetime import date as date_type
-    td = date_type.fromisoformat(target_date) if target_date else date.today()
+    td = date_type.fromisoformat(target_date) if target_date else athlete_local_today(get_athlete_timezone(current_user))
 
     targets = compute_daily_targets(db, current_user.id, td)
     if not targets:
@@ -268,7 +269,7 @@ def parse_nutrition(
 
     return NutritionEntryCreate(
         athlete_id=current_user.id,
-        date=date.today(),
+        date=athlete_local_today(get_athlete_timezone(current_user)),
         entry_type="daily",
         calories=parsed.get("calories"),
         protein_g=parsed.get("protein_g"),
@@ -513,7 +514,7 @@ def log_fueling(
     qty = payload.quantity or 1.0
     entry = NutritionEntry(
         athlete_id=current_user.id,
-        date=date.today(),
+        date=athlete_local_today(get_athlete_timezone(current_user)),
         entry_type=payload.entry_type,
         activity_id=payload.activity_id,
         calories=Decimal(str((product.calories or 0) * qty)),
@@ -575,7 +576,7 @@ def get_nutrition_summary(
     current_user: Athlete = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    end = date.today()
+    end = athlete_local_today(get_athlete_timezone(current_user))
     start = end - timedelta(days=days - 1)
 
     entries = (
@@ -648,7 +649,8 @@ def get_activity_linked_nutrition(
     current_user: Athlete = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    cutoff = date.today() - timedelta(days=days)
+    _tz = get_athlete_timezone(current_user)
+    cutoff = athlete_local_today(_tz) - timedelta(days=days)
     M_PER_MI = 1609.344
 
     linked_entries = (
@@ -698,7 +700,7 @@ def get_activity_linked_nutrition(
         result.append(_ActivityNutrition(
             activity_id=str(act.id),
             activity_name=act.name or "Run",
-            activity_date=act.start_time.date().isoformat() if act.start_time else "",
+            activity_date=to_athlete_local_date(act.start_time, _tz).isoformat() if act.start_time else "",
             distance_mi=round(dist, 1) if dist else None,
             pre_entries=[_entry_dict(e) for e in pre],
             during_entries=[_entry_dict(e) for e in during],

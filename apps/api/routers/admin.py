@@ -1534,7 +1534,8 @@ def regenerate_starter_plan(
     )
     before = {"active_plan_ids": [str(p.id) for p in existing], "active_plan_generation_methods": [p.generation_method for p in existing]}
 
-    today = date.today()
+    from services.timezone_utils import get_athlete_timezone, athlete_local_today
+    today = athlete_local_today(get_athlete_timezone(target))
     archived_ids: List[str] = []
     for p in existing:
         p.status = "archived"

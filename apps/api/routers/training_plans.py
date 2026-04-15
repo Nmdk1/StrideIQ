@@ -19,6 +19,7 @@ from core.database import get_db
 from core.auth import get_current_athlete
 from models import Athlete, Activity, TrainingPlan, PlannedWorkout
 from services.plan_lifecycle import get_active_plan_for_athlete
+from services.timezone_utils import get_athlete_timezone, athlete_local_today, to_athlete_local_date, local_day_bounds_utc
 
 router = APIRouter(prefix="/v1/training-plans", tags=["Training Plans"])
 
@@ -176,9 +177,9 @@ async def get_current_week(
     if not plan:
         return None
     
-    # Get current week bounds
-    today = date.today()
-    week_start = today - timedelta(days=today.weekday())  # Monday
+    tz = get_athlete_timezone(athlete)
+    today = athlete_local_today(tz)
+    week_start = today - timedelta(days=today.weekday())
     week_end = week_start + timedelta(days=6)  # Sunday
     
     # Get workouts for this week
@@ -237,12 +238,11 @@ async def get_calendar(
     
     If no dates provided, returns current month.
     """
-    # Default to current month
-    today = date.today()
+    tz = get_athlete_timezone(athlete)
+    today = athlete_local_today(tz)
     if start_date is None:
         start_date = today.replace(day=1)
     if end_date is None:
-        # Last day of month
         if today.month == 12:
             end_date = today.replace(year=today.year + 1, month=1, day=1) - timedelta(days=1)
         else:
@@ -273,7 +273,7 @@ async def get_calendar(
     # Group activities by date
     activities_by_date = {}
     for a in activities:
-        d = a.start_time.date()
+        d = to_athlete_local_date(a.start_time, tz)
         if d not in activities_by_date:
             activities_by_date[d] = []
         activities_by_date[d].append({
@@ -553,9 +553,10 @@ def reject_adaptation_proposal(
 
 # ============ Helper Functions ============
 
-def _calculate_current_week(plan: TrainingPlan) -> Optional[int]:
+def _calculate_current_week(plan: TrainingPlan, today: Optional[date] = None) -> Optional[int]:
     """Calculate which week of the plan we're currently in."""
-    today = date.today()
+    if today is None:
+        today = date.today()
     
     if today < plan.plan_start_date:
         return 0
@@ -566,9 +567,10 @@ def _calculate_current_week(plan: TrainingPlan) -> Optional[int]:
     return (days_in // 7) + 1
 
 
-def _calculate_progress(plan: TrainingPlan) -> float:
+def _calculate_progress(plan: TrainingPlan, today: Optional[date] = None) -> float:
     """Calculate plan progress as percentage."""
-    today = date.today()
+    if today is None:
+        today = date.today()
     
     if today < plan.plan_start_date:
         return 0.0

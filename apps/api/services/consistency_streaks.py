@@ -122,8 +122,8 @@ def calculate_streak(db: Session, athlete_id: UUID) -> StreakInfo:
     level = get_athlete_experience_level(db, athlete_id)
     thresholds = CONSISTENCY_THRESHOLDS[level]
     
-    # Start from last completed week
-    today = date.today()
+    from services.timezone_utils import get_athlete_timezone_from_db, athlete_local_today
+    today = athlete_local_today(get_athlete_timezone_from_db(db, athlete_id))
     # Find the Monday of this week
     current_week_start = today - timedelta(days=today.weekday())
     

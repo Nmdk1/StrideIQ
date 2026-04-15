@@ -28,6 +28,12 @@ from core.feature_flags import is_feature_enabled
 from models import Athlete, Activity, ActivitySplit, ActivityStream, PlannedWorkout, TrainingPlan, CalendarInsight, DailyCheckin
 from services.n1_insight_generator import friendly_signal_name
 from services.plan_lifecycle import get_active_plan_for_athlete
+from services.timezone_utils import (
+    get_athlete_timezone,
+    get_athlete_timezone_from_db,
+    athlete_local_today,
+    to_athlete_local_date,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -1260,6 +1266,7 @@ def _sanitize_finding_text(text: str) -> str:
 def validate_relative_time_claims(
     text: str,
     recent_run_dates: List[date],
+    today: Optional[date] = None,
 ) -> dict:
     """
     Catch obviously wrong relative-time claims in LLM output.
@@ -1277,7 +1284,8 @@ def validate_relative_time_claims(
         return {"valid": True}
 
     lower = text.lower()
-    today = date.today()
+    if today is None:
+        today = date.today()
 
     most_recent = max(recent_run_dates)
     days_since_most_recent = (today - most_recent).days
@@ -1383,6 +1391,7 @@ def _call_opus_briefing_sync(
     api_key: str,
     llm_timeout: Optional[int] = None,
     athlete_id: Optional[str] = None,
+    local_today: Optional[date] = None,
 ) -> Optional[dict]:
     """
     Synchronous LLM call for home briefing — routes through the centralized
@@ -1414,7 +1423,7 @@ def _call_opus_briefing_sync(
         for k, v in schema_fields.items()
     )
 
-    _today = date.today()
+    _today = local_today or date.today()
     system_prompt = (
         f"You are an elite running coach generating a structured home page briefing. "
         f"Today is {_today.isoformat()} ({_today.strftime('%A')}). "
@@ -1568,6 +1577,7 @@ def _fetch_llm_briefing_sync(
     race_data: Optional[dict],
     cache_key: str,
     athlete_id: str,
+    local_today: Optional[date] = None,
 ) -> Optional[dict]:
     """
     Pure LLM call + validation + Redis cache write.  No DB access.
@@ -1585,7 +1595,7 @@ def _fetch_llm_briefing_sync(
     if anthropic_key:
         result = _call_opus_briefing_sync(
             prompt, schema_fields, required_fields, anthropic_key,
-            athlete_id=athlete_id,
+            athlete_id=athlete_id, local_today=local_today,
         )
     else:
         logger.info("ANTHROPIC_API_KEY not set — falling back to Gemini for home briefing")
@@ -1690,7 +1700,7 @@ def _fetch_llm_briefing_sync(
                 _field_text = result.get(_field_name)
                 if not _field_text:
                     continue
-                _time_check = validate_relative_time_claims(_field_text, _recent_dates)
+                _time_check = validate_relative_time_claims(_field_text, _recent_dates, today=local_today)
                 if not _time_check["valid"]:
                     logger.warning(
                         "Briefing field '%s' has wrong relative-time claim (%s); clearing",
@@ -2001,7 +2011,7 @@ def generate_coach_home_briefing(
     run the LLM call in a worker thread via ``asyncio.to_thread``.
 
     Returns ``(cached_result,)`` if Redis hit (request path only), or
-    ``(None, prompt, schema_fields, required_fields, cache_key, garmin_sleep_h)``
+    ``(None, prompt, schema_fields, required_fields, cache_key, garmin_sleep_h, local_today)``
     if the LLM call is needed.
 
     skip_cache=True: the Lane 2A Celery worker always passes this to bypass
@@ -2015,10 +2025,13 @@ def generate_coach_home_briefing(
     """
     import hashlib
     import json as _json
+    from uuid import UUID as _tz_uuid
 
-    # Build data fingerprint for cache key (date included to prevent cross-day staleness)
+    tz = get_athlete_timezone_from_db(db, _tz_uuid(athlete_id))
+    local_today = athlete_local_today(tz)
+
     cache_input = _json.dumps({
-        "date": date.today().isoformat(),
+        "date": local_today.isoformat(),
         "completed": today_completed,
         "planned": planned_workout,
         "checkin": checkin_data,
@@ -2062,7 +2075,7 @@ def generate_coach_home_briefing(
             .filter(
                 InsightLog.athlete_id == athlete_id,
                 InsightLog.mode != "log",
-                InsightLog.trigger_date >= date.today() - timedelta(days=7),
+                InsightLog.trigger_date >= local_today - timedelta(days=7),
             )
             .order_by(desc(InsightLog.trigger_date))
             .limit(3)
@@ -2090,7 +2103,7 @@ def generate_coach_home_briefing(
     # Build the prompt
     # --- Insight rotation: suppress recently-surfaced coach_noticed insight for 48h ---
     parts = [
-        f"You are an elite running coach speaking directly to your athlete about TODAY ({date.today().isoformat()}, {date.today().strftime('%A')}).",
+        f"You are an elite running coach speaking directly to your athlete about TODAY ({local_today.isoformat()}, {local_today.strftime('%A')}).",
         "You have their full training profile below. Use it. Be specific, direct, insightful.",
         "CRITICAL: All dates below include pre-computed relative times like '(2 days ago)' or '(yesterday)'. USE those labels verbatim — do NOT compute your own relative time. NEVER say 'two weeks ago' unless the data says '(2 weeks ago)'.",
         "Reference their actual numbers. Sound like a real coach, not a dashboard.",
@@ -2371,9 +2384,8 @@ def generate_coach_home_briefing(
 
     # Runs completed this week — ground the LLM so it never fabricates cut runs
     try:
-        from datetime import date as _date
-        _today = _date.today()
-        _week_start = _today - __import__("datetime").timedelta(days=_today.weekday())
+        _today = local_today
+        _week_start = _today - timedelta(days=_today.weekday())
         from models import Activity as _Activity
         from sqlalchemy import func as _func
         _runs_this_week = (
@@ -2581,7 +2593,7 @@ def generate_coach_home_briefing(
     if race_data:
         required_fields.append("race_assessment")
 
-    return (None, prompt, schema_fields, required_fields, cache_key, garmin_sleep_h)
+    return (None, prompt, schema_fields, required_fields, cache_key, garmin_sleep_h, local_today)
 
 
 def compute_coach_noticed(
@@ -2601,6 +2613,9 @@ def compute_coach_noticed(
     No live analyze_correlations — all correlation data comes from persisted
     CorrelationFinding rows (populated by the daily fingerprint refresh).
     """
+    tz = get_athlete_timezone_from_db(db, __import__("uuid").UUID(athlete_id))
+    _local_today = athlete_local_today(tz)
+
     # 1. Persisted fingerprint finding (trust-gated, rotated daily)
     try:
         from uuid import UUID as _UUID
@@ -2624,8 +2639,7 @@ def compute_coach_noticed(
             .all()
         )
         if eligible:
-            # deterministic daily rotation across top findings
-            idx = date.today().toordinal() % len(eligible)
+            idx = _local_today.toordinal() % len(eligible)
             f = eligible[idx]
             if not _is_finding_in_cooldown(athlete_id, f.input_name, f.output_metric):
                 inp_name = friendly_signal_name(f.input_name)
@@ -2748,13 +2762,15 @@ def _build_rich_intelligence_context(athlete_id: str, db: Session) -> str:
     """
     from uuid import UUID as _UUID
     athlete_uuid = _UUID(athlete_id)
+    _tz = get_athlete_timezone_from_db(db, athlete_uuid)
+    _local_today = athlete_local_today(_tz)
 
     sections: list[str] = []
 
     # 1. Daily intelligence rules that fired today
     try:
         from services.daily_intelligence import DailyIntelligenceEngine, InsightMode
-        intel_result = DailyIntelligenceEngine().evaluate(athlete_uuid, date.today(), db)
+        intel_result = DailyIntelligenceEngine().evaluate(athlete_uuid, _local_today, db)
         fired = [
             ins for ins in intel_result.insights
             if ins.mode != InsightMode.LOG
@@ -2849,11 +2865,10 @@ def _build_rich_intelligence_context(athlete_id: str, db: Session) -> str:
         ).order_by(Activity.start_time.desc()).limit(5).all()
         if recent:
             from services.coach_tools import _relative_date as _rel
-            _today_d = date.today()
             lines = []
             for a in recent:
                 day = a.start_time.strftime("%a %b %d") if a.start_time else "?"
-                rel = _rel(a.start_time.date(), _today_d) if a.start_time else ""
+                rel = _rel(to_athlete_local_date(a.start_time, _tz), _local_today) if a.start_time else ""
                 lines.append(f"- {day} {rel}: {a.shape_sentence}")
             if lines:
                 sections.append(
@@ -3051,6 +3066,7 @@ def compute_race_countdown(
     plan: Optional[TrainingPlan],
     athlete_id: str,
     db: Session,
+    local_today: Optional[date] = None,
 ) -> Optional[RaceCountdown]:
     """
     ADR-17 Phase 2: Race countdown from active training plan.
@@ -3063,9 +3079,12 @@ def compute_race_countdown(
     if not race_date:
         return None
 
-    days_remaining = (race_date - date.today()).days
+    if local_today is None:
+        _tz = get_athlete_timezone_from_db(db, __import__("uuid").UUID(athlete_id))
+        local_today = athlete_local_today(_tz)
+    days_remaining = (race_date - local_today).days
     if days_remaining < 0:
-        return None  # Race already happened
+        return None
 
     race_name = getattr(plan, "goal_race_name", None)
 
@@ -3328,7 +3347,6 @@ async def get_home_data(
     """
     Get home page data: today's workout, yesterday's insight, week progress.
     """
-    from services.timezone_utils import get_athlete_timezone, athlete_local_today, local_day_bounds_utc
     _ath_tz = get_athlete_timezone(current_user)
     today = athlete_local_today(_ath_tz)
     yesterday = today - timedelta(days=1)
@@ -3674,7 +3692,7 @@ async def get_home_data(
 
     # --- Phase 2 (ADR-17): Race Countdown ---
     race_countdown = compute_race_countdown(
-        active_plan, str(current_user.id), db
+        active_plan, str(current_user.id), db, local_today=today
     )
 
     # --- Phase 2 (ADR-17): Check-in Needed + Today's Check-in Summary ---
@@ -3872,7 +3890,7 @@ async def get_home_data(
                 if len(prep) == 1:
                     coach_briefing = prep[0]
                 else:
-                    _, prompt, schema_fields, required_fields, cache_key, garmin_sleep_h = prep
+                    _, prompt, schema_fields, required_fields, cache_key, garmin_sleep_h, _local_today = prep
                     if garmin_sleep_h is not None:
                         if checkin_data_dict is None:
                             checkin_data_dict = {}
@@ -3888,6 +3906,7 @@ async def get_home_data(
                                 race_data=race_data_dict,
                                 cache_key=cache_key,
                                 athlete_id=str(current_user.id),
+                                local_today=_local_today,
                             ),
                             timeout=HOME_BRIEFING_TIMEOUT_S,
                         )
@@ -3935,7 +3954,8 @@ async def get_home_data(
                 .limit(5)
                 .all()
             )
-            idx = date.today().toordinal() % len(eligible)
+            _home_tz = get_athlete_timezone(current_user)
+            idx = athlete_local_today(_home_tz).toordinal() % len(eligible)
             f = eligible[idx]
             tier = "strong" if f.times_confirmed >= 8 else "confirmed"
             home_finding = HomeFinding(
@@ -4061,7 +4081,7 @@ async def get_home_signals(
         return HomeSignalsResponse(
             signals=[],
             suppressed_count=0,
-            last_updated=date.today().isoformat()
+            last_updated=athlete_local_today(get_athlete_timezone(current_user)).isoformat()
         )
 
     # Aggregate signals from all analytics methods

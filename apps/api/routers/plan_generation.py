@@ -22,6 +22,7 @@ import re
 from core.database import get_db
 from core.auth import get_current_athlete, get_current_athlete_optional
 from models import Athlete, TrainingPlan, PlannedWorkout
+from services.timezone_utils import get_athlete_timezone, athlete_local_today
 
 from services.plan_framework import (
     VolumeTierClassifier,
@@ -704,8 +705,7 @@ async def withdraw_from_plan(
     # Archive the plan
     plan.status = "archived"
     
-    # Mark all future planned workouts as cancelled
-    today = date.today()
+    today = athlete_local_today(get_athlete_timezone(athlete))
     db.query(PlannedWorkout).filter(
         PlannedWorkout.plan_id == plan_id,
         PlannedWorkout.scheduled_date >= today,
@@ -747,8 +747,7 @@ async def pause_plan(
     # Pause the plan
     plan.status = "paused"
     
-    # Calculate current week for reference
-    today = date.today()
+    today = athlete_local_today(get_athlete_timezone(athlete))
     current_workout = db.query(PlannedWorkout).filter(
         PlannedWorkout.plan_id == plan_id,
         PlannedWorkout.scheduled_date <= today,
@@ -826,7 +825,7 @@ async def change_race_date(
     if plan.status not in ("active", "paused"):
         raise HTTPException(status_code=400, detail=f"Cannot modify plan with status: {plan.status}")
     
-    today = date.today()
+    today = athlete_local_today(get_athlete_timezone(athlete))
     if request.new_race_date <= today:
         raise HTTPException(status_code=400, detail="New race date must be in the future")
     
@@ -1818,7 +1817,7 @@ async def create_model_driven_plan(
             detail=f"Invalid race_distance. Must be one of: {', '.join(valid_distances)}"
         )
     
-    today = date.today()
+    today = athlete_local_today(get_athlete_timezone(athlete))
     if request.race_date <= today:
         raise HTTPException(
             status_code=400,
@@ -2279,7 +2278,7 @@ async def create_constraint_aware_plan(
             detail=f"Invalid race_distance. Must be one of: {', '.join(valid_distances)}"
         )
     
-    today = date.today()
+    today = athlete_local_today(get_athlete_timezone(athlete))
     if request.race_date <= today:
         raise HTTPException(
             status_code=400,
@@ -2532,8 +2531,7 @@ async def preview_constraint_aware_plan(
     # Get fitness bank
     bank = get_fitness_bank(athlete.id, db)
     
-    # Calculate weeks to race
-    today = date.today()
+    today = athlete_local_today(get_athlete_timezone(athlete))
     weeks_to_race = (race_date - today).days // 7
     
     # Generate narratives (ADR-033)

@@ -694,7 +694,9 @@ def get_plan_week(db: Session, athlete_id: UUID) -> Dict[str, Any]:
     """
     Current week's plan.
     """
-    today = date.today()
+    from services.timezone_utils import get_athlete_timezone_from_db, athlete_local_today
+    _tz = get_athlete_timezone_from_db(db, athlete_id)
+    today = athlete_local_today(_tz)
     week_start = today - timedelta(days=today.weekday())  # Monday
     week_end = week_start + timedelta(days=6)
 
@@ -819,6 +821,9 @@ def get_training_load(db: Session, athlete_id: UUID) -> Dict[str, Any]:
     """
     CTL/ATL/TSB summary using TrainingLoadCalculator.
     """
+    from services.timezone_utils import get_athlete_timezone_from_db, athlete_local_today
+    _tz = get_athlete_timezone_from_db(db, athlete_id)
+    _today = athlete_local_today(_tz)
     now = datetime.utcnow()
     calc = TrainingLoadCalculator(db)
     summary = calc.calculate_training_load(athlete_id)
@@ -869,11 +874,11 @@ def get_training_load(db: Session, athlete_id: UUID) -> Dict[str, Any]:
             {
                 "type": "derived",
                 "id": f"training_load:{str(athlete_id)}",
-                "date": date.today().isoformat(),
+                "date": _today.isoformat(),
                 "value": f"ATL {summary.current_atl}, CTL {summary.current_ctl}, TSB {summary.current_tsb} ({zone_info.zone.value})",
                 # Back-compat keys
                 "metric_set": "training_load",
-                "as_of_date": date.today().isoformat(),
+                "as_of_date": _today.isoformat(),
                 "source": "TrainingLoadCalculator.calculate_training_load",
             }
         ],
@@ -887,6 +892,9 @@ def get_training_paces(db: Session, athlete_id: UUID) -> Dict[str, Any]:
     Returns target paces for easy, threshold, interval, repetition, and marathon training.
     This is THE authoritative source for training paces - do not derive paces from other data.
     """
+    from services.timezone_utils import get_athlete_timezone_from_db, athlete_local_today
+    _tz = get_athlete_timezone_from_db(db, athlete_id)
+    _today = athlete_local_today(_tz)
     now = datetime.utcnow()
     try:
         from services.rpi_calculator import calculate_training_paces as calc_paces
@@ -960,7 +968,7 @@ def get_training_paces(db: Session, athlete_id: UUID) -> Dict[str, Any]:
                 {
                     "type": "calculation",
                     "id": f"rpi_paces:{athlete_id}",
-                    "date": date.today().isoformat(),
+                    "date": _today.isoformat(),
                     "value": f"RPI {rpi:.1f} → Threshold {format_display('threshold')}, Easy {format_display('easy')}",
                 }
             ],
@@ -1158,6 +1166,9 @@ def get_recovery_status(db: Session, athlete_id: UUID) -> Dict[str, Any]:
     """
     Recovery metrics: half-life, durability, overtraining risk signals.
     """
+    from services.timezone_utils import get_athlete_timezone_from_db, athlete_local_today
+    _tz = get_athlete_timezone_from_db(db, athlete_id)
+    _today = athlete_local_today(_tz)
     now = datetime.utcnow()
     try:
         athlete_id_str = str(athlete_id)
@@ -1202,7 +1213,7 @@ def get_recovery_status(db: Session, athlete_id: UUID) -> Dict[str, Any]:
                 {
                     "type": "derived",
                     "id": f"recovery_status:{str(athlete_id)}",
-                    "date": date.today().isoformat(),
+                    "date": _today.isoformat(),
                     "value": (
                         f"Recovery half-life: {half_life_days} days"
                         if half_life_days is not None
@@ -1223,6 +1234,9 @@ def get_active_insights(db: Session, athlete_id: UUID, limit: int = 5) -> Dict[s
     """
     Prioritized actionable insights.
     """
+    from services.timezone_utils import get_athlete_timezone_from_db, athlete_local_today
+    _tz = get_athlete_timezone_from_db(db, athlete_id)
+    _today = athlete_local_today(_tz)
     now = datetime.utcnow()
     try:
         limit = max(1, min(int(limit), 10))
@@ -1258,7 +1272,7 @@ def get_active_insights(db: Session, athlete_id: UUID, limit: int = 5) -> Dict[s
                 {
                     "source": source,
                     "insight_id": str(getattr(ins, "id", "")) if getattr(ins, "id", None) else None,
-                    "date": (getattr(ins, "insight_date", None) or date.today()).isoformat()
+                    "date": (getattr(ins, "insight_date", None) or _today).isoformat()
                     if getattr(ins, "insight_date", None) or not is_calendar
                     else None,
                     "type": insight_type,
@@ -1275,7 +1289,7 @@ def get_active_insights(db: Session, athlete_id: UUID, limit: int = 5) -> Dict[s
                 {
                     "type": "calendar_insight" if source == "calendar_insight" else "generated_insight",
                     "id": str(getattr(ins, "id", "")) if getattr(ins, "id", None) else None,
-                    "date": (getattr(ins, "insight_date", None) or date.today()).isoformat(),
+                    "date": (getattr(ins, "insight_date", None) or _today).isoformat(),
                     "value": getattr(ins, "title", None) or "insight",
                 }
             )
@@ -1317,6 +1331,8 @@ def get_pb_patterns(db: Session, athlete_id: UUID) -> Dict[str, Any]:
     """
     from services.training_load import TrainingLoadCalculator
     from models import PersonalBest
+    from services.timezone_utils import get_athlete_timezone_from_db, athlete_local_today
+    _tz = get_athlete_timezone_from_db(db, athlete_id)
 
     now = datetime.utcnow()
     try:
@@ -1418,7 +1434,7 @@ def get_pb_patterns(db: Session, athlete_id: UUID) -> Dict[str, Any]:
             })
 
         # --- Narrative ---
-        _today = date.today()
+        _today = athlete_local_today(_tz)
         pb_narr_parts: List[str] = [f"{len(pb_details)} personal best(s) in the last year."]
         for pbd in pb_details[:3]:
             cat = pbd.get("category", "?")
@@ -1463,6 +1479,9 @@ def get_efficiency_by_zone(
     """
     Efficiency trend for specific effort zones (comparable runs only).
     """
+    from services.timezone_utils import get_athlete_timezone_from_db, to_athlete_local_date, athlete_local_today
+    _tz = get_athlete_timezone_from_db(db, athlete_id)
+    _today = athlete_local_today(_tz)
     now = datetime.utcnow()
     try:
         days = max(30, min(int(days), 365))
@@ -1523,7 +1542,7 @@ def get_efficiency_by_zone(
                             {
                                 "type": "activity",
                                 "id": str(a.id),
-                                "date": a.start_time.date().isoformat(),
+                                "date": to_athlete_local_date(a.start_time, _tz).isoformat(),
                                 "value": value,
                                 # Back-compat keys
                                 "activity_id": str(a.id),
@@ -1568,7 +1587,7 @@ def get_efficiency_by_zone(
                 {
                     "type": "derived",
                     "id": f"efficiency_zone:{str(athlete_id)}:{effort_zone}",
-                    "date": date.today().isoformat(),
+                    "date": _today.isoformat(),
                     "value": (
                         f"{effort_zone} zone: {len(zone_data or [])} runs, current {current:.6f}"
                         if current is not None
@@ -1593,6 +1612,9 @@ def get_nutrition_correlations(
     """
     Get activity-linked nutrition correlations.
     """
+    from services.timezone_utils import get_athlete_timezone_from_db, athlete_local_today
+    _tz = get_athlete_timezone_from_db(db, athlete_id)
+    _today = athlete_local_today(_tz)
     now = datetime.utcnow()
     try:
         days = max(30, min(int(days), 365))
@@ -1664,7 +1686,7 @@ def get_nutrition_correlations(
                 {
                     "type": "derived",
                     "id": f"nutrition_correlations:{str(athlete_id)}",
-                    "date": date.today().isoformat(),
+                    "date": _today.isoformat(),
                     "value": f"Activity-linked nutrition analysis over {days} days",
                 }
             ],
@@ -1816,13 +1838,15 @@ def get_weekly_volume(db: Session, athlete_id: UUID, weeks: int = 12) -> Dict[st
     - "What were my highest-volume weeks recently?"
     - "How consistent have I been since returning from injury?"
     """
+    from services.timezone_utils import get_athlete_timezone_from_db, to_athlete_local_date, athlete_local_today
+    _tz = get_athlete_timezone_from_db(db, athlete_id)
     now = datetime.utcnow()
     try:
         weeks = max(1, min(int(weeks), 104))  # cap at ~2 years
         units = _preferred_units(db, athlete_id)
 
         # Build week buckets aligned to Monday starts (ISO week).
-        today = date.today()
+        today = athlete_local_today(_tz)
         end_week_start = today - timedelta(days=today.weekday())  # Monday
         start_week_start = end_week_start - timedelta(days=7 * (weeks - 1))
         start_dt = datetime.combine(start_week_start, datetime.min.time())
@@ -1853,7 +1877,7 @@ def get_weekly_volume(db: Session, athlete_id: UUID, weeks: int = 12) -> Dict[st
             }
 
         for a in runs:
-            d = a.start_time.date()
+            d = to_athlete_local_date(a.start_time, _tz)
             ws = d - timedelta(days=d.weekday())
             key = ws.isoformat()
             if key not in buckets:
@@ -1993,6 +2017,8 @@ def get_best_runs(
     Optional effort_zone filters by athlete max_hr:
       - easy / threshold / race (same mapping used elsewhere)
     """
+    from services.timezone_utils import get_athlete_timezone_from_db, to_athlete_local_date
+    _tz = get_athlete_timezone_from_db(db, athlete_id)
     now = datetime.utcnow()
     try:
         days = max(7, min(int(days), 730))
@@ -2039,11 +2065,12 @@ def get_best_runs(
             speed_mps = (distance_m / duration_s) if duration_s > 0 else None
             eff = (speed_mps / float(a.avg_hr)) if (speed_mps and a.avg_hr) else None
 
-            _br_rel = _relative_date(a.start_time.date())
+            _a_local_date = to_athlete_local_date(a.start_time, _tz)
+            _br_rel = _relative_date(_a_local_date)
             rows.append(
                 {
                     "activity_id": str(a.id),
-                    "date": f"{a.start_time.date().isoformat()} {_br_rel}",
+                    "date": f"{_a_local_date.isoformat()} {_br_rel}",
                     "name": (a.name or "").strip() or "Run",
                     "distance_km": round(distance_m / 1000.0, 2),
                     "distance_mi": round(distance_m / _M_PER_MI, 2),
@@ -2138,6 +2165,8 @@ def compare_training_periods(db: Session, athlete_id: UUID, days: int = 28) -> D
     - "Am I ramping too fast?"
     - "What changed in the last 4 weeks vs the prior 4 weeks?"
     """
+    from services.timezone_utils import get_athlete_timezone_from_db, to_athlete_local_date
+    _tz = get_athlete_timezone_from_db(db, athlete_id)
     now = datetime.utcnow()
     try:
         days = max(7, min(int(days), 180))
@@ -2213,7 +2242,7 @@ def compare_training_periods(db: Session, athlete_id: UUID, days: int = 28) -> D
                     "type": "activity",
                     "id": str(act.id),
                     "ref": str(act.id)[:8],
-                    "date": act.start_time.date().isoformat(),
+                    "date": to_athlete_local_date(act.start_time, _tz).isoformat(),
                     "value": _fmt_run(act),
                 }
             )
@@ -2223,7 +2252,7 @@ def compare_training_periods(db: Session, athlete_id: UUID, days: int = 28) -> D
                     "type": "activity",
                     "id": str(act.id),
                     "ref": str(act.id)[:8],
-                    "date": act.start_time.date().isoformat(),
+                    "date": to_athlete_local_date(act.start_time, _tz).isoformat(),
                     "value": _fmt_run(act),
                 }
             )
@@ -2291,6 +2320,8 @@ def get_wellness_trends(db: Session, athlete_id: UUID, days: int = 28) -> Dict[s
     is included alongside athlete self-report when available.
     """
     from models import DailyCheckin, GarminDay
+    from services.timezone_utils import get_athlete_timezone_from_db, athlete_local_today
+    _tz = get_athlete_timezone_from_db(db, athlete_id)
 
     now = datetime.utcnow()
     days = max(7, min(int(days), 90))
@@ -2418,7 +2449,7 @@ def get_wellness_trends(db: Session, athlete_id: UUID, days: int = 28) -> Dict[s
             if c.resting_hr:
                 parts.append(f"RHR:{c.resting_hr}")
 
-            _today = date.today()
+            _today = athlete_local_today(_tz)
             evidence.append({
                 "type": "wellness",
                 "date": f"{c.date.isoformat()} {_relative_date(c.date, _today)}",
@@ -2429,7 +2460,7 @@ def get_wellness_trends(db: Session, athlete_id: UUID, days: int = 28) -> Dict[s
         # Lead with most recent self-report entry for temporal anchoring.
         # Guard: if no checkins (only Garmin data), skip this block.
         most_recent_line = ""
-        _today = date.today()
+        _today = athlete_local_today(_tz)
         if checkins:
             most_recent = checkins[0]
             _mr_rel = _relative_date(most_recent.date, _today)
@@ -2561,6 +2592,8 @@ def get_athlete_profile(db: Session, athlete_id: UUID) -> Dict[str, Any]:
     Returns max_hr, threshold paces, RPI, runner type, and training metrics.
     Critical for personalized recommendations and goal setting.
     """
+    from services.timezone_utils import get_athlete_timezone_from_db, athlete_local_today
+    _tz = get_athlete_timezone_from_db(db, athlete_id)
     now = datetime.utcnow()
 
     try:
@@ -2573,7 +2606,7 @@ def get_athlete_profile(db: Session, athlete_id: UUID) -> Dict[str, Any]:
         # Calculate age if birthdate available
         age = None
         if athlete.birthdate:
-            today = date.today()
+            today = athlete_local_today(_tz)
             age = calculate_age(athlete.birthdate, today)
 
         # Convert threshold pace for display
@@ -2680,6 +2713,9 @@ def get_athlete_profile(db: Session, athlete_id: UUID) -> Dict[str, Any]:
 
 def get_profile_edit_paths(db: Session, athlete_id: UUID, field: str = "birthdate") -> Dict[str, Any]:
     """Return deterministic UI navigation for athlete profile edits."""
+    from services.timezone_utils import get_athlete_timezone_from_db, athlete_local_today
+    _tz = get_athlete_timezone_from_db(db, athlete_id)
+    _today = athlete_local_today(_tz)
     now = datetime.utcnow()
     normalized_field = (field or "birthdate").strip().lower()
     field_aliases = {
@@ -2755,7 +2791,7 @@ def get_profile_edit_paths(db: Session, athlete_id: UUID, field: str = "birthdat
             {
                 "type": "ui_path",
                 "id": f"profile_path:{canonical_field}",
-                "date": date.today().isoformat(),
+                "date": _today.isoformat(),
                 "value": f"{resolved['route']} > {resolved['section']} > {resolved['field']}",
             }
         ],
@@ -2769,6 +2805,8 @@ def get_training_load_history(db: Session, athlete_id: UUID, days: int = 42) -> 
     Returns daily snapshots of training load metrics to understand load progression.
     Critical for periodization analysis and injury risk assessment.
     """
+    from services.timezone_utils import get_athlete_timezone_from_db, to_athlete_local_date
+    _tz = get_athlete_timezone_from_db(db, athlete_id)
     now = datetime.utcnow()
     days = max(7, min(int(days), 90))
 
@@ -2803,7 +2841,7 @@ def get_training_load_history(db: Session, athlete_id: UUID, days: int = 42) -> 
         # Calculate daily TSS values
         daily_tss: Dict[date, float] = {}
         for a in runs:
-            run_date = a.start_time.date()
+            run_date = to_athlete_local_date(a.start_time, _tz)
             # Simple TSS approximation: (duration_min * intensity_score / 100) or duration-based fallback
             duration_min = (a.duration_s or 0) / 60
             intensity = (a.intensity_score or 50) / 100  # Default to moderate if unknown
@@ -2982,6 +3020,9 @@ def get_coach_intent_snapshot(db: Session, athlete_id: UUID, ttl_days: int = 7) 
     """
     Return the athlete's current intent snapshot (self-guided coaching state).
     """
+    from services.timezone_utils import get_athlete_timezone_from_db, athlete_local_today
+    _tz = get_athlete_timezone_from_db(db, athlete_id)
+    _today = athlete_local_today(_tz)
     now = datetime.utcnow()
     try:
         snap = _get_intent_snapshot(db, athlete_id)
@@ -3034,7 +3075,7 @@ def get_coach_intent_snapshot(db: Session, athlete_id: UUID, ttl_days: int = 7) 
                 {
                     "type": "derived",
                     "id": f"coach_intent_snapshot:{str(athlete_id)}",
-                    "date": date.today().isoformat(),
+                    "date": _today.isoformat(),
                     "value": "Intent snapshot present" if snap else "No intent snapshot set yet",
                 }
             ],
@@ -3134,6 +3175,9 @@ def get_training_prescription_window(
     - athlete-stated constraints (time/mileage/pain) via intent snapshot or params
     - deterministic plan generator primitives (paces + template selection)
     """
+    from services.timezone_utils import get_athlete_timezone_from_db, to_athlete_local_date, athlete_local_today
+    _tz = get_athlete_timezone_from_db(db, athlete_id)
+    _today_local = athlete_local_today(_tz)
     now = datetime.utcnow()
     try:
         days = max(1, min(int(days), 7))
@@ -3144,9 +3188,9 @@ def get_training_prescription_window(
             try:
                 start = date.fromisoformat(start_date)
             except Exception:
-                start = date.today()
+                start = _today_local
         else:
-            start = date.today()
+            start = _today_local
         end = start + timedelta(days=days - 1)
 
         # Pull intent snapshot as default athlete input (self-guided coaching).
@@ -3173,7 +3217,7 @@ def get_training_prescription_window(
 
         # Recent volume trends (last 4 full weeks, athlete-derived).
         def _weekly_miles_for_last_n_weeks(n: int = 4) -> List[float]:
-            today = date.today()
+            today = _today_local
             end_week_start = today - timedelta(days=today.weekday())  # Monday
             start_week_start = end_week_start - timedelta(days=7 * (n - 1))
             start_dt = datetime.combine(start_week_start, datetime.min.time())
@@ -3193,7 +3237,7 @@ def get_training_prescription_window(
                 ws = start_week_start + timedelta(days=7 * w)
                 buckets[ws.isoformat()] = 0.0
             for a in runs:
-                d = a.start_time.date()
+                d = to_athlete_local_date(a.start_time, _tz)
                 ws = d - timedelta(days=d.weekday())
                 key = ws.isoformat()
                 if key in buckets:
@@ -3284,7 +3328,7 @@ def get_training_prescription_window(
                 {
                     "type": "derived",
                     "id": f"weekly_volume:{str(athlete_id)}:4w",
-                    "date": date.today().isoformat(),
+                    "date": _today_local.isoformat(),
                     "value": f"Last 4 weeks volume (mi): {last4} (avg {recent_weekly_avg} mi/week)",
                 }
             )
@@ -3292,7 +3336,7 @@ def get_training_prescription_window(
             {
                 "type": "derived",
                 "id": f"baseline:{str(athlete_id)}",
-                "date": date.today().isoformat(),
+                "date": _today_local.isoformat(),
                 "value": (
                     f"Established baseline: {baseline.get('weekly_miles', 0):.0f} mpw, "
                     f"typical long {baseline.get('long_run_miles', 0):.0f} mi, "
@@ -3635,12 +3679,14 @@ def build_athlete_brief(db: Session, athlete_id: UUID) -> str:
     Cached in Redis for 15 minutes. Invalidated on activity write.
     """
     from core.cache import get_cache, set_cache
+    from services.timezone_utils import get_athlete_timezone_from_db, athlete_local_today
+    _tz = get_athlete_timezone_from_db(db, athlete_id)
     _cache_key = f"athlete_brief:{athlete_id}"
     _cached = get_cache(_cache_key)
     if _cached is not None:
         return _cached
 
-    today = date.today()
+    today = athlete_local_today(_tz)
     sections: List[str] = [
         f"## Date Context\nToday is {today.isoformat()} ({today.strftime('%A')}). All dates below include pre-computed relative labels like '(2 days ago)' or '(yesterday)'. USE those labels verbatim — do NOT compute your own relative time. NEVER say 'X days ago' unless that exact label appears in the data."
     ]
@@ -4355,6 +4401,8 @@ def get_mile_splits(
     unit: str = "mi",
 ) -> Dict[str, Any]:
     """Return distance-based split data from stream data and/or device laps."""
+    from services.timezone_utils import get_athlete_timezone_from_db, to_athlete_local_date
+    _tz = get_athlete_timezone_from_db(db, athlete_id)
     now = datetime.utcnow()
     tool_name = "get_mile_splits"
     normalized_unit = (unit or "mi").strip().lower()
@@ -4565,7 +4613,7 @@ def get_mile_splits(
                 {
                     "type": "activity",
                     "id": str(activity_uuid),
-                    "date": activity.start_time.date().isoformat() if activity.start_time else _iso(now)[:10],
+                    "date": to_athlete_local_date(activity.start_time, _tz).isoformat() if activity.start_time else _iso(now)[:10],
                     "value": f"{(activity.name or 'Run').strip() or 'Run'} split analysis from stream data",
                 }
             ],
@@ -4594,7 +4642,7 @@ def get_mile_splits(
                 {
                     "type": "activity",
                     "id": str(activity_uuid),
-                    "date": activity.start_time.date().isoformat() if activity.start_time else _iso(now)[:10],
+                    "date": to_athlete_local_date(activity.start_time, _tz).isoformat() if activity.start_time else _iso(now)[:10],
                     "value": f"{(activity.name or 'Run').strip() or 'Run'} split analysis from device laps",
                 }
             ],
@@ -4647,6 +4695,8 @@ def analyze_run_streams(
     from services.run_stream_analysis import (
         AthleteContext, analyze_stream,
     )
+    from services.timezone_utils import get_athlete_timezone_from_db, to_athlete_local_date
+    _tz = get_athlete_timezone_from_db(db, athlete_id)
 
     now = datetime.utcnow()
     tool_name = "analyze_run_streams"
@@ -4784,9 +4834,9 @@ def analyze_run_streams(
         "evidence": [{
             "type": "stream_analysis",
             "id": f"stream:{activity_id}",
-            "date": activity.start_time.date().isoformat() if activity.start_time else _iso(now)[:10],
-            "value": f"tier={result.tier_used}, confidence={result.confidence}, "
-                     f"segments={len(result.segments)}, moments={len(result.moments)}",
+        "date": to_athlete_local_date(activity.start_time, _tz).isoformat() if activity.start_time else _iso(now)[:10],
+        "value": f"tier={result.tier_used}, confidence={result.confidence}, "
+                 f"segments={len(result.segments)}, moments={len(result.moments)}",
         }],
     }
 
