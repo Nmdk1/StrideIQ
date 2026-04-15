@@ -1393,6 +1393,7 @@ def _call_opus_briefing_sync(
     llm_timeout: Optional[int] = None,
     athlete_id: Optional[str] = None,
     local_today: Optional[date] = None,
+    local_now: Optional[datetime] = None,
 ) -> Optional[dict]:
     """
     Synchronous LLM call for home briefing — routes through the centralized
@@ -1425,9 +1426,17 @@ def _call_opus_briefing_sync(
     )
 
     _today = local_today or date.today()
+    _now = local_now or datetime.now()
+    try:
+        _time_str = _now.strftime("%-I:%M %p")
+    except ValueError:
+        _time_str = _now.strftime("%I:%M %p").lstrip("0")
+    _tod = "morning" if _now.hour < 12 else ("afternoon" if _now.hour < 17 else "evening")
     system_prompt = (
         f"You are an elite running coach generating a structured home page briefing. "
         f"Today is {_today.isoformat()} ({_today.strftime('%A')}). "
+        f"The athlete's current local time is {_time_str} ({_tod}). "
+        "Use time-appropriate language — say 'this afternoon' if it's afternoon, 'this evening' if evening, 'this morning' ONLY if it's actually morning. "
         "All dates include pre-computed relative times like '(2 days ago)'. USE those labels — do NOT compute your own. "
         "Respond with ONLY a valid JSON object — no markdown, no code fences, no explanation. "
         "The JSON must contain these fields:\n"
@@ -1579,6 +1588,7 @@ def _fetch_llm_briefing_sync(
     cache_key: str,
     athlete_id: str,
     local_today: Optional[date] = None,
+    local_now: Optional[datetime] = None,
 ) -> Optional[dict]:
     """
     Pure LLM call + validation + Redis cache write.  No DB access.
@@ -1596,7 +1606,7 @@ def _fetch_llm_briefing_sync(
     if anthropic_key:
         result = _call_opus_briefing_sync(
             prompt, schema_fields, required_fields, anthropic_key,
-            athlete_id=athlete_id, local_today=local_today,
+            athlete_id=athlete_id, local_today=local_today, local_now=local_now,
         )
     else:
         logger.info("ANTHROPIC_API_KEY not set — falling back to Gemini for home briefing")
@@ -2012,7 +2022,7 @@ def generate_coach_home_briefing(
     run the LLM call in a worker thread via ``asyncio.to_thread``.
 
     Returns ``(cached_result,)`` if Redis hit (request path only), or
-    ``(None, prompt, schema_fields, required_fields, cache_key, garmin_sleep_h, local_today)``
+    ``(None, prompt, schema_fields, required_fields, cache_key, garmin_sleep_h, local_today, local_now)``
     if the LLM call is needed.
 
     skip_cache=True: the Lane 2A Celery worker always passes this to bypass
@@ -2030,6 +2040,7 @@ def generate_coach_home_briefing(
 
     tz = get_athlete_timezone_from_db(db, _tz_uuid(athlete_id))
     local_today = athlete_local_today(tz)
+    local_now = datetime.now(timezone.utc).astimezone(tz)
 
     cache_input = _json.dumps({
         "date": local_today.isoformat(),
@@ -2585,7 +2596,7 @@ def generate_coach_home_briefing(
         "week_assessment": f"Implication: explain what this week's trajectory means for near-term training direction, based on actual training not plan adherence. 1 sentence.{_lane('')}",
         "checkin_reaction": f"Acknowledge how they feel FIRST, then guide next steps. If they feel good despite high load, validate that and suggest recovery actions to maintain it. Never contradict their self-report. 1-2 sentences.{_lane(checkin_summary)}",
         "race_assessment": f"Honest readiness assessment for their race based on current fitness, not plan adherence. 1-2 sentences.{_lane(race_summary)}",
-        "morning_voice": f"The first thing the athlete reads. ONE paragraph, 2-3 sentences. Follow this structure exactly: Sentence 1: State what they did today with one specific number (distance, pace, or HR). Sentence 2: Connect it to their recent training pattern — volume trend this week, load block context, or a personal fingerprint pattern. Sentence 3 (optional): One concrete forward-looking action for TOMORROW only — if the UPCOMING PLAN section exists, reference the actual scheduled workout by name and type instead of guessing. CRITICAL RULES: If the athlete already ran today, NEVER tell them to rest TODAY or do zero running TODAY — their run is done; guidance is about tomorrow. If a quality session (threshold, intervals, tempo, long run) is scheduled tomorrow, NEVER suggest rest or easy movement — frame today as preparation for that session. NEVER reference the briefing itself, synced data, data refreshes, or system internals. NEVER say 'home briefing', 'synced activity', 'refreshed'. Must cite at least one specific number (pace, distance, HR — NOT internal metrics). ABSOLUTE BAN on CTL, ATL, TSB, chronic load, acute load, form score, durability index, recovery half-life, injury risk score, 'confirmed N times', 'r=', 'correlation'.{_lane(fingerprint_summary)}",
+        "morning_voice": f"The first thing the athlete reads. ONE paragraph, 2-3 sentences. Follow this structure exactly: Sentence 1: State what they did today with one specific number (distance, pace, or HR). Use time-appropriate language: 'this afternoon' if the run was in the afternoon, 'this evening' if evening, 'this morning' ONLY if they actually ran before noon. Sentence 2: Connect it to their recent training pattern — volume trend this week, load block context, or a personal fingerprint pattern. Sentence 3 (optional): One concrete forward-looking action for TOMORROW only — if the UPCOMING PLAN section exists, reference the actual scheduled workout by name and type instead of guessing. CRITICAL RULES: If the athlete already ran today, NEVER tell them to rest TODAY or do zero running TODAY — their run is done; guidance is about tomorrow. If a quality session (threshold, intervals, tempo, long run) is scheduled tomorrow, NEVER suggest rest or easy movement — frame today as preparation for that session. NEVER reference the briefing itself, synced data, data refreshes, or system internals. NEVER say 'home briefing', 'synced activity', 'refreshed'. Must cite at least one specific number (pace, distance, HR — NOT internal metrics). ABSOLUTE BAN on CTL, ATL, TSB, chronic load, acute load, form score, durability index, recovery half-life, injury risk score, 'confirmed N times', 'r=', 'correlation'.{_lane(fingerprint_summary)}",
         "workout_why": f"One sentence explaining WHY today's workout matters in the context of their training. Example: 'Active recovery keeps blood flowing after yesterday's 10-mile effort.' No sycophantic language.{_lane(today_summary)}",
     }
     required_fields = ["coach_noticed", "today_context", "week_assessment", "morning_voice"]
@@ -2594,7 +2605,7 @@ def generate_coach_home_briefing(
     if race_data:
         required_fields.append("race_assessment")
 
-    return (None, prompt, schema_fields, required_fields, cache_key, garmin_sleep_h, local_today)
+    return (None, prompt, schema_fields, required_fields, cache_key, garmin_sleep_h, local_today, local_now)
 
 
 def compute_coach_noticed(
@@ -3891,7 +3902,7 @@ async def get_home_data(
                 if len(prep) == 1:
                     coach_briefing = prep[0]
                 else:
-                    _, prompt, schema_fields, required_fields, cache_key, garmin_sleep_h, _local_today = prep
+                    _, prompt, schema_fields, required_fields, cache_key, garmin_sleep_h, _local_today, _local_now = prep
                     if garmin_sleep_h is not None:
                         if checkin_data_dict is None:
                             checkin_data_dict = {}
@@ -3908,6 +3919,7 @@ async def get_home_data(
                                 cache_key=cache_key,
                                 athlete_id=str(current_user.id),
                                 local_today=_local_today,
+                                local_now=_local_now,
                             ),
                             timeout=HOME_BRIEFING_TIMEOUT_S,
                         )

@@ -115,7 +115,7 @@ def _build_briefing_prompt(athlete_id: str, db: Session) -> Optional[tuple]:
     generate_coach_home_briefing() prompt builder.
 
     Returns
-      (prompt, schema_fields, required_fields, checkin_data_dict, race_data_dict, garmin_sleep_h)
+      (prompt, schema_fields, required_fields, checkin_data_dict, race_data_dict, garmin_sleep_h, local_now)
     on success, ``None`` when legacy cache short-circuits, and ``False`` on hard failure.
     """
     from models import Activity, DailyCheckin, PlannedWorkout, TrainingPlan
@@ -285,12 +285,12 @@ def _build_briefing_prompt(athlete_id: str, db: Session) -> Optional[tuple]:
             )
             return None  # Sentinel: already cached, normal skip
 
-        _, prompt, schema_fields, required_fields, _, garmin_sleep_h, _local_today = prep
+        _, prompt, schema_fields, required_fields, _, garmin_sleep_h, _local_today, _local_now = prep
         if garmin_sleep_h is not None:
             if checkin_data_dict is None:
                 checkin_data_dict = {}
             checkin_data_dict["garmin_sleep_h"] = garmin_sleep_h
-        return prompt, schema_fields, required_fields, checkin_data_dict, race_data_dict, garmin_sleep_h
+        return prompt, schema_fields, required_fields, checkin_data_dict, race_data_dict, garmin_sleep_h, _local_now
 
     except Exception as e:
         logger.error(f"Failed to build briefing prompt for {athlete_id}: {e}", exc_info=True)
@@ -334,9 +334,10 @@ def _call_opus_briefing(
     schema_fields: dict,
     required_fields: list,
     athlete_id: Optional[str] = None,
+    local_now=None,
 ) -> Optional[dict]:
     """Call Sonnet (via _call_opus_briefing_sync) with PROVIDER_TIMEOUT_S enforced.
-    
+
     Function name retained for compatibility — runtime model is claude-sonnet-4-6
     unless Kimi canary is active for this athlete.
     """
@@ -352,6 +353,8 @@ def _call_opus_briefing(
         _call_opus_briefing_sync, prompt, schema_fields, required_fields, anthropic_key,
         PROVIDER_TIMEOUT_S,  # llm_timeout — worker path gets full budget
         athlete_id,          # pass through for canary routing
+        None,                # local_today — let _call_opus_briefing_sync default
+        local_now,           # athlete's current local datetime
     )
     try:
         return future.result(timeout=PROVIDER_TIMEOUT_S)
@@ -371,6 +374,7 @@ def _call_llm_for_briefing(
     schema_fields: dict,
     required_fields: list,
     athlete_id: Optional[str] = None,
+    local_now=None,
 ) -> Optional[dict]:
     """
     Single LLM dispatch point for home briefing generation.
@@ -384,7 +388,7 @@ def _call_llm_for_briefing(
     can be verified by tests via patching this function.  All actual LLM
     calls go through _call_opus_briefing (Sonnet/Kimi) or _call_gemini_briefing.
     """
-    result = _call_opus_briefing(prompt, schema_fields, required_fields, athlete_id=athlete_id)
+    result = _call_opus_briefing(prompt, schema_fields, required_fields, athlete_id=athlete_id, local_now=local_now)
     if result is not None:
         return result
     return _call_gemini_briefing(prompt, schema_fields, required_fields)
@@ -577,7 +581,7 @@ def generate_home_briefing_task(self: Task, athlete_id: str) -> Dict:
             fb_result["reason"] = "prompt_build_failed"
             return fb_result
 
-        prompt, schema_fields, required_fields, checkin_data, race_data, garmin_sleep_h = prompt_result
+        prompt, schema_fields, required_fields, checkin_data, race_data, garmin_sleep_h, _local_now = prompt_result
 
         from routers.home import (
             _valid_home_briefing_contract,
@@ -591,7 +595,7 @@ def generate_home_briefing_task(self: Task, athlete_id: str) -> Dict:
         use_opus = bool(os.getenv("ANTHROPIC_API_KEY"))
         source_model = "claude-sonnet-4-6" if use_opus else "gemini-2.5-flash"
         is_canary = is_canary_athlete(athlete_id)
-        result = _call_llm_for_briefing(prompt, schema_fields, required_fields, athlete_id=athlete_id)
+        result = _call_llm_for_briefing(prompt, schema_fields, required_fields, athlete_id=athlete_id, local_now=_local_now)
 
         if result is not None and is_canary:
             canary_failed = False
