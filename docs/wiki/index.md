@@ -1,6 +1,6 @@
 # StrideIQ Internal Wiki
 
-**Last updated:** April 11, 2026
+**Last updated:** April 15, 2026
 
 This is the single onboarding document. Read this instead of the 12-document read order.
 
@@ -67,6 +67,57 @@ Wiki update: Update docs/wiki/[relevant-page].md with [what changed].
 ```
 
 This is the same discipline as "update tests after code changes." The wiki stays current because every change includes a wiki update step.
+
+## Project Structure (April 2026 Reorganization)
+
+### Backend (`apps/api/`)
+
+```
+models/                     # ORM models split by domain
+  __init__.py               # Re-exports all 87 models for backward compat
+  athlete.py                # Athlete, goals, overrides, calibration, photos
+  activity.py               # Activity, splits, streams, PBs, best efforts
+  plan.py                   # TrainingPlan, PlannedWorkout, templates, calendar
+  checkin.py                # DailyCheckin, body comp, readiness, work pattern
+  nutrition.py              # Nutrition goals/entries, fueling products
+  coaching.py               # CoachChat, recommendations, intent snapshots
+  correlation.py            # Findings, auto-discovery, narration logs
+  system.py                 # Billing, invites, ingestion state, telemetry
+
+services/
+  sync/                     # Strava, Garmin, dedup, backfill (16 files)
+  intelligence/             # Correlation engine, attribution, narration (16 files)
+  plan_framework/           # Plan generation engine (V1)
+  plan_engine_v2/           # Plan generation engine (V2)
+  auto_discovery/           # Correlation auto-discovery pipeline
+  ai_coach.py               # AI coach (god file, 5.7K lines — split deferred)
+  coach_tools.py            # Coach tool functions (god file, 4.9K lines — split deferred)
+  [other services]          # Analysis, shape, email, stripe, etc.
+
+data/
+  workout_variants/         # Workout registry JSON + pilot markdowns
+  *.xlsx                    # Performance standards data
+```
+
+### Documentation (`docs/`)
+
+```
+docs/
+  FOUNDER_OPERATING_CONTRACT.md   # How agents work with the founder
+  PRODUCT_MANIFESTO.md            # Product soul
+  PRODUCT_STRATEGY_2026-03-03.md  # 16-concept moat
+  TRAINING_PLAN_REBUILD_PLAN.md   # Build plan north star
+  SITE_AUDIT_LIVING.md            # Current state inventory
+  wiki/                           # Synthesized system docs (this wiki)
+  specs/                          # Detailed specifications
+  references/                     # Coaching science references
+  adr/                            # Architecture decision records
+  archive/                        # Historical builder instructions, handoffs, notes
+```
+
+### Backward Compatibility
+
+All service files moved to `services/sync/` or `services/intelligence/` have **shim files** at their old paths that redirect imports transparently. Existing `from services.strava_service import X` continues to work. These shims can be removed once all imports are updated to the new paths.
 
 ## What This Wiki Is Not
 
