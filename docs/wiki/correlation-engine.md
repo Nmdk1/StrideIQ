@@ -71,6 +71,24 @@ Six cross-training inputs added to the correlation engine (Apr 5, 2026):
 
 Direction expectations are **empty** — the engine discovers relationships without pre-baked assumptions.
 
+### Nutrition Inputs (Apr 9, 2026)
+
+Nine nutrition inputs added via `aggregate_fueling_inputs()`:
+
+| Input Metric | Source |
+|-------------|--------|
+| `pre_run_caffeine_mg` | Pre-activity caffeine |
+| `pre_run_carbs_g` | Pre-activity carbs |
+| `during_run_carbs_g_per_hour` | During-activity carbs / duration |
+| `pre_run_meal_gap_minutes` | Time between last meal and activity start |
+| `daily_caffeine_mg` | Total daily caffeine |
+| `daily_calories` | Total daily calories |
+| `daily_protein_g` | Total daily protein |
+| `daily_carbs_g` | Total daily carbs |
+| `daily_fat_g` | Total daily fat |
+
+These correlate against all existing output metrics (efficiency, HR drift, pace, recovery). The engine can discover relationships like "pre-run caffeine > 100mg correlates with higher efficiency" or "daily protein > 1.6g/kg correlates with faster recovery."
+
 ### AutoDiscovery
 
 Located in `services/auto_discovery/`:

@@ -413,3 +413,74 @@ about nutrition, without needing to call a tool.
 9. **No population language anywhere in the UI.** Grep the frontend for
    "recommend", "guideline", "suggest", "should eat", "expert". Zero hits
    in the nutrition page.
+
+---
+
+## Integration Points — Nutrition as a First-Class Metric
+
+Nutrition is not a sidecar feature. When the input pipeline above is
+built and data starts flowing, nutrition becomes a core input metric
+at the same level as training load, sleep, and HRV. The integrations
+below should be built as data becomes available.
+
+### Correlation Engine
+
+Nutrition data enters the correlation engine as a dimension alongside
+existing metrics. Target findings:
+- "When you consumed 80+ g/hr carbs on long runs, your cardiac drift
+  was 22% lower" (population-validated pattern)
+- "Your protein intake in the 2 hours after threshold sessions
+  correlates with faster recovery on the following day"
+- "On days when you logged <1500 kcal, your next-day easy pace was
+  15 sec/mi slower"
+
+Nutrition correlations use the same statistical rigor as all other
+findings. No spurious claims. Suppress over hallucinate.
+
+### Daily Briefing
+
+When tomorrow's workout is ≥90 min or a race simulation:
+- "You have a 16-mile long run tomorrow. Your fueling on your last
+  two long runs averaged 45 g/hr — below the 75 g/hr floor. Consider
+  preparing gels tonight."
+
+When fueling data shows a pattern:
+- "Your last 3 long runs with 75+ g/hr carbs all had negative splits.
+  Keep doing what you're doing."
+
+When no nutrition data exists: say nothing. Don't remind athletes
+to log food — that's penalty UX.
+
+### Coach Model
+
+The coach should be fueling-aware when reviewing workout outcomes:
+- After a bonked long run: ask about fueling before suggesting
+  fitness issues
+- After a great race: acknowledge fueling if data shows they hit
+  their target
+- In pre-race conversations: reference their practiced fueling rate
+  from training logs
+
+The coach never prescribes specific diets or calorie targets. It
+references the athlete's own data and patterns.
+
+### Plan Generator (Workout Descriptions)
+
+Already specified in the Algorithm Spec (section 10, Workout
+Description Quality Bar): all workouts ≥90 min include
+`fueling_target_g_per_hr` in the segments schema and a fueling
+reminder in the description text. The fueling target scales with
+training age:
+- Early development: 60 g/hr
+- Developing: 75 g/hr
+- Established: 75-90 g/hr
+- Race day: athlete's practiced rate
+
+### Fueling Product Library (Future)
+
+When the product library is built (gels, drinks, chews), the system
+can compute whether an athlete's planned products hit their g/hr
+target: "Your 2 gels + 1 bottle of Tailwind = ~65 g/hr. You need
+one more gel per hour to hit your 90 g/hr target."
+
+This is the future state — not a blocker for the current build.

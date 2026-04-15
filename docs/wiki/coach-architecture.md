@@ -56,12 +56,14 @@ The system prompt in `ai_coach.py` includes:
 
 ### Coach Tools
 
-The coach has access to ~24 tools defined in `services/coach_tools.py`:
+The coach has access to ~26 tools defined in `services/coach_tools.py`:
 
 - `get_recent_runs()` — last N days of run activities
 - `get_wellness_trends()` — 28-day check-in trends
 - `get_pb_patterns()` — personal best analysis
-- `build_athlete_brief()` — comprehensive context
+- `build_athlete_brief()` — comprehensive context (includes Nutrition Snapshot: today's totals, goal, day tier, targets)
+- `get_nutrition_correlations()` — nutrition-related findings from the correlation engine
+- `get_nutrition_log()` — recent nutrition entries for an athlete
 - Activity data queries, plan data, correlation findings
 
 ### Conversation Management
@@ -81,6 +83,7 @@ The coach has access to ~24 tools defined in `services/coach_tools.py`:
 - **Caps recalibrated** (Apr 7, 2026): Raised from Sonnet-era levels (50K tokens/month) to Kimi-appropriate levels (2M standard, 5M VIP). No athlete should ever cap out — it's a product-killer.
 - **Date rendering fix** (Apr 7, 2026): All 7 date-emitting code paths now include pre-computed relative labels. `_relative_date()` precision extended to day-level through 30 days.
 - **Athlete calibration** (Apr 6, 2026): Coach prompt no longer defaults to conservatism regardless of athlete experience.
+- **Nutrition context** (Apr 9, 2026): `build_athlete_brief` now includes a Nutrition Snapshot section. Two new tools (`get_nutrition_correlations`, `get_nutrition_log`) let the coach query nutrition data on demand.
 
 ## Known Issues
 
