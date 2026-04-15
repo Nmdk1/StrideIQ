@@ -24,7 +24,7 @@ def test_all_correlation_inputs_have_friendly_names():
     """Every signal the engine aggregates must have a human-readable name."""
     from services.n1_insight_generator import FRIENDLY_NAMES
 
-    src = (Path(__file__).resolve().parents[1] / "services" / "correlation_engine.py").read_text()
+    src = (Path(__file__).resolve().parents[1] / "services" / "intelligence" / "correlation_engine.py").read_text()
 
     # Extract all keys assigned into the inputs dict in the engine.
     required_signals = set(

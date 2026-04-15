@@ -120,8 +120,8 @@ class TestActivityGarminColumns:
 
     def test_training_effect_annotation_in_model_source(self):
         """[L2] INFORMATIONAL ONLY annotation must be present in models.py source."""
-        import models as mod
-        src = inspect.getsource(mod)
+        from models.activity import Activity
+        src = inspect.getsource(Activity)
         assert "INFORMATIONAL ONLY" in src, (
             "garmin_aerobic_te / _anaerobic_te / _te_label must be annotated "
             "'INFORMATIONAL ONLY' in models.py"
@@ -129,8 +129,8 @@ class TestActivityGarminColumns:
 
     def test_garmin_feel_annotation_in_model_source(self):
         """[L3] Self-evaluation caveat annotation must be present in models.py source."""
-        import models as mod
-        src = inspect.getsource(mod)
+        from models.activity import Activity
+        src = inspect.getsource(Activity)
         assert "low-fidelity" in src.lower() or "low fidelity" in src.lower(), (
             "garmin_feel / garmin_perceived_effort must have low-fidelity caveat in models.py"
         )
