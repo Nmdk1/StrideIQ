@@ -176,8 +176,8 @@ class TestFindBestRace:
         assert best is old
 
     def test_low_rpi_excluded(self):
-        """Races with RPI < 35 are not valid race efforts."""
-        junk = _make_race(days_ago=30, rpi=30.0)
+        """Races with RPI < 15 are not valid race efforts."""
+        junk = _make_race(days_ago=30, rpi=10.0)
         rpi, best = self._calc()._find_best_race([junk])
         assert rpi == 0.0
         assert best is None

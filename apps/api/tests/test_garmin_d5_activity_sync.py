@@ -756,12 +756,7 @@ class TestFirstSessionSweepTrigger:
 
         mock_db = _make_mock_db()
         mock_athlete = _make_mock_athlete()
-        mock_db.query.return_value.filter.return_value.first.side_effect = [
-            None,  # idempotency check activity 1
-            None,  # idempotency check activity 2
-            None,  # idempotency check activity 3
-            None,  # findings existence probe (no findings)
-        ]
+        mock_db.query.return_value.filter.return_value.first.return_value = None
         mock_db.query.return_value.filter.return_value.all.return_value = []
 
         with patch("tasks.garmin_webhook_tasks.get_db_sync", return_value=mock_db), \
@@ -777,16 +772,24 @@ class TestFirstSessionSweepTrigger:
 
     def test_first_session_sweep_not_enqueued_when_findings_exist(self):
         from tasks.garmin_webhook_tasks import process_garmin_activity_task
+        from models import CorrelationFinding
 
         mock_db = _make_mock_db()
         mock_athlete = _make_mock_athlete()
-        mock_db.query.return_value.filter.return_value.first.side_effect = [
-            None,          # idempotency check activity 1
-            None,          # idempotency check activity 2
-            None,          # idempotency check activity 3
-            MagicMock(),   # findings existence probe
-        ]
-        mock_db.query.return_value.filter.return_value.all.return_value = []
+
+        default_q = MagicMock()
+        default_q.filter.return_value.first.return_value = None
+        default_q.filter.return_value.all.return_value = []
+
+        cf_q = MagicMock()
+        cf_q.filter.return_value.first.return_value = MagicMock()
+
+        def _smart_query(model, *a, **kw):
+            if model is CorrelationFinding.id:
+                return cf_q
+            return default_q
+
+        mock_db.query.side_effect = _smart_query
 
         with patch("tasks.garmin_webhook_tasks.get_db_sync", return_value=mock_db), \
              patch("tasks.garmin_webhook_tasks._find_athlete_in_db", return_value=mock_athlete), \
@@ -974,5 +977,5 @@ class TestStreamIngestionTask:
         result, mock_db = self._run_task(_DETAIL_PAYLOAD, activity=activity)
 
         assert result["processed"] == 1
-        assert activity.session_detail == _DETAIL_PAYLOAD
+        assert activity.session_detail["detail_webhook_raw"] == _DETAIL_PAYLOAD
         mock_db.add.assert_not_called()

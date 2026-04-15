@@ -148,10 +148,15 @@ def scan_and_mark_duplicates(
 
             if not match_activities(a_dict, b_dict):
                 # Fallback: duration-based match catches cases where providers
-                # report different distances (Garmin DI vs Strava GPS drift)
+                # report different distances (Garmin DI vs Strava GPS drift).
+                # Only applies when distances are close or one is missing.
                 ta = a.duration_s or 0
                 tb = b.duration_s or 0
                 if ta <= 0 or tb <= 0 or abs(ta - tb) / max(ta, tb) > 0.03:
+                    continue
+                da = float(a.distance_m) if a.distance_m else 0.0
+                db_dist = float(b.distance_m) if b.distance_m else 0.0
+                if da > 0 and db_dist > 0 and abs(da - db_dist) / max(da, db_dist) > 0.20:
                     continue
 
             primary, secondary = _choose_primary(a, b)

@@ -843,7 +843,7 @@ class TestCeleryTask:
         with patch("tasks.home_briefing_tasks._call_opus_briefing", return_value=None) as mock_opus, \
              patch("tasks.home_briefing_tasks._call_gemini_briefing", return_value=gemini_result) as mock_gemini, \
              patch("tasks.home_briefing_tasks._build_data_fingerprint", return_value="fp1"), \
-             patch("tasks.home_briefing_tasks._build_briefing_prompt", return_value=("prompt", {}, [], {}, {}, None)), \
+             patch("tasks.home_briefing_tasks._build_briefing_prompt", return_value=("prompt", {}, [], {}, {}, None, datetime.now())), \
              patch("tasks.home_briefing_tasks.get_db_sync", return_value=MagicMock()), \
              patch("tasks.home_briefing_tasks.acquire_task_lock", return_value=True), \
              patch("tasks.home_briefing_tasks.release_task_lock"), \
@@ -864,7 +864,7 @@ class TestCeleryTask:
         with patch("tasks.home_briefing_tasks._call_opus_briefing", return_value=opus_result) as mock_opus, \
              patch("tasks.home_briefing_tasks._call_gemini_briefing") as mock_gemini, \
              patch("tasks.home_briefing_tasks._build_data_fingerprint", return_value="fp1"), \
-             patch("tasks.home_briefing_tasks._build_briefing_prompt", return_value=("prompt", {}, [], {}, {}, None)), \
+             patch("tasks.home_briefing_tasks._build_briefing_prompt", return_value=("prompt", {}, [], {}, {}, None, datetime.now())), \
              patch("tasks.home_briefing_tasks.get_db_sync", return_value=MagicMock()), \
              patch("tasks.home_briefing_tasks.acquire_task_lock", return_value=True), \
              patch("tasks.home_briefing_tasks.release_task_lock"), \
@@ -922,7 +922,7 @@ class TestCeleryTask:
              patch("tasks.home_briefing_tasks.get_db_sync", return_value=MagicMock()), \
              patch("tasks.home_briefing_tasks.get_redis_client", return_value=fake_redis), \
              patch("tasks.home_briefing_tasks._build_data_fingerprint", return_value=fingerprint), \
-             patch("tasks.home_briefing_tasks._build_briefing_prompt", return_value=("prompt", {}, [], {}, {}, None)) as mock_prompt, \
+             patch("tasks.home_briefing_tasks._build_briefing_prompt", return_value=("prompt", {}, [], {}, {}, None, datetime.now())) as mock_prompt, \
              patch("tasks.home_briefing_tasks._call_llm_for_briefing", return_value=payload) as mock_llm, \
              patch("routers.home._valid_home_briefing_contract", return_value=True), \
              patch("routers.home.validate_voice_output", return_value={"valid": True}), \
@@ -979,7 +979,7 @@ class TestCeleryTask:
              patch("tasks.home_briefing_tasks.get_db_sync", return_value=MagicMock()), \
              patch("tasks.home_briefing_tasks.get_redis_client", return_value=fake_redis), \
              patch("tasks.home_briefing_tasks._build_data_fingerprint", return_value=fingerprint), \
-             patch("tasks.home_briefing_tasks._build_briefing_prompt", return_value=("prompt", {}, [], {}, {}, None)) as mock_prompt, \
+             patch("tasks.home_briefing_tasks._build_briefing_prompt", return_value=("prompt", {}, [], {}, {}, None, datetime.now())) as mock_prompt, \
              patch("tasks.home_briefing_tasks._call_llm_for_briefing", return_value=llm_payload) as mock_llm, \
              patch("routers.home._valid_home_briefing_contract", return_value=True), \
              patch("routers.home.validate_voice_output", return_value={"valid": True}), \
@@ -1009,7 +1009,7 @@ class TestCeleryTask:
              patch("tasks.home_briefing_tasks.release_task_lock"), \
              patch("tasks.home_briefing_tasks.get_db_sync", return_value=mock_db), \
              patch("tasks.home_briefing_tasks._build_data_fingerprint", return_value="fp1"), \
-             patch("tasks.home_briefing_tasks._build_briefing_prompt", return_value=("prompt", {}, [], {}, {}, None)), \
+             patch("tasks.home_briefing_tasks._build_briefing_prompt", return_value=("prompt", {}, [], {}, {}, None, datetime.now())), \
              patch("tasks.home_briefing_tasks._call_llm_for_briefing", return_value=None), \
              patch("tasks.home_briefing_tasks._build_deterministic_briefing", return_value={
                  "coach_noticed": "Latest run synced: 6.0 mi at 8:56/mi.",
@@ -1046,7 +1046,7 @@ class TestCeleryTask:
              patch("tasks.home_briefing_tasks.release_task_lock"), \
              patch("tasks.home_briefing_tasks.get_db_sync", return_value=mock_db), \
              patch("tasks.home_briefing_tasks._build_data_fingerprint", return_value="fp-fallback"), \
-             patch("tasks.home_briefing_tasks._build_briefing_prompt", return_value=("prompt", {}, [], {}, {}, None)), \
+             patch("tasks.home_briefing_tasks._build_briefing_prompt", return_value=("prompt", {}, [], {}, {}, None, datetime.now())), \
              patch("tasks.home_briefing_tasks._call_llm_for_briefing", return_value=None), \
              patch("tasks.home_briefing_tasks._build_deterministic_briefing", return_value={
                  "coach_noticed": "Latest run synced.",
@@ -1080,7 +1080,7 @@ class TestCeleryTask:
              patch("tasks.home_briefing_tasks.release_task_lock"), \
              patch("tasks.home_briefing_tasks.get_db_sync", return_value=mock_db), \
              patch("tasks.home_briefing_tasks._build_data_fingerprint", return_value="fp-llm"), \
-             patch("tasks.home_briefing_tasks._build_briefing_prompt", return_value=("prompt", {}, [], {}, {}, None)), \
+             patch("tasks.home_briefing_tasks._build_briefing_prompt", return_value=("prompt", {}, [], {}, {}, None, datetime.now())), \
              patch("tasks.home_briefing_tasks._call_llm_for_briefing", return_value=llm_payload), \
              patch("routers.home._valid_home_briefing_contract", return_value=True), \
              patch("routers.home.validate_voice_output", return_value={"valid": True}), \
@@ -1269,7 +1269,7 @@ class TestCacheWriteReliability:
              patch("tasks.home_briefing_tasks.release_task_lock"), \
              patch("tasks.home_briefing_tasks.get_db_sync", return_value=MagicMock()), \
              patch("tasks.home_briefing_tasks._build_data_fingerprint", return_value="fp1"), \
-             patch("tasks.home_briefing_tasks._build_briefing_prompt", return_value=("prompt", {}, [], {}, {})), \
+             patch("tasks.home_briefing_tasks._build_briefing_prompt", return_value=("prompt", {}, [], {}, {}, None, datetime.now())), \
              patch("tasks.home_briefing_tasks._call_llm_for_briefing", return_value=payload), \
              patch("tasks.home_briefing_tasks.record_task_failure"), \
              patch("routers.home._valid_home_briefing_contract", return_value=True), \

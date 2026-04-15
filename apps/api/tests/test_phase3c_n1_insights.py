@@ -92,6 +92,7 @@ def _make_athlete(tier="subscriber"):
     a = MagicMock()
     a.id = uuid4()
     a.subscription_tier = tier
+    a.has_active_subscription = tier not in ("free",)
     a.email = "test@example.com"
     return a
 

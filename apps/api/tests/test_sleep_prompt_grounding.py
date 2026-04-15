@@ -23,8 +23,11 @@ from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Optional
 from unittest.mock import MagicMock, patch, PropertyMock
+from uuid import uuid4
 
 import pytest
+
+_VALID_UUID = str(uuid4())
 
 # ---------------------------------------------------------------------------
 # Path setup — mirror what the worker does
@@ -128,14 +131,13 @@ class TestCheckinDataDictWorkerPath:
         # generate_coach_home_briefing is imported lazily inside _build_briefing_prompt;
         # patch at the routers.home module level where the function is defined.
         with patch("routers.home.generate_coach_home_briefing") as mock_gen:
-            # Return a 6-tuple (the new format after the fix)
-            mock_gen.return_value = (None, "prompt", {}, [], "cache_key", None)
+            from datetime import date as _d, datetime as _dt
+            mock_gen.return_value = (None, "prompt", {}, [], "cache_key", None, _d.today(), _dt.utcnow())
 
-            result = _build_briefing_prompt("athlete-uuid-123", mock_db)
+            result = _build_briefing_prompt(_VALID_UUID, mock_db)
 
-        # result is (prompt, schema_fields, required_fields, checkin_data_dict, race_data_dict, garmin_sleep_h)
         assert result is not None and result is not False
-        _, _, _, checkin_data, _, _ = result
+        _, _, _, checkin_data, _, _, _ = result
         assert checkin_data is not None
         assert "sleep_h" in checkin_data
         assert abs(checkin_data["sleep_h"] - 6.5) < 0.01
@@ -168,14 +170,14 @@ class TestPromptContainsSourceLabeledSleepFields:
             patch("routers.home._get_garmin_sleep_h_for_last_night", return_value=(None, str(date.today()), False)),
         ):
             prep = generate_coach_home_briefing(
-                athlete_id="test-athlete-id",
+                athlete_id=_VALID_UUID,
                 db=mock_db,
                 checkin_data={"readiness_label": "Fine", "sleep_label": "Good", "soreness_label": "None", "sleep_h": 7.0},
                 skip_cache=True,
             )
 
-        assert len(prep) == 6
-        _, prompt, _, _, _, _ = prep
+        assert len(prep) == 8
+        _, prompt, _, _, _, _, _, _ = prep
         assert "TODAY_CHECKIN_SLEEP_HOURS" in prompt
         assert "7.0" in prompt
 
@@ -194,13 +196,13 @@ class TestPromptContainsSourceLabeledSleepFields:
             patch("routers.home._get_garmin_sleep_h_for_last_night", return_value=(6.75, str(date.today()), True)),
         ):
             prep = generate_coach_home_briefing(
-                athlete_id="test-athlete-id",
+                athlete_id=_VALID_UUID,
                 db=mock_db,
                 checkin_data={"sleep_h": 7.0, "sleep_label": "Good", "readiness_label": "Fine", "soreness_label": "None"},
                 skip_cache=True,
             )
 
-        _, prompt, _, _, _, _ = prep
+        _, prompt, _, _, _, _, _, _ = prep
         assert "synthesize" in prompt.lower() or "average" in prompt.lower() or "invent" in prompt.lower()
 
     def test_prompt_contains_garmin_sleep_when_available(self):
@@ -218,13 +220,13 @@ class TestPromptContainsSourceLabeledSleepFields:
             patch("routers.home._get_garmin_sleep_h_for_last_night", return_value=(6.75, str(date.today()), True)),
         ):
             prep = generate_coach_home_briefing(
-                athlete_id="test-athlete-id",
+                athlete_id=_VALID_UUID,
                 db=mock_db,
                 checkin_data={"sleep_h": 7.0, "sleep_label": "Good", "readiness_label": "Fine", "soreness_label": "None"},
                 skip_cache=True,
             )
 
-        _, prompt, _, _, _, garmin_sleep_h = prep
+        _, prompt, _, _, _, garmin_sleep_h, _, _ = prep
         assert garmin_sleep_h == 6.75
         assert "GARMIN_LAST_NIGHT_SLEEP_HOURS" in prompt
         assert "6.75" in prompt
@@ -244,13 +246,13 @@ class TestPromptContainsSourceLabeledSleepFields:
             patch("routers.home._get_garmin_sleep_h_for_last_night", return_value=(6.75, "2026-03-09", False)),
         ):
             prep = generate_coach_home_briefing(
-                athlete_id="test-athlete-id",
+                athlete_id=_VALID_UUID,
                 db=mock_db,
                 checkin_data={"sleep_h": 7.0, "sleep_label": "Good", "readiness_label": "Fine", "soreness_label": "None"},
                 skip_cache=True,
             )
 
-        _, prompt, _, _, _, garmin_sleep_h = prep
+        _, prompt, _, _, _, garmin_sleep_h, _, _ = prep
         assert "GARMIN_LAST_NIGHT_SLEEP_HOURS" not in prompt
         assert "NOT YET AVAILABLE" in prompt
         assert garmin_sleep_h is None

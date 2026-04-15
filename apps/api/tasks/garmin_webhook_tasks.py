@@ -1371,8 +1371,10 @@ def process_garmin_activity_file_task(
     Activity, and feed into the strength parser pipeline.
     """
     import requests as http_requests
+    from services.garmin_adapter import adapt_activity_file_record
 
-    callback_url = record.get("callbackURL")
+    adapted = adapt_activity_file_record(record)
+    callback_url = adapted["callback_url"]
     if not callback_url:
         logger.warning(
             "process_activity_file: no callbackURL in record for athlete %s — keys: %s",
@@ -1381,8 +1383,8 @@ def process_garmin_activity_file_task(
         )
         return {"status": "skipped", "reason": "no_callback_url"}
 
-    summary_id = record.get("summaryId")
-    file_type = record.get("fileType", "UNKNOWN")
+    summary_id = adapted["summary_id"]
+    file_type = adapted["file_type"]
 
     logger.info(
         "process_activity_file: downloading %s file for athlete=%s summary=%s",

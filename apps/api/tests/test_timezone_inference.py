@@ -50,9 +50,15 @@ class TestInferTimezoneFromCoordinates:
         assert result is None or isinstance(result, ZoneInfo)
 
     def test_timezonefinder_unavailable_returns_none(self):
-        with patch.dict("sys.modules", {"timezonefinder": None}):
-            result = infer_timezone_from_coordinates(lat=41.85, lng=-87.65)
-            assert result is None
+        import services.timezone_utils as _tzu
+        original = _tzu._tf_instance
+        _tzu._tf_instance = None
+        try:
+            with patch.dict("sys.modules", {"timezonefinder": None}):
+                result = infer_timezone_from_coordinates(lat=41.85, lng=-87.65)
+                assert result is None
+        finally:
+            _tzu._tf_instance = original
 
 
 class TestInferAndPersistAthleteTimezone:

@@ -42,6 +42,7 @@ def _make_athlete(tier="premium"):
     a = MagicMock()
     a.id = uuid.uuid4()
     a.subscription_tier = tier
+    a.has_active_subscription = tier not in ("free",)
     a.email = "mbshaf@gmail.com"
     return a
 
@@ -122,12 +123,13 @@ class TestPerInsightSuppression:
 
         corr_result = _mock_corr_result([
             _strong_correlation("weekly_volume_km", "positive"),
-            _strong_correlation("sleep_hours", "positive"),
+            _strong_correlation("recovery_days", "positive"),
         ])
 
         with patch("services.correlation_engine.analyze_correlations",
                    return_value=corr_result):
-            return generate_n1_insights(athlete_id, db, days_window=90)
+            return generate_n1_insights(athlete_id, db, days_window=90,
+                                        output_metric="completion_rate")
 
     def test_unsuppressed_insights_surface(self):
         athlete_id = uuid.uuid4()
@@ -137,8 +139,7 @@ class TestPerInsightSuppression:
     def test_suppressed_insight_does_not_surface(self):
         """Suppress one fingerprint — that specific insight disappears."""
         athlete_id = uuid.uuid4()
-        # First, find the fingerprint for weekly_volume_km + positive
-        fp = _insight_fingerprint("weekly_volume_km", "positive", "efficiency")
+        fp = _insight_fingerprint("weekly_volume_km", "positive", "completion_rate")
 
         insights_before = self._run_generate(athlete_id)
         count_before = len(insights_before)
@@ -155,27 +156,25 @@ class TestPerInsightSuppression:
     def test_other_insights_unaffected_by_suppression(self):
         """Suppressing one insight leaves others alive."""
         athlete_id = uuid.uuid4()
-        fp_to_suppress = _insight_fingerprint("weekly_volume_km", "positive", "efficiency")
+        fp_to_suppress = _insight_fingerprint("weekly_volume_km", "positive", "completion_rate")
 
         insights = self._run_generate(athlete_id, suppressed_fingerprints=[fp_to_suppress])
-        # sleep_hours insight should still surface
         input_names = [i.evidence.get("input_name") for i in insights]
-        assert "sleep_hours" in input_names
+        assert "recovery_days" in input_names
 
     def test_suppression_table_unavailable_fails_open(self):
         """If suppression table is unavailable, insights still surface (fail open)."""
         athlete_id = uuid.uuid4()
         db = MagicMock()
-        # Simulate DB error on suppression lookup
         db.query.return_value.filter.return_value.all.side_effect = Exception("DB unavailable")
 
         corr_result = _mock_corr_result([_strong_correlation()])
 
         with patch("services.correlation_engine.analyze_correlations",
                    return_value=corr_result):
-            insights = generate_n1_insights(athlete_id, db, days_window=90)
+            insights = generate_n1_insights(athlete_id, db, days_window=90,
+                                            output_metric="completion_rate")
 
-        # Should still surface insights (fail open)
         assert len(insights) > 0
 
     def test_n1insight_carries_fingerprint(self):
@@ -368,21 +367,21 @@ class TestStatisticalGatesUnchanged:
             athlete_id = uuid.uuid4()
         db = _mock_db_no_suppressions()
         corr_result = _mock_corr_result([
-            {"input_name": "sleep_hours", "correlation_coefficient": r,
+            {"input_name": "recovery_days", "correlation_coefficient": r,
              "p_value": p, "sample_size": n, "direction": "positive",
              "strength": "moderate", "time_lag_days": 0}
         ])
         with patch("services.correlation_engine.analyze_correlations",
                    return_value=corr_result):
-            return generate_n1_insights(athlete_id, db, days_window=90)
+            return generate_n1_insights(athlete_id, db, days_window=90,
+                                        output_metric="completion_rate")
 
     def test_p_gate_still_enforced_after_bonferroni(self):
         """p=0.06 after Bonferroni → no insight."""
-        # 2 correlations, p=0.03 → p_adj = 0.06 > 0.05
         athlete_id = uuid.uuid4()
         db = _mock_db_no_suppressions()
         corr_result = _mock_corr_result([
-            {"input_name": "sleep_hours", "correlation_coefficient": 0.5,
+            {"input_name": "recovery_days", "correlation_coefficient": 0.5,
              "p_value": 0.03, "sample_size": 30, "direction": "positive",
              "strength": "moderate", "time_lag_days": 0},
             {"input_name": "weekly_volume_km", "correlation_coefficient": 0.5,
@@ -391,7 +390,8 @@ class TestStatisticalGatesUnchanged:
         ])
         with patch("services.correlation_engine.analyze_correlations",
                    return_value=corr_result):
-            insights = generate_n1_insights(athlete_id, db, days_window=90)
+            insights = generate_n1_insights(athlete_id, db, days_window=90,
+                                            output_metric="completion_rate")
         assert insights == []
 
     def test_r_gate_still_enforced(self):
@@ -413,8 +413,6 @@ class TestStatisticalGatesUnchanged:
         """Insights with banned acronyms in text are still filtered."""
         athlete_id = uuid.uuid4()
         db = _mock_db_no_suppressions()
-        # The "tsb" input maps to "form (training readiness)" which is safe
-        # But use a name that would produce banned output
         corr_result = _mock_corr_result([
             {"input_name": "weekly_volume_km", "correlation_coefficient": 0.6,
              "p_value": 0.001, "sample_size": 50, "direction": "positive",
@@ -422,7 +420,8 @@ class TestStatisticalGatesUnchanged:
         ])
         with patch("services.correlation_engine.analyze_correlations",
                    return_value=corr_result):
-            insights = generate_n1_insights(athlete_id, db, days_window=90)
+            insights = generate_n1_insights(athlete_id, db, days_window=90,
+                                            output_metric="completion_rate")
         # All returned insights must be free of banned acronyms
         from services.n1_insight_generator import BANNED_PATTERN
         for ins in insights:

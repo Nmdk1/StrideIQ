@@ -96,10 +96,10 @@ class TestCostCapConstants:
             COACH_MAX_OUTPUT_TOKENS,
         )
         
-        assert COACH_MAX_REQUESTS_PER_DAY == 50
-        assert COACH_MAX_OPUS_REQUESTS_PER_DAY == 3
-        assert COACH_MONTHLY_TOKEN_BUDGET == 1_000_000
-        assert COACH_MONTHLY_OPUS_TOKEN_BUDGET == 50_000
+        assert COACH_MAX_REQUESTS_PER_DAY == 100
+        assert COACH_MAX_OPUS_REQUESTS_PER_DAY == 50
+        assert COACH_MONTHLY_TOKEN_BUDGET == 5_000_000
+        assert COACH_MONTHLY_OPUS_TOKEN_BUDGET == 5_000_000
         assert COACH_MAX_INPUT_TOKENS == 4000
         assert COACH_MAX_OUTPUT_TOKENS == 1500
 

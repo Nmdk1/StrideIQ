@@ -233,7 +233,8 @@ class TestBuildContextDistancesInMiles:
 class TestWellnessTrendsGarminData:
     """get_wellness_trends must include GarminDay Health API data alongside DailyCheckin."""
 
-    def test_wellness_trends_includes_garmin_data(self):
+    @patch("services.timezone_utils.get_athlete_timezone_from_db", return_value=None)
+    def test_wellness_trends_includes_garmin_data(self, _tz):
         from services.coach_tools import get_wellness_trends
 
         athlete_id = uuid.uuid4()
@@ -247,8 +248,6 @@ class TestWellnessTrendsGarminData:
             sleep_score=82,
         )
 
-        # get_wellness_trends calls db.query(DailyCheckin) first, then db.query(GarminDay).
-        # Use side_effect with a call counter to return different results per call order.
         db = MagicMock()
         _call_idx = [0]
 
@@ -257,10 +256,8 @@ class TestWellnessTrendsGarminData:
             idx = _call_idx[0]
             _call_idx[0] += 1
             if idx == 0:
-                # First call: DailyCheckin — return empty
                 q.filter.return_value.order_by.return_value.all.return_value = []
             else:
-                # Second call: GarminDay — return one record
                 q.filter.return_value.order_by.return_value.all.return_value = [garmin]
             return q
 
@@ -280,7 +277,8 @@ class TestWellnessTrendsGarminData:
         assert garmin_data.get("hrv_overnight_avg_ms") is not None
         assert abs(garmin_data["hrv_overnight_avg_ms"] - 44.0) < 0.5
 
-    def test_wellness_trends_graceful_no_garmin(self):
+    @patch("services.timezone_utils.get_athlete_timezone_from_db", return_value=None)
+    def test_wellness_trends_graceful_no_garmin(self, _tz):
         """get_wellness_trends must not crash when no GarminDay or DailyCheckin records exist."""
         from services.coach_tools import get_wellness_trends
 
@@ -790,6 +788,7 @@ class TestBriefDatePreComputation:
                     "days ago", "yesterday", "today", "tomorrow",
                     "weeks ago", "week ago", "in ", "days away",
                     "days remaining", "of 7 days",
+                    "w ago)", "d ago)", "months ago",
                 ]
             )
             assert has_relative, (

@@ -83,6 +83,23 @@ _CADENCE_UNIT_MAP: Dict[str, Optional[str]] = {
 
 
 # ---------------------------------------------------------------------------
+# D3.0 — Activity file webhook adapter
+# ---------------------------------------------------------------------------
+
+
+def adapt_activity_file_record(raw: Dict[str, Any]) -> Dict[str, Any]:
+    """Translate a Garmin activity-file webhook record to internal field names.
+
+    Raw fields: summaryId, fileType, callbackURL.
+    """
+    return {
+        "summary_id": _str_or_none(raw.get("summaryId")),
+        "file_type": raw.get("fileType", "UNKNOWN"),
+        "callback_url": raw.get("callbackURL"),
+    }
+
+
+# ---------------------------------------------------------------------------
 # D3.1 — Activity adapter
 # ---------------------------------------------------------------------------
 

@@ -224,6 +224,7 @@ class TestTSSCalculation:
         activity.avg_hr = 155
         activity.name = "Easy Morning Run"
         activity.workout_type = "easy_run"
+        activity.sport = "run"
         return activity
     
     def test_hr_tss_calculation(self, calculator, mock_athlete, mock_activity):
@@ -317,6 +318,7 @@ class TestEstimatedTSSWorkoutTypes:
         activity.duration_s = 3600  # 1 hour
         activity.distance_m = None  # Force estimation
         activity.avg_hr = None
+        activity.sport = "run"
         return activity
     
     @pytest.fixture

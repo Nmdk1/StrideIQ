@@ -93,16 +93,16 @@ class TestTrainingPaces:
     # Tolerance: ±30 seconds is acceptable for practical training purposes
     PACE_TESTS = [
         # (rpi, easy, marathon, threshold, interval, rep) - seconds per mile
-        # I/R recalibrated 2026-03-29 against reference calculator
-        (30, 776, 631, 595, 466, 451),
-        (35, 660, 545, 514, 444, 430),
-        (40, 594, 495, 467, 421, 412),
-        (45, 544, 461, 435, 398, 384),
-        (50, 508, 435, 408, 375, 355),
-        (55, 474, 408, 385, 352, 326),
-        (60, 447, 385, 365, 329, 298),
-        (65, 420, 362, 340, 306, 269),
-        (70, 395, 342, 323, 284, 241),
+        # Aligned 2026-04-10 to _RPI_PACE_TABLE (Daniels/Gilbert derivation 2026-04-04)
+        (30, 685, 662, 595, 529, 505),
+        (35, 636, 586, 539, 490, 466),
+        (40, 590, 526, 492, 453, 429),
+        (45, 538, 477, 448, 412, 388),
+        (50, 494, 437, 411, 378, 354),
+        (55, 458, 403, 380, 350, 326),
+        (60, 427, 374, 354, 326, 302),
+        (65, 400, 349, 332, 305, 281),
+        (70, 377, 328, 313, 288, 264),
     ]
     
     # Tolerance in seconds — tight enough to catch calibration drift.

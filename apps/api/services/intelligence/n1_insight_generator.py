@@ -174,6 +174,7 @@ FRIENDLY_NAMES: Dict[str, str] = {
     "muscle_mass_kg": "muscle mass",
     "daily_fat_g": "daily fat intake",
     "daily_fiber_g": "daily fiber intake",
+    "daily_caffeine_mg": "daily caffeine intake",
     "daily_calories": "daily calorie intake",
     "weight_kg": "body weight",
     "bmi": "body mass index",

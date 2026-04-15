@@ -336,6 +336,8 @@ def test_upsert_updates_confounder_fields():
     existing.input_name = "readiness_1_5"
     existing.output_metric = "efficiency"
     existing.time_lag_days = 3
+    existing.threshold_value = None
+    existing.threshold_direction = None
 
     db.query.return_value.filter.return_value.first.return_value = existing
     db.query.return_value.filter.return_value.all.return_value = [existing]

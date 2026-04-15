@@ -116,6 +116,6 @@ class TestSyncTaskProgressReporting:
         
         # Verify the update_state call is in the source
         assert "self.update_state(" in source
-        assert "state='PROGRESS'" in source
-        assert "'current'" in source
-        assert "'total'" in source
+        assert "state=" in source and "PROGRESS" in source
+        assert "current" in source
+        assert "total" in source

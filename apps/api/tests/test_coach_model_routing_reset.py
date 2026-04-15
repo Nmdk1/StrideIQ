@@ -181,7 +181,6 @@ class TestPremiumCapPreserved:
             "COACH_MODEL_ROUTING": "on",
             "OWNER_ATHLETE_ID": "",
             "ANTHROPIC_API_KEY": "sk-test",
-            "COACH_MAX_OPUS_REQUESTS_PER_DAY": "3",
         }):
             coach = AICoach(mock_db)
             coach.anthropic_client = MagicMock()
@@ -192,7 +191,8 @@ class TestPremiumCapPreserved:
         usage.tokens_this_month = 0
         usage.opus_tokens_this_month = 0
         with patch.object(coach, "_get_or_create_usage", return_value=usage), \
-             patch.object(coach, "_is_founder", return_value=False):
+             patch.object(coach, "_is_founder", return_value=False), \
+             patch("services.coaching._budget.COACH_MAX_OPUS_REQUESTS_PER_DAY", 3):
             allowed, reason = coach.check_budget(
                 uuid4(), is_opus=True, is_vip=False
             )

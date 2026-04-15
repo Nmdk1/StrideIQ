@@ -166,6 +166,8 @@ class TestPerNarrativeSuppression:
         workout = _make_workout_mock()
         with patch("services.workout_narrative_generator._build_context") as mock_ctx, \
              patch("services.workout_narrative_generator._get_recent_narratives", return_value=[]), \
+             patch("services.intelligence.workout_narrative_generator._call_narrative_llm",
+                   return_value=("Your TSB is -12 so take it easy.", 80, 25, 120)), \
              patch.dict(os.environ, {KILL_SWITCH_3B_ENV: "false"}):
             mock_ctx.return_value = {
                 "workout": {"type": "easy", "subtype": None, "title": "Easy Run",
@@ -180,7 +182,6 @@ class TestPerNarrativeSuppression:
             }
             result = generate_workout_narrative(
                 uuid.uuid4(), date.today(), MagicMock(),
-                gemini_client=_mock_llm("Your TSB is -12 so take it easy."),
             )
         assert result.suppressed is True
         assert "kill_switch" not in result.suppression_reason.lower()
@@ -190,6 +191,8 @@ class TestPerNarrativeSuppression:
         """Intensity encouragement during taper suppressed independently of kill switch."""
         with patch("services.workout_narrative_generator._build_context") as mock_ctx, \
              patch("services.workout_narrative_generator._get_recent_narratives", return_value=[]), \
+             patch("services.intelligence.workout_narrative_generator._call_narrative_llm",
+                   return_value=("Push hard today and attack the hills.", 80, 25, 120)), \
              patch.dict(os.environ, {KILL_SWITCH_3B_ENV: "false"}):
             mock_ctx.return_value = {
                 "workout": {"type": "easy", "subtype": None, "title": "Recovery Run",
@@ -204,7 +207,6 @@ class TestPerNarrativeSuppression:
             }
             result = generate_workout_narrative(
                 uuid.uuid4(), date.today(), MagicMock(),
-                gemini_client=_mock_llm("Push hard today and attack the hills."),
             )
         assert result.suppressed is True
         assert "intensity" in result.suppression_reason.lower()
@@ -215,6 +217,8 @@ class TestPerNarrativeSuppression:
         with patch("services.workout_narrative_generator._build_context") as mock_ctx, \
              patch("services.workout_narrative_generator._get_recent_narratives",
                    return_value=[recent_text]), \
+             patch("services.intelligence.workout_narrative_generator._call_narrative_llm",
+                   return_value=(recent_text, 80, 25, 120)), \
              patch.dict(os.environ, {KILL_SWITCH_3B_ENV: "false"}):
             mock_ctx.return_value = {
                 "workout": {"type": "easy", "subtype": None, "title": "Easy Run",
@@ -229,7 +233,6 @@ class TestPerNarrativeSuppression:
             }
             result = generate_workout_narrative(
                 uuid.uuid4(), date.today(), MagicMock(),
-                gemini_client=_mock_llm(recent_text),
             )
         assert result.suppressed is True
         assert "similar" in result.suppression_reason.lower()

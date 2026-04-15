@@ -6,6 +6,7 @@ Run inside the API container:
 
 Outputs Python dict literals that can be pasted into the V2 evaluation harness.
 """
+import os
 import sys
 import json
 sys.path.insert(0, ".")
@@ -17,7 +18,9 @@ from services.plan_framework.fingerprint_bridge import compute_fingerprint
 from services.plan_framework.load_context import build_load_context
 
 TARGET_EMAILS = [
-    "mbshaf@gmail.com",
+    e.strip()
+    for e in os.environ.get("STRIDEIQ_TARGET_EMAILS", "").split(",")
+    if e.strip()
 ]
 
 TARGET_NAMES = ["brian", "larry", "josh", "mark", "adam"]
