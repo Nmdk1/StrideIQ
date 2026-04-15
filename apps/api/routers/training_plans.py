@@ -19,7 +19,7 @@ from core.database import get_db
 from core.auth import get_current_athlete
 from models import Athlete, Activity, TrainingPlan, PlannedWorkout
 from services.plan_lifecycle import get_active_plan_for_athlete
-from services.timezone_utils import get_athlete_timezone, athlete_local_today, to_athlete_local_date, local_day_bounds_utc
+from services.timezone_utils import get_athlete_timezone, athlete_local_today, to_activity_local_date, local_day_bounds_utc
 
 router = APIRouter(prefix="/v1/training-plans", tags=["Training Plans"])
 
@@ -273,7 +273,7 @@ async def get_calendar(
     # Group activities by date
     activities_by_date = {}
     for a in activities:
-        d = to_athlete_local_date(a.start_time, tz)
+        d = to_activity_local_date(a, tz)
         if d not in activities_by_date:
             activities_by_date[d] = []
         activities_by_date[d].append({

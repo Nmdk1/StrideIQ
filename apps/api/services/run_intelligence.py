@@ -18,7 +18,7 @@ import logging
 from sqlalchemy.orm import Session
 
 from models import Activity, ActivitySplit, CachedStreamAnalysis, CalendarNote
-from services.timezone_utils import get_athlete_timezone_from_db, to_athlete_local_date
+from services.timezone_utils import get_athlete_timezone_from_db, to_activity_local_date
 
 logger = logging.getLogger(__name__)
 
@@ -238,7 +238,7 @@ def _get_interval_history(
         return {
             "prev_avg_pace_per_mile": _fmt_pace_per_mile(prev_avg),
             "prev_avg_pace_s_km": prev_avg,
-            "prev_date": to_athlete_local_date(prev.start_time, get_athlete_timezone_from_db(db, activity.athlete_id)).isoformat(),
+            "prev_date": to_activity_local_date(prev, get_athlete_timezone_from_db(db, activity.athlete_id)).isoformat(),
             "prev_reps": len(prev_clean),
             "prev_total_reps": len(prev_paces),
         }
@@ -403,7 +403,7 @@ def _get_drift_history_avg(activity: Activity, db: Session) -> Optional[Dict[str
 
 def _get_athlete_notes(activity: Activity, db: Session) -> Optional[str]:
     """Fetch athlete's calendar notes for this activity's date."""
-    run_date = to_athlete_local_date(activity.start_time, get_athlete_timezone_from_db(db, activity.athlete_id))
+    run_date = to_activity_local_date(activity, get_athlete_timezone_from_db(db, activity.athlete_id))
     notes = (
         db.query(CalendarNote)
         .filter(

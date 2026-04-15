@@ -22,7 +22,7 @@ from sqlalchemy.orm import Session
 from core.auth import get_current_user
 from core.cache import invalidate_athlete_cache, invalidate_correlation_cache
 from core.database import get_db
-from services.timezone_utils import get_athlete_timezone, athlete_local_today, to_athlete_local_date
+from services.timezone_utils import get_athlete_timezone, athlete_local_today, to_activity_local_date
 from models import (
     Activity,
     Athlete,
@@ -700,7 +700,7 @@ def get_activity_linked_nutrition(
         result.append(_ActivityNutrition(
             activity_id=str(act.id),
             activity_name=act.name or "Run",
-            activity_date=to_athlete_local_date(act.start_time, _tz).isoformat() if act.start_time else "",
+            activity_date=to_activity_local_date(act, _tz).isoformat() if act.start_time else "",
             distance_mi=round(dist, 1) if dist else None,
             pre_entries=[_entry_dict(e) for e in pre],
             during_entries=[_entry_dict(e) for e in during],

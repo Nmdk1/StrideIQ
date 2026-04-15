@@ -32,7 +32,7 @@ from services.timezone_utils import (
     get_athlete_timezone,
     get_athlete_timezone_from_db,
     athlete_local_today,
-    to_athlete_local_date,
+    to_activity_local_date,
     local_day_bounds_utc,
 )
 
@@ -2869,7 +2869,7 @@ def _build_rich_intelligence_context(athlete_id: str, db: Session) -> str:
             lines = []
             for a in recent:
                 day = a.start_time.strftime("%a %b %d") if a.start_time else "?"
-                rel = _rel(to_athlete_local_date(a.start_time, _tz), _local_today) if a.start_time else ""
+                rel = _rel(to_activity_local_date(a, _tz), _local_today) if a.start_time else ""
                 lines.append(f"- {day} {rel}: {a.shape_sentence}")
             if lines:
                 sections.append(
@@ -3446,8 +3446,8 @@ async def get_home_data(
         ).order_by(Activity.start_time.desc()).first()
 
         if last_activity:
-            from services.timezone_utils import to_athlete_local_date
-            last_local_date = to_athlete_local_date(last_activity.start_time, _ath_tz)
+            from services.timezone_utils import to_activity_local_date as _to_act_local
+            last_local_date = _to_act_local(last_activity, _ath_tz)
             days_ago = (today - last_local_date).days
             yesterday_insight = YesterdayInsight(
                 has_activity=False,
@@ -3486,8 +3486,8 @@ async def get_home_data(
     ).all()
     _week_actuals: dict = {}
     for _a in _week_actuals_raw:
-        from services.timezone_utils import to_athlete_local_date as _to_local
-        _day = _to_local(_a.start_time, _ath_tz)
+        from services.timezone_utils import to_activity_local_date as _to_act_local2
+        _day = _to_act_local2(_a, _ath_tz)
         if _day not in _week_actuals:
             _week_actuals[_day] = _a  # keep first per day
 

@@ -360,10 +360,10 @@ def get_report(
             .order_by(Activity.start_time)
             .all()
         )
-        from services.timezone_utils import get_athlete_timezone, to_athlete_local_date
+        from services.timezone_utils import get_athlete_timezone, to_activity_local_date
         _tz = get_athlete_timezone(current_user)
         for r in rows:
-            d_key = to_athlete_local_date(r.start_time, _tz) if r.start_time else None
+            d_key = to_activity_local_date(r, _tz) if r.start_time else None
             if d_key:
                 activities_by_date.setdefault(d_key, []).append(r)
 

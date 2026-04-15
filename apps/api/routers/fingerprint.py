@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 from core.auth import get_current_user, require_admin
 from core.database import get_db
 from models import Activity, Athlete, PerformanceEvent, AthleteFinding
-from services.timezone_utils import get_athlete_timezone, get_athlete_timezone_from_db, to_athlete_local_date
+from services.timezone_utils import get_athlete_timezone, get_athlete_timezone_from_db, to_activity_local_date
 from schemas_fingerprint import (
     BrowseResponse,
     RaceCard,
@@ -92,7 +92,7 @@ def _activity_to_card(
         event_id=event.id if event else None,
         activity_id=act.id,
         name=act.name,
-        date=to_athlete_local_date(act.start_time, tz) if (act.start_time and tz) else (act.start_time.date() if act.start_time else None),
+        date=to_activity_local_date(act, tz) if (act.start_time and tz) else (act.start_time.date() if act.start_time else None),
         time_of_day=time_of_day,
         day_of_week=day_of_week,
         distance_category=dist_cat,
@@ -136,7 +136,7 @@ def _build_strip_data(athlete_id: UUID, db: Session) -> RacingLifeStripData:
     _tz = get_athlete_timezone_from_db(db, athlete_id)
     weekly: dict = {}
     for act in activities:
-        d = to_athlete_local_date(act.start_time, _tz)
+        d = to_activity_local_date(act, _tz)
         week_start = d - timedelta(days=d.weekday())
         if week_start not in weekly:
             weekly[week_start] = {"volume_m": 0, "count": 0}
@@ -373,7 +373,7 @@ async def add_race(
 
     dist_m = float(act.distance_m) if act.distance_m else 0
     dist_cat = get_distance_category(dist_m) or "unknown"
-    event_date = to_athlete_local_date(act.start_time, get_athlete_timezone(current_user))
+    event_date = to_activity_local_date(act, get_athlete_timezone(current_user))
 
     dupe = db.query(PerformanceEvent).filter(
         PerformanceEvent.athlete_id == current_user.id,

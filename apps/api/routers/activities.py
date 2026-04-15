@@ -940,7 +940,7 @@ _INPUT_TO_ACTIVITY_FIELD = {
 def _build_prestate(activity: Activity, db: Session) -> dict:
     """Build actual pre-state values for this activity from checkin + activity fields."""
     from models import DailyCheckin
-    from services.timezone_utils import get_athlete_timezone_from_db, to_athlete_local_date
+    from services.timezone_utils import get_athlete_timezone_from_db, to_activity_local_date
 
     values: dict = {}
 
@@ -950,7 +950,7 @@ def _build_prestate(activity: Activity, db: Session) -> dict:
             db.query(DailyCheckin)
             .filter(
                 DailyCheckin.athlete_id == activity.athlete_id,
-                DailyCheckin.date == to_athlete_local_date(activity.start_time, tz),
+                DailyCheckin.date == to_activity_local_date(activity, tz),
             )
             .first()
         )

@@ -34,7 +34,7 @@ from services import coach_tools
 from services.plan_lifecycle import get_active_plan_for_athlete
 from services.timezone_utils import (
     get_athlete_timezone,
-    to_athlete_local_date,
+    to_activity_local_date,
     athlete_local_today,
     local_day_bounds_utc,
 )
@@ -755,7 +755,7 @@ def get_calendar(
     ).order_by(Activity.start_time).all()
     
     for a in activities:
-        activity_date = to_athlete_local_date(a.start_time, tz)
+        activity_date = to_activity_local_date(a, tz)
         if activity_date not in activities_by_date:
             activities_by_date[activity_date] = []
         activities_by_date[activity_date].append(a)
@@ -1383,7 +1383,7 @@ def _build_coach_context(
     
     context["recent_workouts"] = [
         {
-            "date": to_athlete_local_date(a.start_time, tz).isoformat(),
+            "date": to_activity_local_date(a, tz).isoformat(),
             "distance_m": a.distance_m,
             "workout_type": a.workout_type,
             "avg_hr": a.avg_hr
@@ -1455,7 +1455,7 @@ def get_calendar_week(
     
     activities_by_date = {}
     for a in activities:
-        d = to_athlete_local_date(a.start_time, tz)
+        d = to_activity_local_date(a, tz)
         if d not in activities_by_date:
             activities_by_date[d] = []
         activities_by_date[d].append(a)

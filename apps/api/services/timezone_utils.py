@@ -153,6 +153,21 @@ def is_valid_iana_timezone(tz_str: str) -> bool:
         return False
 
 
+_tf_instance = None
+
+
+def _get_timezone_finder():
+    """Lazy singleton for TimezoneFinder (disk-load is expensive, lookup is fast)."""
+    global _tf_instance
+    if _tf_instance is None:
+        try:
+            from timezonefinder import TimezoneFinder
+            _tf_instance = TimezoneFinder()
+        except ImportError:
+            return None
+    return _tf_instance
+
+
 def infer_timezone_from_coordinates(lat: float, lng: float) -> Optional[ZoneInfo]:
     """
     Reverse-geocode a lat/lng to an IANA timezone using timezonefinder.
@@ -161,14 +176,36 @@ def infer_timezone_from_coordinates(lat: float, lng: float) -> Optional[ZoneInfo
     Never raises.
     """
     try:
-        from timezonefinder import TimezoneFinder  # lazy import — library is optional dep
-        tf = TimezoneFinder()
+        tf = _get_timezone_finder()
+        if tf is None:
+            return None
         tz_str = tf.timezone_at(lat=lat, lng=lng)
         if tz_str:
             return ZoneInfo(tz_str)
     except Exception:
         logger.debug("timezonefinder lookup failed for lat=%s lng=%s", lat, lng, exc_info=True)
     return None
+
+
+def to_activity_local_date(activity, athlete_tz: ZoneInfo) -> date:
+    """
+    Convert an activity's UTC start_time to the local date where the run happened.
+
+    Handles travel: if the activity has GPS coordinates, uses the timezone at
+    those coordinates instead of the athlete's home timezone. Falls back to
+    athlete_tz if GPS is absent or timezone lookup fails.
+    """
+    tz = athlete_tz
+    lat = getattr(activity, "start_lat", None)
+    lng = getattr(activity, "start_lng", None)
+    if lat is not None and lng is not None:
+        try:
+            gps_tz = infer_timezone_from_coordinates(float(lat), float(lng))
+            if gps_tz is not None:
+                tz = gps_tz
+        except (ValueError, TypeError):
+            pass
+    return to_athlete_local_date(activity.start_time, tz)
 
 
 def infer_and_persist_athlete_timezone(db: Session, athlete_id: UUID) -> Optional[ZoneInfo]:
