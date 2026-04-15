@@ -13,21 +13,15 @@ from services.plan_framework.workout_variant_dispatch import (
     resolve_workout_variant_id,
 )
 
-def _find_repo_root() -> Path:
+def _find_api_root() -> Path:
+    """Walk up from this test file to find the apps/api directory."""
     p = Path(__file__).resolve()
     for parent in p.parents:
-        if (parent / "_AI_CONTEXT_").is_dir():
+        if (parent / "data" / "workout_variants").is_dir():
             return parent
     return p.parents[min(3, len(p.parents) - 1)]
 
-REGISTRY_PATH = (
-    _find_repo_root()
-    / "_AI_CONTEXT_"
-    / "KNOWLEDGE_BASE"
-    / "workouts"
-    / "variants"
-    / "workout_registry.json"
-)
+REGISTRY_PATH = _find_api_root() / "data" / "workout_variants" / "workout_registry.json"
 
 
 @pytest.fixture(autouse=True)

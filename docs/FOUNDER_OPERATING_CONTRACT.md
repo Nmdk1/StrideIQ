@@ -51,7 +51,7 @@ non-negotiable. The depth scales with complexity.
 
 Before touching a single file, do a deep dive:
 - Read the relevant code — trace the full call chain
-- Read the knowledgebase (`_AI_CONTEXT_/KNOWLEDGE_BASE/`)
+- Read the knowledgebase (`docs/wiki/`, `docs/references/`)
 - Read the build plan (`docs/TRAINING_PLAN_REBUILD_PLAN.md`)
 - If the domain is unfamiliar, do external research (modern coaching
   science, competitor analysis, API documentation)
@@ -496,9 +496,9 @@ immediately.
 - **`services/n1_insight_generator.py`** — contains the Athlete Trust
   Safety Contract (8 clauses) and `OutputMetricMeta` registry. Read this
   before writing any coach output or metric interpretation.
-- **`_AI_CONTEXT_/KNOWLEDGE_BASE/`** — coaching philosophy, governing
-  principles, training hierarchy. Read before touching plan generation.
-- **`_AI_CONTEXT_/00_MANIFESTO.md`** — product manifesto. The "why."
+- **`docs/wiki/`** — system documentation, coaching philosophy, domain guides.
+  Read before touching plan generation.
+- **`docs/PRODUCT_MANIFESTO.md`** — product manifesto. The "why."
 
 ---
 

@@ -14,15 +14,16 @@ from pathlib import Path
 
 import pytest
 
-def _find_repo_root() -> Path:
+def _find_api_root() -> Path:
+    """Walk up from this test file to find the apps/api directory."""
     p = Path(__file__).resolve()
     for parent in p.parents:
-        if (parent / "_AI_CONTEXT_").is_dir():
+        if (parent / "data" / "workout_variants").is_dir():
             return parent
     return p.parents[min(3, len(p.parents) - 1)]
 
-REPO_ROOT = _find_repo_root()
-VARIANTS_DIR = REPO_ROOT / "_AI_CONTEXT_" / "KNOWLEDGE_BASE" / "workouts" / "variants"
+API_ROOT = _find_api_root()
+VARIANTS_DIR = API_ROOT / "data" / "workout_variants"
 REGISTRY_PATH = VARIANTS_DIR / "workout_registry.json"
 
 VOLUME_FAMILIES = frozenset({"E", "M", "T", "I", "R", "long", "composite"})

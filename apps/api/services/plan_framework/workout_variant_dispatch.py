@@ -16,13 +16,20 @@ from typing import Any, Dict, List, Optional
 
 def _resolve_registry_path() -> Path:
     """
-    Monorepo dev: registry lives at repo root under _AI_CONTEXT_/...
-    Docker (context apps/api): tree stops at /app — walk parents until found or
-    return a non-existent path (resolve_workout_variant_id returns None).
+    Locate workout_registry.json.
+
+    Primary: apps/api/data/workout_variants/workout_registry.json
+    (relative to any ancestor that contains a data/ dir).
+    Fallback: legacy _AI_CONTEXT_/... path for backward compat.
+    Docker: /app/data/workout_variants/workout_registry.json (COPY in Dockerfile).
     """
     here = Path(__file__).resolve()
     for anc in here.parents:
-        cand = (
+        primary = anc / "data" / "workout_variants" / "workout_registry.json"
+        if primary.is_file():
+            return primary
+    for anc in here.parents:
+        legacy = (
             anc
             / "_AI_CONTEXT_"
             / "KNOWLEDGE_BASE"
@@ -30,8 +37,8 @@ def _resolve_registry_path() -> Path:
             / "variants"
             / "workout_registry.json"
         )
-        if cand.is_file():
-            return cand
+        if legacy.is_file():
+            return legacy
     return here.parent / ".workout_registry_not_bundled.json"
 
 

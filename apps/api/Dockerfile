@@ -26,9 +26,8 @@ RUN pip install --upgrade pip setuptools wheel && \
 # Application code
 COPY apps/api/ .
 
-# Variant registry (path walk in workout_variant_dispatch finds /app/_AI_CONTEXT_/...)
-COPY _AI_CONTEXT_/KNOWLEDGE_BASE/workouts/variants/workout_registry.json \
-    _AI_CONTEXT_/KNOWLEDGE_BASE/workouts/variants/workout_registry.json
+# Variant registry (path walk in workout_variant_dispatch finds /app/data/workout_variants/...)
+# Note: apps/api/ is already COPYed above, so data/ is included automatically.
 
 # Make migration script executable
 RUN chmod +x run_migrations.py
