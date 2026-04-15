@@ -32,6 +32,12 @@ from models import (
 from services.ai_coach import AICoach
 from services import coach_tools
 from services.plan_lifecycle import get_active_plan_for_athlete
+from services.timezone_utils import (
+    get_athlete_timezone,
+    to_athlete_local_date,
+    athlete_local_today,
+    local_day_bounds_utc,
+)
 
 router = APIRouter(prefix="/v1/calendar", tags=["Calendar"])
 
@@ -367,9 +373,10 @@ def _sanitize_day_coach_text(text: str) -> str:
     out = re.sub(r"\n{3,}", "\n\n", out).strip()
     return out
 
-def get_day_status(planned: Optional[PlannedWorkout], activities: List[Activity], day_date: date) -> str:
+def get_day_status(planned: Optional[PlannedWorkout], activities: List[Activity], day_date: date, today: Optional[date] = None) -> str:
     """Determine the status of a calendar day."""
-    today = date.today()
+    if today is None:
+        today = date.today()
     
     if day_date > today:
         return "future"
@@ -684,12 +691,14 @@ def get_calendar(
     - Notes
     - Insights
     """
-    # Default to current month
+    # Resolve athlete timezone for correct calendar-day bucketing
+    tz = get_athlete_timezone(current_user)
+    local_today = athlete_local_today(tz)
+
+    # Default to current month in athlete's local timezone
     if not start_date:
-        today = date.today()
-        start_date = today.replace(day=1)
+        start_date = local_today.replace(day=1)
     if not end_date:
-        # End of month
         next_month = start_date.replace(day=28) + timedelta(days=4)
         end_date = next_month.replace(day=1) - timedelta(days=1)
     
@@ -711,28 +720,21 @@ def get_calendar(
         for w in workouts:
             planned_workouts[w.scheduled_date] = w
             
-            # Determine current week/phase based on today
-            if w.scheduled_date == date.today():
+            if w.scheduled_date == local_today:
                 current_week = w.week_number
                 current_phase = w.phase
         
-        # If current_week not set (no workout today), calculate from plan dates
         if current_week is None and active_plan.plan_start_date:
-            today = date.today()
-            if today < active_plan.plan_start_date:
-                # Plan hasn't started yet - show week 1
+            if local_today < active_plan.plan_start_date:
                 current_week = 1
-                # Get phase from first workout
                 first_workout = db.query(PlannedWorkout).filter(
                     PlannedWorkout.plan_id == active_plan.id
                 ).order_by(PlannedWorkout.scheduled_date).first()
                 if first_workout:
                     current_phase = first_workout.phase
-            elif today <= (active_plan.plan_end_date or today):
-                # Plan is in progress - calculate week from start date
-                days_from_start = (today - active_plan.plan_start_date).days
+            elif local_today <= (active_plan.plan_end_date or local_today):
+                days_from_start = (local_today - active_plan.plan_start_date).days
                 current_week = (days_from_start // 7) + 1
-                # Get phase from nearest workout in this week
                 nearest = db.query(PlannedWorkout).filter(
                     PlannedWorkout.plan_id == active_plan.id,
                     PlannedWorkout.week_number == current_week
@@ -740,17 +742,20 @@ def get_calendar(
                 if nearest:
                     current_phase = nearest.phase
     
-    # Get activities in range
+    # Query activities using UTC bounds for the athlete-local date range
+    range_start_utc = local_day_bounds_utc(start_date, tz)[0]
+    range_end_utc = local_day_bounds_utc(end_date, tz)[1]
+
     activities_by_date = {}
     activities = db.query(Activity).filter(
         Activity.athlete_id == current_user.id,
         Activity.is_duplicate == False,  # noqa: E712
-        func.date(Activity.start_time) >= start_date,
-        func.date(Activity.start_time) <= end_date
+        Activity.start_time >= range_start_utc,
+        Activity.start_time < range_end_utc,
     ).order_by(Activity.start_time).all()
     
     for a in activities:
-        activity_date = a.start_time.date()
+        activity_date = to_athlete_local_date(a.start_time, tz)
         if activity_date not in activities_by_date:
             activities_by_date[activity_date] = []
         activities_by_date[activity_date].append(a)
@@ -791,7 +796,7 @@ def get_calendar(
         day_notes = notes_by_date.get(current, [])
         day_insights = insights_by_date.get(current, [])
         
-        status = get_day_status(planned, day_activities, current)
+        status = get_day_status(planned, day_activities, current, today=local_today)
         
         total_distance = sum(a.distance_m or 0 for a in day_activities)
         total_duration = sum(a.duration_s or 0 for a in day_activities)
@@ -893,6 +898,9 @@ def get_calendar_day(
     - All notes
     - All insights
     """
+    tz = get_athlete_timezone(current_user)
+    local_today = athlete_local_today(tz)
+
     # Get active plan and planned workout
     active_plan = get_active_plan_for_athlete(db, current_user.id)
     
@@ -903,11 +911,13 @@ def get_calendar_day(
             PlannedWorkout.scheduled_date == calendar_date
         ).first()
     
-    # Get activities for this day
+    # Query activities using athlete-local day bounds in UTC
+    day_start_utc, day_end_utc = local_day_bounds_utc(calendar_date, tz)
     activities = db.query(Activity).filter(
         Activity.athlete_id == current_user.id,
         Activity.is_duplicate == False,  # noqa: E712
-        func.date(Activity.start_time) == calendar_date
+        Activity.start_time >= day_start_utc,
+        Activity.start_time < day_end_utc,
     ).order_by(Activity.start_time).all()
     activities = dedupe_activities_for_calendar_display(activities)
     
@@ -924,7 +934,7 @@ def get_calendar_day(
         CalendarInsight.is_dismissed.is_(False)
     ).order_by(CalendarInsight.priority.desc()).all()
     
-    status = get_day_status(planned, activities, calendar_date)
+    status = get_day_status(planned, activities, calendar_date, today=local_today)
     total_distance = sum(a.distance_m or 0 for a in activities)
     total_duration = sum(a.duration_s or 0 for a in activities)
     
@@ -1327,8 +1337,9 @@ def _build_coach_context(
             "total_weeks": active_plan.total_weeks
         }
     
+    tz = get_athlete_timezone(athlete)
+
     if context_type == "day" and context_date:
-        # Get specific day context
         planned = None
         if active_plan:
             planned = db.query(PlannedWorkout).filter(
@@ -1336,10 +1347,12 @@ def _build_coach_context(
                 PlannedWorkout.scheduled_date == context_date
             ).first()
         
+        day_start_utc, day_end_utc = local_day_bounds_utc(context_date, tz)
         activities = db.query(Activity).filter(
             Activity.athlete_id == athlete.id,
             Activity.is_duplicate == False,  # noqa: E712
-            func.date(Activity.start_time) == context_date
+            Activity.start_time >= day_start_utc,
+            Activity.start_time < day_end_utc,
         ).all()
         
         context["day"] = {
@@ -1370,7 +1383,7 @@ def _build_coach_context(
     
     context["recent_workouts"] = [
         {
-            "date": a.start_time.date().isoformat(),
+            "date": to_athlete_local_date(a.start_time, tz).isoformat(),
             "distance_m": a.distance_m,
             "workout_type": a.workout_type,
             "avg_hr": a.avg_hr
@@ -1422,21 +1435,27 @@ def get_calendar_week(
     if not planned_workouts:
         raise HTTPException(status_code=404, detail=f"Week {week_number} not found in plan")
     
+    tz = get_athlete_timezone(current_user)
+    local_today = athlete_local_today(tz)
+
     # Get date range for the week
     start_date = min(w.scheduled_date for w in planned_workouts)
     end_date = max(w.scheduled_date for w in planned_workouts)
     
-    # Get activities for the week
+    # Query activities using athlete-local UTC bounds
+    range_start_utc = local_day_bounds_utc(start_date, tz)[0]
+    range_end_utc = local_day_bounds_utc(end_date, tz)[1]
+
     activities = db.query(Activity).filter(
         Activity.athlete_id == current_user.id,
         Activity.is_duplicate == False,  # noqa: E712
-        func.date(Activity.start_time) >= start_date,
-        func.date(Activity.start_time) <= end_date
+        Activity.start_time >= range_start_utc,
+        Activity.start_time < range_end_utc,
     ).all()
     
     activities_by_date = {}
     for a in activities:
-        d = a.start_time.date()
+        d = to_athlete_local_date(a.start_time, tz)
         if d not in activities_by_date:
             activities_by_date[d] = []
         activities_by_date[d].append(a)
@@ -1445,7 +1464,7 @@ def get_calendar_week(
     days = []
     for planned in planned_workouts:
         day_activities = activities_by_date.get(planned.scheduled_date, [])
-        status = get_day_status(planned, day_activities, planned.scheduled_date)
+        status = get_day_status(planned, day_activities, planned.scheduled_date, today=local_today)
         
         total_distance = sum(a.distance_m or 0 for a in day_activities)
         total_duration = sum(a.duration_s or 0 for a in day_activities)
