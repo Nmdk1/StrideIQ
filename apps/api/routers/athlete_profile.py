@@ -11,8 +11,6 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import Optional, Dict
-from datetime import date
-
 from core.database import get_db
 from core.auth import get_current_athlete
 from models import Athlete, DailyCheckin

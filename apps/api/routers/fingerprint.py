@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 from core.auth import get_current_user, require_admin
 from core.database import get_db
 from models import Activity, Athlete, PerformanceEvent, AthleteFinding
-from services.timezone_utils import get_athlete_timezone, get_athlete_timezone_from_db, to_athlete_local_date, athlete_local_today
+from services.timezone_utils import get_athlete_timezone, get_athlete_timezone_from_db, to_athlete_local_date
 from schemas_fingerprint import (
     BrowseResponse,
     RaceCard,

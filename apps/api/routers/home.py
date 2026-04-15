@@ -33,6 +33,7 @@ from services.timezone_utils import (
     get_athlete_timezone_from_db,
     athlete_local_today,
     to_athlete_local_date,
+    local_day_bounds_utc,
 )
 
 logger = logging.getLogger(__name__)
