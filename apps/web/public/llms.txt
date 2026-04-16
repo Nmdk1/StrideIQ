@@ -20,7 +20,7 @@
 - Training paces derived from the Daniels/Gilbert oxygen cost equations (peer-reviewed exercise physiology, 1979).
 - Age-grading uses Alan Jones 2025 WMA Road Age-Grading Tables, approved by USATF Masters Long Distance Running Council.
 - Heat adjustment uses temperature and dew point to estimate physiological cost increase from heat stress.
-- All calculations use physics-based formulas, not static lookup tables.
+- Training pace zones are looked up from a calibration table (RPI 20–85) that is itself derived from the Daniels/Gilbert oxygen cost equations, with linear interpolation between RPI values.
 
 ## What StrideIQ Does Not Do
 

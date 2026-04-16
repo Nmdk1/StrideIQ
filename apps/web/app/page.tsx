@@ -32,14 +32,11 @@ const webAppJsonLd = {
   operatingSystem: 'Web',
   description:
     'AI-powered running coaching platform with free training calculators for pace, age-grading, and heat adjustment. Connects with Garmin Connect and Strava.',
-  offers: [
-    {
-      '@type': 'Offer',
-      price: '0',
-      priceCurrency: 'USD',
-      description: 'Free training pace calculator, age-grading, and heat-adjusted pace tools',
-    },
-  ],
+  // NOTE: no top-level `offers` block on the WebApplication itself — StrideIQ
+  // is a paid subscription product with free public calculators as a separate
+  // surface. A zero-price Offer at this level would be misleading to Google
+  // Rich Results. Each free-tool page (SoftwareApplication entity) already
+  // carries its own zero-price offer correctly.
 }
 
 export const metadata: Metadata = {

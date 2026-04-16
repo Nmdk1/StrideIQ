@@ -24,7 +24,7 @@ export const metadata: Metadata = {
     card: 'summary_large_image',
     title: 'Training Pace Calculator - Running Pace Zones from Race Time',
     description:
-      'Free training pace calculator with Daniels/Gilbert VDOT zones — easy through repetition paces from any race result.',
+      'Free training pace calculator with Daniels/Gilbert pace zones — easy through repetition paces from any race result.',
   },
 }
 
@@ -97,7 +97,7 @@ export default function TrainingPaceCalculatorPage() {
         {/* Answer capsule */}
         <div className="bg-orange-500/10 border border-orange-500/30 rounded-xl p-5 mb-6">
           <p className="text-slate-200 leading-relaxed">
-            <strong className="text-orange-400">Quick answer:</strong> Enter a recent race time and distance below. The calculator applies the Daniels/Gilbert oxygen cost equations to derive your VDOT — your current running fitness score — and outputs your five training pace zones in both min/mile and min/km.
+            <strong className="text-orange-400">Quick answer:</strong> Enter a recent race time and distance below. The calculator applies the Daniels/Gilbert oxygen cost equations to derive your Running Performance Index (RPI) — your current aerobic fitness score — and outputs your five training pace zones in both min/mile and min/km.
           </p>
         </div>
 
@@ -111,10 +111,10 @@ export default function TrainingPaceCalculatorPage() {
           <h2 className="text-2xl font-bold mb-4">How the training pace calculator works</h2>
           <div className="prose prose-invert prose-slate max-w-none space-y-4 text-slate-300">
             <p>
-              The calculator uses the <strong>Daniels/Gilbert VDOT system</strong> — a measure of your current aerobic capacity derived from race performance rather than a lab test. The underlying oxygen cost equations were published in peer-reviewed exercise physiology research in 1979 and remain the gold standard for running pace prescription.
+              The calculator uses the <strong>Daniels/Gilbert oxygen cost equations</strong> — a measure of your current aerobic capacity derived from race performance rather than a lab test. The equations were published in peer-reviewed exercise physiology research in 1979 and remain the gold standard for running pace prescription. StrideIQ expresses the result as an <strong>RPI (Running Performance Index)</strong> score.
             </p>
             <p>
-              Your race time and distance are converted to a VDOT score. Each VDOT score maps to five training intensity zones: Easy (E), Marathon (M), Threshold (T), Interval (I), and Repetition (R). These zones correspond to distinct physiological targets — aerobic base building, lactate threshold development, VO2max stimulus, and neuromuscular speed.
+              Your race time and distance are converted to an RPI score. Each RPI score maps to five training intensity zones: Easy (E), Marathon (M), Threshold (T), Interval (I), and Repetition (R). These zones correspond to distinct physiological targets — aerobic base building, lactate threshold development, VO2max stimulus, and neuromuscular speed.
             </p>
             <p>
               The <strong>Easy pace</strong> range is wide intentionally — it&apos;s the zone for most of your weekly volume. Running too fast on easy days is the most common training mistake. The <strong>Threshold pace</strong> (tempo pace) should feel comfortably hard — you could hold it for 20 minutes in a race but not much longer. <strong>Interval pace</strong> is close to your 3K–5K race pace.

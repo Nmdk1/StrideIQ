@@ -11,7 +11,7 @@ export default function HowItWorks() {
             How It Works
           </h2>
           <p className="text-xl text-slate-300 max-w-3xl mx-auto">
-            No templates. No scores. Adaptation based on your efficiency trends.
+            No templates. No scores. Adaptation based on what actually moves your race times.
           </p>
           <p className="text-lg text-slate-400 max-w-3xl mx-auto mt-4">
             You coach yourself — with intelligent guidance from decades of proven principles and your own data.
@@ -48,7 +48,7 @@ export default function HowItWorks() {
             </div>
             <h3 className="text-2xl font-bold mb-4">Receive training that evolves</h3>
             <p className="text-slate-400 text-lg">
-              Your plan adapts as you improve. We track efficiency trends, not arbitrary scores. Real adaptation based on real data.
+              Your plan adapts as you evolve. We track what your training actually produces — race times, adaptation, recovery — not arbitrary scores. Real adaptation based on real data.
             </p>
           </div>
         </div>

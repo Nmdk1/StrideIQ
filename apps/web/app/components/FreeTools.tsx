@@ -19,7 +19,7 @@ export default function FreeTools() {
             Training calculators you’ll actually use
           </h2>
           <p className="text-xl text-slate-300 max-w-3xl mx-auto mb-6">
-            Training paces, age-grading, and heat adjustments—built with research-backed equations (not lookup tables).
+            Training paces, age-grading, and heat adjustments—built on peer-reviewed equations (Daniels/Gilbert 1979, WMA 2025).
           </p>
           <div className="flex flex-wrap justify-center gap-3 text-sm text-slate-400 mb-6">
             <Link href="/tools/training-pace-calculator" className="text-orange-400/90 hover:text-orange-300 transition-colors">
