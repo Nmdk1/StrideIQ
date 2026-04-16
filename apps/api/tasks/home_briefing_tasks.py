@@ -290,7 +290,18 @@ def _build_briefing_prompt(athlete_id: str, db: Session) -> Optional[tuple]:
             if checkin_data_dict is None:
                 checkin_data_dict = {}
             checkin_data_dict["garmin_sleep_h"] = garmin_sleep_h
-        return prompt, schema_fields, required_fields, checkin_data_dict, race_data_dict, garmin_sleep_h, _local_now
+        return (
+            prompt,
+            schema_fields,
+            required_fields,
+            checkin_data_dict,
+            race_data_dict,
+            garmin_sleep_h,
+            _local_now,
+            today_completed,
+            planned_workout_dict,
+            upcoming_plan_list,
+        )
 
     except Exception as e:
         logger.error(f"Failed to build briefing prompt for {athlete_id}: {e}", exc_info=True)
@@ -581,7 +592,30 @@ def generate_home_briefing_task(self: Task, athlete_id: str) -> Dict:
             fb_result["reason"] = "prompt_build_failed"
             return fb_result
 
-        prompt, schema_fields, required_fields, checkin_data, race_data, garmin_sleep_h, _local_now = prompt_result
+        (
+            prompt,
+            schema_fields,
+            required_fields,
+            checkin_data,
+            race_data,
+            garmin_sleep_h,
+            _local_now,
+            today_completed,
+            planned_workout_snapshot,
+            upcoming_plan_snapshot,
+        ) = prompt_result
+
+        # Track which output validators fired so the persisted briefing row
+        # carries a truthful audit trail of what happened to the LLM output.
+        validation_flags: Dict[str, bool] = {
+            "contract_valid": True,
+            "voice_valid": True,
+            "sleep_valid": True,
+            "sleep_stripped": False,
+            "coach_noticed_cleared": False,
+            "workout_why_cleared": False,
+            "canary_retried": False,
+        }
 
         from routers.home import (
             _valid_home_briefing_contract,
@@ -617,6 +651,7 @@ def generate_home_briefing_task(self: Task, athlete_id: str) -> Dict:
                         )
 
             if canary_failed:
+                validation_flags["canary_retried"] = True
                 result = _call_opus_briefing(prompt, schema_fields, required_fields, athlete_id=None)
                 if result is None:
                     result = _call_gemini_briefing(prompt, schema_fields, required_fields)
@@ -648,6 +683,7 @@ def generate_home_briefing_task(self: Task, athlete_id: str) -> Dict:
         if raw_voice:
             voice_check = validate_voice_output(raw_voice, field="morning_voice")
             if not voice_check["valid"]:
+                validation_flags["voice_valid"] = False
                 logger.warning(
                     f"morning_voice failed validation ({voice_check.get('reason')}) "
                     f"for {athlete_id}; using fallback"
@@ -656,6 +692,7 @@ def generate_home_briefing_task(self: Task, athlete_id: str) -> Dict:
             elif voice_check.get("truncated_text"):
                 result["morning_voice"] = voice_check["truncated_text"]
         else:
+            validation_flags["voice_valid"] = False
             result["morning_voice"] = _VOICE_FALLBACK
 
         # Sleep claim grounding validator
@@ -665,6 +702,8 @@ def generate_home_briefing_task(self: Task, athlete_id: str) -> Dict:
         if final_voice and final_voice != _VOICE_FALLBACK:
             sleep_check = validate_sleep_claims(final_voice, _garmin_h, _checkin_h)
             if not sleep_check["valid"]:
+                validation_flags["sleep_valid"] = False
+                validation_flags["sleep_stripped"] = True
                 stripped = _strip_ungrounded_sleep_sentences(
                     final_voice, _garmin_h, _checkin_h
                 )
@@ -700,6 +739,7 @@ def generate_home_briefing_task(self: Task, athlete_id: str) -> Dict:
         if raw_noticed:
             noticed_check = validate_voice_output(raw_noticed, field="coach_noticed")
             if not noticed_check["valid"]:
+                validation_flags["coach_noticed_cleared"] = True
                 logger.warning(
                     f"coach_noticed failed validation ({noticed_check.get('reason')}) "
                     f"for {athlete_id}; clearing field"
@@ -710,6 +750,7 @@ def generate_home_briefing_task(self: Task, athlete_id: str) -> Dict:
         if raw_why:
             why_check = validate_voice_output(raw_why, field="workout_why")
             if not why_check["valid"]:
+                validation_flags["workout_why_cleared"] = True
                 result["workout_why"] = None
 
         # write_briefing_cache raises RuntimeError on any failure (setex error or
@@ -727,24 +768,54 @@ def generate_home_briefing_task(self: Task, athlete_id: str) -> Dict:
 
         # Finding-level cooldown: after briefing generation, set cooldown keys
         # for any correlation findings that appear in the output text.
+        injected: list = []
         try:
             from routers.home import _set_finding_cooldowns
             briefing_text = " ".join(str(v) for v in result.values() if v)
-            injected = kwargs.get("injected_findings", [])
-            if not injected:
-                from services.correlation_engine import analyze_correlations
-                try:
-                    corr_result = analyze_correlations(athlete_id, days=60, db=db)
-                    injected = [
-                        {"input_name": c.get("input_name", ""), "output_metric": c.get("output_metric", "efficiency")}
-                        for c in corr_result.get("correlations", [])
-                        if c.get("is_significant")
-                    ]
-                except Exception:
-                    pass
+            from services.correlation_engine import analyze_correlations
+            try:
+                corr_result = analyze_correlations(athlete_id, days=60, db=db)
+                injected = [
+                    {"input_name": c.get("input_name", ""), "output_metric": c.get("output_metric", "efficiency")}
+                    for c in corr_result.get("correlations", [])
+                    if c.get("is_significant")
+                ]
+            except Exception:
+                pass
             _set_finding_cooldowns(athlete_id, briefing_text, injected)
         except Exception as _e:
             logger.debug("Finding cooldown write failed (non-blocking): %s", _e)
+
+        # Persist the generated brief + inputs to the long-term corpus
+        # (coach_briefing, coach_briefing_input). NEVER raises — if this
+        # fails, the Redis cache is already written and /v1/home stays
+        # healthy. See services/intelligence/briefing_persistence.py.
+        try:
+            from services.intelligence.briefing_persistence import persist_briefing
+            athlete_local_date_value = (
+                _local_now.date() if _local_now is not None else datetime.now(timezone.utc).date()
+            )
+            persist_briefing(
+                db=db,
+                athlete_id=athlete_id,
+                athlete_local_date=athlete_local_date_value,
+                payload=result,
+                source_model=source_model,
+                briefing_source="llm",
+                briefing_is_interim=False,
+                data_fingerprint=fingerprint,
+                schema_version=2,
+                prompt_text=prompt,
+                today_completed=today_completed,
+                planned_workout=planned_workout_snapshot,
+                checkin_data=checkin_data,
+                race_data=race_data,
+                upcoming_plan=upcoming_plan_snapshot,
+                findings_injected=injected or None,
+                validation_flags=validation_flags,
+            )
+        except Exception as _pe:  # noqa: BLE001 — persistence must never break /v1/home
+            logger.warning("Brief persistence failed (non-blocking) for %s: %s", athlete_id, _pe)
 
         reset_circuit(athlete_id)
 

@@ -3,7 +3,7 @@
 from .activity import Activity, StrengthExerciseSet, PerformanceEvent, ActivitySplit, ActivityStream, PersonalBest, BestEffort, ActivityFeedback, ActivityReflection, CachedStreamAnalysis  # noqa: F401
 from .athlete import Athlete, AthleteFuelingProfile, AthleteRaceResultAnchor, AthleteTrainingPaceProfile, AthleteGoal, AthleteCalibratedModel, AthleteWorkoutResponse, AthleteOverride, AthleteLearning, AthleteAdaptationThresholds, AthletePhoto, AthleteFact, AthleteInvestigationConfig  # noqa: F401
 from .checkin import DailyCheckin, BodyComposition, WorkPattern, IntakeQuestionnaire, DailyReadiness  # noqa: F401
-from .coaching import CoachActionProposal, CoachingKnowledgeEntry, CoachingRecommendation, RecommendationOutcome, CoachChat, CoachIntentSnapshot, CoachUsage  # noqa: F401
+from .coaching import CoachActionProposal, CoachingKnowledgeEntry, CoachingRecommendation, RecommendationOutcome, CoachChat, CoachIntentSnapshot, CoachUsage, CoachBriefing, CoachBriefingInput  # noqa: F401
 from .correlation import AthleteFinding, InsightFeedback, ThresholdCalibrationLog, SelfRegulationLog, InsightLog, NarrationLog, CorrelationFinding, CorrelationMediator, NarrativeFeedback, AutoDiscoveryRun, AutoDiscoveryExperiment, AutoDiscoveryCandidate, AutoDiscoveryReviewLog, N1InsightSuppression, AutoDiscoveryChangeLog, AutoDiscoveryScanCoverage  # noqa: F401
 from .nutrition import NutritionGoal, NutritionEntry, USDAFood, FuelingProduct, MealTemplate  # noqa: F401
 from .plan import WorkoutTemplate, WorkoutSelectionAuditEvent, TrainingPlan, PlannedWorkout, PlanModificationLog, TrainingAvailability, CalendarNote, CalendarInsight, WorkoutDefinition, PhaseDefinition, ScalingRule, PlanTemplate, PlanAdaptationProposal, PlanPreview  # noqa: F401
@@ -45,6 +45,8 @@ __all__ = [
     "CoachChat",
     "CoachIntentSnapshot",
     "CoachUsage",
+    "CoachBriefing",
+    "CoachBriefingInput",
     "AthleteFinding",
     "InsightFeedback",
     "ThresholdCalibrationLog",

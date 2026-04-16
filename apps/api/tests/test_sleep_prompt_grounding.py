@@ -137,7 +137,11 @@ class TestCheckinDataDictWorkerPath:
             result = _build_briefing_prompt(_VALID_UUID, mock_db)
 
         assert result is not None and result is not False
-        _, _, _, checkin_data, _, _, _ = result
+        # _build_briefing_prompt returns a 10-tuple:
+        # (prompt, schema_fields, required_fields, checkin_data, race_data,
+        #  garmin_sleep_h, _local_now, today_completed, planned_workout_snapshot,
+        #  upcoming_plan_snapshot)
+        _, _, _, checkin_data, _, _, _, _, _, _ = result
         assert checkin_data is not None
         assert "sleep_h" in checkin_data
         assert abs(checkin_data["sleep_h"] - 6.5) < 0.01

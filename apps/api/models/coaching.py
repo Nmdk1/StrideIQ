@@ -294,3 +294,125 @@ class CoachUsage(Base):
         Index("ix_coach_usage_month", "month"),
     )
 
+
+class CoachBriefing(Base):
+    """
+    Persisted home briefing (output).
+
+    One row per materially-distinct briefing produced for an athlete. The
+    /v1/home read path does not touch this table; it exists as a permanent
+    corpus the founder can query directly and as the substrate future
+    admin/marketing read paths will build on.
+
+    `athlete_local_date` is the athlete's local date at `generated_at`, not
+    UTC — so "today's brief" queries line up with the day the athlete was
+    actually on when the brief was served.
+
+    A UNIQUE index on (athlete_id, data_fingerprint, date_trunc('minute',
+    generated_at)) — declared in migration briefing_persist_001 — makes
+    persistence idempotent against same-minute retries while still allowing
+    multiple distinct briefs per day.
+    """
+
+    __tablename__ = "coach_briefing"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    athlete_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("athlete.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+
+    generated_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    )
+    # Minute-truncated UTC copy of generated_at. Populated explicitly by
+    # persist_briefing so the unique index
+    # (athlete_id, data_fingerprint, generated_at_minute) can collapse
+    # same-minute retry duplicates.
+    generated_at_minute = Column(
+        DateTime(timezone=False),
+        nullable=False,
+    )
+    athlete_local_date = Column(Date, nullable=False)
+
+    data_fingerprint = Column(String(32), nullable=False)
+    source_model = Column(Text, nullable=False)
+    briefing_source = Column(Text, nullable=False)
+    briefing_is_interim = Column(Boolean, nullable=False, default=False)
+    schema_version = Column(Integer, nullable=False, default=2)
+
+    coach_noticed = Column(Text, nullable=True)
+    today_context = Column(Text, nullable=True)
+    week_assessment = Column(Text, nullable=True)
+    checkin_reaction = Column(Text, nullable=True)
+    race_assessment = Column(Text, nullable=True)
+    morning_voice = Column(Text, nullable=True)
+    workout_why = Column(Text, nullable=True)
+
+    payload_json = Column(JSONB, nullable=False)
+    validation_flags = Column(JSONB, nullable=False, default=dict)
+
+    input_snapshot = relationship(
+        "CoachBriefingInput",
+        back_populates="briefing",
+        uselist=False,
+        cascade="all, delete-orphan",
+    )
+
+    __table_args__ = (
+        Index("ix_coach_briefing_athlete_id", "athlete_id"),
+        Index("ix_coach_briefing_athlete_local_date", "athlete_id", "athlete_local_date"),
+        Index("ix_coach_briefing_generated_at", "generated_at"),
+    )
+
+
+class CoachBriefingInput(Base):
+    """
+    The inputs that produced a specific CoachBriefing (1:1, FK cascade).
+
+    Stores structured JSONB snapshots of everything the coach saw plus the
+    verbatim prompt that was sent to the LLM. Split out from CoachBriefing
+    so the output-heavy corpus stays narrow and the input-heavy rows can be
+    retained/deleted on a different schedule later without rewriting the
+    briefings themselves.
+    """
+
+    __tablename__ = "coach_briefing_input"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    briefing_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("coach_briefing.id", ondelete="CASCADE"),
+        nullable=False,
+        unique=True,
+    )
+    athlete_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("athlete.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    captured_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    )
+
+    today_completed = Column(JSONB, nullable=True)
+    planned_workout = Column(JSONB, nullable=True)
+    checkin_data = Column(JSONB, nullable=True)
+    race_data = Column(JSONB, nullable=True)
+    upcoming_plan = Column(JSONB, nullable=True)
+    findings_injected = Column(JSONB, nullable=True)
+
+    prompt_text = Column(Text, nullable=False)
+    garmin_sleep_h = Column(Numeric(4, 2), nullable=True)
+
+    briefing = relationship("CoachBriefing", back_populates="input_snapshot")
+
+    __table_args__ = (
+        Index("ix_coach_briefing_input_athlete_id", "athlete_id"),
+    )
+

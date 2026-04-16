@@ -407,7 +407,7 @@ class TestWorkerValidatesAllVoiceFields:
              patch("tasks.home_briefing_tasks.release_task_lock"), \
              patch("tasks.home_briefing_tasks.get_db_sync", return_value=MagicMock()), \
              patch("tasks.home_briefing_tasks._build_data_fingerprint", return_value="fp1"), \
-             patch("tasks.home_briefing_tasks._build_briefing_prompt", return_value=("prompt", {}, [], {}, {}, None, None)), \
+             patch("tasks.home_briefing_tasks._build_briefing_prompt", return_value=("prompt", {}, [], {}, {}, None, None, None, None, None)), \
              patch("tasks.home_briefing_tasks._call_llm_for_briefing", return_value=tsb_payload), \
              patch("tasks.home_briefing_tasks.reset_circuit"), \
              patch("routers.home._valid_home_briefing_contract", return_value=True), \
@@ -452,7 +452,7 @@ class TestWorkerValidatesAllVoiceFields:
              patch("tasks.home_briefing_tasks.release_task_lock"), \
              patch("tasks.home_briefing_tasks.get_db_sync", return_value=MagicMock()), \
              patch("tasks.home_briefing_tasks._build_data_fingerprint", return_value="fp1"), \
-             patch("tasks.home_briefing_tasks._build_briefing_prompt", return_value=("prompt", {}, [], {}, {}, None, None)), \
+             patch("tasks.home_briefing_tasks._build_briefing_prompt", return_value=("prompt", {}, [], {}, {}, None, None, None, None, None)), \
              patch("tasks.home_briefing_tasks._call_llm_for_briefing", return_value=tsb_payload), \
              patch("tasks.home_briefing_tasks.reset_circuit"), \
              patch("routers.home._valid_home_briefing_contract", return_value=True), \
@@ -495,7 +495,7 @@ class TestWorkerValidatesAllVoiceFields:
              patch("tasks.home_briefing_tasks.release_task_lock"), \
              patch("tasks.home_briefing_tasks.get_db_sync", return_value=MagicMock()), \
              patch("tasks.home_briefing_tasks._build_data_fingerprint", return_value="fp1"), \
-             patch("tasks.home_briefing_tasks._build_briefing_prompt", return_value=("prompt", {}, [], {"garmin_sleep_h": 5.3, "sleep_h": 5.0}, {"days_remaining": 3}, None, None)), \
+             patch("tasks.home_briefing_tasks._build_briefing_prompt", return_value=("prompt", {}, [], {"garmin_sleep_h": 5.3, "sleep_h": 5.0}, {"days_remaining": 3}, None, None, None, None, None)), \
              patch("tasks.home_briefing_tasks._call_llm_for_briefing", return_value=llm_payload), \
              patch("tasks.home_briefing_tasks.reset_circuit"), \
              patch("routers.home._valid_home_briefing_contract", return_value=True), \
