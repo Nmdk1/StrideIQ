@@ -11,8 +11,16 @@ from sqlalchemy import func
 
 logger = logging.getLogger(__name__)
 
-from models import Activity, Athlete, ActivitySplit, ActivityStream
+from models import (
+    Activity,
+    Athlete,
+    ActivitySplit,
+    ActivityStream,
+    TrainingPlan,
+    PlannedWorkout,
+)
 from core.date_utils import calculate_age
+from services.rpi_calculator import calculate_training_paces
 from services.coach_tools._utils import (
     _iso, _mi_from_m, _pace_str_mi, _pace_str, _relative_date,
     _preferred_units, _fmt_mmss, _pace_seconds_from_text,
@@ -243,9 +251,13 @@ def get_calendar_day_context(db: Session, athlete_id: UUID, day: str) -> Dict[st
                 if isinstance(raw_mi, (int, float)) and raw_mi > 0:
                     marathon_pace_sec_per_mile = int(round(float(raw_mi)))
                     marathon_pace_per_mile = f"{_fmt_mmss(marathon_pace_sec_per_mile)}/mi"
-    except Exception:
-        # Keep day-context available even if pace references are unavailable.
-        pass
+    except Exception as _paces_exc:
+        # Keep day-context available even if pace references are unavailable,
+        # but log so silent NameError / import regressions don't ship.
+        logger.warning(
+            "calendar_day_context: marathon pace resolution failed: %s",
+            _paces_exc,
+        )
 
     planned_data: Optional[Dict[str, Any]] = None
     evidence: List[Dict[str, Any]] = []

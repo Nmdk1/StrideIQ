@@ -58,8 +58,11 @@ class TestTaskCallSitesDoNotUseNext:
     """
 
     def test_intelligence_tasks_no_next_get_db_sync(self):
-        import ast, pathlib
-        src = pathlib.Path("tasks/intelligence_tasks.py").read_text()
+        import pathlib
+        # Use an absolute path so the test works regardless of pytest CWD
+        # (repo root vs apps/api).
+        api_root = pathlib.Path(__file__).resolve().parents[1]
+        src = (api_root / "tasks" / "intelligence_tasks.py").read_text()
         assert "next(get_db_sync())" not in src, (
             "tasks/intelligence_tasks.py must not use next(get_db_sync()). "
             "Replace with get_db_sync() directly."
@@ -67,7 +70,8 @@ class TestTaskCallSitesDoNotUseNext:
 
     def test_digest_tasks_no_next_get_db_sync(self):
         import pathlib
-        src = pathlib.Path("tasks/digest_tasks.py").read_text()
+        api_root = pathlib.Path(__file__).resolve().parents[1]
+        src = (api_root / "tasks" / "digest_tasks.py").read_text()
         assert "next(get_db_sync())" not in src, (
             "tasks/digest_tasks.py must not use next(get_db_sync()). "
             "Replace with get_db_sync() directly."
@@ -138,7 +142,8 @@ class TestAdminMetricsNonNested:
 
     def test_metrics_endpoint_no_nested_func_avg_count(self):
         import pathlib
-        src = pathlib.Path("routers/admin.py").read_text()
+        api_root = pathlib.Path(__file__).resolve().parents[1]
+        src = (api_root / "routers" / "admin.py").read_text()
         assert "func.avg(func.count(" not in src, (
             "routers/admin.py must not use func.avg(func.count(...)) — "
             "nested aggregates are rejected by Postgres. Use a subquery."

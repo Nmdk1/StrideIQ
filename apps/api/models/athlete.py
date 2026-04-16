@@ -141,7 +141,16 @@ class Athlete(Base):
     # from Activity → Athlete. Without this, delete ordering is arbitrary
     # and can cause ForeignKeyViolation when both are deleted in one flush.
     # lazy="dynamic" prevents auto-loading (returns query, no perf impact).
-    activities = relationship("Activity", back_populates="athlete", lazy="dynamic")
+    # cascade="all, delete-orphan" tells the UoW to delete child activity
+    # rows rather than UPDATE ... SET athlete_id = NULL (which would violate
+    # the NOT NULL constraint).  Surfaced by test_orm_delete_ordering.
+    activities = relationship(
+        "Activity",
+        back_populates="athlete",
+        lazy="dynamic",
+        cascade="all, delete-orphan",
+        passive_deletes=False,
+    )
     garmin_days = relationship("GarminDay", back_populates="athlete", lazy="dynamic")
     athlete_photos = relationship("AthletePhoto", back_populates="athlete", lazy="dynamic")
     runtoon_images = relationship("RuntoonImage", back_populates="athlete", lazy="dynamic")

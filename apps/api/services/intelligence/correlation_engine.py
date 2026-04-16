@@ -794,6 +794,10 @@ def aggregate_daily_inputs(
         ("garmin_min_hr", "min_hr"),
         ("garmin_resting_hr", "resting_hr"),
         ("garmin_vo2max", "vo2max"),
+        # Body battery + stress — wearable-derived readiness/stress proxies
+        ("garmin_body_battery_end", "body_battery_end"),
+        ("garmin_avg_stress", "avg_stress"),
+        ("garmin_max_stress", "max_stress"),
     ]
 
     for input_key, attr in _GARMIN_SIGNALS:

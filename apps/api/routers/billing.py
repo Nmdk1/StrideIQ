@@ -37,7 +37,12 @@ def start_trial(
     if getattr(current_user, "trial_started_at", None) is not None:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Trial already used")
 
-    if getattr(current_user, "subscription_tier", "free") in getattr(Athlete, "PAID_TIERS", set()):
+    # Paid-tier gate: rely on the canonical tier hierarchy rather than a
+    # magic attribute on the Athlete model.  Athlete.PAID_TIERS was never
+    # defined, so getattr(..., set()) silently let every paid subscriber
+    # through — regression surfaced by test_trial_denied_if_already_paid_tier.
+    from core.tier_utils import tier_satisfies
+    if tier_satisfies(getattr(current_user, "subscription_tier", "free"), "subscriber"):
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Already has paid access")
 
     existing_sub = db.query(Subscription).filter(Subscription.athlete_id == current_user.id).first()

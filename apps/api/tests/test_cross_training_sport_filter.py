@@ -245,14 +245,13 @@ class TestCorrelationEngineSportFilter:
     ):
         """With only cycling data, session stress should be empty."""
         athlete, _ = cycling_only_athlete
-        from services.correlation_engine import CorrelationEngine
+        from services.correlation_engine import aggregate_daily_session_stress
 
-        engine = CorrelationEngine(db_session)
         today = date.today()
-        result = engine.aggregate_daily_session_stress(
-            athlete.id, today - timedelta(days=60), today
-        )
-        assert result == {} or len(result) == 0, (
+        start = datetime.combine(today - timedelta(days=60), datetime.min.time())
+        end = datetime.combine(today, datetime.max.time())
+        result = aggregate_daily_session_stress(str(athlete.id), start, end, db_session)
+        assert len(result) == 0, (
             f"Cycling-only athlete should have no session stress, "
             f"got {len(result)} days"
         )
@@ -274,8 +273,8 @@ class TestRunAnalysisEngineSportFilter:
 
         engine = RunAnalysisEngine(db_session)
         ctx = engine._get_week_context(athlete.id, date.today())
-        assert ctx["count"] == 1, (
-            f"Expected 1 run in week context, got {ctx['count']}. "
+        assert ctx["runs_so_far"] == 1, (
+            f"Expected 1 run in week context, got {ctx['runs_so_far']}. "
             "Cycling activity may have leaked through."
         )
 
@@ -309,13 +308,13 @@ class TestHomeSportFilter:
         athlete, run_act, cycling_act = athlete_with_mixed_sports
         from routers.home import compute_last_run
 
-        last_run = compute_last_run(db_session, athlete)
+        last_run = compute_last_run(athlete.id, db_session)
         assert last_run is not None, "Expected a last_run (the run exists within 96h)"
-        assert last_run["activity_id"] == str(run_act.id), (
-            f"compute_last_run returned activity {last_run['activity_id']}, "
+        assert last_run.activity_id == str(run_act.id), (
+            f"compute_last_run returned activity {last_run.activity_id}, "
             f"expected run {run_act.id}, not cycling {cycling_act.id}"
         )
-        assert last_run["name"] == "Morning Run"
+        assert last_run.name == "Morning Run"
 
     def test_compute_last_run_none_for_cycling_only(
         self, db_session, cycling_only_athlete
@@ -324,7 +323,7 @@ class TestHomeSportFilter:
         athlete, _ = cycling_only_athlete
         from routers.home import compute_last_run
 
-        last_run = compute_last_run(db_session, athlete)
+        last_run = compute_last_run(athlete.id, db_session)
         assert last_run is None, (
             "Cycling-only athlete should have no last_run"
         )

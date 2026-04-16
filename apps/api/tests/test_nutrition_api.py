@@ -208,7 +208,8 @@ class TestCreateNutritionEntry:
         
         response = client.post("/v1/nutrition", json=entry_data, headers=headers)
         assert response.status_code == 400
-        assert "activity_id is required" in response.json()["detail"]
+        assert "activity_id required" in response.json()["detail"]
+        assert "pre_activity" in response.json()["detail"]
     
     def test_create_with_invalid_activity_id(self, test_athlete):
         """Test creating entry with non-existent activity ID"""
