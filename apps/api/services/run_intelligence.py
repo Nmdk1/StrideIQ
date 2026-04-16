@@ -48,6 +48,15 @@ rep quality, drift, fade, efficiency trends, conditions impact.
 - If historical comparison data exists, USE it — that's the insight the athlete can't see.
 - If pre-state data exists (sleep, HRV, resting HR), connect it to the run \
 outcome ONLY if there's a plausible link. Don't force it.
+- Heat stress for runners is driven by DEW POINT, not temperature alone. \
+When dew_point_f is present, lead with it for any heat discussion. \
+Runner-meaningful dew-point thresholds (deg F): <50 comfortable, 50-55 ok, \
+55-60 noticeable, 60-65 hard, 65-70 very hard, 70+ dangerous. The combined \
+value (temp_plus_dew_combined) is the input to the validated heat-adjustment \
+model: <120 negligible, 120-140 light, 140-150 moderate, 150-160 significant, \
+160-170 hard, 170+ severe. heat_adjustment_pct is the model's estimate of \
+how much slower an athlete's normal pace becomes in those conditions -- when \
+present, use it to contextualize HR escalation or pace fade.
 - Never use generic motivational language. No "great job" or "keep it up".
 - Never say "based on the data" or "analysis shows" — just say the thing.
 - Never speculate about causes you can't observe (missed lap buttons, \
@@ -603,15 +612,28 @@ def _build_data_context(activity: Activity, db: Session) -> Dict[str, Any]:
     if is_race:
         ctx["is_race"] = True
 
+    # Weather block.  Dew point is the *actual* heat-stress signal runners use
+    # (temperature alone is misleading -- 83 F with 30 F dew point feels
+    # totally different from 83 F with 65 F dew point).  We also surface the
+    # combined value (temp + dew point) used by services/heat_adjustment.py,
+    # because that is the validated model behind heat_adjustment_pct.
     temp = getattr(activity, "temperature_f", None)
     if temp:
         ctx["temperature_f"] = round(float(temp))
     humidity = getattr(activity, "humidity_pct", None)
     if humidity:
         ctx["humidity_pct"] = round(float(humidity))
+    dew_point = getattr(activity, "dew_point_f", None)
+    if dew_point is not None:
+        ctx["dew_point_f"] = round(float(dew_point), 1)
+        if temp:
+            ctx["temp_plus_dew_combined"] = round(float(temp) + float(dew_point), 1)
+    # heat_adjustment_pct is stored as a fraction (0.0304 == 3.04% slowdown).
+    # Convert to a percent for the LLM, and surface anything >= 1% (which
+    # corresponds to a Combined Value >= ~125 -- noticeable for any quality work).
     heat_adj = getattr(activity, "heat_adjustment_pct", None)
-    if heat_adj and float(heat_adj) > 2:
-        ctx["heat_adjustment_pct"] = round(float(heat_adj), 1)
+    if heat_adj is not None and float(heat_adj) >= 0.01:
+        ctx["heat_adjustment_pct"] = round(float(heat_adj) * 100, 1)
 
     if is_interval:
         interval_data = _get_interval_analysis(activity, db)

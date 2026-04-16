@@ -45,6 +45,7 @@ def _make_activity(**overrides):
     a.pre_overnight_hrv = overrides.get("pre_overnight_hrv", None)
     a.temperature_f = overrides.get("temperature_f", None)
     a.humidity_pct = overrides.get("humidity_pct", None)
+    a.dew_point_f = overrides.get("dew_point_f", None)
     a.heat_adjustment_pct = overrides.get("heat_adjustment_pct", None)
     a.weather_condition = overrides.get("weather_condition", None)
     a.avg_cadence = overrides.get("avg_cadence", None)
@@ -223,7 +224,9 @@ class TestBuildDataContext:
     @patch("services.run_intelligence._get_stream_drift", return_value=None)
     @patch("services.run_intelligence._get_split_pacing", return_value=None)
     def test_context_includes_heat(self, *mocks):
-        a = _make_activity(temperature_f=92, heat_adjustment_pct=4.5)
+        # heat_adjustment_pct is stored as a fraction (0.045 == 4.5% slowdown).
+        # The LLM context exposes it as a percent for readability.
+        a = _make_activity(temperature_f=92, heat_adjustment_pct=0.045)
         db = MagicMock()
         ctx = _build_data_context(a, db)
         assert ctx["temperature_f"] == 92
@@ -239,6 +242,82 @@ class TestBuildDataContext:
         db = MagicMock()
         ctx = _build_data_context(a, db)
         assert ctx["pre_run_state"]["sleep_hours"] == 7.2
+
+    # ---- Heat / dew-point context (regression for the founder's complaint
+    # that the LLM was looking only at temperature and ignoring dew point,
+    # which is the actual heat-stress signal for runners) ----
+
+    @patch("services.run_intelligence._get_athlete_notes", return_value=None)
+    @patch("services.run_intelligence._get_drift_history_avg", return_value=None)
+    @patch("services.run_intelligence._get_efficiency_vs_peers", return_value=None)
+    @patch("services.run_intelligence._get_stream_drift", return_value=None)
+    @patch("services.run_intelligence._get_split_pacing", return_value=None)
+    def test_context_includes_dew_point_when_present(self, *mocks):
+        # Today's actual values for activity a5799370-7c54-4a72-909a-9e492398fb30:
+        # temp 83.3 F, humidity 45%, dew point 59.7 F, heat_adjustment_pct 0.0304.
+        a = _make_activity(
+            temperature_f=83.3, humidity_pct=45,
+            dew_point_f=59.7, heat_adjustment_pct=0.0304,
+        )
+        db = MagicMock()
+        ctx = _build_data_context(a, db)
+        assert ctx["temperature_f"] == 83
+        assert ctx["humidity_pct"] == 45
+        assert ctx["dew_point_f"] == 59.7
+        # Combined value (input to heat-adjustment model) must be in context
+        # so the LLM can map it onto the validated tier table.
+        assert ctx["temp_plus_dew_combined"] == 143.0
+        # heat_adjustment_pct stored as fraction; surfaced as percent.
+        assert ctx["heat_adjustment_pct"] == 3.0
+
+    @patch("services.run_intelligence._get_athlete_notes", return_value=None)
+    @patch("services.run_intelligence._get_drift_history_avg", return_value=None)
+    @patch("services.run_intelligence._get_efficiency_vs_peers", return_value=None)
+    @patch("services.run_intelligence._get_stream_drift", return_value=None)
+    @patch("services.run_intelligence._get_split_pacing", return_value=None)
+    def test_heat_adjustment_unit_bug_regression(self, *mocks):
+        # Specific regression: heat_adjustment_pct is stored as a decimal
+        # fraction by services.heat_adjustment.compute_activity_heat_fields
+        # (e.g. 0.0304 == 3.04% slowdown).  The previous code checked
+        # `if > 2`, suppressing every realistic heat condition.  The fix
+        # lowers the threshold to 0.01 (1%) and converts to percent.
+        a = _make_activity(
+            temperature_f=83, dew_point_f=60, heat_adjustment_pct=0.0304,
+        )
+        db = MagicMock()
+        ctx = _build_data_context(a, db)
+        # Old code would have omitted heat_adjustment_pct entirely (0.0304 < 2).
+        assert "heat_adjustment_pct" in ctx
+        assert ctx["heat_adjustment_pct"] == 3.0
+
+    @patch("services.run_intelligence._get_athlete_notes", return_value=None)
+    @patch("services.run_intelligence._get_drift_history_avg", return_value=None)
+    @patch("services.run_intelligence._get_efficiency_vs_peers", return_value=None)
+    @patch("services.run_intelligence._get_stream_drift", return_value=None)
+    @patch("services.run_intelligence._get_split_pacing", return_value=None)
+    def test_heat_adjustment_below_threshold_is_suppressed(self, *mocks):
+        # A 0.5% heat adjustment is noise -- don't surface it.  Suppression
+        # over noise (founder rule).
+        a = _make_activity(
+            temperature_f=70, dew_point_f=50, heat_adjustment_pct=0.005,
+        )
+        db = MagicMock()
+        ctx = _build_data_context(a, db)
+        assert "heat_adjustment_pct" not in ctx
+        # But dew point itself is still useful context whenever present.
+        assert ctx["dew_point_f"] == 50.0
+
+    @patch("services.run_intelligence._get_athlete_notes", return_value=None)
+    @patch("services.run_intelligence._get_drift_history_avg", return_value=None)
+    @patch("services.run_intelligence._get_efficiency_vs_peers", return_value=None)
+    @patch("services.run_intelligence._get_stream_drift", return_value=None)
+    @patch("services.run_intelligence._get_split_pacing", return_value=None)
+    def test_temp_plus_dew_combined_only_when_both_present(self, *mocks):
+        a = _make_activity(temperature_f=70, dew_point_f=None)
+        db = MagicMock()
+        ctx = _build_data_context(a, db)
+        assert "temp_plus_dew_combined" not in ctx
+        assert "dew_point_f" not in ctx
 
 
 class TestGenerateRunIntelligence:
