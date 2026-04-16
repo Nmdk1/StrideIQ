@@ -48,7 +48,7 @@ const BQ_PAGE_CONFIG: Record<string, {
   description: string
   h1: string
   openingParagraph: string
-  trainingContext: string
+  trainingContext: string | ((data: BQEntry) => string)
   buildFaq: (data: BQEntry) => { q: string; a: string }[]
 }> = {
   'boston-qualifying-time-men-18-34': {
@@ -82,7 +82,7 @@ const BQ_PAGE_CONFIG: Record<string, {
     description: `2026 BQ standard for men 40–44 with training paces, WMA age grade (${Math.round(67.8)}%), and equivalent times at other distances. Daniels/Gilbert formula.`,
     h1: 'Boston Qualifying Time — Men Ages 40–44',
     openingParagraph: 'Men 40–44 enter the masters division with a slightly more generous BQ standard — and often with their sharpest race-day judgment. Marathon performance in this decade is highly trainable, and the 3:05 standard is within reach for runners who commit to structured preparation.',
-    trainingContext: 'Masters marathon training for men 40–44 differs from the 30s primarily in recovery management. The aerobic adaptation response remains strong, but tissue repair between hard sessions takes longer. Space quality sessions (threshold, interval, long run with marathon-pace miles) at least 5 days apart. Easy days should genuinely feel easy — at ${d.paces?.easy?.mi || \'this pace\'} or slower — to allow full recovery before the next quality stimulus.',
+    trainingContext: (d) => `Masters marathon training for men 40–44 differs from the 30s primarily in recovery management. The aerobic adaptation response remains strong, but tissue repair between hard sessions takes longer. Space quality sessions (threshold, interval, long run with marathon-pace miles) at least 5 days apart. Easy days should genuinely feel easy — at ${d.paces.easy.mi}/mi or slower — to allow full recovery before the next quality stimulus.`,
     buildFaq: (d) => [
       { q: `What training paces does a ${d.bqTime} men's 40–44 BQ require?`, a: `To achieve a ${d.bqTime} marathon (RPI ${d.rpi}): Easy ${d.paces.easy.mi}/mi, Marathon ${d.paces.marathon.mi}/mi, Threshold ${d.paces.threshold.mi}/mi, Interval ${d.paces.interval.mi}/mi. Your WMA age-grade for this performance is ${d.wmaGradePct}% — strong masters-level running. The training paces reflect genuine sub-elite fitness that requires months of consistent preparation.` },
       { q: `How does the men's 40–44 BQ compare to the open standard on an age-adjusted basis?`, a: `A ${d.bqTime} marathon for a ${d.midAge}-year-old man scores ${d.wmaGradePct}% WMA age-graded — representing solid masters performance. On an age-adjusted basis, this places you in the competitive tier of masters marathon racing. It is a meaningfully harder performance relative to your age peers than simply matching the BQ time at face value.` },
@@ -160,7 +160,7 @@ const BQ_PAGE_CONFIG: Record<string, {
     description: `2026 BQ standard for men 70–74 with training paces, WMA age grade, and equivalent times. Daniels/Gilbert formula.`,
     h1: 'Boston Qualifying Time — Men Ages 70–74',
     openingParagraph: 'Men who qualify for Boston at 70–74 represent the pinnacle of masters endurance running. The 4:20 standard, age-adjusted, reflects fitness that a small fraction of the running population at this age achieves. The training and discipline required are genuine.',
-    trainingContext: 'For men 70–74, consistent easy volume is the foundation. Long runs remain the primary marathon-specific session — building to 16–18 miles at easy pace is still achievable and necessary. Threshold work once every 10–14 days at ${d.paces?.threshold?.mi || \'threshold\'} pace maintains the lactate clearance that marathon effort requires. Recovery from every hard session is the primary scheduling concern.',
+    trainingContext: (d) => `For men 70–74, consistent easy volume is the foundation. Long runs remain the primary marathon-specific session — building to 16–18 miles at easy pace is still achievable and necessary. Threshold work once every 10–14 days at ${d.paces.threshold.mi}/mi pace maintains the lactate clearance that marathon effort requires. Recovery from every hard session is the primary scheduling concern.`,
     buildFaq: (d) => [
       { q: `What training paces does a ${d.bqTime} BQ require for men 70–74?`, a: `For a ${d.bqTime} marathon BQ (RPI ${d.rpi}): Easy ${d.paces.easy.mi}/mi, Marathon ${d.paces.marathon.mi}/mi, Threshold ${d.paces.threshold.mi}/mi, Interval ${d.paces.interval.mi}/mi. Marathon training pace (${d.paces.marathon.mi}/mi) is the target for the final miles of long runs. All other miles should be at easy pace or slower.` },
       { q: `What WMA grade is a 4:20 marathon for men 70–74?`, a: `A ${d.bqTime} marathon at age ${d.midAge} scores ${d.wmaGradePct}% WMA age-graded. At this age, the WMA factor is significantly above 1.0, meaning the standard accounts for substantial age-related performance decline from the open class. Achieving this time represents competitive running by any measure.` },
@@ -227,7 +227,7 @@ const BQ_PAGE_CONFIG: Record<string, {
     description: `2026 BQ standard for women 40–44 with training paces, WMA age grade, and equivalent times. Daniels/Gilbert formula.`,
     h1: 'Boston Qualifying Time — Women Ages 40–44',
     openingParagraph: 'Many women run their fastest marathons in their early 40s — not despite their age but because of the training consistency and racing intelligence that comes with it. The 3:35 BQ standard for women 40–44 reflects competitive masters fitness that a well-trained woman in this decade can achieve.',
-    trainingContext: 'Women 40–44 targeting a BQ should prioritize long runs and threshold work, with careful recovery management between hard sessions. The aerobic system adapts strongly at this age. Running easy days genuinely easy — at ${d.paces?.easy?.mi || \'this pace\'} or slower — is the most impactful discipline change most women at this level can make. Recovery from hard sessions takes a day longer than it did at 30; plan accordingly.',
+    trainingContext: (d) => `Women 40–44 targeting a BQ should prioritize long runs and threshold work, with careful recovery management between hard sessions. The aerobic system adapts strongly at this age. Running easy days genuinely easy — at ${d.paces.easy.mi}/mi or slower — is the most impactful discipline change most women at this level can make. Recovery from hard sessions takes a day longer than it did at 30; plan accordingly.`,
     buildFaq: (d) => [
       { q: `What are the training paces for a women's 40–44 BQ of ${d.bqTime}?`, a: `For a ${d.bqTime} marathon BQ (RPI ${d.rpi}): Easy ${d.paces.easy.mi}/mi, Marathon ${d.paces.marathon.mi}/mi, Threshold ${d.paces.threshold.mi}/mi, Interval ${d.paces.interval.mi}/mi. The WMA age grade for this performance is ${d.wmaGradePct}% — you are running well above average for your age group. These training paces reflect the fitness level required to sustain that level of performance.` },
       { q: 'Do women 40–44 have a realistic shot at Boston entry after qualifying?', a: `Yes — the women's 40–44 group typically has a less competitive cutoff buffer than the 18–34 group because the pool of qualifiers is smaller. A 3–5 minute buffer under 3:35 is usually sufficient. Confirm with the official BAA registration updates for the current year's exact cutoff.` },
@@ -279,7 +279,7 @@ const BQ_PAGE_CONFIG: Record<string, {
     description: `2026 BQ standard for women 60–64 with training paces, WMA age grade, and equivalent times. Daniels/Gilbert formula.`,
     h1: 'Boston Qualifying Time — Women Ages 60–64',
     openingParagraph: 'Women who qualify for Boston at 60–64 are among the most remarkable endurance athletes in any age group. A 4:20 marathon at 60+ — age-adjusted — places at the competitive level of masters running nationally. The depth of fitness required is genuine.',
-    trainingContext: 'Women 60–64 targeting a BQ center their training on recovery management and long-run quality. Three structured sessions per week — long run, threshold, easy-plus fartlek — with full recovery between each is the productive pattern. Easy pace at ${d.paces?.easy?.mi || \'this pace\'}/mi or slower must be the norm for recovery runs. The aerobic system still adapts; patience with longer adaptation timelines is the required adjustment.',
+    trainingContext: (d) => `Women 60–64 targeting a BQ center their training on recovery management and long-run quality. Three structured sessions per week — long run, threshold, easy-plus fartlek — with full recovery between each is the productive pattern. Easy pace at ${d.paces.easy.mi}/mi or slower must be the norm for recovery runs. The aerobic system still adapts; patience with longer adaptation timelines is the required adjustment.`,
     buildFaq: (d) => [
       { q: `What training paces does a ${d.bqTime} women's 60–64 BQ require?`, a: `For a ${d.bqTime} marathon BQ (RPI ${d.rpi}): Easy ${d.paces.easy.mi}/mi, Marathon ${d.paces.marathon.mi}/mi, Threshold ${d.paces.threshold.mi}/mi, Interval ${d.paces.interval.mi}/mi. Marathon training pace (${d.paces.marathon.mi}/mi) is the target for the final miles of your longest training runs. Everything else accumulates at easy pace (${d.paces.easy.mi}/mi or slower).` },
       { q: `What WMA grade is a 4:20 marathon for women 60–64?`, a: `A ${d.bqTime} marathon at age ${d.midAge} scores ${d.wmaGradePct}% WMA age-graded. The WMA table accounts for significant age factors at 60–64, making the absolute time less meaningful than the age-adjusted score. This is competitive masters running by any measure.` },
@@ -519,7 +519,7 @@ export default function BQAgePage({ params }: Props) {
         <section className="mb-10">
           <h2 className="text-2xl font-bold mb-4">Training approach for a {data.bqTime} BQ</h2>
           <div className="prose prose-invert prose-slate max-w-none text-slate-300">
-            <p>{config.trainingContext}</p>
+            <p>{typeof config.trainingContext === 'function' ? config.trainingContext(data) : config.trainingContext}</p>
           </div>
         </section>
 
