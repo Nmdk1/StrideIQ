@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel, ConfigDict
 from typing import List, Optional
 from uuid import UUID
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 
 from core.database import get_db
 from core.auth import get_current_athlete
@@ -482,7 +482,7 @@ def get_pending_proposal(
     if not proposal:
         return None
 
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     if proposal.expires_at and now > proposal.expires_at:
         proposal.status = "expired"
         db.commit()
