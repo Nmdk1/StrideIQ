@@ -176,3 +176,6 @@ htmlcov/
 *-logs-*.txt
 job-logs.txt
 backend-test-logs.txt
+
+# V2 plan engine evaluation reports (generated artifacts)
+apps/api/services/plan_engine_v2/evaluation/reports/
