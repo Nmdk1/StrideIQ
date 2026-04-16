@@ -227,6 +227,12 @@ def ensure_fresh_token(athlete, db) -> bool:
         return True  # Can't check, assume OK
 
     now = datetime.now(tz.utc)
+    # Defensive: historical rows may have been written as naive datetimes
+    # even though the column is `DateTime(timezone=True)`.  Treat naive
+    # values as UTC so the comparison below never raises
+    # `can't compare offset-naive and offset-aware datetimes`.
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=tz.utc)
     # Refresh if token expires within 5 minutes
     if expires_at > now + timedelta(minutes=5):
         return True  # Token still fresh
