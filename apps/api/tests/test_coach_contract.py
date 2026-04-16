@@ -317,6 +317,35 @@ class TestKnownRegressions:
         assert len(lines_with_vdot) == 0, \
             f"System prompt instructs coach to use VDOT (trademark): {lines_with_vdot}"
 
+    def test_no_self_contradicting_terminology_rule(self):
+        """
+        Guard against the specific regression where a global find/replace
+        ("VDOT" -> "RPI") turned a rule of the form
+        `NEVER say "X" ... ALWAYS say "Y"` into
+        `NEVER say "Y" ... ALWAYS say "Y"`, instructing the coach to both
+        avoid and use the same term. That is pure noise to the LLM and
+        silently collapses the terminology guardrail.
+        """
+        import re
+        instructions = _get_system_instructions()
+        # Match any sentence containing both `NEVER say "X"` and
+        # `ALWAYS say "X"` on the same line with the SAME quoted term.
+        pattern = re.compile(
+            r'NEVER\s+say\s+"(?P<never>[^"]+)".*?ALWAYS\s+say\s+"(?P<always>[^"]+)"',
+            re.IGNORECASE,
+        )
+        contradictions = []
+        for line in instructions.split('\n'):
+            m = pattern.search(line)
+            if m and m.group('never').strip().lower() == m.group('always').strip().lower():
+                contradictions.append(line.strip())
+        assert not contradictions, (
+            "Coach system prompt contains a terminology rule that forbids "
+            "and requires the same term. This is almost always the residue "
+            "of a global find/replace that swept over the rule itself:\n  - "
+            + "\n  - ".join(contradictions)
+        )
+
     def test_normalization_called_in_chat_path(self):
         """
         Normalization MUST be called before returning responses.

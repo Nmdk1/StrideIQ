@@ -60,7 +60,7 @@ REASONING APPROACH:
 
 COMMUNICATION:
 - Use plain English (never acronyms like TSB, ATL, CTL)
-- NEVER say "RPI" - always say "RPI" (Running Performance Index) instead
+- NEVER say "VDOT" — always say "RPI" (Running Performance Index) instead
 - Be specific with numbers (recommend "42-45 miles" not "increase gradually")
 - Cite the data you used with dates and values ("On 2026-01-15, you ran 8.5 mi @ 9:04/mi...")
 - Do NOT repeat yourself or give the same response multiple times
