@@ -35,6 +35,11 @@ Rules:
 - ONLY describe what the data shows. Never speculate about what "should have" \
 happened, what was "planned," or why data is missing. If there are 4 reps, \
 there are 4 reps. Do not infer planned rep counts from workout names or titles.
+- If `intervals.derived_from_pace` is true, the rep structure was inferred \
+from the pace pattern of the splits because the watch did not tag reps \
+explicitly. The reps are real and the paces are accurate, but if there is \
+genuine ambiguity about rep boundaries you may say "around N reps". Never \
+mention "the algorithm" or "we inferred" -- just describe the workout.
 - Never state the obvious (distance, duration, avg pace) — the athlete sees those.
 - Focus on what THIS run reveals: pacing execution, cardiac response, \
 rep quality, drift, fade, efficiency trends, conditions impact.
@@ -106,14 +111,135 @@ def _workout_label(wt: Optional[str]) -> str:
     return labels.get(wt.lower(), wt.lower().replace("_", " "))
 
 
+# Canonical set of workout types that are structured as discrete reps.
+# Source: WORKOUT_TYPE_OPTIONS in routers/activity_workout_type.py.  Anything
+# here should be analyzed as reps, not as a continuous run, even if the watch
+# did not tag splits with lap_type='work'.  Excludes fartlek (pace pattern too
+# irregular) and strides (too short to read as reps).
+INTERVAL_WORKOUT_TYPES = frozenset({
+    "interval",            # legacy / generic
+    "intervals",           # legacy / generic
+    "track",               # legacy
+    "track_workout",
+    "tempo_intervals",
+    "cruise_intervals",
+    "vo2max_intervals",
+    "hill_repetitions",
+})
+
+
 def _is_interval_workout(activity: Activity) -> bool:
     wt = getattr(activity, "workout_type", None)
     if not wt:
         return False
-    return wt.lower() in {"interval", "intervals", "track", "track_workout"}
+    return wt.lower() in INTERVAL_WORKOUT_TYPES
 
 
 # ── Data gathering ─────────────────────────────────────────────────────
+
+
+def _derive_reps_from_unmarked_splits(splits) -> Optional[List[Dict[str, Any]]]:
+    """
+    When the watch did not tag splits with lap_type='work' (the common Garmin
+    case for cruise intervals, tempo intervals, and any "fake" interval done
+    without a structured workout file), reconstruct the rep structure from the
+    pace pattern of the splits.
+
+    Algorithm
+    ---------
+    1. Compute pace_s_km for every split with usable distance/time.
+    2. Find the largest gap in the lower (faster) half of the sorted paces;
+       splits faster than that gap are work candidates, the rest are
+       warmup/recovery/cooldown.
+    3. Group consecutive work-candidate splits into reps (a slow split between
+       two fast clusters breaks the rep).
+    4. For each rep, sum distance + time, derive pace and time-weighted HR.
+
+    The watch's 1-mile auto-lap habit chops a single ~10-min rep into two
+    consecutive fast splits; merging via "consecutive work-candidate" handles
+    that natively.
+
+    Returns a list of rep dicts in the same shape as the lap_type='work' path,
+    or None if the pattern is too ambiguous to read confidently.
+    """
+    candidates = []
+    for s in splits:
+        if not s.distance or not s.elapsed_time:
+            continue
+        dist = float(s.distance)
+        elapsed = float(s.elapsed_time)
+        if dist < 100 or elapsed <= 0:
+            continue
+        pace = elapsed / (dist / 1000)
+        candidates.append({
+            "split": s,
+            "distance_m": dist,
+            "elapsed_s": elapsed,
+            "pace_s_km": pace,
+        })
+
+    if len(candidates) < 4:
+        return None
+
+    paces_sorted = sorted(c["pace_s_km"] for c in candidates)
+    n = len(paces_sorted)
+    gaps = [
+        (paces_sorted[i + 1] - paces_sorted[i], paces_sorted[i], paces_sorted[i + 1])
+        for i in range(n // 2)
+    ]
+    if not gaps:
+        return None
+    best_gap, lo_edge, hi_edge = max(gaps, key=lambda g: g[0])
+
+    fastest = paces_sorted[0]
+    if best_gap < max(20.0, fastest * 0.10):
+        return None
+
+    work_threshold = lo_edge
+
+    in_rep = False
+    rep_splits: List[List[Dict[str, Any]]] = []
+    current: List[Dict[str, Any]] = []
+    for c in candidates:
+        if c["pace_s_km"] <= work_threshold:
+            current.append(c)
+            in_rep = True
+        else:
+            if in_rep and current:
+                rep_splits.append(current)
+                current = []
+            in_rep = False
+    if current:
+        rep_splits.append(current)
+
+    if len(rep_splits) < 2:
+        return None
+
+    reps: List[Dict[str, Any]] = []
+    for i, group in enumerate(rep_splits):
+        total_dist = sum(g["distance_m"] for g in group)
+        total_elapsed = sum(g["elapsed_s"] for g in group)
+        pace = total_elapsed / (total_dist / 1000)
+
+        hr_num = 0.0
+        hr_den = 0.0
+        for g in group:
+            sp = g["split"]
+            if sp.average_heartrate:
+                hr_num += float(sp.average_heartrate) * g["elapsed_s"]
+                hr_den += g["elapsed_s"]
+        avg_hr = int(round(hr_num / hr_den)) if hr_den > 0 else None
+
+        reps.append({
+            "rep": i + 1,
+            "distance_m": round(total_dist),
+            "elapsed_s": round(total_elapsed, 1),
+            "pace_per_mile": _fmt_pace_per_mile(pace),
+            "pace_s_km": round(pace, 1),
+            "avg_hr": avg_hr,
+        })
+
+    return reps
 
 
 def _get_interval_analysis(activity: Activity, db: Session) -> Optional[Dict[str, Any]]:
@@ -131,23 +257,28 @@ def _get_interval_analysis(activity: Activity, db: Session) -> Optional[Dict[str
         and s.elapsed_time and float(s.elapsed_time) > 0
     ]
 
-    if len(work_splits) < 2:
-        return None
-
-    reps = []
-    for i, s in enumerate(work_splits):
-        dist = float(s.distance)
-        elapsed = float(s.elapsed_time)
-        pace_s_km = elapsed / (dist / 1000)
-        hr = int(s.average_heartrate) if s.average_heartrate else None
-        reps.append({
-            "rep": i + 1,
-            "distance_m": round(dist),
-            "elapsed_s": round(elapsed, 1),
-            "pace_per_mile": _fmt_pace_per_mile(pace_s_km),
-            "pace_s_km": round(pace_s_km, 1),
-            "avg_hr": hr,
-        })
+    derived_from_pace = False
+    if len(work_splits) >= 2:
+        reps = []
+        for i, s in enumerate(work_splits):
+            dist = float(s.distance)
+            elapsed = float(s.elapsed_time)
+            pace_s_km = elapsed / (dist / 1000)
+            hr = int(s.average_heartrate) if s.average_heartrate else None
+            reps.append({
+                "rep": i + 1,
+                "distance_m": round(dist),
+                "elapsed_s": round(elapsed, 1),
+                "pace_per_mile": _fmt_pace_per_mile(pace_s_km),
+                "pace_s_km": round(pace_s_km, 1),
+                "avg_hr": hr,
+            })
+    else:
+        derived = _derive_reps_from_unmarked_splits(splits)
+        if not derived:
+            return None
+        reps = derived
+        derived_from_pace = True
 
     all_paces = [r["pace_s_km"] for r in reps]
     sorted_paces = sorted(all_paces)
@@ -179,6 +310,7 @@ def _get_interval_analysis(activity: Activity, db: Session) -> Optional[Dict[str
         "busted_reps": [r["rep"] for r in reps if r["busted"]],
         "avg_hr_work": round(sum(r["avg_hr"] for r in reps if r["avg_hr"]) / max(1, sum(1 for r in reps if r["avg_hr"]))) if any(r["avg_hr"] for r in reps) else None,
         "history": history,
+        "derived_from_pace": derived_from_pace,
     }
 
 

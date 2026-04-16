@@ -18,6 +18,9 @@ from services.run_intelligence import (
     _build_data_context,
     _get_pre_state,
     _is_interval_workout,
+    _derive_reps_from_unmarked_splits,
+    _get_interval_analysis,
+    INTERVAL_WORKOUT_TYPES,
     IntelligenceHighlight,
 )
 
@@ -283,3 +286,192 @@ class TestGenerateRunIntelligence:
         assert result is not None
         assert result.body == ""
         assert len(result.highlights) > 0
+
+
+class TestIntervalWorkoutTypeCoverage:
+    """The interval-workout-type set must include every workout type that is
+    structured as discrete reps in the canonical WORKOUT_TYPE_OPTIONS list,
+    not just the legacy {interval, intervals, track, track_workout}.
+
+    This is the regression that broke the activity-page intelligence on
+    cruise_intervals runs (the founder's threshold workout was treated as a
+    continuous run because cruise_intervals was missing from the set).
+    """
+
+    def test_cruise_intervals_is_recognized(self):
+        a = _make_activity(workout_type="cruise_intervals")
+        assert _is_interval_workout(a) is True
+
+    def test_tempo_intervals_is_recognized(self):
+        a = _make_activity(workout_type="tempo_intervals")
+        assert _is_interval_workout(a) is True
+
+    def test_vo2max_intervals_is_recognized(self):
+        a = _make_activity(workout_type="vo2max_intervals")
+        assert _is_interval_workout(a) is True
+
+    def test_hill_repetitions_is_recognized(self):
+        a = _make_activity(workout_type="hill_repetitions")
+        assert _is_interval_workout(a) is True
+
+    def test_track_workout_is_recognized(self):
+        a = _make_activity(workout_type="track_workout")
+        assert _is_interval_workout(a) is True
+
+    def test_easy_run_is_not_an_interval(self):
+        a = _make_activity(workout_type="easy_run")
+        assert _is_interval_workout(a) is False
+
+    def test_long_run_is_not_an_interval(self):
+        a = _make_activity(workout_type="long_run")
+        assert _is_interval_workout(a) is False
+
+    def test_tempo_run_is_not_an_interval_workout(self):
+        # tempo_run is a continuous tempo, not a rep workout.  This is the
+        # boundary case -- "tempo" without "intervals" stays continuous.
+        a = _make_activity(workout_type="tempo_run")
+        assert _is_interval_workout(a) is False
+
+
+def _make_split(distance_m, elapsed_s, hr=None, lap_type=None, split_number=1):
+    """Build a MagicMock split that quacks like models.ActivitySplit."""
+    s = MagicMock()
+    s.split_number = split_number
+    s.distance = distance_m
+    s.elapsed_time = elapsed_s
+    s.average_heartrate = hr
+    s.lap_type = lap_type
+    return s
+
+
+# Real split data for activity a5799370-7c54-4a72-909a-9e492398fb30
+# (founder's "Lauderdale County - 4 x 10 minutes at T" run, 2026-04-16).
+# workout_type=cruise_intervals, every split has lap_type=NULL.
+# The actual workout was 3 reps of ~10 min at threshold pace, but the watch
+# auto-lapped at every 1 mile, so each rep was cut into TWO consecutive
+# fast-pace splits.  This is the run that the bug originally broke on.
+LAUDERDALE_2026_04_16_SPLITS = [
+    # split_number, distance_m, elapsed_s, avg_hr   -- role
+    (1,  1609.34, 532, 118),  # warmup mile
+    (2,  1609.34, 479, 131),  # warmup mile
+    (3,   604.90, 635, 136),  # warmup tail / pause
+    (4,  1609.34, 379, 128),  # rep 1 (auto-lap mid-rep) - 6:19/mi
+    (5,   932.23, 220, 160),  # rep 1 continuation       - 6:20/mi
+    (6,   214.30, 179, 132),  # recovery jog
+    (7,  1609.34, 378, 155),  # rep 2 (auto-lap mid-rep) - 6:18/mi
+    (8,   928.83, 221, 169),  # rep 2 continuation       - 6:23/mi
+    (9,   191.41, 303, 142),  # recovery jog (very slow)
+    (10, 1609.34, 382, 161),  # rep 3 (auto-lap mid-rep) - 6:22/mi
+    (11,  910.65, 218, 170),  # rep 3 continuation       - 6:25/mi
+    (12,  189.44, 151, 148),  # cooldown
+]
+
+
+def _lauderdale_splits():
+    return [
+        _make_split(distance_m=d, elapsed_s=e, hr=h, lap_type=None, split_number=n)
+        for (n, d, e, h) in LAUDERDALE_2026_04_16_SPLITS
+    ]
+
+
+class TestDeriveRepsFromUnmarkedSplits:
+    """Pace-pattern fallback for the common Garmin case where the watch
+    didn't tag splits with lap_type='work'.  Every assertion below is keyed
+    to the founder's actual 2026-04-16 cruise-intervals run."""
+
+    def test_lauderdale_reconstructs_three_reps(self):
+        reps = _derive_reps_from_unmarked_splits(_lauderdale_splits())
+        assert reps is not None
+        assert len(reps) == 3, (
+            f"expected 3 reps from the Lauderdale fixture, got {len(reps)}: {reps}"
+        )
+
+    def test_lauderdale_each_rep_is_about_one_and_a_half_miles(self):
+        reps = _derive_reps_from_unmarked_splits(_lauderdale_splits())
+        for r in reps:
+            mi = r["distance_m"] / 1609.34
+            assert 1.4 <= mi <= 1.7, f"rep {r['rep']} was {mi:.2f}mi: {r}"
+
+    def test_lauderdale_each_rep_pace_is_threshold(self):
+        # All three reps were at ~6:20/mi, which is ~236 s/km.
+        reps = _derive_reps_from_unmarked_splits(_lauderdale_splits())
+        for r in reps:
+            assert 230 <= r["pace_s_km"] <= 245, (
+                f"rep {r['rep']} pace was {r['pace_s_km']} s/km, "
+                f"expected ~236 s/km (6:20/mi): {r}"
+            )
+
+    def test_lauderdale_rep_consistency_is_tight(self):
+        reps = _derive_reps_from_unmarked_splits(_lauderdale_splits())
+        paces = [r["pace_s_km"] for r in reps]
+        avg = sum(paces) / len(paces)
+        max_spread_pct = max(abs((p - avg) / avg * 100) for p in paces)
+        assert max_spread_pct < 3.0, (
+            f"reps were {paces}, spread={max_spread_pct:.2f}% -- "
+            "should be <3% for these threshold reps"
+        )
+
+    def test_lauderdale_each_rep_has_hr(self):
+        reps = _derive_reps_from_unmarked_splits(_lauderdale_splits())
+        for r in reps:
+            assert r["avg_hr"] is not None, f"rep {r['rep']} missing HR"
+            assert 120 <= r["avg_hr"] <= 200
+
+    def test_lauderdale_via_full_interval_analysis_returns_three_reps(self):
+        # End-to-end: feed the full split list to _get_interval_analysis,
+        # which should fall through the lap_type='work' branch and pick up
+        # the pace-derived path.
+        activity = _make_activity(workout_type="cruise_intervals")
+        db = MagicMock()
+        db.query.return_value.filter.return_value.order_by.return_value.all.return_value = (
+            _lauderdale_splits()
+        )
+        # _get_interval_history makes its own queries; stub it to None so we
+        # don't try to compare against an empty mock history.
+        with patch(
+            "services.run_intelligence._get_interval_history", return_value=None
+        ):
+            result = _get_interval_analysis(activity, db)
+        assert result is not None
+        assert result["total_reps"] == 3
+        assert result["clean_reps"] == 3
+        assert result["busted_reps"] == []
+        assert result["derived_from_pace"] is True
+        # Average pace should land at ~6:20/mi.
+        assert 230 <= result["clean_avg_pace_s_km"] <= 245
+
+    def test_easy_run_pattern_returns_no_reps(self):
+        # 8 splits all at ~5:30/km easy-run pace.  No fast cluster, so the
+        # gap-finder should suppress and return None rather than fabricate.
+        easy_splits = [
+            _make_split(distance_m=1000, elapsed_s=330 + (i % 3) * 5, hr=140, split_number=i + 1)
+            for i in range(8)
+        ]
+        assert _derive_reps_from_unmarked_splits(easy_splits) is None
+
+    def test_too_few_splits_returns_none(self):
+        splits = [
+            _make_split(distance_m=1000, elapsed_s=240, hr=170, split_number=1),
+            _make_split(distance_m=1000, elapsed_s=242, hr=171, split_number=2),
+        ]
+        assert _derive_reps_from_unmarked_splits(splits) is None
+
+    def test_lap_type_work_path_still_wins_when_present(self):
+        # When the watch DID tag work splits (structured workout file), the
+        # legacy path must take precedence and produce non-derived output.
+        splits = [
+            _make_split(distance_m=400, elapsed_s=78, hr=170, lap_type="work", split_number=1),
+            _make_split(distance_m=400, elapsed_s=79, hr=171, lap_type="work", split_number=2),
+            _make_split(distance_m=400, elapsed_s=80, hr=172, lap_type="work", split_number=3),
+            _make_split(distance_m=200, elapsed_s=80, hr=130, lap_type="rest", split_number=4),
+        ]
+        activity = _make_activity(workout_type="track_workout")
+        db = MagicMock()
+        db.query.return_value.filter.return_value.order_by.return_value.all.return_value = splits
+        with patch(
+            "services.run_intelligence._get_interval_history", return_value=None
+        ):
+            result = _get_interval_analysis(activity, db)
+        assert result is not None
+        assert result["total_reps"] == 3
+        assert result["derived_from_pace"] is False
