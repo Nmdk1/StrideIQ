@@ -67,6 +67,18 @@ class Activity(Base):
     stream_fetch_retry_count = Column(Integer, nullable=False, default=0, server_default="0")
     stream_fetch_deferred_until = Column(DateTime(timezone=True), nullable=True)
 
+    # --- STRAVA FALLBACK (Garmin detail timeout repair) ---
+    # Set by services/sync/strava_fallback.repair_garmin_activity_from_strava
+    # when the cleanup task fail-closes a Garmin row to 'unavailable' and the
+    # athlete has Strava connected.  See docs/specs/garmin_strava_fallback_plan.md.
+    # status values: succeeded / failed / skipped_no_strava / skipped_no_match /
+    # skipped_too_old / skipped_strava_no_streams / skipped_rate_limited / pending
+    strava_fallback_status = Column(Text, nullable=True)
+    strava_fallback_attempted_at = Column(DateTime(timezone=True), nullable=True)
+    strava_fallback_strava_activity_id = Column(BigInteger, nullable=True)
+    strava_fallback_error = Column(Text, nullable=True)
+    strava_fallback_attempt_count = Column(Integer, nullable=False, default=0, server_default="0")
+
     # --- CROSS-TRAINING METADATA ---
     garmin_activity_type = Column(Text, nullable=True)
     cadence_unit = Column(Text, nullable=True)

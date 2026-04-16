@@ -101,7 +101,7 @@ def cleanup_stale_garmin_pending_streams(self) -> dict:
                       FROM activity_stream s
                       WHERE s.activity_id = a.id
                   )
-                RETURNING a.athlete_id
+                RETURNING a.id, a.athlete_id
                 """
             ),
             {
@@ -114,6 +114,34 @@ def cleanup_stale_garmin_pending_streams(self) -> dict:
         healed = len(updated_rows)
         athlete_ids = {str(r.athlete_id) for r in updated_rows}
         affected_athletes = len(athlete_ids)
+
+        # --- Strava-fallback enqueue (Garmin -> Strava structural repair) ---
+        # Every row we just fail-closed gets one shot at repair via the
+        # athlete's Strava account.  The task itself enforces the eligibility
+        # gates (Strava tokens present, sport=run, age <= 14d, idempotent
+        # claim) so a duplicate enqueue is harmless.
+        # Enqueue is best-effort: a Celery broker hiccup must not roll back
+        # the cleanup commit above.
+        fallback_enqueued = 0
+        try:
+            from tasks.strava_fallback_tasks import (
+                repair_garmin_activity_from_strava_task,
+            )
+
+            for row in updated_rows:
+                try:
+                    repair_garmin_activity_from_strava_task.delay(str(row.id))
+                    fallback_enqueued += 1
+                except Exception as enqueue_exc:
+                    logger.warning(
+                        "strava_fallback_enqueue_failed activity_id=%s error=%s",
+                        row.id,
+                        enqueue_exc,
+                    )
+        except Exception as import_exc:
+            logger.warning(
+                "strava_fallback_module_unavailable: %s", import_exc
+            )
 
         if healed >= GARMIN_STREAM_ALERT_THRESHOLD:
             logger.warning(
@@ -135,6 +163,7 @@ def cleanup_stale_garmin_pending_streams(self) -> dict:
             "healed": healed,
             "affected_athletes": affected_athletes,
             "stale_window_min": GARMIN_STREAM_STALE_MINUTES,
+            "fallback_enqueued": fallback_enqueued,
         }
     except Exception as exc:
         db.rollback()
