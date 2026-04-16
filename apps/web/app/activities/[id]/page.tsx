@@ -626,7 +626,6 @@ export default function ActivityDetailPage() {
             ),
             context: (
               <div className="space-y-5">
-                <RunIntelligence activityId={activityId} />
                 <GoingInCard
                   preRecoveryHrv={activity.pre_recovery_hrv}
                   preOvernightHrv={activity.pre_overnight_hrv}
