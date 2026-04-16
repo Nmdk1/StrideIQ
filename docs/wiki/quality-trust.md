@@ -21,7 +21,7 @@ When the system doesn't have enough data, it says nothing — not something plau
 
 - The coach earns trust incrementally: Phase 1 (Narrator) → Phase 2 (Advisor) → Phase 3 (Conditional Autonomy)
 - Findings require `|r| >= 0.3`, `p < 0.05`, `n >= 10`, and `times_confirmed >= 3` before surfacing
-- The KB violation scanner (`_check_kb_violations` in `ai_coach.py`) catches claims that violate known rules
+- The KB violation scanner (`_check_kb_violations` in `services/coaching/_constants.py`) catches claims that violate known rules
 - Template narratives are banned — every statement must be grounded in data
 
 ### 3. The Athlete Decides, The System Informs
@@ -59,12 +59,12 @@ Raw data is always visible. Interpretation sits on top of data, never replaces i
 
 ### Coach Anti-Hallucination Guardrails
 
-Located in `services/ai_coach.py`:
+Located in `services/coaching/core.py` (and mixins under `services/coaching/`):
 
 - **Data-verification discipline:** "When citing specific paces, splits, or workout metrics in comparison, you MUST use the actual data from the tools available to you. Never infer from workout titles or summaries."
 - **Athlete calibration:** The prompt adapts to athlete experience level — an experienced BQ runner with proven self-regulation patterns does not get default conservatism
 - **Fatigue threshold context:** During deliberate build/overreach phases approaching a race, fatigue thresholds are acknowledged as context, not surfaced as warnings
-- **Date rendering:** All dates in LLM context include pre-computed relative labels via `_relative_date()` in `coach_tools.py` — the LLM never computes relative time itself
+- **Date rendering:** All dates in LLM context include pre-computed relative labels via `_relative_date()` in `services/coach_tools/_utils.py` — the LLM never computes relative time itself
 
 ### Briefing Guardrails
 

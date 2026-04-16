@@ -27,7 +27,7 @@ The Manual contains several sections derived from different data sources:
 
 ### Display Names
 
-The `FRIENDLY_NAMES` dict in `services/n1_insight_generator.py` maps internal signal names to athlete-readable names:
+The `FRIENDLY_NAMES` dict in `services/intelligence/n1_insight_generator.py` maps internal signal names to athlete-readable names (legacy path `services/n1_insight_generator.py` is now a shim):
 - `garmin_sleep_deep_s` → "Deep Sleep"
 - `dew_point_f` → "Dew Point"
 - `feedback_leg_feel` → "Leg Feel"

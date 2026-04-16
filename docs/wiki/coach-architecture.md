@@ -2,13 +2,15 @@
 
 ## Current State
 
-The AI coach is the primary conversational interface. Every athlete query routes through `services/ai_coach.py`. The current production model is **Kimi K2.5** for all athletes (universal routing as of Apr 6, 2026). Claude Sonnet 4.6 is the silent fallback on Kimi errors only. Gemini Flash is retired from the coach path.
+The AI coach is the primary conversational interface. Every athlete query routes through the `AICoach` class in `services/coaching/core.py` (legacy import path `services/ai_coach.py` is a 5-line shim that still re-exports `AICoach`). The current production model is **Kimi K2.5** for all athletes (universal routing as of Apr 6, 2026). Claude Sonnet 4.6 is the silent fallback on Kimi errors only. Gemini Flash is retired from the coach path.
+
+The `AICoach` class is composed of seven mixins living alongside `core.py` in the `coaching/` package: `_context.py`, `_llm.py`, `_thread.py`, `_tools.py`, `_budget.py`, `_guardrails.py`, `_prescriptions.py`. Shared constants and the KB violation scanner live in `_constants.py`.
 
 ## How It Works
 
 ### Model Routing
 
-All routing logic is in `services/ai_coach.py`:
+Routing lives on the `AICoach` class in `services/coaching/core.py`:
 
 - **`_determine_model()`** — routes every query to Kimi K2.5
 - **`_handle_coach_query()`** — orchestrates the full query lifecycle
@@ -18,7 +20,7 @@ All routing logic is in `services/ai_coach.py`:
 
 ### Budget & Caps
 
-Configured in `ai_coach.py` (lines 76-94), documented in `docs/COACH_RUNTIME_CAP_CONFIG.md`:
+Implemented in the `_budget.py` mixin (`check_budget`, `_is_founder`, `is_athlete_vip`). Documented in `docs/COACH_RUNTIME_CAP_CONFIG.md`:
 
 | Cap | Standard | VIP | Founder |
 |-----|----------|-----|---------|
@@ -32,21 +34,21 @@ Since all traffic routes through the "opus" lane (Kimi K2.5 = premium lane), the
 - **`check_budget()`** — enforces caps per `CoachUsage` records
 - **`_is_founder()`** — `OWNER_ATHLETE_ID` env var bypasses all caps
 - **`is_athlete_vip()`** — checks `COACH_VIP_ATHLETE_IDS` env var + `athlete.is_coach_vip` DB flag
-- **Cost formula** (line ~656): `(input_tokens * 0.0383 + output_tokens * 0.172) / 100` (Kimi rates)
+- **Cost formula:** `(input_tokens * 0.0383 + output_tokens * 0.172) / 100` (Kimi rates)
 
 ### Context Building
 
 Three context builders serve different surfaces:
 
-1. **`build_athlete_brief()`** in `coach_tools.py` (line ~3505) — comprehensive athlete context for coach chat. 14-day recent runs, identity, wellness, PBs, race predictions, fingerprint, weekly volume. Header instructs LLM to USE pre-computed relative labels verbatim.
+1. **`build_athlete_brief()`** in `services/coach_tools/brief.py` — comprehensive athlete context for coach chat. 14-day recent runs, identity, wellness, PBs, race predictions, fingerprint, weekly volume. Header instructs LLM to USE pre-computed relative labels verbatim.
 
-2. **`_build_athlete_context_for_chat()`** in `ai_coach.py` (line ~2530) — 7-day activity summary, 30-day stats, check-ins, Garmin watch data, planned workouts. All dates include `_relative_date()` labels.
+2. **`_build_athlete_context_for_chat()`** in `services/coaching/_context.py` — 7-day activity summary, 30-day stats, check-ins, Garmin watch data, planned workouts. All dates include `_relative_date()` labels.
 
-3. **`_build_athlete_state_for_opus()`** in `ai_coach.py` (line ~4818) — premium context with recent runs, latest check-in. Dates include relative labels.
+3. **`_build_athlete_state_for_opus()`** in `services/coaching/_context.py` — premium context with recent runs, latest check-in. Dates include relative labels.
 
 ### System Prompt
 
-The system prompt in `ai_coach.py` includes:
+The system prompt assembled in `services/coaching/core.py` includes:
 
 - **Athlete calibration:** Adapts to experience level — experienced athletes don't get default conservatism
 - **Data verification discipline:** Must query actual data before making pace/split comparisons
@@ -56,7 +58,7 @@ The system prompt in `ai_coach.py` includes:
 
 ### Coach Tools
 
-The coach has access to ~26 tools defined in `services/coach_tools.py`:
+The coach has access to ~26 tools defined in the `services/coach_tools/` package (split from the former 4.9K-line `coach_tools.py` god file into `brief.py`, `insights.py`, `activity.py`, `wellness.py`, `performance.py`, `plan.py`, `profile.py`, `load.py`, `_utils.py`):
 
 - `get_recent_runs()` — last N days of run activities
 - `get_wellness_trends()` — 28-day check-in trends
@@ -75,7 +77,7 @@ The coach has access to ~26 tools defined in `services/coach_tools.py`:
 
 ### KB Violation Scanner
 
-`_check_kb_violations()` in `ai_coach.py` scans coach output against the 76-rule KB registry. Catches claims that violate known principles (e.g., citing population statistics, making directional claims without data).
+`_check_kb_violations()` in `services/coaching/_constants.py` scans coach output against the 76-rule KB registry. Catches claims that violate known principles (e.g., citing population statistics, making directional claims without data).
 
 ## Key Decisions
 
@@ -100,5 +102,6 @@ The coach has access to ~26 tools defined in `services/coach_tools.py`:
 - `docs/specs/COACH_MODEL_ROUTING_RESET_SPEC.md` — routing architecture
 - `docs/specs/KIMI_K25_COMPARISON_SPEC.md` — Kimi adoption
 - `docs/BUILDER_INSTRUCTIONS_2026-03-08_FOUNDER_OPUS_ROUTING.md` — VIP routing
-- `apps/api/services/ai_coach.py` — implementation
-- `apps/api/services/coach_tools.py` — tool implementations
+- `apps/api/services/coaching/` — coach package (`core.py` + 7 mixins + `_constants.py`)
+- `apps/api/services/coach_tools/` — coach tool package (9 files by concern)
+- `apps/api/services/ai_coach.py` — legacy 5-line shim (preserves `from services.ai_coach import AICoach`)

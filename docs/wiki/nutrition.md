@@ -94,7 +94,7 @@ Nutrition data feeds the correlation engine via `aggregate_fueling_inputs()`:
 
 The coach sees nutrition via two mechanisms:
 
-1. **Athlete brief** (`coach_tools.py` → `build_athlete_brief`): "Nutrition Snapshot" section includes today's totals, goal type, day tier, multiplier, and calorie/macro targets
+1. **Athlete brief** (`services/coach_tools/brief.py` → `build_athlete_brief`): "Nutrition Snapshot" section includes today's totals, goal type, day tier, multiplier, and calorie/macro targets
 2. **Tools**: `get_nutrition_correlations` (relevant findings) and `get_nutrition_log` (recent entries) — coach can look up nutrition data on request
 
 ## Reporting

@@ -86,12 +86,19 @@ models/                     # ORM models split by domain
 
 services/
   sync/                     # Strava, Garmin, dedup, backfill (16 files)
-  intelligence/             # Correlation engine, attribution, narration (16 files)
+  intelligence/             # Correlation engine, attribution, narration, n1 insights (16 files)
   plan_framework/           # Plan generation engine (V1)
   plan_engine_v2/           # Plan generation engine (V2)
   auto_discovery/           # Correlation auto-discovery pipeline
-  ai_coach.py               # AI coach (god file, 5.7K lines — split deferred)
-  coach_tools.py            # Coach tool functions (god file, 4.9K lines — split deferred)
+  coaching/                 # AI coach split into mixins + core (was ai_coach.py god file)
+                            #   core.py (AICoach class), _context.py, _llm.py, _thread.py,
+                            #   _tools.py, _budget.py, _guardrails.py, _prescriptions.py,
+                            #   _constants.py, __init__.py
+  coach_tools/              # Coach tool functions split by concern (was coach_tools.py god file)
+                            #   brief.py, insights.py, activity.py, wellness.py,
+                            #   performance.py, plan.py, profile.py, load.py, _utils.py
+  ai_coach.py               # 5-line backward-compat shim → services/coaching
+                            # (legacy import path `from services.ai_coach import AICoach` still works)
   [other services]          # Analysis, shape, email, stripe, etc.
 
 data/

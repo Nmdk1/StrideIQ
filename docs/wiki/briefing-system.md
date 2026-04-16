@@ -23,7 +23,7 @@ The briefing uses a two-lane architecture:
 
 The briefing prompt is assembled in `generate_coach_home_briefing()` in `routers/home.py` (line ~1938). It gathers **8+ intelligence sources:**
 
-1. **Athlete brief** — full context from `build_athlete_brief()` in `coach_tools.py`
+1. **Athlete brief** — full context from `build_athlete_brief()` in `services/coach_tools/brief.py`
 2. **Today's completed activity** — if the athlete ran today, includes distance, pace, HR, elevation, temperature, humidity, heat adjustment
 3. **Workout structure** — from `_summarize_workout_structure()` if detected (5-gate architecture)
 4. **Planned workout** — from `PlannedWorkout` if one exists for today
@@ -86,7 +86,8 @@ Threshold: `median * 0.92` (must be ≥8% faster than median to qualify as "work
 
 - `apps/api/routers/home.py` — prompt assembly, workout structure detection
 - `apps/api/tasks/home_briefing_tasks.py` — Lane 2A worker
-- `apps/api/services/coach_tools.py` — athlete brief, wellness trends
+- `apps/api/services/coach_tools/brief.py` — `build_athlete_brief`
+- `apps/api/services/coach_tools/wellness.py` — wellness trends
 - `apps/api/services/fingerprint_context.py` — fingerprint prompt section
 - `apps/api/tasks/beat_startup_dispatch.py` — deployment-proof scheduling
 - `docs/BUILD_SPEC_HOME_AND_ACTIVITY.md` — home page spec

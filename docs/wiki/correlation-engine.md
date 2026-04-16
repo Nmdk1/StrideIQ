@@ -8,7 +8,7 @@ The correlation engine is a scientific instrument for one athlete. It discovers 
 
 ### Core Pipeline
 
-Located in `services/correlation_engine.py`:
+Located in `services/intelligence/correlation_engine.py` (legacy path `services/correlation_engine.py` is now a backward-compat shim):
 
 1. **Input aggregation:** `aggregate_daily_inputs()` and `aggregate_activity_level_inputs()` compute ~70 input signals per observation
 2. **Bivariate Pearson correlation:** Each input vs each output metric, with 0-7 day lags (peak lag selected)
@@ -144,6 +144,7 @@ Currently only `cutback_frequency` and `quality_spacing_min_hours` are fully con
 - `docs/specs/LIMITER_ENGINE_BRIEF.md` — limiter engine brief
 - `docs/FINGERPRINT_VISIBILITY_ROADMAP.md` — visibility and surfaces
 - `docs/specs/AUTO_DISCOVERY_PHASE0_SPEC.md` through `PHASE1_SPEC.md` — AutoDiscovery phases
-- `apps/api/services/correlation_engine.py` — core engine
-- `apps/api/services/correlation_layers.py` — L1-L4
+- `apps/api/services/intelligence/correlation_engine.py` — core engine
+- `apps/api/services/intelligence/correlation_layers.py` — L1-L4
+- `apps/api/services/correlation_engine.py` and `correlation_layers.py` — 5-line backward-compat shims
 - `apps/api/services/plan_framework/fingerprint_bridge.py` — bridge to plan engine
