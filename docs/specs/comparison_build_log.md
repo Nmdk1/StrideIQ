@@ -424,6 +424,107 @@ Phase 7 next, then return to Phase 6 if time permits.
 
 ---
 
+## Phase 7 — Block-over-block periodization view
+
+**Status:** SHIPPED 2026-04-17 — backend commit `b361ca1`, frontend same
+commit.
+
+**What shipped (backend):**
+
+- `services/comparison/block_comparison.py` — pure aggregation service
+  that takes two `TrainingBlock` rows and returns a structured
+  comparison: per-side weekly series (volume + quality split), per-
+  workout-type compare rows, scalar deltas, and suppressions.
+- `compare_blocks(db, focus_id, against=None)` defaults to picking the
+  most recent prior block of the **same phase** for a fair comparison
+  (e.g. build vs build, not build vs the race that sits between them).
+  Falls back to any prior block if no same-phase peer exists. When no
+  prior block exists at all, returns the focus solo with a
+  `previous_block` suppression rather than fabricating a comparison.
+- `routers/blocks.py` — `GET /v1/blocks/{block_id}/compare` endpoint
+  with optional `against=<uuid>` query param.
+
+**What shipped (frontend):**
+
+- `app/blocks/page.tsx` — index of all detected training blocks for the
+  athlete, with phase badge, distance, run count, and date range. Click
+  a row to drill into the comparison view. Honest empty state.
+- `app/blocks/[id]/page.tsx` — block-over-block comparison view.
+  Visual-first design: focus header naming the two blocks, delta strip
+  for the headline scalars (distance, runs, peak week, quality %, weeks,
+  longest run), side-by-side block columns each with weekly volume bars
+  (quality split shown in a darker shade) + summary stats, and per-
+  workout-type rows showing count + distance + pace for each side. When
+  there's no prior block, surfaces the focus standalone with an explicit
+  "no previous block to compare yet" message.
+
+**Tests:**
+
+- `tests/test_block_comparison.py` — 10 pure-function tests covering
+  pace math, weekly aggregation (empty/single/quality split), and
+  workout-type compare (single, disjoint, sorting by volume, untyped
+  skips). All pass locally.
+
+**Behavioral smoke (prod, founder data, 17 detected blocks):**
+
+```
+GET /v1/blocks → 17 blocks
+  build  | 2026-03-16 → 2026-04-19 |   370km |  27 runs (focus, in progress)
+  race   | 2026-03-09 → 2026-03-15 |    80km |   6 runs
+  peak   | 2025-12-15 → 2026-03-08 |   704km |  56 runs
+  race   | 2025-12-01 → 2025-12-14 |   108km |  11 runs
+  base   | 2025-09-01 → 2025-11-30 |  1392km | 129 runs
+  ...
+
+GET /v1/blocks/{focus}/compare → matched same-phase build → build
+  same_phase: True
+  a (older):  build 2025-06-30 → 2025-08-31  945km  78 runs   (9 weeks, completed)
+  b (focus):  build 2026-03-16 → 2026-04-19  370km  27 runs   (5 weeks, in progress)
+  workout_type_compare:
+    long_run         a=13/286km   b=0/0km      (no long runs yet this build)
+    aerobic_run      a=18/194km   b=2/15km
+    recovery_run     a=16/83km    b=6/74km
+    medium_long_run  a=6/92km     b=2/42km
+    fartlek          a=6/86km     b=1/13km
+  deltas:
+    total_distance_m: -574,641m   (focus is mid-block; expected)
+    run_count: -51                (focus is mid-block; expected)
+    quality_pct: +6%              (current build skewing more quality)
+    peak_week_distance_m: -42km
+    weeks: -4                     (in-progress vs completed)
+```
+
+The aggregation correctly picked the previous *build* block (last
+summer's 9-week build) over the more recent race blocks. The data
+surfaces a real, actionable signal: "this build is 5 weeks in with no
+long runs yet vs 13 long runs in the same phase last summer." That's a
+finding the founder can act on — the type of pattern recognition the
+correlation engine layer above this would key on.
+
+**Notes / decisions:**
+
+- Same-phase preference makes block-over-block periodization comparisons
+  fair by default. Athlete can override via `?against=<uuid>`.
+- All aggregation is pure functions over the raw `Activity` table — no
+  invented numbers, no synthesis. The week series, the workout-type
+  rollups, and the deltas are all derived directly from activity rows
+  bounded by `start_date`/`end_date`.
+- Suppressions are first-class: missing previous block → empty `a` +
+  `previous_block` suppression. UI honors this with an explicit message.
+- Frontend uses tabular numerics throughout; weekly bars use a dual-fill
+  pattern (lighter = total volume, darker = quality work) so the
+  athlete can see both volume and intensity composition at a glance.
+
+**Why Phase 7 over Phase 6:**
+
+Documented above (end of Phase 5 section): Phase 5 already surfaces
+anniversary data with weather context. Drawing it as an overlay on the
+run shape canvas would be polish; the block-over-block view is a *new*
+product surface and the only remaining new product surface in the
+comparison family. Reordered accordingly.
+
+---
+
 ## Phase 5 (legacy design notes from Phase 2 — kept for reference)
 
 A *route* is a canonical group of activities the athlete has run on the
