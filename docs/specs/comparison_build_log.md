@@ -285,9 +285,146 @@ needs.
 
 ## Phase 5 — Activity-page comparable runs
 
-**Status:** in progress
+**Status:** SHIPPED 2026-04-17
 
-**Design (locked):**
+**Commits:** `0ebb728` (backend) → `31b11be` (frontend)
+
+**What shipped (backend):**
+
+Tier-based comparable-runs service + endpoint. The endpoint walks a
+priority hierarchy of comparison "tiers" and returns each tier that
+yielded data, with explicit `suppressions` for any tier that did not.
+
+Tiers, in order:
+
+1. `same_route_anniversary` — same route, ±30 days from one year ago.
+   This is the "did I get faster on my favorite hill?" tier.
+2. `same_route_recent` — last 5 runs on the same route, excluding
+   anniversaries (so we don't double-show).
+3. `same_type_current_block` — same workout type, inside the current
+   detected training block. This is the "did my cruise intervals
+   progress this build?" tier.
+4. `same_type_similar_cond` — same workout type, last 90 days, soft-
+   filtered to runs within ±5°F temp + ±5°F dew when both have
+   weather data. This is the "fair comparison" tier.
+
+Each entry carries:
+- pace, HR, distance, weather, elevation
+- `delta_pace_s_per_km`, `delta_hr_bpm`, `delta_distance_m` vs the
+  focus run
+- `in_tolerance_heat`, `in_tolerance_elevation` flags so the UI can
+  honestly label "different conditions" without claiming heat-adjusted
+  pace where data is missing.
+
+Endpoint: `GET /v1/activities/{id}/comparables`
+
+**Behavioral smoke (prod, founder data):**
+
+```
+>>> Comparables for a5799370 (cruise intervals, today)
+  block_summary: build, weeks=5, run_count=27, quality_pct=19
+  tiers: 3
+    [same_route_anniversary] 6 entries
+      - 2025-03-20  6.45km  4:56/km  392d ago  (+4s/km vs focus)
+      - 2025-04-16  6.44km  5:41/km  365d ago  (+49s/km vs focus)
+    [same_route_recent] 5 entries
+      - 2026-04-10  9.82km  5:30/km  6d ago   (+38s/km vs focus)
+    [same_type_current_block] 1 entry
+      - 2026-04-09  14.40km  5:04/km 7d ago   (+12s/km vs focus)
+  suppressions: 0
+```
+
+The founder is faster than the same route a year ago by 4-49s/km
+across 6 anniversary runs — exactly the kind of insight the user
+called out as "cool to see year over year."
+
+**Notes / decisions:**
+
+- Used `total_elevation_gain` (the actual model field) — caught a typo
+  pre-push by reading `models/activity.py` and amended.
+- `_elevation_in_tolerance` returns `False` when either side is missing
+  (suppression discipline — never claim "same elevation" without
+  evidence). Caught by test.
+- Tier 4 soft-filters by heat tolerance only when both runs have temp
+  data; otherwise it falls back to plain same-type recents so the
+  athlete gets *something* useful when weather data is sparse.
+- Block lookup is a single point-in-time query: blocks are date-bounded
+  and non-overlapping in `block_detector`, so this is correct.
+
+**Frontend shipped:** New "Compare" tab on activity page with
+`ComparablesPanel`. Per founder direction: NOT generic cards. F1
+telemetry density:
+
+- Focus header with emerald accent rule, pace + workout type + block
+  summary on one line.
+- Each tier renders as a horizontal strip with a row per comparable.
+- Pace bar per row: emerald fill when faster than focus, amber when
+  slower; vertical tick marks the focus pace as the visual baseline;
+  scale shared across all entries in the tier.
+- Pace delta, HR delta, distance, weather all inline with tabular
+  numerics — no card chrome.
+- Suppressions surface honestly at the bottom.
+
+**Visual smoke (prod, founder activity a5799370):**
+
+DOM snapshot confirms the panel renders 3 tiers with real data:
+
+```
+Comparing this run · 5-week build block · 27 runs · 19% quality
+
+Same route, one year ago      6 runs
+  Mar 20, 2025  1.1y ago  6.45 km  53°F · dew 26 · 52m ↑
+  Mar 21, 2025  1.1y ago  6.45 km  57°F · dew 27 · 42m ↑
+  Apr 16, 2025  1.0y ago  6.44 km  64°F · dew 43 · 41m ↑
+  Apr 30, 2025  12mo ago  6.44 km  76°F · dew 61 · 25m ↑
+  May 1, 2025   12mo ago  6.45 km  76°F · dew 65 · 31m ↑
+  May 8, 2025   11mo ago  6.45 km  69°F · dew 63 · 26m ↑
+
+Recent runs on this route     5 runs
+  Apr 10, 2026  6d ago    9.82 km  78°F · dew 51 · 52m ↑
+  Apr 8, 2026   8d ago    9.66 km  75°F · dew 38 · 50m ↑
+  ...
+
+Other cruise intervals sessions in this block     1 run
+  Apr 9, 2026   7d ago   14.40 km  76°F · dew 44 · 78m ↑
+```
+
+The anniversary tier alone surfaces six prior runs on the same route
+spanning 11-12 months ago, each with full weather context — exactly
+what the founder asked for ("track from last may to compare to this
+may", "hilly runs on the bonita loop from last june", "must be
+temp/dew point cognizant").
+
+**Notes / decisions:**
+
+- Used `total_elevation_gain` (the actual model field) — caught a typo
+  pre-push by reading `models/activity.py` and amended.
+- `_elevation_in_tolerance` returns `False` when either side is missing
+  (suppression discipline). Tested.
+- Tier 4 (similar conditions) didn't surface here because all
+  same-type runs in last 90d are already in tier 3 (current block) —
+  tier-de-duplication is working as designed.
+- Block point-lookup: blocks are date-bounded and non-overlapping in
+  `block_detector`, so a single point-in-time query is correct.
+- Tab list now includes Compare between Analysis and Context. All
+  panels stay mounted (CSS hidden) for instant switching, matching the
+  existing tab pattern.
+
+**Reprioritization for Phase 6 vs Phase 7:**
+
+Original plan was Phase 6 (anniversary overlay on RunShapeCanvas) →
+Phase 7 (block-over-block view). After shipping Phase 5, the
+anniversary data is already surfaced as the first tier with weather
+context. Drawing it as an overlaid pace trace on the run shape canvas
+is incremental polish, not a new product surface.
+
+Phase 7 (block-over-block periodization view) is the only remaining
+*new* product surface in the comparison family. Reordering to ship
+Phase 7 next, then return to Phase 6 if time permits.
+
+---
+
+## Phase 5 (legacy design notes from Phase 2 — kept for reference)
 
 A *route* is a canonical group of activities the athlete has run on the
 same physical course. Fingerprinted by walking the GPS track at uniform
