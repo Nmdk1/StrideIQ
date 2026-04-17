@@ -438,6 +438,15 @@ def _fetch_and_store_stream(activity_id: str, athlete, db: Session) -> str:
     )
     db.commit()
 
+    # --- ROUTE FINGERPRINT (Phase 2 of comparison family) ---
+    # Best-effort: never fail stream ingestion if routing chokes.
+    try:
+        from services.routes.route_fingerprint import compute_for_activity
+        compute_for_activity(db, activity_id)
+    except Exception as exc:  # pragma: no cover — defensive
+        logger.warning("route_fingerprint_failed activity_id=%s err=%s", activity_id, exc)
+        db.rollback()
+
     logger.info(
         "stream_fetch_success activity_id=%s channels=%s points=%s",
         activity_id,

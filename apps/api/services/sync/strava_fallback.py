@@ -415,6 +415,19 @@ def repair_garmin_activity_from_strava(
     except Exception:
         pass
 
+    # --- ROUTE FINGERPRINT (Phase 2 of comparison family) ---
+    try:
+        from services.routes.route_fingerprint import compute_for_activity
+
+        compute_for_activity(db, activity_id)
+    except Exception as exc:  # pragma: no cover — defensive
+        logger.warning(
+            "strava_fallback_route_fingerprint_failed activity_id=%s err=%s",
+            activity_id,
+            exc,
+        )
+        db.rollback()
+
     logger.info(
         "strava_fallback_succeeded activity_id=%s strava_id=%s points=%s splits=%s",
         activity_id,

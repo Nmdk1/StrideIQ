@@ -1032,10 +1032,35 @@ def process_garmin_activity_detail_task(
         items: List[Dict[str, Any]] = payload if isinstance(payload, list) else [payload]
 
         processed = 0
+        processed_activity_ids: List[Any] = []
         for raw_item in items:
-            if _ingest_activity_detail_item(raw_item, athlete_id, db):
+            ingested = _ingest_activity_detail_item(raw_item, athlete_id, db)
+            if ingested:
                 processed += 1
                 db.commit()
+                # _ingest_activity_detail_item returns truthy; the activity
+                # row is identified by garmin_activity_id on the payload.
+                gaid = (raw_item.get("activityId") if isinstance(raw_item, dict) else None)
+                if isinstance(gaid, int):
+                    row = (
+                        db.query(Activity)
+                        .filter(
+                            Activity.athlete_id == athlete_id,
+                            Activity.garmin_activity_id == gaid,
+                        )
+                        .first()
+                    )
+                    if row is not None:
+                        processed_activity_ids.append(row.id)
+
+        # --- ROUTE FINGERPRINT (Phase 2 of comparison family) ---
+        for act_id in processed_activity_ids:
+            try:
+                from services.routes.route_fingerprint import compute_for_activity
+                compute_for_activity(db, act_id)
+            except Exception as exc:  # pragma: no cover — defensive
+                logger.warning("route_fingerprint_failed activity_id=%s err=%s", act_id, exc)
+                db.rollback()
 
         logger.info(
             "process_garmin_activity_detail_task: athlete=%s processed=%d",

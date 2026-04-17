@@ -1,6 +1,7 @@
 """models package — re-exports all ORM models for backward compatibility."""
 
 from .activity import Activity, StrengthExerciseSet, PerformanceEvent, ActivitySplit, ActivityStream, PersonalBest, BestEffort, ActivityFeedback, ActivityReflection, CachedStreamAnalysis  # noqa: F401
+from .route import AthleteRoute  # noqa: F401
 from .athlete import Athlete, AthleteFuelingProfile, AthleteRaceResultAnchor, AthleteTrainingPaceProfile, AthleteGoal, AthleteCalibratedModel, AthleteWorkoutResponse, AthleteOverride, AthleteLearning, AthleteAdaptationThresholds, AthletePhoto, AthleteFact, AthleteInvestigationConfig  # noqa: F401
 from .checkin import DailyCheckin, BodyComposition, WorkPattern, IntakeQuestionnaire, DailyReadiness  # noqa: F401
 from .coaching import CoachActionProposal, CoachingKnowledgeEntry, CoachingRecommendation, RecommendationOutcome, CoachChat, CoachIntentSnapshot, CoachUsage, CoachBriefing, CoachBriefingInput  # noqa: F401
@@ -20,6 +21,7 @@ __all__ = [
     "ActivityFeedback",
     "ActivityReflection",
     "CachedStreamAnalysis",
+    "AthleteRoute",
     "Athlete",
     "AthleteFuelingProfile",
     "AthleteRaceResultAnchor",

@@ -154,6 +154,15 @@ class Activity(Base):
     is_duplicate = Column(Boolean, default=False, nullable=False, server_default="false", index=True)
     duplicate_of_id = Column(UUID(as_uuid=True), ForeignKey("activity.id"), nullable=True)
 
+    # --- ROUTE FINGERPRINT (Phase 2 of comparison family) ---
+    # geohash@7 cells (~150m grid) sampled every ~50m of GPS track.
+    # Stored as a JSONB array of strings.  Set on stream success.
+    route_geohash_set = Column(JSONB, nullable=True)
+    # Linked to the canonical route (group of activities on the same course).
+    # NULL until routing service has run on this activity (legacy rows + manual
+    # activities with no GPS will stay NULL forever).
+    route_id = Column(UUID(as_uuid=True), ForeignKey("athlete_route.id"), nullable=True, index=True)
+
     # --- THE ARMOR: Unique Constraint prevents duplicates at the DB level ---
     __table_args__ = (
         UniqueConstraint('provider', 'external_activity_id', name='uq_activity_provider_external_id'),
