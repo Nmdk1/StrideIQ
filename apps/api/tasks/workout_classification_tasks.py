@@ -36,13 +36,22 @@ from typing import Optional
 from uuid import UUID
 
 from celery import shared_task
-from sqlalchemy import and_
+from sqlalchemy import and_, or_
 
 from core.database import SessionLocal
 from models import Activity, Athlete
 from services.workout_classifier import WorkoutClassifierService
 
 logger = logging.getLogger(__name__)
+
+# Workout types known to have been produced by historically-buggy
+# classifier paths.  When the classifier shipped a bug fix that affects
+# these types (e.g. structured intervals being routed to FARTLEK because
+# the old code bucketed by overall avg intensity), we want to re-run the
+# classifier on rows that landed in these buckets so the Compare tab and
+# every other consumer reflects the corrected type without anyone having
+# to run an ops script per athlete.
+RECLASSIFY_BAD_BUCKETS = {"fartlek", "tempo_intervals"}
 
 
 # Per-athlete safety bound: even a fresh full-history backfill processes
@@ -66,6 +75,7 @@ def backfill_workout_classifications(
     limit_athletes: Optional[int] = None,
     batch_limit_per_athlete: int = BATCH_LIMIT_PER_ATHLETE,
     trailing_days: int = TRAILING_DAYS,
+    reclassify_bad_buckets: bool = False,
 ) -> dict:
     """Classify any run activity with `workout_type IS NULL`.
 
@@ -75,6 +85,11 @@ def backfill_workout_classifications(
         batch_limit_per_athlete: max activities classified per athlete per run.
         trailing_days: only consider runs whose start_time falls within this
             many days of now.
+        reclassify_bad_buckets: if True, ALSO reclassify runs whose existing
+            workout_type sits in `RECLASSIFY_BAD_BUCKETS` (the buckets that
+            historically-buggy classifier paths produced).  Use this once
+            after shipping a classifier fix so the existing fleet picks up
+            the corrected type without per-athlete intervention.
 
     Returns:
         Structured summary used by ops + the periodic safety-net sweep.
@@ -96,6 +111,17 @@ def backfill_workout_classifications(
         cutoff = datetime.now(timezone.utc) - timedelta(days=int(trailing_days))
         classifier = WorkoutClassifierService(db)
 
+        # Build the workout_type filter once -- either "NULL only" (default,
+        # idempotent for normal sweeps) or "NULL or in bad-bucket list" (one-
+        # shot post-classifier-fix mode).
+        if reclassify_bad_buckets:
+            type_filter = or_(
+                Activity.workout_type.is_(None),
+                Activity.workout_type.in_(list(RECLASSIFY_BAD_BUCKETS)),
+            )
+        else:
+            type_filter = Activity.workout_type.is_(None)
+
         for aid in athlete_ids:
             try:
                 pending = (
@@ -104,7 +130,7 @@ def backfill_workout_classifications(
                         and_(
                             Activity.athlete_id == aid,
                             Activity.sport == "run",
-                            Activity.workout_type.is_(None),
+                            type_filter,
                             Activity.start_time >= cutoff,
                         )
                     )

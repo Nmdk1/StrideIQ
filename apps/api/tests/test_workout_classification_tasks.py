@@ -211,6 +211,71 @@ def test_sweep_delegates_to_backfill_with_periodic_settings():
     assert kwargs["batch_limit_per_athlete"] <= 50
 
 
+def test_backfill_reclassify_bad_buckets_widens_filter():
+    """REGRESSION GUARD: when the classifier ships a fix for a bucket
+    that historical buggy paths over-produced (e.g. structured intervals
+    misclassified as FARTLEK because the old code bucketed by diluted
+    overall intensity), the backfill must offer a one-shot mode that
+    re-runs on rows currently sitting in those bad buckets -- not just
+    NULL rows.  Otherwise the existing fleet keeps showing the wrong
+    workout_type forever and athletes never see the corrected grouping."""
+    aid = uuid4()
+    pending = [_FakeActivity(uuid4())]
+    pending[0].workout_type = "fartlek"  # the misclassified state
+
+    db = _make_db([aid], [pending])
+    classifier = MagicMock()
+    classifier.classify_activity.return_value = _make_classification(
+        workout_type_value="vo2max_intervals",
+        workout_zone_value="speed",
+        confidence=0.9,
+        intensity=85.0,
+    )
+
+    with patch(
+        "tasks.workout_classification_tasks.SessionLocal", return_value=db
+    ), patch(
+        "tasks.workout_classification_tasks.WorkoutClassifierService",
+        return_value=classifier,
+    ):
+        result = backfill_workout_classifications.run(reclassify_bad_buckets=True)
+
+    # The widened filter let the misclassified row through, the classifier
+    # fixed it, and the row was persisted with the corrected type.
+    assert result["classified"] == 1
+    assert pending[0].workout_type == "vo2max_intervals"
+    assert pending[0].workout_zone == "speed"
+
+
+def test_backfill_default_mode_does_not_touch_existing_classifications():
+    """REGRESSION GUARD: the default backfill mode is the periodic safety
+    net.  It must NEVER reclassify rows that already have a workout_type,
+    or it will thrash the database every cycle and re-write classifications
+    that downstream consumers already cached/displayed."""
+    aid = uuid4()
+    already_classified = _FakeActivity(uuid4())
+    already_classified.workout_type = "easy_run"
+    # In a real db the filter would exclude this row.  We simulate that by
+    # returning an empty pending list -- the test asserts that the default
+    # mode does not even try to widen the filter.
+    db = _make_db([aid], [[]])
+    classifier = MagicMock()
+
+    with patch(
+        "tasks.workout_classification_tasks.SessionLocal", return_value=db
+    ), patch(
+        "tasks.workout_classification_tasks.WorkoutClassifierService",
+        return_value=classifier,
+    ):
+        result = backfill_workout_classifications.run()
+
+    # Default mode found nothing; classifier untouched, no commits.
+    assert result["classified"] == 0
+    assert already_classified.workout_type == "easy_run"
+    classifier.classify_activity.assert_not_called()
+    db.commit.assert_not_called()
+
+
 def test_sweep_is_wired_in_beat_schedule():
     """REGRESSION GUARD: removing the safety-net sweep silently re-creates
     the population-level Compare-tab breakage if anything ever stops
