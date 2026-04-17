@@ -7,7 +7,7 @@ routers, and configuration for production use.
 from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from routers import v1, strava, strava_webhook, feedback, body_composition, nutrition, work_pattern, auth, activity_analysis, activity_feedback, activity_reflection, training_availability, run_delivery, activities, analytics, correlations, insight_feedback, recovery_metrics, daily_checkin, admin, run_analysis, training_load, population_insights, athlete_profile, training_plans, ai_coach, coach_actions, preferences, compare, activity_workout_type, athlete_insights, contextual_compare, attribution, causal, data_export, calendar, insights, diagnostics, plan_generation, home, plan_export, onboarding, billing, progress, daily_intelligence, stream_analysis, consent, fingerprint, auto_discovery_admin, reports, telemetry, routes
+from routers import v1, strava, strava_webhook, feedback, body_composition, nutrition, work_pattern, auth, activity_analysis, activity_feedback, activity_reflection, training_availability, run_delivery, activities, analytics, correlations, insight_feedback, recovery_metrics, daily_checkin, admin, run_analysis, training_load, population_insights, athlete_profile, training_plans, ai_coach, coach_actions, preferences, compare, activity_workout_type, athlete_insights, contextual_compare, attribution, causal, data_export, calendar, insights, diagnostics, plan_generation, home, plan_export, onboarding, billing, progress, daily_intelligence, stream_analysis, consent, fingerprint, auto_discovery_admin, reports, telemetry, routes, blocks
 from routers import imports as provider_imports
 try:
     from routers import garmin
@@ -382,6 +382,7 @@ app.include_router(training_availability.router)
 app.include_router(run_delivery.router)
 app.include_router(activities.router)
 app.include_router(routes.router)
+app.include_router(blocks.router)
 app.include_router(analytics.router)
 app.include_router(correlations.router)
 app.include_router(insight_feedback.router)
