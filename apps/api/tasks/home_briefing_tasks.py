@@ -52,7 +52,10 @@ if _app_root not in sys.path:
 
 PROVIDER_TIMEOUT_S = 45   # Rich prompt (5 intelligence sources) needs more generation time
 TASK_HARD_TIMEOUT_S = 55  # Must exceed PROVIDER_TIMEOUT_S + DB work headroom
-BRIEFING_FINGERPRINT_VERSION = "v2"
+# v3: prompt now respects athlete preferred_units (metric/imperial). Bumping
+# the version invalidates every cached briefing on rollout so metric athletes
+# stop seeing the previous imperial-baked morning_voice paragraph.
+BRIEFING_FINGERPRINT_VERSION = "v3"
 
 
 def _build_data_fingerprint(
@@ -60,10 +63,22 @@ def _build_data_fingerprint(
     db: Session,
 ) -> str:
     """Build a fingerprint of the athlete's current data state."""
-    from models import Activity, DailyCheckin, TrainingPlan
+    from models import Activity, Athlete, DailyCheckin, TrainingPlan
 
     today = date.today()
     parts = [athlete_id, f"schema:{BRIEFING_FINGERPRINT_VERSION}", f"date:{today.isoformat()}"]
+
+    # Include preferred_units so a units toggle forces a fresh briefing
+    # instead of serving the stale imperial-baked paragraph from cache.
+    try:
+        units_val = (
+            db.query(Athlete.preferred_units)
+            .filter(Athlete.id == athlete_id)
+            .scalar()
+        ) or "imperial"
+        parts.append(f"units:{units_val}")
+    except Exception:
+        pass
 
     try:
         latest_activity = (
