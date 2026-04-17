@@ -1738,6 +1738,149 @@ def backfill_strava_activity_index_task(
 
 
 # ===========================================================================
+# Population-wide Strava index backfill orchestrator
+# ===========================================================================
+#
+# Why this exists:
+#   The non-run sport ingest fix (commit 62bfe77) corrected three filters that were
+#   silently dropping every cycling/walking/hiking/strength activity from Strava. Athletes
+#   synced before that fix have a hole in their history that only a re-index can fill.
+#
+# Eligibility is data-derived (no new schema): an athlete is eligible iff
+#   - they have a Strava token connected, AND
+#   - they have ever synced Strava (last_strava_sync IS NOT NULL — proves the old code
+#     touched them), AND
+#   - they have zero non-run activities from Strava in their DB (the bug's fingerprint).
+#
+# This makes the orchestrator naturally idempotent: once an athlete has been healed,
+# they fall out of the eligible set and re-running the orchestrator skips them. New
+# athletes who join after the fix get correct multi-sport ingest from day one and never
+# enter the eligible set in the first place.
+#
+# Throttling:
+#   Strava rate limit is 200 reads / 15 min per app and 100 / 15 min per user. Each
+#   per-athlete backfill costs `pages_per_athlete` list calls (default 15 → covers ~3000
+#   activities / athlete, more than any user we've seen). At 60s spacing we issue
+#   ~15 athlete-batches per 15-min window = 225 list calls, just at the per-app limit
+#   leaving a small headroom. For a one-shot heal this is the right tradeoff between
+#   speed and safety; live syncs from other athletes share the same budget but are
+#   already 429-armored (see line ~552, 1681).
+#
+# At 20k athletes this orchestrator would take ~14 days of background drain to fully
+# heal — but it does not have to run all at once: each invocation processes a bounded
+# `max_athletes` batch and returns. A beat schedule entry can call it periodically
+# until the eligible set is empty.
+
+
+def _select_athletes_needing_strava_index_backfill(
+    db: Session, limit: int
+) -> List[str]:
+    """
+    Return up to `limit` athlete IDs whose Strava history needs the multi-sport heal.
+
+    Eligibility: athlete has Strava connected, has been synced before (so the buggy
+    runs-only filter touched them), AND currently has zero non-run Strava activities
+    (the bug's fingerprint). Ordered oldest-first by last_strava_sync so athletes who
+    have been waiting longest get healed first.
+    """
+    rows = db.execute(
+        text("""
+            SELECT a.id::text
+            FROM athlete AS a
+            WHERE a.strava_access_token IS NOT NULL
+              AND a.last_strava_sync IS NOT NULL
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM activity AS act
+                  WHERE act.athlete_id = a.id
+                    AND act.provider = 'strava'
+                    AND act.sport IN ('cycling', 'walking', 'hiking', 'strength', 'flexibility')
+              )
+            ORDER BY a.last_strava_sync ASC
+            LIMIT :lim
+        """),
+        {"lim": int(limit)},
+    ).fetchall()
+    return [r[0] for r in rows]
+
+
+@celery_app.task(name="tasks.heal_strava_indexes_population", bind=True)
+def heal_strava_indexes_population_task(
+    self: Task,
+    max_athletes: int = 50,
+    pages_per_athlete: int = 15,
+    spacing_seconds: int = 60,
+) -> Dict:
+    """
+    Population-wide healer for the multi-sport ingest fix. Selects athletes whose
+    Strava history is missing non-run activities (the fingerprint of the dropped-data
+    bug) and enqueues a per-athlete `backfill_strava_activity_index_task` for each one,
+    spaced `spacing_seconds` apart so the combined Strava read traffic stays well under
+    the 200-req / 15-min per-app rate limit.
+
+    Idempotent: re-running it skips athletes who have already been healed (they no
+    longer match the eligibility filter). Bounded: processes at most `max_athletes` per
+    invocation so a single call never blocks indefinitely or floods the queue.
+
+    Returns:
+        {
+            "status": "success",
+            "eligible_total": <int>,        # actual eligible count in DB right now
+            "enqueued": <int>,              # how many backfills this run scheduled
+            "athlete_ids": [<str>, ...],
+            "earliest_eta_s": 0,
+            "latest_eta_s": <spacing_seconds * (enqueued - 1)>,
+        }
+    """
+    db: Session = get_db_sync()
+    try:
+        # Total eligible (for visibility) — not just the bounded batch
+        total_eligible_row = db.execute(
+            text("""
+                SELECT COUNT(*) FROM athlete a
+                WHERE a.strava_access_token IS NOT NULL
+                  AND a.last_strava_sync IS NOT NULL
+                  AND NOT EXISTS (
+                      SELECT 1 FROM activity act
+                      WHERE act.athlete_id = a.id
+                        AND act.provider = 'strava'
+                        AND act.sport IN ('cycling','walking','hiking','strength','flexibility')
+                  )
+            """)
+        ).scalar()
+        eligible_total = int(total_eligible_row or 0)
+
+        athlete_ids = _select_athletes_needing_strava_index_backfill(db, int(max_athletes))
+
+        enqueued = 0
+        for i, athlete_id in enumerate(athlete_ids):
+            # Spacing keeps combined backfill traffic under Strava's per-app rate
+            # limit and lets live syncs from other athletes share the budget.
+            backfill_strava_activity_index_task.apply_async(
+                args=[athlete_id, int(pages_per_athlete)],
+                countdown=int(spacing_seconds) * i,
+            )
+            enqueued += 1
+
+        return {
+            "status": "success",
+            "eligible_total": eligible_total,
+            "enqueued": enqueued,
+            "athlete_ids": athlete_ids,
+            "earliest_eta_s": 0,
+            "latest_eta_s": int(spacing_seconds) * max(0, enqueued - 1),
+            "max_athletes": int(max_athletes),
+            "pages_per_athlete": int(pages_per_athlete),
+            "spacing_seconds": int(spacing_seconds),
+        }
+    except Exception as e:
+        traceback.print_exc()
+        return {"status": "error", "error": str(e)}
+    finally:
+        db.close()
+
+
+# ===========================================================================
 # Stream Backfill + Stale Cleanup (ADR-063)
 # ===========================================================================
 
