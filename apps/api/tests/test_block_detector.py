@@ -250,24 +250,45 @@ class TestLabelBlocks:
         big = max(blocks, key=lambda b: len(b.weeks))
         assert big.phase in {"build", "peak"}
 
-    def test_race_week_labeled_race(self):
-        acts = (
-            _runs(date(2025, 6, 2), 4)
-            + _runs(date(2025, 6, 9), 4)
-            + [
-                _A(
-                    start_time=datetime(2025, 6, 14, 8, 0, tzinfo=timezone.utc),
-                    distance_m=42195,
-                    workout_type="race",
-                    name="Boston",
-                )
-            ]
+    def test_short_block_with_race_labeled_race(self):
+        # Single-week block ending in a race
+        acts = [
+            _A(
+                start_time=datetime(2025, 6, 14, 8, 0, tzinfo=timezone.utc),
+                distance_m=42195,
+                workout_type="race",
+                name="Boston",
+            )
+        ]
+        weeks = aggregate_weeks(acts)
+        ranges = detect_block_boundaries(weeks, acts)
+        blocks = label_blocks(ranges, weeks)
+        assert blocks[-1].phase == "race"
+        assert blocks[-1].goal_event_name == "Boston"
+
+    def test_long_block_with_race_labeled_by_pre_race_phase(self):
+        # 5-week block: 4 weeks of base, then a race week. Whole block
+        # should NOT be just "race" — should reflect what the prior
+        # weeks were (base / build / taper).
+        acts = []
+        for w in range(4):
+            acts += _runs(
+                date(2025, 6, 2) + timedelta(days=7 * w), 5, distance_m=10000
+            )
+        acts.append(
+            _A(
+                start_time=datetime(2025, 6, 28, 8, 0, tzinfo=timezone.utc),
+                distance_m=42195,
+                workout_type="race",
+                name="Boston",
+            )
         )
         weeks = aggregate_weeks(acts)
         ranges = detect_block_boundaries(weeks, acts)
         blocks = label_blocks(ranges, weeks)
-        # Final block must be a race or taper
-        assert blocks[-1].phase in {"race", "taper"}
+        # Long block should NOT be labeled "race" wholesale.
+        assert blocks[-1].phase in {"base", "build", "peak", "taper"}
+        # But the goal event name still rolls through.
         assert blocks[-1].goal_event_name == "Boston"
 
     def test_off_block_labeled_off(self):

@@ -401,19 +401,27 @@ def _label_block(
     # Race in the block?
     has_race = any(w.has_race for w in block_weeks)
     if has_race:
-        # Did the final 1-3 weeks show a taper pattern?
-        last_n = block_weeks[-3:] if len(block_weeks) >= 3 else block_weeks
-        if len(last_n) >= 2:
-            pre_taper = block_weeks[:-len(last_n)]
-            pre_avg = (
-                sum(w.distance_m for w in pre_taper) / len(pre_taper)
-                if pre_taper
-                else block_peak
-            )
+        # Short blocks (1-2 weeks) with a race ARE race blocks — they
+        # represent the race week (and possibly an immediate shakeout
+        # week). Longer blocks were build/base phases that happened to
+        # culminate in a race; label them by their build character and
+        # let the surrounding context show the race date.
+        if len(block_weeks) <= 2:
+            # Did the final 1-2 weeks show a taper pattern vs prior?
+            last_n = block_weeks
+            return "race"
+        # 3+ week block that ended in a race:
+        #   - taper if the final 1-2 weeks dropped ≥20% from the prior
+        #   - peak  if the block hit the 12-week trailing peak with quality
+        #   - build if quality work was present
+        #   - base  otherwise
+        last_n = block_weeks[-2:]
+        pre_taper = block_weeks[:-2]
+        if pre_taper:
+            pre_avg = sum(w.distance_m for w in pre_taper) / len(pre_taper)
             taper_avg = sum(w.distance_m for w in last_n) / len(last_n)
             if pre_avg > 0 and taper_avg <= pre_avg * (1 - TAPER_DROP_THRESHOLD):
                 return "taper"
-        return "race"
 
     if block_peak >= trailing_peak and quality_pct >= QUALITY_PCT_FOR_BUILD and len(block_weeks) >= 3:
         return "peak"
