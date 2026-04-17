@@ -738,6 +738,65 @@ def get_activity(
     return result
 
 
+@router.get("/{activity_id}/comparables")
+def get_activity_comparables(
+    activity_id: UUID,
+    current_user: Athlete = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Tier-based comparable runs for the activity-page comparison view.
+
+    See ``services/comparison/comparable_runs.py`` for tier rules and
+    suppression discipline. Returns:
+
+    ```
+    {
+      "activity_id": "...",
+      "activity_summary": {...},
+      "block_summary": {...} | null,
+      "tiers": [{"kind": "...", "label": "...", "entries": [...]}, ...],
+      "suppressions": [{"kind": "...", "reason": "..."}, ...]
+    }
+    ```
+
+    Empty ``tiers`` with populated ``suppressions`` is the honest answer
+    when the activity has no comparable runs (fresh athlete, indoor
+    workout, etc.). The frontend MUST NOT invent comparables when this
+    endpoint is suppressing them.
+    """
+    from dataclasses import asdict
+    from services.comparison import find_comparables_for_activity
+
+    # Authorize: athlete must own the activity.
+    activity = (
+        db.query(Activity)
+        .filter(Activity.id == activity_id, Activity.athlete_id == current_user.id)
+        .first()
+    )
+    if activity is None:
+        raise HTTPException(status_code=404, detail="activity not found")
+
+    result = find_comparables_for_activity(db, activity_id)
+    if result is None:
+        raise HTTPException(status_code=404, detail="activity not found")
+
+    # Convert dataclasses → JSON-friendly dicts (entries are nested dataclasses)
+    return {
+        "activity_id": result.activity_id,
+        "activity_summary": result.activity_summary,
+        "block_summary": result.block_summary,
+        "tiers": [
+            {
+                "kind": t.kind,
+                "label": t.label,
+                "entries": [asdict(e) for e in t.entries],
+            }
+            for t in result.tiers
+        ],
+        "suppressions": result.suppressions,
+    }
+
+
 @router.get("/{activity_id}/route-siblings")
 def get_route_siblings(
     activity_id: UUID,

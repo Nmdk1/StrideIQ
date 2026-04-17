@@ -7,7 +7,7 @@ and judgment calls made autonomously.
 **Phases:**
 
 1. Activities-list filters (brushable histograms + workout-type chips) — SHIPPED
-2. Route fingerprinting + ingest + backfill — IN PROGRESS
+2. Route fingerprinting + ingest + backfill — SHIPPED
 3. Route naming UX
 4. Block detection engine + persistence
 5. Activity-page comparable runs (workout-type-specific visuals)
@@ -102,6 +102,188 @@ per founder's autonomy directive.
 ---
 
 ## Phase 2 — Route fingerprinting
+
+**Status:** SHIPPED 2026-04-17
+
+**Commits:** `4290a53` (foundation: migration + service + ingest hooks +
+backfill task + endpoints + tests) → `fd9b5c2` (sentinel fix for
+GPS-less activities to break backfill loop)
+
+**Behavioral smoke (prod, founder account, 2026-04-17):**
+
+```
+[OK ] alembic head = route_fp_001
+[OK ] new activity cols: ['route_geohash_set', 'route_id']
+[OK ] athlete_route table exists: True
+[INFO] founder baseline: 582 stream-bearing run activities, 0 routed
+[OK ] backfill drained: 517 routed across 106 unique routes,
+                        65 sentinel-marked (no GPS — treadmill/track),
+                        0 errors, loop terminates on second pass.
+
+Top routes by run_count (founder account, 20 months of history):
+  fce66de5  79 runs  ~11.7km  Aug 2024 → Apr 2026  (Meridian core loop)
+  1665ecbb  68 runs  ~10.7km  Aug 2024 → today (Apr 16, 2026)
+  05309748  32 runs  ~6.9km   Nov 2024 → Apr 2026
+  8cbc145e  32 runs  ~18.8km  Jul 2025 → Apr 2026  (long-run staple)
+  e6b53f0c  26 runs  ~6.8km   Aug 2024 → Nov 2025
+  c2546dae  23 runs  ~26.3km  Sep 2024 → Dec 2025  (HM-distance route)
+  24a3bbaf  19 runs  ~16.8km
+  1caacb45  19 runs  ~14.0km  (different town — clean spatial separation)
+  e340757c  18 runs  ~27.9km
+  d2a0a8a2  17 runs  ~9.6km
+  ...106 routes total
+
+[OK ] /v1/routes (default min_runs=2) → 23 routes, last_seen DESC
+[OK ] /v1/routes/{id} returns route + 10 activities with workout_type & HR
+[OK ] /v1/routes?min_runs=1&limit=200 → 63 fingerprints across 300 acts
+```
+
+**Visual self-judgment:** Backend foundation is rock-solid. Spatial
+separation between centroids is clean (Meridian core ~32.455,-88.726;
+secondary cluster ~32.37,-88.73 in a different town). Distance-prefilter
+working as designed: variants of the same start point segment by
+distance (6.4km / 6.8km / 9.6km / 11.7km loops are distinct routes,
+which is correct — they are different runs even when they share a
+trailhead). Year-over-year is now possible: route fce66de5 has runs
+spanning Aug 2024 → Apr 2026, which is exactly the spine the comparison
+product needs.
+
+**Notes / judgment calls:**
+
+- Sentinel value `route_geohash_set = []` (empty list) marks "tried but
+  no usable GPS" — without this the backfill query loops forever on
+  treadmill activities. This decision is documented in the
+  `compute_for_activity` docstring and enforced by
+  `test_indoor_treadmill_stream_marks_empty_sentinel`.
+- I set `min_runs=2` as the default for `/v1/routes` listing because
+  one-off routes are noise. The athlete can pass `min_runs=1` to see
+  every fingerprint (used for debugging today).
+- Did NOT add a UI for routes in this phase — the API is live, the
+  consumption is the activity-page comparable-runs view (Phase 5)
+  and the route naming UX (Phase 3).
+
+---
+
+## Phase 3 — Route auto-naming + dominant_workout_type
+
+**Status:** SHIPPED 2026-04-17 (server-side; UI rename folded into Phase 5)
+
+**Commit:** `5ed28f0`
+
+**What shipped:**
+
+- Every `RouteSummary` now ships `display_name` and
+  `dominant_workout_type`. Athletes see "11.7 km route", "18.8 km
+  long-run route", "track loop" defaults instead of `null` names —
+  zero work required from the athlete to get useful labels for the
+  comparison product.
+- Auto-name buckets tuned to founder data shape:
+  `< 8 km` → loop / `8-16 km` → route / `16-26 km` → long-run /
+  `26-36 km` → marathon-distance / `> 36 km` → ultra-distance.
+- Workout-type prefix ("track loop" / "tempo route" / "long-run
+  route") added when ≥40% of the route's typed runs share that
+  workout type. Double-labeling guarded ("long-run long-run" cannot
+  occur).
+- 10/10 `test_routes_naming.py` pass.
+
+**Behavioral smoke (prod, founder, 2026-04-17):**
+
+```
+10.7 km route                        runs= 68  dom=recovery_run
+18.8 km long-run route               runs= 32  dom=medium_long_run
+14.0 km route                        runs= 19  dom=None
+11.7 km route                        runs= 79  dom=recovery_run
+22.2 km long-run route               runs=  2  dom=recovery_run
+16.8 km long-run route               runs= 19  dom=medium_long_run
+6.9 km loop                          runs= 32  dom=recovery_run
+1.6 km loop                          runs=  3  dom=recovery_run
+7.3 km loop                          runs=  9  dom=recovery_run
+16.2 km long-run route               runs=  2  dom=race
+```
+
+**Notes:** UI rename input deferred to Phase 5 surface — naturally
+appears on the activity-page route card where it has context
+("you're running your 11.7 km route — name it Bonita Loop?"). No
+deploy was needed for Phase 3 alone since it's server-only.
+
+---
+
+## Phase 4 — Training block detection
+
+**Status:** SHIPPED 2026-04-17
+
+**Commits:** `5ed28f0` (foundation: model + migration + detector +
+backfill task + endpoints + 21 tests) → `3e7a96d` (label refinement:
+3+ week blocks containing a race no longer label wholesale as
+"race" — taper / build / peak / base based on pre-race phase).
+
+**What shipped:**
+
+- `services/blocks/block_detector.py` — pure-Python rule-based
+  detector. ISO-week aggregation → boundary detection (off weeks
+  isolate; ≥10-day gaps split; recovery weeks following 2+ building
+  weeks isolate; race weeks terminate the block) → phase labeling
+  using a workout-type registry as the single source of truth for
+  what counts as "quality."
+- `models/training_block.py` + `training_block_001` migration.
+- `tasks.backfill_training_blocks` Celery task (delete-and-recreate
+  per-athlete; safe to re-run nightly).
+- `GET /v1/blocks` and `GET /v1/blocks/{id}` endpoints.
+- 22/22 `test_block_detector.py` pass.
+
+**Behavioral smoke (prod, founder, 2026-04-17 after fix):**
+
+```
+17 blocks detected covering Aug 2024 → Apr 2026.
+Phase distribution:
+  base       5
+  race       5
+  recovery   2
+  build      2
+  off        1
+  taper      1
+  peak       1
+
+Most-recent 12 blocks (the product-relevant window):
+  2025-02-24 → 2025-03-02   1wk   recovery     29 km
+  2025-03-03 → 2025-04-13   6wk   base        562 km   ends with Threefoot mile (race name retained)
+  2025-04-14 → 2025-04-20   1wk   race        151 km   "1st place in the Threefoot mile!"
+  2025-04-21 → 2025-05-04   2wk   race        221 km   "Chip time 41:27 — garmin 10k 41:04"
+  2025-05-05 → 2025-06-15   6wk   taper       867 km   ends Pascagoula Charity 5k
+  2025-06-16 → 2025-06-29   2wk   race        300 km
+  2025-06-30 → 2025-08-31   9wk   build       945 km
+  2025-09-01 → 2025-11-30  13wk   base       1392 km   peak_wk=129.9km
+  2025-12-01 → 2025-12-14   2wk   race        108 km
+  2025-12-15 → 2026-03-08  12wk   peak        704 km   q=25%, ends Bay St Louis
+  2026-03-09 → 2026-03-15   1wk   race         80 km   ends Cary Running
+  2026-03-16 → 2026-04-19   5wk   build       370 km   q=19%  (CURRENT BLOCK)
+```
+
+**Visual self-judgment:** The detector found the founder's actual
+training shape: a 12-week peak block from Dec 2025 → Mar 2026 (the
+Bay St Louis HM block, q=25%, peak weekly 129km), a 13-week base
+through fall 2025, multiple race weeks correctly bounded as their
+own phases. The CURRENT block is correctly identified as a 5-week
+build with 19% quality. This is the spine the comparison product
+needs.
+
+**Notes / judgment calls:**
+
+- `race` is now reserved for ≤2-week blocks containing a race (race
+  + immediate shakeout). Long blocks ending in races label by their
+  pre-race character (taper/build/peak/base) and retain the
+  `goal_event_name` so the UI can still surface "12-week peak block
+  for Bay St Louis HM" correctly.
+- Detector is deterministic and idempotent — backfill safely
+  re-runs nightly via Celery beat (next: add to beat schedule when
+  Phase 7 needs it).
+- `peak` requires the trailing 12-week peak weekly distance AND
+  ≥10% quality runs AND ≥3 weeks. Suppression discipline: never
+  call something "peak" without evidence.
+
+---
+
+## Phase 5 — Activity-page comparable runs
 
 **Status:** in progress
 
