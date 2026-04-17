@@ -325,6 +325,17 @@ def compute_for_activity(
     raw = (stream.stream_data or {}).get("latlng") or []
     fingerprint = compute_geohash_set(raw)
     if not fingerprint:
+        # Sentinel: activity has a stream but no usable GPS (treadmill,
+        # indoor track, lost-fix). Mark it so the backfill query stops
+        # re-visiting these every batch. route_id stays NULL.
+        if activity.route_geohash_set is None:
+            activity.route_geohash_set = []
+            if commit:
+                try:
+                    db.commit()
+                except Exception:
+                    db.rollback()
+                    raise
         return None
 
     route = attach_or_create_route(db, activity, fingerprint, track=raw)

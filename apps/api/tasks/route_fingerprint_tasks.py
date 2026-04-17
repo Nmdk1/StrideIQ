@@ -56,6 +56,7 @@ def backfill_route_fingerprints(self, athlete_id: Optional[str] = None, batch_si
                 .filter(
                     Activity.athlete_id == aid,
                     Activity.route_id.is_(None),
+                    Activity.route_geohash_set.is_(None),
                     Activity.sport == "run",
                 )
                 .order_by(Activity.start_time.asc())

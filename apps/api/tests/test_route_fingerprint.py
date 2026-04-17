@@ -263,6 +263,41 @@ class TestAttachOrCreateRoute:
         assert compute_for_activity(db_session, activity.id) is None
         assert activity.route_id is None
 
+    def test_indoor_treadmill_stream_marks_empty_sentinel(self, db_session):
+        """Stream exists but has no usable GPS — must mark route_geohash_set=[]
+        so the backfill task does not re-process it forever."""
+        athlete = _make_athlete(db_session)
+        # Stream with only zero-zero sentinels (Garmin treadmill / lost-fix).
+        bogus_track = [[0.0, 0.0]] * 200
+        activity = Activity(
+            id=uuid.uuid4(),
+            athlete_id=athlete.id,
+            start_time=datetime(2025, 5, 1, 10, tzinfo=timezone.utc),
+            sport="run",
+            source="garmin",
+            distance_m=5000,
+            stream_fetch_status="success",
+        )
+        db_session.add(activity)
+        db_session.flush()
+        stream = ActivityStream(
+            activity_id=activity.id,
+            stream_data={"latlng": bogus_track, "time": list(range(len(bogus_track)))},
+            channels_available=["latlng", "time"],
+            point_count=len(bogus_track),
+            source="garmin",
+        )
+        db_session.add(stream)
+        db_session.commit()
+
+        result = compute_for_activity(db_session, activity.id)
+        assert result is None
+        db_session.refresh(activity)
+        assert activity.route_id is None
+        # Sentinel is critical: the backfill task uses
+        # `route_geohash_set IS NULL` to know which activities still need work.
+        assert activity.route_geohash_set == []
+
     def test_idempotent_recomputation_does_not_double_count(self, db_session):
         athlete = _make_athlete(db_session)
         track = _walk_track(37.7, -122.4, 0, 5000.0)
