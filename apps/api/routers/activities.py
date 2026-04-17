@@ -100,6 +100,16 @@ def list_activities(
     max_distance_m: Optional[int] = Query(None, ge=0, description="Maximum distance in meters"),
     sport: Optional[str] = Query(None, description="Filter by sport type"),
     is_race: Optional[bool] = Query(None, description="Filter by race status"),
+    workout_type: Optional[str] = Query(
+        None,
+        description="Filter by workout_type. Comma-separated list for multi-select (e.g., 'long_run,threshold').",
+    ),
+    temp_min: Optional[float] = Query(None, description="Minimum temperature °F (inclusive). NULL temp activities excluded when set."),
+    temp_max: Optional[float] = Query(None, description="Maximum temperature °F (inclusive). NULL temp activities excluded when set."),
+    dew_min: Optional[float] = Query(None, description="Minimum dew point °F (inclusive). NULL dew activities excluded when set."),
+    dew_max: Optional[float] = Query(None, description="Maximum dew point °F (inclusive). NULL dew activities excluded when set."),
+    elev_gain_min: Optional[float] = Query(None, description="Minimum elevation gain (meters). NULL excluded when set."),
+    elev_gain_max: Optional[float] = Query(None, description="Maximum elevation gain (meters). NULL excluded when set."),
     sort_by: str = Query("start_time", description="Sort field: start_time, distance_m, duration_s"),
     sort_order: str = Query("desc", description="Sort order: asc or desc"),
 ):
@@ -108,6 +118,12 @@ def list_activities(
     
     Returns only activities belonging to the authenticated user.
     Supports filtering by date range, distance, sport type, and race status.
+
+    Phase 1 additions (comparison product family):
+        workout_type, temp_min/max, dew_min/max, elev_gain_min/max.
+        Suppression rule: when a range filter is active, activities with
+        NULL on that field are excluded — we never claim a value we don't
+        have.
     """
     # Build query - always filter by athlete_id
     query = db.query(Activity).filter(Activity.athlete_id == current_user.id)
@@ -143,7 +159,34 @@ def list_activities(
     # Sport filtering
     if sport:
         query = query.filter(Activity.sport == sport)
-    
+
+    # --- Phase 1 filters ---------------------------------------------------
+    # workout_type: comma-separated multi-select. NULL workout_type rows are
+    # excluded when this filter is active (suppression principle: don't include
+    # a row in a typed filter when its type is unknown).
+    if workout_type:
+        types = [t.strip() for t in workout_type.split(",") if t.strip()]
+        if types:
+            query = query.filter(Activity.workout_type.in_(types))
+
+    # Range filters share a helper to enforce min<=max and NULL exclusion.
+    def _apply_range(col, lo, hi, label: str):
+        if lo is not None and hi is not None and lo > hi:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"{label}: min cannot exceed max ({lo} > {hi})",
+            )
+        nonlocal query
+        if lo is not None:
+            query = query.filter(col >= lo, col.isnot(None))
+        if hi is not None:
+            query = query.filter(col <= hi, col.isnot(None))
+
+    _apply_range(Activity.temperature_f, temp_min, temp_max, "temp")
+    _apply_range(Activity.dew_point_f, dew_min, dew_max, "dew")
+    _apply_range(Activity.total_elevation_gain, elev_gain_min, elev_gain_max, "elev_gain")
+    # ----------------------------------------------------------------------
+
     # Race filtering
     # When filtering for races (is_race=True): include if EITHER flag is True
     # When filtering for training (is_race=False): exclude if EITHER flag is True
@@ -302,6 +345,107 @@ def get_activities_summary(
         "activities_by_sport": sports,
         "race_count": summary.race_count or 0,
         "period_days": days,
+    }
+
+
+@router.get("/filter-distributions", response_model=dict)
+def get_filter_distributions(
+    current_user: Athlete = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Return per-dimension distributions for the activities-list filter UI.
+
+    For each filterable dimension, returns either:
+      - {available: True, min, max, buckets: [{lo, hi, count}, ...]}  (16 buckets)
+      - {available: False}  when fewer than 5 activities have a value
+        in that dimension (suppression rule: don't render a histogram
+        the athlete can't meaningfully brush on).
+
+    workout_types lists the types the athlete actually has, with counts.
+    NULL workout_type rows are excluded — they're not selectable.
+
+    See docs/specs/phase1_filters_design.md for the full design.
+    """
+    from sqlalchemy import func
+
+    AVAILABILITY_THRESHOLD = 5
+    BUCKET_COUNT = 16
+
+    workout_type_rows = (
+        db.query(Activity.workout_type, func.count(Activity.id))
+        .filter(
+            Activity.athlete_id == current_user.id,
+            Activity.workout_type.isnot(None),
+        )
+        .group_by(Activity.workout_type)
+        .order_by(func.count(Activity.id).desc(), Activity.workout_type.asc())
+        .all()
+    )
+    workout_types = [
+        {"value": value, "count": int(count)}
+        for value, count in workout_type_rows
+        if value
+    ]
+
+    def _distribution(column) -> dict:
+        """Build histogram metadata for a numeric column."""
+        rows = (
+            db.query(column)
+            .filter(
+                Activity.athlete_id == current_user.id,
+                column.isnot(None),
+            )
+            .all()
+        )
+        values = [float(v[0]) for v in rows if v[0] is not None]
+        if len(values) < AVAILABILITY_THRESHOLD:
+            return {"available": False}
+
+        lo = min(values)
+        hi = max(values)
+        if hi == lo:
+            # All identical — single-bucket histogram is meaningless; degrade
+            # gracefully by reporting the single value with count.
+            return {
+                "available": True,
+                "min": lo,
+                "max": hi,
+                "buckets": [{"lo": lo, "hi": hi, "count": len(values)}],
+            }
+
+        bucket_width = (hi - lo) / BUCKET_COUNT
+        buckets = []
+        for i in range(BUCKET_COUNT):
+            b_lo = lo + i * bucket_width
+            b_hi = lo + (i + 1) * bucket_width
+            buckets.append({"lo": b_lo, "hi": b_hi, "count": 0})
+
+        for v in values:
+            # Last bucket is inclusive on the upper bound; others are [lo, hi).
+            if v >= hi:
+                idx = BUCKET_COUNT - 1
+            else:
+                idx = int((v - lo) / bucket_width)
+                if idx < 0:
+                    idx = 0
+                if idx >= BUCKET_COUNT:
+                    idx = BUCKET_COUNT - 1
+            buckets[idx]["count"] += 1
+
+        return {
+            "available": True,
+            "min": lo,
+            "max": hi,
+            "buckets": buckets,
+        }
+
+    return {
+        "workout_types": workout_types,
+        "distance_m": _distribution(Activity.distance_m),
+        "temp_f": _distribution(Activity.temperature_f),
+        "dew_point_f": _distribution(Activity.dew_point_f),
+        "elevation_gain_m": _distribution(Activity.total_elevation_gain),
     }
 
 

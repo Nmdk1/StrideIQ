@@ -23,8 +23,37 @@ export interface ActivityListParams {
   max_distance_m?: number;
   sport?: string;
   is_race?: boolean;
+  // Phase 1 — comparison product family
+  workout_type?: string; // comma-separated CSV (e.g., "long_run,threshold")
+  temp_min?: number;
+  temp_max?: number;
+  dew_min?: number;
+  dew_max?: number;
+  elev_gain_min?: number;
+  elev_gain_max?: number;
   sort_by?: 'start_time' | 'distance_m' | 'duration_s';
   sort_order?: 'asc' | 'desc';
+}
+
+export interface FilterHistogramBucket {
+  lo: number;
+  hi: number;
+  count: number;
+}
+
+export interface FilterHistogram {
+  available: boolean;
+  min?: number;
+  max?: number;
+  buckets?: FilterHistogramBucket[];
+}
+
+export interface FilterDistributions {
+  workout_types: { value: string; count: number }[];
+  distance_m: FilterHistogram;
+  temp_f: FilterHistogram;
+  dew_point_f: FilterHistogram;
+  elevation_gain_m: FilterHistogram;
 }
 
 export interface ActivitySummary {
@@ -60,6 +89,17 @@ export const activitiesService = {
    */
   async getSummary(days: number = 30): Promise<ActivitySummary> {
     return apiClient.get<ActivitySummary>(`/v1/activities/summary?days=${days}`);
+  },
+
+  /**
+   * Per-dimension distributions powering the brushable filter histograms.
+   *
+   * The backend marks each dimension `available: false` when there are
+   * fewer than 5 activities with values — the frontend uses this to
+   * suppress that histogram entirely (suppression > placeholder).
+   */
+  async getFilterDistributions(): Promise<FilterDistributions> {
+    return apiClient.get<FilterDistributions>('/v1/activities/filter-distributions');
   },
 
   /**

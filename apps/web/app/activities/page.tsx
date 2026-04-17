@@ -10,9 +10,18 @@
 
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
 
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useActivities, useActivitiesSummary } from '@/lib/hooks/queries/activities';
 import { ActivityCard } from '@/components/activities/ActivityCard';
+import {
+  ActivityFilterPanel,
+  EMPTY_FILTERS,
+  filtersToParams,
+  paramsToFilters,
+  isFiltersActive,
+  type ActivityFiltersState,
+} from '@/components/activities/ActivityFilterPanel';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { ErrorMessage } from '@/components/ui/ErrorMessage';
 import { UnitToggle } from '@/components/ui/UnitToggle';
@@ -36,16 +45,55 @@ export default function ActivitiesPage() {
   } = useCompareSelection();
   
   const [selectionMode, setSelectionMode] = useState(false);
-  
+  const router = useRouter();
+  const searchParams = useSearchParams();
+
   const [filters, setFilters] = useState<ActivityListParams>({
     limit: 20,
     offset: 0,
     sort_by: 'start_time',
     sort_order: 'desc',
   });
+  const [filterState, setFilterState] = useState<ActivityFiltersState>(EMPTY_FILTERS);
 
-  const { data: activities, isLoading, error } = useActivities(filters);
+  // Hydrate filter state from URL on first load (deep-link restore)
+  useEffect(() => {
+    if (!searchParams) return;
+    const restored = paramsToFilters(searchParams);
+    setFilterState(restored);
+  }, []); // intentionally only on mount; URL changes after that come from us
+
+  // Combine sort/pagination filters with the structural filter state
+  const combinedParams = useMemo<ActivityListParams>(() => {
+    const fp = filtersToParams(filterState);
+    return {
+      ...filters,
+      ...fp,
+      ...(fp.min_distance_m ? { min_distance_m: Number(fp.min_distance_m) } : {}),
+      ...(fp.max_distance_m ? { max_distance_m: Number(fp.max_distance_m) } : {}),
+      ...(fp.temp_min ? { temp_min: Number(fp.temp_min) } : {}),
+      ...(fp.temp_max ? { temp_max: Number(fp.temp_max) } : {}),
+      ...(fp.dew_min ? { dew_min: Number(fp.dew_min) } : {}),
+      ...(fp.dew_max ? { dew_max: Number(fp.dew_max) } : {}),
+      ...(fp.elev_gain_min ? { elev_gain_min: Number(fp.elev_gain_min) } : {}),
+      ...(fp.elev_gain_max ? { elev_gain_max: Number(fp.elev_gain_max) } : {}),
+    };
+  }, [filters, filterState]);
+
+  const { data: activities, isLoading, error } = useActivities(combinedParams);
   const { data: summary } = useActivitiesSummary(30);
+
+  // Sync filter state to URL — shareable, refresh-stable
+  useEffect(() => {
+    const sp = new URLSearchParams();
+    const fp = filtersToParams(filterState);
+    Object.entries(fp).forEach(([k, v]) => {
+      if (v != null) sp.set(k, String(v));
+    });
+    const qs = sp.toString();
+    const target = qs ? `/activities?${qs}` : '/activities';
+    router.replace(target, { scroll: false });
+  }, [filterState, router]);
 
   const handleToggleSelectionMode = () => {
     if (selectionMode && selectionCount === 0) {
@@ -87,6 +135,13 @@ export default function ActivitiesPage() {
   const handlePageChange = (newOffset: number) => {
     setFilters((prev) => ({ ...prev, offset: newOffset }));
   };
+
+  const handleStructuralFilterChange = (next: ActivityFiltersState) => {
+    setFilterState(next);
+    setFilters((prev) => ({ ...prev, offset: 0 })); // any filter change resets pagination
+  };
+
+  const filtersActive = isFiltersActive(filterState);
 
   return (
     <ProtectedRoute>
@@ -186,79 +241,75 @@ export default function ActivitiesPage() {
           </div>
         )}
 
-        {/* Filters */}
-        <Card className="bg-slate-800 border-slate-700 mb-6">
-          <CardContent className="pt-4 pb-4">
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-              <div>
-                <label className="block text-sm font-medium mb-2 text-slate-400">Sort By</label>
-                <select
-                  value={filters.sort_by || 'start_time'}
-                  onChange={(e) =>
-                    handleFilterChange({
-                      sort_by: e.target.value as 'start_time' | 'distance_m' | 'duration_s',
-                    })
-                  }
-                  className="w-full px-3 py-2 bg-slate-900 border border-slate-600 rounded-lg text-white focus:border-orange-500 focus:outline-none"
-                >
-                  <option value="start_time">Date</option>
-                  <option value="distance_m">Distance</option>
-                  <option value="duration_s">Duration</option>
-                </select>
-              </div>
+        {/* Brushable filter panel — see docs/specs/phase1_filters_design.md */}
+        <ActivityFilterPanel value={filterState} onChange={handleStructuralFilterChange} />
 
-              <div>
-                <label className="block text-sm font-medium mb-2 text-slate-400">Order</label>
-                <select
-                  value={filters.sort_order || 'desc'}
-                  onChange={(e) =>
-                    handleFilterChange({
-                      sort_order: e.target.value as 'asc' | 'desc',
-                    })
-                  }
-                  className="w-full px-3 py-2 bg-slate-900 border border-slate-600 rounded-lg text-white focus:border-orange-500 focus:outline-none"
-                >
-                  <option value="desc">Newest First</option>
-                  <option value="asc">Oldest First</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium mb-2 text-slate-400">Show</label>
-                <select
-                  value={filters.is_race === undefined ? 'all' : filters.is_race ? 'races' : 'training'}
-                  onChange={(e) => {
-                    const value = e.target.value;
-                    handleFilterChange({
-                      is_race: value === 'all' ? undefined : value === 'races',
-                    });
-                  }}
-                  className="w-full px-3 py-2 bg-slate-900 border border-slate-600 rounded-lg text-white focus:border-orange-500 focus:outline-none"
-                >
-                  <option value="all">All Activities</option>
-                  <option value="races">Races Only</option>
-                  <option value="training">Training Only</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium mb-2 text-slate-400">Per Page</label>
-                <select
-                  value={filters.limit || 20}
-                  onChange={(e) =>
-                    handleFilterChange({ limit: parseInt(e.target.value), offset: 0 })
-                  }
-                  className="w-full px-3 py-2 bg-slate-900 border border-slate-600 rounded-lg text-white focus:border-orange-500 focus:outline-none"
-                >
-                  <option value="10">10</option>
-                  <option value="20">20</option>
-                  <option value="50">50</option>
-                  <option value="100">100</option>
-                </select>
-              </div>
+        {/* Compact secondary controls (sort, race/training scope, page size) */}
+        <div className="flex flex-wrap items-end gap-3 mb-4 text-xs">
+          <div className="flex items-center gap-1.5">
+            <span className="text-slate-500 uppercase tracking-wide">Sort</span>
+            <select
+              value={filters.sort_by || 'start_time'}
+              onChange={(e) =>
+                handleFilterChange({
+                  sort_by: e.target.value as 'start_time' | 'distance_m' | 'duration_s',
+                })
+              }
+              className="bg-slate-900 border border-slate-700 rounded text-slate-200 px-2 py-1 focus:border-orange-500 focus:outline-none"
+            >
+              <option value="start_time">Date</option>
+              <option value="distance_m">Distance</option>
+              <option value="duration_s">Duration</option>
+            </select>
+            <select
+              value={filters.sort_order || 'desc'}
+              onChange={(e) =>
+                handleFilterChange({ sort_order: e.target.value as 'asc' | 'desc' })
+              }
+              className="bg-slate-900 border border-slate-700 rounded text-slate-200 px-2 py-1 focus:border-orange-500 focus:outline-none"
+            >
+              <option value="desc">Newest</option>
+              <option value="asc">Oldest</option>
+            </select>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <span className="text-slate-500 uppercase tracking-wide">Show</span>
+            <select
+              value={filters.is_race === undefined ? 'all' : filters.is_race ? 'races' : 'training'}
+              onChange={(e) => {
+                const value = e.target.value;
+                handleFilterChange({
+                  is_race: value === 'all' ? undefined : value === 'races',
+                });
+              }}
+              className="bg-slate-900 border border-slate-700 rounded text-slate-200 px-2 py-1 focus:border-orange-500 focus:outline-none"
+            >
+              <option value="all">All</option>
+              <option value="races">Races</option>
+              <option value="training">Training</option>
+            </select>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <span className="text-slate-500 uppercase tracking-wide">Per page</span>
+            <select
+              value={filters.limit || 20}
+              onChange={(e) =>
+                handleFilterChange({ limit: parseInt(e.target.value), offset: 0 })
+              }
+              className="bg-slate-900 border border-slate-700 rounded text-slate-200 px-2 py-1 focus:border-orange-500 focus:outline-none"
+            >
+              <option value="10">10</option>
+              <option value="20">20</option>
+              <option value="50">50</option>
+              <option value="100">100</option>
+            </select>
+          </div>
+          {filtersActive && activities && (
+            <div className="ml-auto text-slate-300 tabular-nums">
+              {activities.length}{activities.length === (filters.limit || 20) ? '+' : ''} match
             </div>
-          </CardContent>
-        </Card>
+          )}
+        </div>
 
         {/* Activities List */}
         {isLoading && (

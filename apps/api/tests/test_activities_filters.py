@@ -203,7 +203,6 @@ def test_existing_distance_filter_still_works(
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(reason="Phase 1 not implemented yet", strict=True)
 def test_workout_type_filter_single_value(
     filter_athlete, filter_headers, filter_dataset
 ):
@@ -215,7 +214,6 @@ def test_workout_type_filter_single_value(
     assert len(body) == 4
 
 
-@pytest.mark.xfail(reason="Phase 1 not implemented yet", strict=True)
 def test_workout_type_filter_multi_value_csv(
     filter_athlete, filter_headers, filter_dataset
 ):
@@ -228,7 +226,6 @@ def test_workout_type_filter_multi_value_csv(
     assert len(body) == 7  # 4 long + 3 threshold
 
 
-@pytest.mark.xfail(reason="Phase 1 not implemented yet", strict=True)
 def test_workout_type_filter_excludes_null_workout_type(
     filter_athlete, filter_headers, filter_dataset
 ):
@@ -248,7 +245,6 @@ def test_workout_type_filter_excludes_null_workout_type(
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(reason="Phase 1 not implemented yet", strict=True)
 def test_dew_point_range_filter_inclusive_bounds(
     filter_athlete, filter_headers, filter_dataset
 ):
@@ -262,7 +258,6 @@ def test_dew_point_range_filter_inclusive_bounds(
     assert len(body) == 7
 
 
-@pytest.mark.xfail(reason="Phase 1 not implemented yet", strict=True)
 def test_temp_range_filter_excludes_null_temperature(
     filter_athlete, filter_headers, filter_dataset
 ):
@@ -275,7 +270,6 @@ def test_temp_range_filter_excludes_null_temperature(
     assert len(body) == 11  # the NULL-temp trail run is excluded
 
 
-@pytest.mark.xfail(reason="Phase 1 not implemented yet", strict=True)
 def test_invalid_range_min_greater_than_max_returns_400(
     filter_athlete, filter_headers, filter_dataset
 ):
@@ -290,7 +284,6 @@ def test_invalid_range_min_greater_than_max_returns_400(
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(reason="Phase 1 not implemented yet", strict=True)
 def test_elevation_gain_filter(
     filter_athlete, filter_headers, filter_dataset
 ):
@@ -308,7 +301,6 @@ def test_elevation_gain_filter(
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(reason="Phase 1 not implemented yet", strict=True)
 def test_combined_filters_all_and_together(
     filter_athlete, filter_headers, filter_dataset
 ):
@@ -327,7 +319,6 @@ def test_combined_filters_all_and_together(
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(reason="Phase 1 not implemented yet", strict=True)
 def test_filter_distributions_endpoint_returns_workout_types_with_counts(
     filter_athlete, filter_headers, filter_dataset
 ):
@@ -345,7 +336,6 @@ def test_filter_distributions_endpoint_returns_workout_types_with_counts(
     assert None not in types
 
 
-@pytest.mark.xfail(reason="Phase 1 not implemented yet", strict=True)
 def test_filter_distributions_returns_distance_histogram_with_buckets(
     filter_athlete, filter_headers, filter_dataset
 ):
@@ -364,7 +354,6 @@ def test_filter_distributions_returns_distance_histogram_with_buckets(
     assert total_count == 12
 
 
-@pytest.mark.xfail(reason="Phase 1 not implemented yet", strict=True)
 def test_filter_distributions_marks_dew_unavailable_when_too_few(filter_athlete, filter_headers):
     """With <5 activities having dew data, dew_point_f.available must be False."""
     db = SessionLocal()
@@ -389,7 +378,6 @@ def test_filter_distributions_marks_dew_unavailable_when_too_few(filter_athlete,
         db.close()
 
 
-@pytest.mark.xfail(reason="Phase 1 not implemented yet", strict=True)
 def test_filter_distributions_unavailable_when_zero_data(filter_athlete, filter_headers):
     """An athlete with no activities at all gets all dimensions marked unavailable."""
     resp = client.get(
@@ -404,7 +392,6 @@ def test_filter_distributions_unavailable_when_zero_data(filter_athlete, filter_
     assert body["workout_types"] == []
 
 
-@pytest.mark.xfail(reason="Phase 1 not implemented yet", strict=True)
 def test_filter_distributions_requires_auth(filter_athlete, filter_dataset):
     resp = client.get("/v1/activities/filter-distributions")
     assert resp.status_code == 401
