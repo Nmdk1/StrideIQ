@@ -92,6 +92,80 @@ def list_blocks(
     return BlockListResponse(blocks=[_to_summary(b) for b in rows])
 
 
+@router.get("/{block_id}/compare")
+def compare_block(
+    block_id: UUID,
+    against: Optional[UUID] = Query(
+        default=None,
+        description=(
+            "Block id to compare against. If omitted, the most recent prior "
+            "block of the same phase is selected; falls back to any prior block."
+        ),
+    ),
+    current_user: Athlete = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Block-over-block periodization comparison.
+
+    See ``services/comparison/block_comparison.py`` for selection
+    rules and aggregation. Returns:
+
+    ```
+    {
+      "a": { ...older block summary + week_series... },
+      "b": { ...focus block summary + week_series... },
+      "same_phase": bool,
+      "workout_type_compare": [ ... ],
+      "deltas": { "total_distance_m": ..., "run_count": ..., ... },
+      "suppressions": [ ... ]
+    }
+    ```
+
+    When no prior block exists, returns ``b`` populated and ``a`` empty
+    with a `previous_block` suppression — the UI shows the focus
+    standalone with an explicit "no previous block to compare yet"
+    message rather than fabricating a comparison.
+    """
+    from dataclasses import asdict
+    from services.comparison import compare_blocks
+
+    focus = (
+        db.query(TrainingBlock)
+        .filter(
+            TrainingBlock.id == block_id,
+            TrainingBlock.athlete_id == current_user.id,
+        )
+        .first()
+    )
+    if focus is None:
+        raise HTTPException(status_code=404, detail="block not found")
+
+    if against is not None:
+        peer = (
+            db.query(TrainingBlock)
+            .filter(
+                TrainingBlock.id == against,
+                TrainingBlock.athlete_id == current_user.id,
+            )
+            .first()
+        )
+        if peer is None:
+            raise HTTPException(status_code=404, detail="against block not found")
+
+    result = compare_blocks(db, block_id, against)
+    if result is None:
+        raise HTTPException(status_code=404, detail="block not found")
+
+    return {
+        "a": asdict(result.a),
+        "b": asdict(result.b),
+        "same_phase": result.same_phase,
+        "workout_type_compare": [asdict(w) for w in result.workout_type_compare],
+        "deltas": result.deltas,
+        "suppressions": result.suppressions,
+    }
+
+
 @router.get("/{block_id}", response_model=BlockDetailResponse)
 def get_block(
     block_id: UUID,

@@ -1,5 +1,12 @@
 """Activity comparison services (Phase 5+)."""
 
+from .block_comparison import (  # noqa: F401
+    BlockComparison,
+    BlockCompareSide,
+    WeekStat,
+    WorkoutTypeCompare,
+    compare_blocks,
+)
 from .comparable_runs import (  # noqa: F401
     ComparableTier,
     ComparableEntry,
