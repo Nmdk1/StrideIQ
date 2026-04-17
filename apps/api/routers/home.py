@@ -2015,6 +2015,7 @@ def generate_coach_home_briefing(
     race_data: Optional[dict] = None,
     skip_cache: bool = False,
     upcoming_plan: Optional[list] = None,
+    preferred_units: Optional[str] = None,
 ) -> tuple:
     """
     Prepare everything the LLM needs (DB work on request thread), then
@@ -2038,9 +2039,26 @@ def generate_coach_home_briefing(
     import json as _json
     from uuid import UUID as _tz_uuid
 
+    from services.coach_units import coach_units
+
     tz = get_athlete_timezone_from_db(db, _tz_uuid(athlete_id))
     local_today = athlete_local_today(tz)
     local_now = datetime.now(timezone.utc).astimezone(tz)
+
+    # Resolve units. Callers from the request path may not pass the value;
+    # fall back to the athlete row so the prompt always speaks the athlete's
+    # language regardless of which entry point invoked us.
+    if preferred_units is None:
+        try:
+            from models import Athlete
+            preferred_units = (
+                db.query(Athlete.preferred_units)
+                .filter(Athlete.id == athlete_id)
+                .scalar()
+            ) or "imperial"
+        except Exception:
+            preferred_units = "imperial"
+    units = coach_units(preferred_units)
 
     cache_input = _json.dumps({
         "date": local_today.isoformat(),
@@ -2049,6 +2067,7 @@ def generate_coach_home_briefing(
         "checkin": checkin_data,
         "race": race_data,
         "upcoming": upcoming_plan,
+        "units": units.preferred_units,
     }, sort_keys=True, default=str)
     data_hash = hashlib.md5(cache_input.encode()).hexdigest()[:12]
     cache_key = f"coach_home_briefing:{athlete_id}:{data_hash}"
@@ -2132,7 +2151,7 @@ def generate_coach_home_briefing(
         "- Be direct and honest, not sycophantic. The athlete trusts data, not flattery.",
         "",
         "PERSONAL FINGERPRINT CONTRACT:",
-        "- Use threshold values to give specific advice WITH UNITS: 'your sleep cliff is at 6.2 hours — last night was 5.5 hours'. Pace as min/mi, sleep in hours, time of day as AM/PM, distances in miles, counts as numbers.",
+        f"- Use threshold values to give specific advice WITH UNITS: 'your sleep cliff is at 6.2 hours — last night was 5.5 hours'. Pace as {units.pace_unit}, sleep in hours, time of day as AM/PM, distances in {units.distance_unit_long}, counts as numbers.",
         "- Use asymmetry ratios to convey magnitude ('bad sleep hurts you 3x more than good sleep helps').",
         "- Use decay timing for forward-looking advice ('the effect peaks tomorrow based on your 2-day half-life').",
         "- When describing a pattern, be SPECIFIC about what the data shows. 'I've noticed a pattern' is vague and useless. 'Your easy runs before 7 AM are consistently slower — that threshold has held across 18 observations' is specific and actionable.",
@@ -2247,14 +2266,31 @@ def generate_coach_home_briefing(
     except Exception as fe:
         logger.warning(f"Fact injection into morning voice skipped: {fe}")
 
+    if units.is_metric:
+        _hilly_example = "+300m gain"
+        _heat_threshold = "16°C"
+        _heat_hot = "29°C/80%rh"
+        _heat_cool = "10°C/30%rh"
+        _heat_pace_hot = f"5:35{units.pace_unit_short}"
+        _heat_pace_cool = f"5:17{units.pace_unit_short}"
+        _heat_diff_threshold = "8°C"
+    else:
+        _hilly_example = "+1000ft gain"
+        _heat_threshold = "60°F"
+        _heat_hot = "85°F/80%rh"
+        _heat_cool = "50°F/30%rh"
+        _heat_pace_hot = f"9:00{units.pace_unit_short}"
+        _heat_pace_cool = f"8:30{units.pace_unit_short}"
+        _heat_diff_threshold = "15°F"
+
     parts.append(
         "=== PACE COMPARISON CONTRACT ===\n"
         "NEVER compare paces between runs without accounting for these confounders:\n"
-        "1. ELEVATION: A hilly run (+1000ft gain) is inherently slower than a flat run. "
+        f"1. ELEVATION: A hilly run ({_hilly_example}) is inherently slower than a flat run. "
         "If elevation data differs significantly between two runs, say so explicitly.\n"
-        "2. HEAT: Runs above 60°F are physiologically slower. A 9:00/mi in 85°F/80%rh is "
-        "FASTER effort than 8:30/mi in 50°F/30%rh. Use the heat-adjustment percentage when "
-        "available. If temperature data differs by >15°F between compared runs, you MUST note it.\n"
+        f"2. HEAT: Runs above {_heat_threshold} are physiologically slower. A {_heat_pace_hot} in {_heat_hot} is "
+        f"FASTER effort than {_heat_pace_cool} in {_heat_cool}. Use the heat-adjustment percentage when "
+        f"available. If temperature data differs by >{_heat_diff_threshold} between compared runs, you MUST note it.\n"
         "3. SEASON: Do NOT compare a March run to a July run and claim the athlete is 'getting faster' "
         "or 'slowing down' without noting the seasonal temperature difference.\n"
         "4. WORKOUT TYPE: Do NOT compare an interval/tempo workout average pace to an easy run pace. "
@@ -2267,11 +2303,23 @@ def generate_coach_home_briefing(
 
     if today_completed:
         c = today_completed
-        today_line = f"COMPLETED today: {c.get('name')}, {c.get('distance_mi')}mi, pace {c.get('pace')}, HR {c.get('avg_hr', 'N/A')}, {c.get('duration_min')}min"
-        if c.get("elevation_gain_ft") is not None:
-            today_line += f", elevation +{c['elevation_gain_ft']}ft"
-        if c.get("temperature_f") is not None:
-            today_line += f", {c['temperature_f']}°F"
+        # Prefer pre-formatted *_text fields written by the briefing builder
+        # (which respects the athlete's preferred units). Fall back to the
+        # legacy imperial keys for any caller that hasn't been migrated yet.
+        _dist_text = c.get("distance_text")
+        if not _dist_text and c.get("distance_mi") is not None:
+            _dist_text = f"{c['distance_mi']} mi"
+        today_line = f"COMPLETED today: {c.get('name')}, {_dist_text or '?'}, pace {c.get('pace')}, HR {c.get('avg_hr', 'N/A')}, {c.get('duration_min')}min"
+        _elev_text = c.get("elevation_text")
+        if not _elev_text and c.get("elevation_gain_ft") is not None:
+            _elev_text = f"+{c['elevation_gain_ft']} ft"
+        if _elev_text:
+            today_line += f", elevation {_elev_text}"
+        _temp_text = c.get("temperature_text")
+        if not _temp_text and c.get("temperature_f") is not None:
+            _temp_text = f"{c['temperature_f']}°F"
+        if _temp_text:
+            today_line += f", {_temp_text}"
         if c.get("humidity_pct") is not None:
             today_line += f" / {int(c['humidity_pct'])}% humidity"
         if c.get("heat_adjustment_pct") is not None and c["heat_adjustment_pct"] > 0:
@@ -2310,10 +2358,15 @@ def generate_coach_home_briefing(
             plan_mi = planned_workout.get("distance_mi")
             plan_type = planned_workout.get("title") or planned_workout.get("workout_type")
             if plan_mi and c.get("distance_mi") and abs(c["distance_mi"] - plan_mi) > 1.0:
-                parts.append(f"Note: plan had {plan_mi}mi {plan_type}, athlete ran {c['distance_mi']}mi instead.")
+                # Compare in miles (the canonical stored field) but render
+                # both numbers in the athlete's units.
+                _plan_text = planned_workout.get("distance_text") or f"{plan_mi} mi"
+                _ran_text = c.get("distance_text") or f"{c['distance_mi']} mi"
+                parts.append(f"Note: plan had {_plan_text} {plan_type}, athlete ran {_ran_text} instead.")
     elif planned_workout and planned_workout.get("has_workout"):
         w = planned_workout
-        parts.append(f"PLANNED (not yet completed): {w.get('title') or w.get('workout_type')}, {w.get('distance_mi', '?')}mi")
+        _w_dist = w.get("distance_text") or (f"{w.get('distance_mi')} mi" if w.get("distance_mi") is not None else "?")
+        parts.append(f"PLANNED (not yet completed): {w.get('title') or w.get('workout_type')}, {_w_dist}")
         parts.append("The athlete may or may not follow this plan. Coach based on their actual patterns, not the plan.")
     else:
         parts.append("No planned workout and nothing completed yet today.")
@@ -2322,7 +2375,12 @@ def generate_coach_home_briefing(
         _up_lines = ["=== UPCOMING PLAN (next 1-3 days) ==="]
         for _up in upcoming_plan:
             _up_type = _up.get("title") or _up.get("workout_type") or "workout"
-            _up_dist = f", {_up['distance_mi']}mi" if _up.get("distance_mi") else ""
+            if _up.get("distance_text"):
+                _up_dist = f", {_up['distance_text']}"
+            elif _up.get("distance_mi"):
+                _up_dist = f", {_up['distance_mi']} mi"
+            else:
+                _up_dist = ""
             _up_desc = f" — {_up['description']}" if _up.get("description") else ""
             _up_lines.append(f"- {_up['day_name']}: {_up_type}{_up_dist}{_up_desc}")
         _up_lines.extend([
@@ -2547,21 +2605,26 @@ def generate_coach_home_briefing(
     today_summary = ""
     if today_completed:
         c = today_completed
+        _ts_dist = c.get("distance_text") or (
+            f"{c.get('distance_mi')} mi" if c.get("distance_mi") is not None else "?"
+        )
         if c.get("workout_structure"):
             today_summary = (
-                f"Completed: {c.get('name')}, {c.get('distance_mi')}mi total\n"
+                f"Completed: {c.get('name')}, {_ts_dist} total\n"
                 f"  {c.get('workout_structure')}"
             )
         else:
             today_summary = (
-                f"Completed: {c.get('name')}, {c.get('distance_mi')}mi, "
+                f"Completed: {c.get('name')}, {_ts_dist}, "
                 f"pace {c.get('pace')}, HR {c.get('avg_hr', 'N/A')}"
             )
     elif planned_workout and planned_workout.get("has_workout"):
         w = planned_workout
+        _w_dist = w.get("distance_text") or (
+            f"{w.get('distance_mi')} mi" if w.get("distance_mi") is not None else "?"
+        )
         today_summary = (
-            f"Planned: {w.get('title') or w.get('workout_type')}, "
-            f"{w.get('distance_mi', '?')}mi"
+            f"Planned: {w.get('title') or w.get('workout_type')}, {_w_dist}"
         )
 
     checkin_summary = ""
@@ -2591,13 +2654,13 @@ def generate_coach_home_briefing(
         return " YOUR DATA FOR THIS FIELD: Use the athlete brief and today context above."
 
     schema_fields = {
-        "coach_noticed": f"The single most important coaching observation the athlete doesn't already know. If a daily intelligence rule fired, lead with that. Otherwise draw from wellness trends, training load signals, or recent activity patterns. The athlete should read this and think 'I didn't know that.' 1-2 sentences. BE SPECIFIC: describe what you observed using the athlete's training units — pace in min/mi, distances in miles, sleep in hours, time as AM/PM, frequency as counts. Never be vague about the pattern. 'Your easy pace changes with time of day' is too vague. 'Your easy runs before 7 AM have been consistently slower across 18 observations — there's a threshold around 7 AM' is specific. BANNED: r-values, p-values, correlation coefficients, 'statistically significant', z-scores, any statistical language. Use coaching language, not statistics.{_lane(coach_noticed_source)}",
+        "coach_noticed": f"The single most important coaching observation the athlete doesn't already know. If a daily intelligence rule fired, lead with that. Otherwise draw from wellness trends, training load signals, or recent activity patterns. The athlete should read this and think 'I didn't know that.' 1-2 sentences. BE SPECIFIC: describe what you observed using the athlete's training units — pace in {units.pace_unit}, distances in {units.distance_unit_long}, sleep in hours, time as AM/PM, frequency as counts. Never be vague about the pattern. 'Your easy pace changes with time of day' is too vague. 'Your easy runs before 7 AM have been consistently slower across 18 observations — there's a threshold around 7 AM' is specific. BANNED: r-values, p-values, correlation coefficients, 'statistically significant', z-scores, any statistical language. Use coaching language, not statistics.{_lane(coach_noticed_source)}",
         "today_context": f"Action-focused context: if run completed, state the result then specify next steps referencing the UPCOMING PLAN if available; if not yet, describe what today should look like. Must include a concrete next action. If tomorrow has a quality session scheduled, next steps should prepare for it (fueling, sleep, hydration). 1-2 sentences.{_lane(today_summary)}",
         "week_assessment": f"Implication: explain what this week's trajectory means for near-term training direction, based on actual training not plan adherence. 1 sentence.{_lane('')}",
         "checkin_reaction": f"Acknowledge how they feel FIRST, then guide next steps. If they feel good despite high load, validate that and suggest recovery actions to maintain it. Never contradict their self-report. 1-2 sentences.{_lane(checkin_summary)}",
         "race_assessment": f"Honest readiness assessment for their race based on current fitness, not plan adherence. 1-2 sentences.{_lane(race_summary)}",
         "morning_voice": f"The first thing the athlete reads. ONE paragraph, 2-3 sentences. Follow this structure exactly: Sentence 1: State what they did today with one specific number (distance, pace, or HR). Use time-appropriate language: 'this afternoon' if the run was in the afternoon, 'this evening' if evening, 'this morning' ONLY if they actually ran before noon. Sentence 2: Connect it to their recent training pattern — volume trend this week, load block context, or a personal fingerprint pattern. Sentence 3 (optional): One concrete forward-looking action for TOMORROW only — if the UPCOMING PLAN section exists, reference the actual scheduled workout by name and type instead of guessing. CRITICAL RULES: If the athlete already ran today, NEVER tell them to rest TODAY or do zero running TODAY — their run is done; guidance is about tomorrow. If a quality session (threshold, intervals, tempo, long run) is scheduled tomorrow, NEVER suggest rest or easy movement — frame today as preparation for that session. NEVER reference the briefing itself, synced data, data refreshes, or system internals. NEVER say 'home briefing', 'synced activity', 'refreshed'. Must cite at least one specific number (pace, distance, HR — NOT internal metrics). ABSOLUTE BAN on CTL, ATL, TSB, chronic load, acute load, form score, durability index, recovery half-life, injury risk score, 'confirmed N times', 'r=', 'correlation'.{_lane(fingerprint_summary)}",
-        "workout_why": f"One sentence explaining WHY today's workout matters in the context of their training. Example: 'Active recovery keeps blood flowing after yesterday's 10-mile effort.' No sycophantic language.{_lane(today_summary)}",
+        "workout_why": f"One sentence explaining WHY today's workout matters in the context of their training. Example: 'Active recovery keeps blood flowing after yesterday's {'15 km' if units.is_metric else '10-mile'} effort.' No sycophantic language.{_lane(today_summary)}",
     }
     required_fields = ["coach_noticed", "today_context", "week_assessment", "morning_voice"]
     if checkin_data:

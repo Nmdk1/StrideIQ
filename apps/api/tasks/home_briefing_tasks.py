@@ -118,13 +118,25 @@ def _build_briefing_prompt(athlete_id: str, db: Session) -> Optional[tuple]:
       (prompt, schema_fields, required_fields, checkin_data_dict, race_data_dict, garmin_sleep_h, local_now)
     on success, ``None`` when legacy cache short-circuits, and ``False`` on hard failure.
     """
-    from models import Activity, DailyCheckin, PlannedWorkout, TrainingPlan
+    from models import Activity, Athlete, DailyCheckin, PlannedWorkout, TrainingPlan
 
     from services.timezone_utils import get_athlete_timezone_from_db, athlete_local_today
+    from services.coach_units import coach_units
     tz = get_athlete_timezone_from_db(db, UUID(athlete_id))
     today = athlete_local_today(tz)
 
     try:
+        # Resolve the athlete's preferred display units once. The morning
+        # briefing must speak in the same units the athlete sees on every
+        # other surface — historically this builder hardcoded miles and the
+        # LLM faithfully repeated "7-mile run" to a metric athlete.
+        preferred_units = (
+            db.query(Athlete.preferred_units)
+            .filter(Athlete.id == athlete_id)
+            .scalar()
+        ) or "imperial"
+        units = coach_units(preferred_units)
+
         active_plan = (
             db.query(TrainingPlan)
             .filter(
@@ -147,21 +159,23 @@ def _build_briefing_prompt(athlete_id: str, db: Session) -> Optional[tuple]:
             .first()
         )
         if today_actual:
+            # Imperial-keyed values are kept for backward compatibility with
+            # any legacy consumer reading the dict, but the prompt template
+            # now reads the *_text fields so the LLM never sees raw numbers
+            # divorced from their unit.
             actual_mi = (
                 round(today_actual.distance_m / 1609.344, 1)
                 if today_actual.distance_m
                 else None
             )
-            actual_pace = None
-            if today_actual.distance_m and today_actual.duration_s:
-                pace_s = today_actual.duration_s / (today_actual.distance_m / 1609.344)
-                mins = int(pace_s // 60)
-                secs = int(pace_s % 60)
-                actual_pace = f"{mins}:{secs:02d}/mi"
+            actual_pace = units.format_pace_from_distance_duration(
+                today_actual.distance_m, today_actual.duration_s
+            )
             elev_m = float(today_actual.total_elevation_gain) if today_actual.total_elevation_gain is not None else None
             today_completed = {
                 "name": today_actual.name or "Run",
                 "distance_mi": actual_mi,
+                "distance_text": units.format_distance(today_actual.distance_m),
                 "pace": actual_pace,
                 "avg_hr": int(today_actual.avg_hr) if today_actual.avg_hr else None,
                 "duration_min": (
@@ -170,7 +184,9 @@ def _build_briefing_prompt(athlete_id: str, db: Session) -> Optional[tuple]:
                     else None
                 ),
                 "elevation_gain_ft": int(round(elev_m * 3.28084)) if elev_m is not None else None,
+                "elevation_text": units.format_elevation(elev_m),
                 "temperature_f": round(float(today_actual.temperature_f), 1) if today_actual.temperature_f is not None else None,
+                "temperature_text": units.format_temperature_from_f(today_actual.temperature_f),
                 "humidity_pct": round(float(today_actual.humidity_pct), 0) if today_actual.humidity_pct is not None else None,
                 "heat_adjustment_pct": round(float(today_actual.heat_adjustment_pct), 1) if today_actual.heat_adjustment_pct is not None else None,
             }
@@ -198,13 +214,16 @@ def _build_briefing_prompt(athlete_id: str, db: Session) -> Optional[tuple]:
             )
             if planned:
                 distance_mi = None
+                planned_distance_m = None
                 if planned.target_distance_km:
                     distance_mi = round(planned.target_distance_km * 0.621371, 1)
+                    planned_distance_m = float(planned.target_distance_km) * 1000.0
                 planned_workout_dict = {
                     "has_workout": True,
                     "workout_type": planned.workout_type,
                     "title": planned.title,
                     "distance_mi": distance_mi,
+                    "distance_text": units.format_distance(planned_distance_m),
                 }
 
         race_data_dict = None
@@ -250,12 +269,14 @@ def _build_briefing_prompt(athlete_id: str, db: Session) -> Optional[tuple]:
             )
             for pw in _upcoming_days:
                 _pw_mi = round(pw.target_distance_km * 0.621371, 1) if pw.target_distance_km else None
+                _pw_distance_m = float(pw.target_distance_km) * 1000.0 if pw.target_distance_km else None
                 upcoming_plan_list.append({
                     "date": pw.scheduled_date.isoformat(),
                     "day_name": pw.scheduled_date.strftime("%A"),
                     "workout_type": pw.workout_type,
                     "title": pw.title,
                     "distance_mi": _pw_mi,
+                    "distance_text": units.format_distance(_pw_distance_m),
                     "description": pw.description,
                 })
 
@@ -275,6 +296,7 @@ def _build_briefing_prompt(athlete_id: str, db: Session) -> Optional[tuple]:
             race_data=race_data_dict,
             skip_cache=True,
             upcoming_plan=upcoming_plan_list if upcoming_plan_list else None,
+            preferred_units=preferred_units,
         )
 
         if len(prep) == 1:
@@ -411,7 +433,15 @@ def _build_deterministic_briefing(athlete_id: str, db: Session) -> Dict[str, str
 
     This is used when provider calls or contract validation fail.
     """
-    from models import Activity
+    from models import Activity, Athlete
+    from services.coach_units import coach_units
+
+    preferred_units = (
+        db.query(Athlete.preferred_units)
+        .filter(Athlete.id == athlete_id)
+        .scalar()
+    ) or "imperial"
+    units = coach_units(preferred_units)
 
     latest = (
         db.query(Activity)
@@ -421,15 +451,14 @@ def _build_deterministic_briefing(athlete_id: str, db: Session) -> Dict[str, str
     )
 
     if latest and latest.distance_m and latest.duration_s:
-        distance_mi = round(float(latest.distance_m) / 1609.344, 1)
-        pace_s = float(latest.duration_s) / max(float(latest.distance_m) / 1609.344, 0.1)
-        pace_str = f"{int(pace_s // 60)}:{int(pace_s % 60):02d}/mi"
+        distance_text = units.format_distance(latest.distance_m)
+        pace_str = units.format_pace_from_distance_duration(latest.distance_m, latest.duration_s)
         coach_noticed = (
-            f"Latest run synced: {distance_mi} mi at {pace_str}. "
+            f"Latest run synced: {distance_text} at {pace_str}. "
             "Signals will refine as more data arrives."
         )
         morning_voice = (
-            f"{distance_mi} miles in your latest run at {pace_str}. "
+            f"{distance_text} in your latest run at {pace_str}. "
             "Your home briefing is refreshed from synced activity data."
         )
         today_context = "Sync completed. Use this as your current baseline for today's effort."
