@@ -442,3 +442,155 @@ class TestBuildAthleteBrief:
 
         assert "Age: 57" in result
         assert "58" not in result  # the exact error from the failed conversation
+
+
+class TestBuildAthleteBriefRespectsUnits:
+    """Regression: build_athlete_brief must format distances/paces in the
+    athlete's preferred units. Imperial athletes see 'mi' and '/mi'; metric
+    athletes see 'km' and '/km'. Mixing units in the brief is the root cause
+    of the LLM emitting the wrong unit downstream.
+    """
+
+    @pytest.fixture
+    def db(self):
+        return MagicMock()
+
+    @pytest.fixture
+    def athlete_id(self):
+        return uuid4()
+
+    def _build_full_brief(self, db, athlete_id, *, preferred_units: str):
+        from models import Athlete, TrainingPlan, DailyCheckin
+
+        mock_athlete = MagicMock()
+        mock_athlete.display_name = "Test Runner"
+        mock_athlete.birthdate = date(1990, 1, 1)
+        mock_athlete.sex = "male"
+        mock_athlete.preferred_units = preferred_units
+
+        mock_plan = MagicMock(
+            goal_race_name="Boston Marathon",
+            goal_race_date=date(2026, 4, 20),
+            goal_race_distance_m=42195,
+            goal_time_seconds=11400,
+            total_weeks=16,
+            name="Marathon Build",
+            status="active",
+        )
+
+        def _route_query(model_cls):
+            chain = MagicMock()
+            if model_cls is Athlete:
+                chain.filter.return_value.first.return_value = mock_athlete
+            elif model_cls is TrainingPlan:
+                chain.filter.return_value.first.return_value = mock_plan
+            elif model_cls is DailyCheckin:
+                chain.filter.return_value.order_by.return_value.first.return_value = None
+            else:
+                chain.filter.return_value.first.return_value = None
+                chain.filter.return_value.count.return_value = 0
+                chain.filter.return_value.order_by.return_value.first.return_value = None
+                chain.filter.return_value.order_by.return_value.limit.return_value.all.return_value = []
+                chain.filter.return_value.all.return_value = []
+            return chain
+
+        db.query.side_effect = _route_query
+
+        # Stub fitness bank so 'Athlete Experience Calibration' renders.
+        bank = MagicMock()
+        bank.experience_level.value = "intermediate"
+        bank.peak_weekly_miles = 50.0
+        bank.current_weekly_miles = 30.0
+        bank.current_long_run_miles = 12.0
+        bank.is_returning_from_break = False
+
+        weekly_data = {"weeks_data": [
+            {"week_start": "2026-01-12", "total_distance_mi": 36.0, "total_distance_km": 57.9, "run_count": 5},
+            {"week_start": "2026-01-19", "total_distance_mi": 45.0, "total_distance_km": 72.4, "run_count": 6},
+            {"week_start": "2026-01-26", "total_distance_mi": 50.0, "total_distance_km": 80.5, "run_count": 5},
+            {"week_start": "2026-02-02", "total_distance_mi": 31.0, "total_distance_km": 49.9, "run_count": 3,
+             "is_current_week": True, "days_elapsed": 4, "days_remaining": 3},
+        ]}
+        runs_data = {"runs": [
+            {
+                "start_time": "2026-02-06",
+                "name": "Lunch Run",
+                "distance_mi": 8.0,
+                "distance_km": 12.87,
+                "pace_per_mile": "9:04/mi",
+                "pace_per_km": "5:38/km",
+                "avg_hr": 127,
+                "elevation_gain_ft": 200,
+                "elevation_gain_m": 61,
+                "temperature_f": 50,
+            },
+        ]}
+
+        from services.coach_tools import build_athlete_brief
+
+        # Use a unique cache key per call by changing athlete_id-derived units in the cache.
+        # Patch get_cache to always miss and set_cache as no-op so tests are isolated.
+        with patch("services.fitness_bank.FitnessBankCalculator") as mock_fb, \
+             patch("services.coach_tools.get_training_load", return_value={"ok": False}), \
+             patch("services.coach_tools.get_recovery_status", return_value={"ok": False}), \
+             patch("services.coach_tools.get_weekly_volume", return_value={"ok": True, "data": weekly_data}), \
+             patch("services.coach_tools.get_recent_runs", return_value={"ok": True, "data": runs_data}), \
+             patch("services.coach_tools.get_race_predictions", return_value={"ok": False}), \
+             patch("services.coach_tools.get_training_paces", return_value={"ok": False}), \
+             patch("services.coach_tools.get_pb_patterns", return_value={"ok": False}), \
+             patch("services.coach_tools.get_correlations", return_value={"ok": False}), \
+             patch("services.coach_tools.get_efficiency_trend", return_value={"ok": False}), \
+             patch("services.coach_tools.get_coach_intent_snapshot",
+                   return_value={"ok": True, "data": {"weekly_mileage_target": 40}}), \
+             patch("core.cache.get_cache", return_value=None), \
+             patch("core.cache.set_cache", return_value=None):
+            mock_fb.return_value.calculate.return_value = bank
+            return build_athlete_brief(db, athlete_id)
+
+    def test_brief_imperial_uses_miles(self, db, athlete_id):
+        result = self._build_full_brief(db, athlete_id, preferred_units="imperial")
+
+        # Calibration
+        assert "Peak proven weekly volume: 50 mi" in result
+        assert "Current weekly volume: 30 mi" in result
+        assert "Recent long run: 12.0 mi" in result
+        # Goal race
+        assert "26.2 miles" in result
+        assert "/mi" in result
+        # Volume trajectory
+        assert "(mi)" in result
+        assert "31.0mi" in result
+        # Recent runs
+        assert "8.0mi @ 9:04/mi" in result
+        assert "+200ft" in result
+        assert "50\u00b0F" in result
+        # Intent
+        assert "Weekly volume target: 40 mi" in result
+        # NEVER show metric units to imperial athlete
+        assert "/km" not in result.replace("distance_km", "")  # safety guard
+        assert "km total" not in result
+
+    def test_brief_metric_uses_kilometers(self, db, athlete_id):
+        result = self._build_full_brief(db, athlete_id, preferred_units="metric")
+
+        # Calibration (50 mi → ~80 km, 30 mi → ~48 km, 12 mi → ~19.3 km)
+        assert "Peak proven weekly volume: 80 km" in result
+        assert "Current weekly volume: 48 km" in result
+        assert "Recent long run: 19.3 km" in result
+        # Goal race
+        assert "42.2 km" in result
+        assert "/km" in result
+        # Volume trajectory
+        assert "(km)" in result
+        assert "49.9km" in result
+        # Recent runs
+        assert "12.9km @ 5:38/km" in result
+        assert "+61m" in result
+        assert "10\u00b0C" in result  # 50°F = 10°C
+        # Intent (40 mi → 64 km)
+        assert "Weekly volume target: 64 km" in result
+        # NEVER show imperial units to metric athlete
+        assert "/mi" not in result
+        assert " mi" not in result.replace(" miles", "")  # allow no imperial "mi" tokens
+        assert "ft" not in result
+        assert "°F" not in result

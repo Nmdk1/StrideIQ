@@ -55,7 +55,7 @@ TASK_HARD_TIMEOUT_S = 55  # Must exceed PROVIDER_TIMEOUT_S + DB work headroom
 # v3: prompt now respects athlete preferred_units (metric/imperial). Bumping
 # the version invalidates every cached briefing on rollout so metric athletes
 # stop seeing the previous imperial-baked morning_voice paragraph.
-BRIEFING_FINGERPRINT_VERSION = "v3"
+BRIEFING_FINGERPRINT_VERSION = "v4"
 
 
 def _build_data_fingerprint(

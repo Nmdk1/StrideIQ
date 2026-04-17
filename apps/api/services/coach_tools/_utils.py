@@ -148,17 +148,36 @@ def _interpret_nutrition_correlation(key: str, r: float) -> str:
 
 
 
-def _format_run_context(run: dict) -> str:
-    """Compact elevation + weather suffix for a recent-run line."""
+def _format_run_context(run: dict, units: str = "imperial") -> str:
+    """Compact elevation + weather suffix for a recent-run line.
+
+    Respects the athlete's preferred units. Imperial -> ft + °F, metric -> m + °C.
+    """
     parts = []
-    elev = run.get("elevation_gain_ft")
-    if elev is not None and elev > 0:
-        parts.append(f"+{int(elev)}ft")
-    temp = run.get("temperature_f")
-    if temp is not None:
-        parts.append(f"{temp:.0f}°F")
+    is_metric = units == "metric"
+    if is_metric:
+        elev_m = run.get("elevation_gain_m")
+        if elev_m is None:
+            elev_ft = run.get("elevation_gain_ft")
+            elev_m = (elev_ft / 3.28084) if elev_ft is not None else None
+        if elev_m is not None and elev_m > 0:
+            parts.append(f"+{int(round(elev_m))}m")
+    else:
+        elev_ft = run.get("elevation_gain_ft")
+        if elev_ft is None:
+            elev_m = run.get("elevation_gain_m")
+            elev_ft = (elev_m * 3.28084) if elev_m is not None else None
+        if elev_ft is not None and elev_ft > 0:
+            parts.append(f"+{int(round(elev_ft))}ft")
+    temp_f = run.get("temperature_f")
+    if temp_f is not None:
+        if is_metric:
+            temp_c = (float(temp_f) - 32.0) * 5.0 / 9.0
+            parts.append(f"{temp_c:.0f}\u00b0C")
+        else:
+            parts.append(f"{float(temp_f):.0f}\u00b0F")
     hum = run.get("humidity_pct")
-    if hum is not None and temp is not None:
+    if hum is not None and temp_f is not None:
         parts.append(f"{int(hum)}%rh")
     return f" [{', '.join(parts)}]" if parts else ""
 

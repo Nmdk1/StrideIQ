@@ -34,7 +34,11 @@ def build_athlete_brief(db: Session, athlete_id: UUID) -> str:  # noqa: C901
     from services.timezone_utils import get_athlete_timezone_from_db, athlete_local_today
     import services.coach_tools as ct
     _tz = get_athlete_timezone_from_db(db, athlete_id)
-    _cache_key = f"athlete_brief:{athlete_id}"
+    units = _preferred_units(db, athlete_id)
+    is_metric = units == "metric"
+    dist_unit = "km" if is_metric else "mi"
+    pace_unit = "/km" if is_metric else "/mi"
+    _cache_key = f"athlete_brief:{athlete_id}:{units}"
     _cached = get_cache(_cache_key)
     if _cached is not None:
         return _cached
@@ -67,12 +71,18 @@ def build_athlete_brief(db: Session, athlete_id: UUID) -> str:  # noqa: C901
         bank = FitnessBankCalculator(db).calculate(athlete_id)
         if bank:
             exp_lines = [f"Experience level: {bank.experience_level.value}"]
+
+            def _vol(mi: float, decimals: int = 0) -> str:
+                if is_metric:
+                    return f"{(mi * 1.609344):.{decimals}f} {dist_unit}"
+                return f"{mi:.{decimals}f} {dist_unit}"
+
             if bank.peak_weekly_miles:
-                exp_lines.append(f"Peak proven weekly volume: {bank.peak_weekly_miles:.0f} mi")
+                exp_lines.append(f"Peak proven weekly volume: {_vol(bank.peak_weekly_miles, 0)}")
             if bank.current_weekly_miles:
-                exp_lines.append(f"Current weekly volume: {bank.current_weekly_miles:.0f} mi")
+                exp_lines.append(f"Current weekly volume: {_vol(bank.current_weekly_miles, 0)}")
             if bank.current_long_run_miles:
-                exp_lines.append(f"Recent long run: {bank.current_long_run_miles:.1f} mi")
+                exp_lines.append(f"Recent long run: {_vol(bank.current_long_run_miles, 1)}")
             if bank.is_returning_from_break:
                 exp_lines.append("Status: returning from break")
             else:
@@ -118,18 +128,25 @@ def build_athlete_brief(db: Session, athlete_id: UUID) -> str:  # noqa: C901
                 days_until = (plan.goal_race_date - today).days
                 lines.append(f"Date: {plan.goal_race_date.isoformat()} ({days_until} days away)")
             if plan.goal_race_distance_m:
-                dist_mi = plan.goal_race_distance_m / _M_PER_MI
-                lines.append(f"Distance: {dist_mi:.1f} miles ({plan.goal_race_distance_m}m)")
+                if is_metric:
+                    dist_km = plan.goal_race_distance_m / 1000.0
+                    lines.append(f"Distance: {dist_km:.1f} km ({plan.goal_race_distance_m}m)")
+                else:
+                    dist_mi = plan.goal_race_distance_m / _M_PER_MI
+                    lines.append(f"Distance: {dist_mi:.1f} miles ({plan.goal_race_distance_m}m)")
             if plan.goal_time_seconds:
                 h = plan.goal_time_seconds // 3600
                 m = (plan.goal_time_seconds % 3600) // 60
                 s = plan.goal_time_seconds % 60
                 lines.append(f"Target time: {h}:{m:02d}:{s:02d}")
                 if plan.goal_race_distance_m and plan.goal_race_distance_m > 0:
-                    goal_pace_sec = plan.goal_time_seconds / (plan.goal_race_distance_m / _M_PER_MI)
+                    if is_metric:
+                        goal_pace_sec = plan.goal_time_seconds / (plan.goal_race_distance_m / 1000.0)
+                    else:
+                        goal_pace_sec = plan.goal_time_seconds / (plan.goal_race_distance_m / _M_PER_MI)
                     gp_m = int(goal_pace_sec // 60)
                     gp_s = int(round(goal_pace_sec % 60))
-                    lines.append(f"Target pace: {gp_m}:{gp_s:02d}/mi")
+                    lines.append(f"Target pace: {gp_m}:{gp_s:02d}{pace_unit}")
             sections.append("## Goal Race\n" + "\n".join(lines))
     except Exception as e:
         logger.debug(f"Brief: goal race failed: {e}")
@@ -187,13 +204,14 @@ def build_athlete_brief(db: Session, athlete_id: UUID) -> str:  # noqa: C901
                 lines = []
                 completed_weeks = []
                 current_week_info = None
+                _dist_key = "total_distance_km" if is_metric else "total_distance_mi"
                 for w in weeks_data:
-                    dist = w.get("total_distance_mi", 0)
+                    dist = w.get(_dist_key, 0)
                     runs = w.get("run_count", 0)
                     if w.get("is_current_week"):
                         elapsed = w.get("days_elapsed", "?")
                         remaining = w.get("days_remaining", "?")
-                        current_week_info = f"Current week: {dist:.1f}mi through {elapsed} of 7 days ({runs} runs, {remaining} days remaining)"
+                        current_week_info = f"Current week: {dist:.1f}{dist_unit} through {elapsed} of 7 days ({runs} runs, {remaining} days remaining)"
                     else:
                         completed_weeks.append((w.get("week_start", ""), dist, runs))
 
@@ -201,7 +219,7 @@ def build_athlete_brief(db: Session, athlete_id: UUID) -> str:  # noqa: C901
                 if completed_weeks:
                     recent = completed_weeks[-4:]  # last 4 completed weeks
                     trajectory = " → ".join(f"{d:.0f}" for _, d, _ in recent)
-                    lines.append(f"Recent completed weeks (mi): {trajectory}")
+                    lines.append(f"Recent completed weeks ({dist_unit}): {trajectory}")
                     if len(recent) >= 2:
                         first_val = recent[0][1]
                         last_val = recent[-1][1]
@@ -215,7 +233,7 @@ def build_athlete_brief(db: Session, athlete_id: UUID) -> str:  # noqa: C901
                         _peak_rel = _relative_date(date.fromisoformat(peak[0]), today)
                     except (ValueError, TypeError):
                         _peak_rel = ""
-                    lines.append(f"Peak week: {peak[1]:.1f}mi (week of {peak[0]}) {_peak_rel}")
+                    lines.append(f"Peak week: {peak[1]:.1f}{dist_unit} (week of {peak[0]}) {_peak_rel}")
                     if last_val > 0 and peak[1] > 0:
                         pct_of_peak = (last_val / peak[1]) * 100
                         lines.append(f"Current vs peak: {pct_of_peak:.0f}%")
@@ -240,6 +258,8 @@ def build_athlete_brief(db: Session, athlete_id: UUID) -> str:  # noqa: C901
                     by_date.setdefault(run_date, []).append(run)
 
                 lines = [f"Last {len(runs)} runs (14 days):"]
+                _run_dist_key = "distance_km" if is_metric else "distance_mi"
+                _run_pace_key = "pace_per_km" if is_metric else "pace_per_mile"
                 for run_date, day_runs in by_date.items():
                     try:
                         _day_rel = " " + _relative_date(date.fromisoformat(run_date), today)
@@ -247,28 +267,28 @@ def build_athlete_brief(db: Session, athlete_id: UUID) -> str:  # noqa: C901
                         _day_rel = ""
 
                     if len(day_runs) > 1:
-                        day_dist = sum(r.get("distance_mi", 0) for r in day_runs)
+                        day_dist = sum(r.get(_run_dist_key, 0) or 0 for r in day_runs)
                         has_race = any(r.get("is_race") for r in day_runs)
                         label = "Race day" if has_race else f"{len(day_runs)} activities"
-                        lines.append(f"  {run_date}{_day_rel} — {label} ({day_dist:.1f}mi total):")
+                        lines.append(f"  {run_date}{_day_rel} — {label} ({day_dist:.1f}{dist_unit} total):")
                         for run in day_runs:
                             name = run.get("shape_sentence") or run.get("name", "Run")
-                            dist = run.get("distance_mi", 0)
-                            pace = run.get("pace_per_mile", "N/A")
+                            dist = run.get(_run_dist_key, 0) or 0
+                            pace = run.get(_run_pace_key, "N/A")
                             hr = run.get("avg_hr", "")
                             hr_str = f" | HR {hr}" if hr else ""
                             tag = " [race]" if run.get("is_race") else ""
-                            ctx = _format_run_context(run)
-                            lines.append(f"    • {name} — {dist:.1f}mi @ {pace}{hr_str}{ctx}{tag}")
+                            ctx = _format_run_context(run, units=units)
+                            lines.append(f"    • {name} — {dist:.1f}{dist_unit} @ {pace}{hr_str}{ctx}{tag}")
                     else:
                         run = day_runs[0]
                         name = run.get("name", "Run")
-                        dist = run.get("distance_mi", 0)
-                        pace = run.get("pace_per_mile", "N/A")
+                        dist = run.get(_run_dist_key, 0) or 0
+                        pace = run.get(_run_pace_key, "N/A")
                         hr = run.get("avg_hr", "")
                         hr_str = f" | HR {hr}" if hr else ""
-                        ctx = _format_run_context(run)
-                        lines.append(f"  {run_date}{_day_rel}: {name} — {dist:.1f}mi @ {pace}{hr_str}{ctx}")
+                        ctx = _format_run_context(run, units=units)
+                        lines.append(f"  {run_date}{_day_rel}: {name} — {dist:.1f}{dist_unit} @ {pace}{hr_str}{ctx}")
 
                 sections.append("## Recent Runs\n" + "\n".join(lines))
     except Exception as e:
@@ -488,7 +508,15 @@ def build_athlete_brief(db: Session, athlete_id: UUID) -> str:  # noqa: C901
             if d.get("pain_flag") and d["pain_flag"] != "none":
                 lines.append(f"Pain flag: {d['pain_flag']}")
             if d.get("weekly_mileage_target"):
-                lines.append(f"Weekly mileage target: {d['weekly_mileage_target']}")
+                _wmt = d["weekly_mileage_target"]
+                try:
+                    _wmt_num = float(_wmt)
+                    if is_metric:
+                        lines.append(f"Weekly volume target: {_wmt_num * 1.609344:.0f} {dist_unit}")
+                    else:
+                        lines.append(f"Weekly volume target: {_wmt_num:.0f} {dist_unit}")
+                except (TypeError, ValueError):
+                    lines.append(f"Weekly volume target: {_wmt}")
             if d.get("next_event_date"):
                 try:
                     _evt_rel = _relative_date(date.fromisoformat(str(d['next_event_date'])[:10]), today)
