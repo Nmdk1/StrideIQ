@@ -34,6 +34,7 @@ import { FindingsCards } from '@/components/activities/FindingsCards';
 import { WhyThisRun } from '@/components/activities/WhyThisRun';
 import { RunIntelligence } from '@/components/activities/RunIntelligence';
 import { AnalysisTabPanel } from '@/components/activities/AnalysisTabPanel';
+import { ComparablesPanel } from '@/components/activities/ComparablesPanel';
 
 interface Activity {
   id: string;
@@ -624,6 +625,7 @@ export default function ActivityDetailPage() {
                 movingTimeS={activity.moving_time_s}
               />
             ),
+            compare: <ComparablesPanel activityId={activityId} />,
             context: (
               <div className="space-y-5">
                 <GoingInCard

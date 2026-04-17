@@ -2,17 +2,31 @@
 
 import React from 'react';
 
-export type ActivityTabId = 'overview' | 'splits' | 'analysis' | 'context' | 'feedback';
+export type ActivityTabId =
+  | 'overview'
+  | 'splits'
+  | 'analysis'
+  | 'compare'
+  | 'context'
+  | 'feedback';
 
 const TAB_LABELS: Record<ActivityTabId, string> = {
   overview: 'Overview',
   splits: 'Splits',
   analysis: 'Analysis',
+  compare: 'Compare',
   context: 'Context',
   feedback: 'Feedback',
 };
 
-const ORDER: ActivityTabId[] = ['overview', 'splits', 'analysis', 'context', 'feedback'];
+const ORDER: ActivityTabId[] = [
+  'overview',
+  'splits',
+  'analysis',
+  'compare',
+  'context',
+  'feedback',
+];
 
 export interface ActivityTabsProps {
   activeTab: ActivityTabId;
