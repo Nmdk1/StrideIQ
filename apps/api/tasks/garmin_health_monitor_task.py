@@ -171,3 +171,114 @@ def cleanup_stale_garmin_pending_streams(self) -> dict:
         raise self.retry(exc=exc)
     finally:
         db.close()
+
+
+# ---------------------------------------------------------------------------
+# Self-healing sweep — defense in depth for the Garmin -> Strava fallback.
+#
+# Background: a Garmin activity row can be transitioned to
+# `stream_fetch_status='unavailable'` from at least two paths today:
+#   1. The cleanup beat above (after 30m stale)
+#   2. The webhook handler when activity_detail arrives with no samples/laps
+# Both paths *should* enqueue the Strava fallback so the UI gets a chart, a
+# map and splits.  When one of them forgets — or a future code path adds a
+# third transition without remembering — affected athletes silently accumulate
+# blank activity pages forever.  That is exactly the regression that broke
+# Larry / Adam / Brian.
+#
+# This sweep removes the requirement that every transition path remember to
+# enqueue.  Instead, every N minutes we scan ALL eligible unavailable rows
+# and enqueue the repair.  The repair task itself owns the atomic claim
+# (`UPDATE...WHERE strava_fallback_status IS NULL OR 'failed' RETURNING`) so
+# duplicate enqueues are harmless and concurrency-safe.
+# ---------------------------------------------------------------------------
+
+GARMIN_FALLBACK_SWEEP_BATCH_LIMIT = 200
+GARMIN_FALLBACK_MAX_AGE_DAYS = 14
+GARMIN_FALLBACK_MAX_ATTEMPTS = 3
+
+
+@celery_app.task(
+    name="tasks.sweep_unavailable_garmin_streams",
+    bind=True,
+    max_retries=2,
+    default_retry_delay=300,
+)
+def sweep_unavailable_garmin_streams(self) -> dict:
+    """Catch every Garmin row marked 'unavailable' that has not yet been
+    repaired (or whose previous attempt soft-failed and is retryable) and
+    enqueue the Strava fallback.
+
+    Idempotent: the repair task's atomic claim makes duplicate enqueues
+    harmless.  Bounded: cap at GARMIN_FALLBACK_SWEEP_BATCH_LIMIT per run so
+    a one-time backfill of thousands of rows still spreads across cycles
+    instead of flooding the queue.
+    """
+    db = get_db_sync()
+    try:
+        rows = db.execute(
+            text(
+                """
+                SELECT a.id::text AS id
+                FROM activity a
+                WHERE a.provider = 'garmin'
+                  AND a.sport = 'run'
+                  AND a.stream_fetch_status = 'unavailable'
+                  AND a.start_time > NOW() - (:max_age_days || ' days')::interval
+                  AND (
+                        a.strava_fallback_status IS NULL
+                        OR (
+                            a.strava_fallback_status IN ('failed', 'skipped_no_match', 'skipped_rate_limited')
+                            AND COALESCE(a.strava_fallback_attempt_count, 0) < :max_attempts
+                        )
+                      )
+                ORDER BY a.start_time DESC
+                LIMIT :limit
+                """
+            ),
+            {
+                "max_age_days": str(GARMIN_FALLBACK_MAX_AGE_DAYS),
+                "max_attempts": GARMIN_FALLBACK_MAX_ATTEMPTS,
+                "limit": GARMIN_FALLBACK_SWEEP_BATCH_LIMIT,
+            },
+        ).fetchall()
+
+        candidates = [r.id for r in rows]
+        if not candidates:
+            return {"status": "ok", "candidates": 0, "enqueued": 0}
+
+        from tasks.strava_fallback_tasks import (
+            repair_garmin_activity_from_strava_task,
+        )
+
+        enqueued = 0
+        for activity_id in candidates:
+            try:
+                repair_garmin_activity_from_strava_task.delay(activity_id)
+                enqueued += 1
+            except Exception as enqueue_exc:
+                logger.warning(
+                    "garmin_fallback_sweep_enqueue_failed activity_id=%s error=%s",
+                    activity_id,
+                    enqueue_exc,
+                )
+
+        if enqueued > 0:
+            logger.info(
+                "[garmin-fallback-sweep] candidates=%d enqueued=%d max_age_days=%d",
+                len(candidates),
+                enqueued,
+                GARMIN_FALLBACK_MAX_AGE_DAYS,
+            )
+
+        return {
+            "status": "ok",
+            "candidates": len(candidates),
+            "enqueued": enqueued,
+            "max_age_days": GARMIN_FALLBACK_MAX_AGE_DAYS,
+        }
+    except Exception as exc:
+        logger.exception("sweep_unavailable_garmin_streams failed: %s", exc)
+        raise self.retry(exc=exc)
+    finally:
+        db.close()

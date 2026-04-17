@@ -51,6 +51,17 @@ beat_schedule = {
         "task": "tasks.cleanup_stale_garmin_pending_streams",
         "schedule": crontab(minute="*/10"),
     },
+    # Garmin -> Strava fallback sweep — every 15 minutes.
+    # Defense-in-depth: catches any 'unavailable' Garmin row that the
+    # webhook handler or cleanup beat failed to enqueue (e.g. broker hiccup,
+    # future code path that adds a third transition, or one-time backfill of
+    # historically affected rows).  Idempotent: the repair task's atomic
+    # claim makes duplicate enqueues harmless.  Bounded per-run so a large
+    # backfill spreads across cycles.
+    "garmin-fallback-sweep": {
+        "task": "tasks.sweep_unavailable_garmin_streams",
+        "schedule": crontab(minute="*/15"),
+    },
     # Daily correlation sweep — after morning intelligence.
     # Runs analyze_correlations() for all 9 output metrics for athletes
     # with new data in the last 24h.
