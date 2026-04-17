@@ -24,11 +24,59 @@ from services.activity_deduplication import match_activities
 logger = logging.getLogger(__name__)
 
 
+# --- Strava activity-type → canonical sport mapping ---
+# Defined here (not in tasks/) so all Strava ingestion paths — the main sync task, the
+# index-upsert helper, and any future ingest entrypoint — share one source of truth.
+# Output sport codes mirror services/sync/garmin_adapter._ACCEPTED_SPORTS so cross-provider
+# dedup and downstream analysis don't have to know which provider an activity came from.
+#
+# Strava is the BACKUP ingestion path: when Garmin is connected, dedup ensures Garmin wins
+# on overlapping activities (see services.activity_deduplication). When Garmin isn't
+# connected — or for activities predating the Garmin connection — Strava is the
+# authoritative source, so it must capture the same breadth of sports Garmin does.
+_STRAVA_SPORT_MAP: Dict[str, str] = {
+    # Runs
+    "run": "run",
+    "trailrun": "run",
+    "virtualrun": "run",
+    # Cycling family
+    "ride": "cycling",
+    "virtualride": "cycling",
+    "mountainbikeride": "cycling",
+    "gravelride": "cycling",
+    "ebikeride": "cycling",
+    "emountainbikeride": "cycling",
+    "velomobile": "cycling",
+    "handcycle": "cycling",
+    # Walking / hiking
+    "walk": "walking",
+    "hike": "hiking",
+    # Strength / conditioning
+    "weighttraining": "strength",
+    "crossfit": "strength",
+    # Mobility
+    "yoga": "flexibility",
+}
+
+
+def strava_sport_from_type(activity_type: str | None) -> str | None:
+    """
+    Map a Strava `type` (or `sport_type`) string to our canonical sport code.
+
+    Returns None for sports we do not currently ingest (swim, ski, kayak, etc.). Callers
+    must skip those — keeping the schema honest about what we've actually wired up
+    downstream analysis for. New sports get added here once their analysis paths exist.
+    """
+    if not activity_type:
+        return None
+    return _STRAVA_SPORT_MAP.get(str(activity_type).strip().lower())
+
+
 @dataclass
 class IndexUpsertResult:
     created: int
     already_present: int
-    skipped_non_runs: int
+    skipped_non_runs: int  # legacy field name; semantically counts unsupported sports
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -44,8 +92,11 @@ def upsert_strava_activity_summaries(athlete: Athlete, db: Session, summaries: L
     skipped = 0
 
     for a in summaries or []:
-        activity_type = (a.get("type") or "").lower()
-        if activity_type != "run":
+        # Accept the same breadth of sports as the main sync path. Strava `sport_type`
+        # is more specific than `type` (introduced 2022), so prefer it when present.
+        raw_type = a.get("sport_type") or a.get("type")
+        mapped_sport = strava_sport_from_type(raw_type)
+        if mapped_sport is None:
             skipped += 1
             continue
 
@@ -93,7 +144,7 @@ def upsert_strava_activity_summaries(athlete: Athlete, db: Session, summaries: L
             start_time=start_time,
             provider="strava",
             external_activity_id=external_activity_id,
-            sport="run",
+            sport=mapped_sport,
             source="strava",
             name=name,
             distance_m=int(round(distance)) if distance else None,

@@ -21,6 +21,7 @@ from services.strava_service import (
     get_activity_streams,
     get_strava_read_budget_remaining,
 )
+from services.sync.strava_index import strava_sport_from_type
 from services.strava_pbs import sync_strava_best_efforts
 from services.athlete_metrics import calculate_athlete_derived_signals
 from services.personal_best import update_personal_best
@@ -588,11 +589,18 @@ def sync_strava_activities_task(self: Task, athlete_id: str) -> Dict:
                 },
             )
 
-            # Strava uses a few run-like types; treat them as runs.
-            activity_type = (a.get("type") or "").lower()
-            if activity_type not in {"run", "virtualrun", "trailrun"}:
+            # Map Strava activity type to our canonical sport. We accept the same breadth
+            # Garmin does (run, cycling, walking, hiking, strength, flexibility) so the
+            # athlete's full activity history is captured. Non-mappable types (swim, ski,
+            # kayak, etc.) are skipped until we wire up their analysis paths.
+            # Strava exposes both `type` (legacy) and `sport_type` (newer, finer-grained);
+            # prefer `sport_type` when present.
+            raw_type = a.get("sport_type") or a.get("type")
+            mapped_sport = strava_sport_from_type(raw_type)
+            if mapped_sport is None:
                 skipped_non_runs += 1
                 continue
+            activity_type = (raw_type or "").lower()
 
             strava_activity_id = a.get("id")
             if not strava_activity_id:
@@ -662,8 +670,19 @@ def sync_strava_activities_task(self: Task, athlete_id: str) -> Dict:
                     existing.name = a.get("name")
                     changed = True
 
+                # Heal historical rows that were force-tagged as sport='run' before the
+                # multi-sport ingest landed. The Strava response is the source of truth here.
+                if existing.sport != mapped_sport:
+                    existing.sport = mapped_sport
+                    changed = True
+
                 if changed:
                     updated_existing += 1
+
+                # Splits/laps backfill is run-specific (mile splits, GAP). For cycling/walking/
+                # hiking/strength the lap segmentation isn't meaningful for our current analysis.
+                if mapped_sport != "run":
+                    continue
 
                 # Check if splits need backfilling
                 split_count = (
@@ -1025,7 +1044,7 @@ def sync_strava_activities_task(self: Task, athlete_id: str) -> Dict:
                 athlete_id=athlete.id,
                 name=a.get("name"),
                 start_time=start_time,
-                sport="run",
+                sport=mapped_sport,
                 source="strava",
                 duration_s=a.get("moving_time") or a.get("elapsed_time"),
                 distance_m=a.get("distance"),
@@ -1055,153 +1074,158 @@ def sync_strava_activities_task(self: Task, athlete_id: str) -> Dict:
                 db.rollback()
                 continue
 
-            # Fetch splits
-            try:
-                if activity_idx > 0:
-                    time.sleep(LAP_FETCH_DELAY)
+            # For non-run sports (cycling, walking, hiking, strength, flexibility) we
+            # ingest the activity row + (below) the wellness stamp + stream, but skip the
+            # run-only analysis pipeline (mile splits, GAP, pace-based PB, run workout
+            # classification). When per-sport pipelines exist, gate them in here.
+            is_run = mapped_sport == "run"
 
-                details = (
-                    get_activity_details(
-                        athlete, int(strava_activity_id), allow_rate_limit_sleep=True
+            if is_run:
+                # Fetch splits (Strava `splits_standard` is mile splits with GAP)
+                try:
+                    if activity_idx > 0:
+                        time.sleep(LAP_FETCH_DELAY)
+
+                    details = (
+                        get_activity_details(
+                            athlete, int(strava_activity_id), allow_rate_limit_sleep=True
+                        )
+                        or {}
                     )
-                    or {}
-                )
-                mile_splits = _extract_strava_mile_splits_from_details(details)
-                mile_map = {}
-                for ms in mile_splits:
-                    try:
-                        mile_map[int(ms["split_number"])] = ms
-                    except Exception:
-                        continue
-
-                laps = get_activity_laps(athlete, strava_activity_id) or []
-                source_splits = []
-                if laps:
-                    for lap in laps:
-                        lap_idx = lap.get("lap_index") or lap.get("split")
-                        if not lap_idx:
-                            continue
-                        split_num = int(lap_idx)
-                        ms = mile_map.get(split_num) or {}
-                        source_splits.append(
-                            {
-                                "split_number": split_num,
-                                "distance": lap.get("distance"),
-                                "elapsed_time": lap.get("elapsed_time"),
-                                "moving_time": lap.get("moving_time"),
-                                "average_heartrate": lap.get("average_heartrate"),
-                                "max_heartrate": lap.get("max_heartrate"),
-                                "average_cadence": lap.get("average_cadence"),
-                                "average_grade_adjusted_speed": ms.get(
-                                    "average_grade_adjusted_speed"
-                                )
-                                or lap.get("average_grade_adjusted_speed"),
-                                "total_elevation_gain": lap.get("total_elevation_gain"),
-                            }
-                        )
-                else:
-                    source_splits = mile_splits
-
-                if source_splits:
-                    for s in source_splits:
-                        idx = s.get("split_number")
-                        if not idx:
-                            continue
+                    mile_splits = _extract_strava_mile_splits_from_details(details)
+                    mile_map = {}
+                    for ms in mile_splits:
                         try:
-                            if (
-                                s.get("distance") is not None
-                                and float(s.get("distance")) < 50
-                            ):
-                                continue
-                            if (
-                                s.get("moving_time") is not None
-                                and int(s.get("moving_time")) < 10
-                            ):
-                                continue
+                            mile_map[int(ms["split_number"])] = ms
                         except Exception:
-                            pass
+                            continue
 
-                        gap_val = None
-                        is_auth = False
-                        try:
-                            ga = s.get("average_grade_adjusted_speed")
-                            if ga is not None:
-                                ga = float(ga)
-                                if ga > 0:
-                                    gap_val = 1609.34 / ga
-                                    is_auth = True
-                        except Exception:
-                            pass
-                        if gap_val is None:
-                            gap_val, is_auth = _gap_seconds_per_mile_from_lap(s)
-
-                        db.add(
-                            ActivitySplit(
-                                activity_id=activity.id,
-                                split_number=int(idx),
-                                distance=s.get("distance"),
-                                elapsed_time=s.get("elapsed_time"),
-                                moving_time=s.get("moving_time"),
-                                average_heartrate=_coerce_int(
-                                    s.get("average_heartrate")
-                                ),
-                                max_heartrate=_coerce_int(s.get("max_heartrate")),
-                                average_cadence=s.get("average_cadence"),
-                                gap_seconds_per_mile=gap_val,
+                    laps = get_activity_laps(athlete, strava_activity_id) or []
+                    source_splits = []
+                    if laps:
+                        for lap in laps:
+                            lap_idx = lap.get("lap_index") or lap.get("split")
+                            if not lap_idx:
+                                continue
+                            split_num = int(lap_idx)
+                            ms = mile_map.get(split_num) or {}
+                            source_splits.append(
+                                {
+                                    "split_number": split_num,
+                                    "distance": lap.get("distance"),
+                                    "elapsed_time": lap.get("elapsed_time"),
+                                    "moving_time": lap.get("moving_time"),
+                                    "average_heartrate": lap.get("average_heartrate"),
+                                    "max_heartrate": lap.get("max_heartrate"),
+                                    "average_cadence": lap.get("average_cadence"),
+                                    "average_grade_adjusted_speed": ms.get(
+                                        "average_grade_adjusted_speed"
+                                    )
+                                    or lap.get("average_grade_adjusted_speed"),
+                                    "total_elevation_gain": lap.get("total_elevation_gain"),
+                                }
                             )
+                    else:
+                        source_splits = mile_splits
+
+                    if source_splits:
+                        for s in source_splits:
+                            idx = s.get("split_number")
+                            if not idx:
+                                continue
+                            try:
+                                if (
+                                    s.get("distance") is not None
+                                    and float(s.get("distance")) < 50
+                                ):
+                                    continue
+                                if (
+                                    s.get("moving_time") is not None
+                                    and int(s.get("moving_time")) < 10
+                                ):
+                                    continue
+                            except Exception:
+                                pass
+
+                            gap_val = None
+                            is_auth = False
+                            try:
+                                ga = s.get("average_grade_adjusted_speed")
+                                if ga is not None:
+                                    ga = float(ga)
+                                    if ga > 0:
+                                        gap_val = 1609.34 / ga
+                                        is_auth = True
+                            except Exception:
+                                pass
+                            if gap_val is None:
+                                gap_val, is_auth = _gap_seconds_per_mile_from_lap(s)
+
+                            db.add(
+                                ActivitySplit(
+                                    activity_id=activity.id,
+                                    split_number=int(idx),
+                                    distance=s.get("distance"),
+                                    elapsed_time=s.get("elapsed_time"),
+                                    moving_time=s.get("moving_time"),
+                                    average_heartrate=_coerce_int(
+                                        s.get("average_heartrate")
+                                    ),
+                                    max_heartrate=_coerce_int(s.get("max_heartrate")),
+                                    average_cadence=s.get("average_cadence"),
+                                    gap_seconds_per_mile=gap_val,
+                                )
+                            )
+                        db.flush()
+
+                    if activity.avg_hr is None and details.get("average_heartrate"):
+                        activity.avg_hr = _coerce_int(details.get("average_heartrate"))
+
+                    if (
+                        activity.temperature_f is None
+                        and details.get("average_temp") is not None
+                    ):
+                        activity.temperature_f = round(
+                            details.get("average_temp") * 9 / 5 + 32, 1
                         )
+
                     db.flush()
 
-                # Backfill avg_hr from details if missing (list endpoint often omits it)
-                if activity.avg_hr is None and details.get("average_heartrate"):
-                    activity.avg_hr = _coerce_int(details.get("average_heartrate"))
-
-                # Backfill temperature from details if missing
-                if (
-                    activity.temperature_f is None
-                    and details.get("average_temp") is not None
-                ):
-                    activity.temperature_f = round(
-                        details.get("average_temp") * 9 / 5 + 32, 1
+                except Exception as e:
+                    print(
+                        f"Warning: Could not fetch laps for activity {strava_activity_id}: {e}"
                     )
 
-                db.flush()
-
-            except Exception as e:
-                print(
-                    f"Warning: Could not fetch laps for activity {strava_activity_id}: {e}"
-                )
-
-            # Calculate performance metrics
-            try:
-                _calculate_performance_metrics(activity, athlete, db)
-            except Exception as e:
-                print(f"Warning: Could not calculate performance metrics: {e}")
-
-            # Update personal best
-            try:
-                pb = update_personal_best(activity, athlete, db)
-            except Exception as e:
-                print(f"Warning: Could not update personal best: {e}")
+                # Calculate performance metrics (run-only: pace zones, training paces)
                 try:
-                    db.rollback()
-                except Exception:
-                    pass
+                    _calculate_performance_metrics(activity, athlete, db)
+                except Exception as e:
+                    print(f"Warning: Could not calculate performance metrics: {e}")
 
-            # Classify workout type (long_run, easy_run, tempo_run, race, etc.)
-            # This drives the efficiency attribution's same-type comparison.
-            try:
-                from services.workout_classifier import WorkoutClassifierService
+                # Update personal best (run-only: distance PBs from pace data)
+                try:
+                    pb = update_personal_best(activity, athlete, db)
+                except Exception as e:
+                    print(f"Warning: Could not update personal best: {e}")
+                    try:
+                        db.rollback()
+                    except Exception:
+                        pass
 
-                classifier = WorkoutClassifierService(db)
-                classification = classifier.classify_activity(activity)
-                activity.workout_type = classification.workout_type.value
-                activity.workout_zone = classification.workout_zone.value
-                activity.workout_confidence = classification.confidence
-                activity.intensity_score = classification.intensity_score
-                db.flush()
-            except Exception as e:
-                print(f"Warning: Could not classify workout: {e}")
+                # Classify workout type — long_run, easy_run, tempo_run, race, etc. drives
+                # efficiency attribution's same-type comparison. Run-only by construction.
+                try:
+                    from services.workout_classifier import WorkoutClassifierService
+
+                    classifier = WorkoutClassifierService(db)
+                    classification = classifier.classify_activity(activity)
+                    activity.workout_type = classification.workout_type.value
+                    activity.workout_zone = classification.workout_zone.value
+                    activity.workout_confidence = classification.confidence
+                    activity.intensity_score = classification.intensity_score
+                    db.flush()
+                except Exception as e:
+                    print(f"Warning: Could not classify workout: {e}")
 
             # Stamp pre-activity wellness from GarminDay
             try:

@@ -145,20 +145,85 @@ def load_summarized_activities(path: Path) -> List[Dict[str, Any]]:
     return [x for x in arr if isinstance(x, dict)]
 
 
-def _sport_from_activity_type(activity_type: Optional[str]) -> str:
-    t = (activity_type or "").lower()
+# Canonical sport set — must stay aligned with services/sync/garmin_adapter._ACCEPTED_SPORTS
+# and tasks/strava_tasks._STRAVA_SPORT_MAP. The DI-Connect export uses lowercased
+# `activityType` strings ("running", "trail_running", "cycling", "mountain_biking",
+# "strength_training", etc.) — different from the webhook's UPPER_CASE form, so we keep
+# this map local but the *output* sport codes match the rest of the system.
+_DI_CONNECT_SPORT_MAP: Dict[str, str] = {
+    # Runs
+    "running": "run",
+    "trail_running": "run",
+    "treadmill_running": "run",
+    "indoor_running": "run",
+    "track_running": "run",
+    "street_running": "run",
+    "virtual_run": "run",
+    "obstacle_run": "run",
+    # Cycling family
+    "cycling": "cycling",
+    "road_biking": "cycling",
+    "mountain_biking": "cycling",
+    "gravel_cycling": "cycling",
+    "indoor_cycling": "cycling",
+    "virtual_ride": "cycling",
+    "cyclocross": "cycling",
+    "bmx": "cycling",
+    "e_bike_fitness": "cycling",
+    "e_bike_mountain": "cycling",
+    "recumbent_cycling": "cycling",
+    "handcycling": "cycling",
+    # Walking / hiking
+    "walking": "walking",
+    "indoor_walking": "walking",
+    "casual_walking": "walking",
+    "speed_walking": "walking",
+    "hiking": "hiking",
+    "rucking": "hiking",
+    # Strength / conditioning
+    "strength_training": "strength",
+    "indoor_cardio": "strength",
+    "cardio_training": "strength",
+    "hiit": "strength",
+    "crossfit": "strength",
+    "bouldering": "strength",
+    "indoor_climbing": "strength",
+    # Mobility
+    "yoga": "flexibility",
+    "pilates": "flexibility",
+    "stretching": "flexibility",
+    "mind_and_body": "flexibility",
+}
+
+
+def _sport_from_activity_type(activity_type: Optional[str]) -> Optional[str]:
+    """
+    Map a Garmin DI-Connect `activityType` to our canonical sport code.
+
+    Returns None for sports we do not currently ingest (swim, ski, paddling, etc.). When the
+    export uses a sub-type we don't have explicitly listed (e.g. a new Garmin device variant),
+    we fall back to substring matching against the parent family — keeping new run/cycle/walk/
+    hike variants from being silently dropped.
+    """
+    if not activity_type:
+        return None
+    t = str(activity_type).strip().lower()
+    if t in _DI_CONNECT_SPORT_MAP:
+        return _DI_CONNECT_SPORT_MAP[t]
+    # Fallback substring matching for unanticipated variants — keeps the ingest broad.
     if "run" in t:
         return "run"
-    if "cycle" in t or "bike" in t:
-        return "ride"
-    if "swim" in t:
-        return "swim"
-    return "workout"
-
-
-def _is_run_like(activity_type: Optional[str]) -> bool:
-    t = (activity_type or "").lower()
-    return "run" in t
+    if "cycl" in t or "bike" in t or "biking" in t:
+        return "cycling"
+    if "hik" in t:
+        return "hiking"
+    if "walk" in t:
+        return "walking"
+    if "strength" in t or "weight" in t:
+        return "strength"
+    if "yoga" in t or "pilates" in t or "stretch" in t:
+        return "flexibility"
+    return None
 
 
 @dataclass(frozen=True)
@@ -239,7 +304,7 @@ def import_garmin_di_connect_summaries(
 
     created = 0
     already_present = 0
-    skipped_non_runs = 0
+    skipped_unsupported_sport = 0
     skipped_possible_duplicate = 0
     parsed_total = 0
 
@@ -255,8 +320,10 @@ def import_garmin_di_connect_summaries(
             external_id_str = str(int(external_id)) if isinstance(external_id, (int, float)) else str(external_id)
 
             activity_type = a.get("activityType")
-            if not _is_run_like(activity_type):
-                skipped_non_runs += 1
+            sport = _sport_from_activity_type(activity_type)
+            if sport is None:
+                # Sport we don't analyze yet (swim, ski, paddling, etc.) — skip cleanly.
+                skipped_unsupported_sport += 1
                 continue
 
             if external_id_str in idx.garmin_external_ids:
@@ -286,8 +353,8 @@ def import_garmin_di_connect_summaries(
                 skipped_possible_duplicate += 1
                 continue
 
-            name = a.get("activityName") or f"Garmin {str(activity_type).title() if activity_type else 'Run'}"
-            sport = _sport_from_activity_type(activity_type)
+            default_label = str(activity_type).title() if activity_type else sport.title()
+            name = a.get("activityName") or f"Garmin {default_label}"
 
             avg_hr = a.get("averageHeartRate")
             max_hr = a.get("maxHeartRate")
@@ -342,7 +409,10 @@ def import_garmin_di_connect_summaries(
         "activities_total": parsed_total,
         "created": created,
         "already_present": already_present,
-        "skipped_non_runs": skipped_non_runs,
+        # Kept under the legacy key for backwards compatibility with any external dashboards
+        # that read this counter; semantically it now counts unsupported sports (swim/ski/etc.).
+        "skipped_non_runs": skipped_unsupported_sport,
+        "skipped_unsupported_sport": skipped_unsupported_sport,
         "skipped_possible_duplicate": skipped_possible_duplicate,
         # ADR-057 audit field aliases (minimum set)
         "parser_types_used": ["garmin_di_connect_summarized_activities_json"],
