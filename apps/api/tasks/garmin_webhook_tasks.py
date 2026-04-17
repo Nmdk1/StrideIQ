@@ -617,11 +617,29 @@ def _ingest_activity_item(
     except Exception:
         logger.warning("Race detection failed for garmin activity %s — non-fatal", external_id, exc_info=True)
 
+    # Classify workout type (long_run, easy_run, threshold_run, race, etc.)
+    # This is what populates `activity.workout_type` for the comparison
+    # service to find same-type matches.  Previously this was called as a
+    # class method without instantiation -- it threw TypeError on every
+    # Garmin ingest, was swallowed by the broad except, and every Garmin
+    # activity went to disk with workout_type=NULL.  That single bug is
+    # what made the Compare tab return "no similar runs" for every Garmin-
+    # primary athlete, because tiers 3 and 4 both gate on workout_type.
     try:
         from services.workout_classifier import WorkoutClassifierService
-        WorkoutClassifierService.classify_activity(new_activity)
+
+        classifier = WorkoutClassifierService(db)
+        classification = classifier.classify_activity(new_activity)
+        new_activity.workout_type = classification.workout_type.value
+        new_activity.workout_zone = classification.workout_zone.value
+        new_activity.workout_confidence = classification.confidence
+        new_activity.intensity_score = classification.intensity_score
     except Exception:
-        logger.warning("Workout classification failed for garmin activity %s — non-fatal", external_id, exc_info=True)
+        logger.warning(
+            "Workout classification failed for garmin activity %s — non-fatal",
+            external_id,
+            exc_info=True,
+        )
 
     return "created"
 

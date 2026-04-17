@@ -49,6 +49,8 @@ DEFAULT_TRAILING_DAYS = 90
 ANNIVERSARY_WINDOW_DAYS = 30
 SAME_ROUTE_RECENT_LIMIT = 5
 SAME_TYPE_LIMIT = 5
+SIMILAR_DISTANCE_LIMIT = 5
+SIMILAR_DISTANCE_TRAILING_DAYS = 60
 
 
 # ---------------------------------------------------------------------------
@@ -304,6 +306,52 @@ def _tier_same_type_current_block(
     return [_to_entry(a, focus, route_lookup) for a in rows]
 
 
+def _tier_similar_distance(
+    db: Session,
+    focus: Activity,
+    route_lookup: Dict[UUID, AthleteRoute],
+    *,
+    trailing_days: int = SIMILAR_DISTANCE_TRAILING_DAYS,
+) -> List[ComparableEntry]:
+    """Trailing N runs within DISTANCE_TOLERANCE of the focus run.
+
+    This is the always-available fallback. It deliberately does NOT require
+    workout_type, route_id, training block, or weather match -- those are
+    the gates that silently emptied tiers 1-4 for every Garmin-primary
+    athlete and made the Compare tab look broken to the entire population.
+
+    For any athlete who has done at least one other run within ±15% of this
+    distance in the last N days, this tier returns something. It is the
+    contractual floor for the Compare panel: if it returns empty, the
+    athlete genuinely does not have a comparable run, and the empty-state
+    in the UI is honest rather than a hidden tier-gate failure.
+    """
+    if focus.distance_m is None or focus.start_time is None:
+        return []
+    focus_distance = float(focus.distance_m)
+    if focus_distance <= 0:
+        return []
+    distance_floor = focus_distance * (1 - DISTANCE_TOLERANCE)
+    distance_ceiling = focus_distance * (1 + DISTANCE_TOLERANCE)
+    since = focus.start_time - timedelta(days=trailing_days)
+    rows = (
+        db.query(Activity)
+        .filter(
+            Activity.athlete_id == focus.athlete_id,
+            Activity.id != focus.id,
+            Activity.sport == "run",
+            Activity.start_time >= since,
+            Activity.start_time < focus.start_time,
+            Activity.distance_m >= distance_floor,
+            Activity.distance_m <= distance_ceiling,
+        )
+        .order_by(Activity.start_time.desc())
+        .limit(SIMILAR_DISTANCE_LIMIT * 3)
+        .all()
+    )
+    return [_to_entry(a, focus, route_lookup) for a in rows[:SIMILAR_DISTANCE_LIMIT]]
+
+
 def _tier_same_type_similar_cond(
     db: Session,
     focus: Activity,
@@ -507,6 +555,30 @@ def find_comparables_for_activity(
                 "kind": "same_type_similar_cond",
                 "reason": "this run has no workout type",
             }
+        )
+
+    # Tier 5 — always-available fallback: trailing same-distance runs.
+    # The other four tiers gate on workout_type, route_id, anniversary, or
+    # current block.  When all four are absent (a non-classified easy run on
+    # a never-repeated route for a new athlete with no detected block) the
+    # panel used to render empty for the entire population.  This tier has
+    # only one gate -- the focus run has a positive distance -- so the panel
+    # is empty if and only if the athlete has zero other runs of similar
+    # distance in the last 60 days.
+    seen_ids.update(e.activity_id for tier in tiers for e in tier.entries)
+    similar_distance = [
+        e
+        for e in _tier_similar_distance(db, focus, route_lookup)
+        if e.activity_id not in seen_ids
+    ]
+    if similar_distance and focus.distance_m:
+        focus_km = float(focus.distance_m) / 1000.0
+        tiers.append(
+            ComparableTier(
+                kind="similar_distance",
+                label=f"Recent runs around {focus_km:.1f} km",
+                entries=similar_distance,
+            )
         )
 
     return ComparablesResult(

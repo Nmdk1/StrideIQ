@@ -417,6 +417,8 @@ function labelFor(kind: string): string {
       return 'Same workout, this block';
     case 'same_type_similar_cond':
       return 'Same workout, similar conditions';
+    case 'similar_distance':
+      return 'Similar distance, recent';
     default:
       return kind;
   }

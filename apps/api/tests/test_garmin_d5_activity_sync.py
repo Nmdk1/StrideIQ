@@ -607,6 +607,57 @@ class TestActivityFieldMapping:
         added = mock_db.add.call_args[0][0]
         assert added.source == "garmin_manual"
 
+    def test_workout_classifier_called_with_instance_and_persists_fields(self):
+        """REGRESSION GUARD: every Garmin activity ingest must instantiate
+        the classifier with `db`, call `.classify_activity(activity)`, and
+        persist workout_type / workout_zone / workout_confidence /
+        intensity_score onto the new row.
+
+        The previous code called `WorkoutClassifierService.classify_activity(
+        new_activity)` as if it were a static method. That raised TypeError
+        on every Garmin ingest, was swallowed by the broad except in
+        `_ingest_activity_item`, and every Garmin run went to disk with
+        workout_type=NULL. That single bug is what caused the Compare tab
+        to return "no similar runs" for every Garmin-primary athlete --
+        tiers 3 and 4 both gate on workout_type.
+
+        If this test fails, do NOT loosen the assertion. Either the
+        classifier signature changed and you must update the call site,
+        or someone reverted the instance-based call and broke the
+        Compare feature for the population again."""
+        from tasks.garmin_webhook_tasks import _ingest_activity_item
+        from services.workout_classifier import WorkoutType, WorkoutZone
+
+        mock_db = _make_mock_db()
+        mock_athlete = _make_mock_athlete()
+        mock_db.query.return_value.filter.return_value.first.return_value = None
+        mock_db.query.return_value.filter.return_value.all.return_value = []
+
+        fake_classification = MagicMock()
+        fake_classification.workout_type = WorkoutType.AEROBIC_RUN
+        fake_classification.workout_zone = WorkoutZone.ENDURANCE
+        fake_classification.confidence = 0.82
+        fake_classification.intensity_score = 47.5
+        fake_classifier = MagicMock()
+        fake_classifier.classify_activity.return_value = fake_classification
+
+        with patch(
+            "services.workout_classifier.WorkoutClassifierService",
+            return_value=fake_classifier,
+        ) as mock_cls:
+            _ingest_activity_item(_RUNNING_RAW, mock_athlete, mock_db)
+
+        # The service was instantiated with db (NOT called as a static method)
+        mock_cls.assert_called_once_with(mock_db)
+        # And then invoked on the new activity row that was added
+        added = mock_db.add.call_args[0][0]
+        fake_classifier.classify_activity.assert_called_once_with(added)
+        # And the result was persisted to the activity
+        assert added.workout_type == WorkoutType.AEROBIC_RUN.value
+        assert added.workout_zone == WorkoutZone.ENDURANCE.value
+        assert added.workout_confidence == 0.82
+        assert added.intensity_score == 47.5
+
 
 # ---------------------------------------------------------------------------
 # D5.1: last_garmin_sync update

@@ -103,4 +103,18 @@ beat_schedule = {
         "task": "tasks.complete_expired_plans",
         "schedule": crontab(hour=2, minute=0),
     },
+    # Workout classification safety-net sweep — every 30 minutes.
+    # Defense-in-depth for the Compare tab.  The Garmin webhook ingest path
+    # used to silently fail to classify (TypeError on bad call signature,
+    # swallowed by broad except).  That left workout_type=NULL for every
+    # Garmin-primary athlete and broke tiers 3 and 4 of the Compare service
+    # for the population.  Even after fixing the call site, this sweep
+    # guarantees that any future code path which creates an activity
+    # without classifying it (or classification raises on a malformed row)
+    # gets healed within one cycle so the population-level breakage cannot
+    # silently recur.
+    "workout-classify-sweep": {
+        "task": "tasks.sweep_unclassified_runs",
+        "schedule": crontab(minute="*/30"),
+    },
 }
