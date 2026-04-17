@@ -540,11 +540,11 @@ function AdvancedAnalyticsSection({ result }: { result: ContextualComparisonResu
           the average of those runs. It represents <span className="italic">your typical performance</span> for this type of effort, 
           so you can see if today you ran better, worse, or the same as usual.
         </p>
-        {ghost.avg_pace_formatted && ghost.avg_hr && (
+        {ghost.avg_pace_per_km && ghost.avg_hr && (
           <div className="mt-3 flex flex-wrap gap-4 text-sm">
             <div className="bg-slate-800/50 rounded px-3 py-1.5">
               <span className="text-slate-400">Ghost Pace:</span>{' '}
-              <span className="text-white font-medium">{ghost.avg_pace_formatted}</span>
+              <span className="text-white font-medium">{formatPace(ghost.avg_pace_per_km)}</span>
             </div>
             <div className="bg-slate-800/50 rounded px-3 py-1.5">
               <span className="text-slate-400">Ghost HR:</span>{' '}

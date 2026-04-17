@@ -199,7 +199,7 @@ function RunCard({
         </div>
         <div>
           <div className="text-xs text-slate-500 uppercase tracking-wide">Pace</div>
-          <div className="text-lg font-bold text-white">{run.pace_formatted || formatPace(run.pace_per_km)}</div>
+          <div className="text-lg font-bold text-white">{run.pace_per_km ? formatPace(run.pace_per_km) : run.pace_formatted || '—'}</div>
         </div>
         <div>
           <div className="text-xs text-slate-500 uppercase tracking-wide">Avg HR</div>
@@ -915,7 +915,7 @@ export default function CompareResultsPage() {
                   <div>
                     <div className="text-xs text-slate-500 uppercase">Avg Pace</div>
                     <div className="text-lg font-bold text-white">
-                      {comparisonData.ghost_average.avg_pace_formatted || formatPace(comparisonData.ghost_average.avg_pace_per_km)}
+                      {formatPace(comparisonData.ghost_average.avg_pace_per_km)}
                     </div>
                   </div>
                   {comparisonData.ghost_average.avg_hr && (

@@ -958,10 +958,30 @@ class TestStreamIngestionTask:
         """No samples in detail → status set to unavailable, no stream row created."""
         activity = self._make_activity()
         payload_no_samples = {**_DETAIL_PAYLOAD, "samples": []}
-        result, mock_db = self._run_task(payload_no_samples, activity=activity)
+        with patch(
+            "tasks.strava_fallback_tasks.repair_garmin_activity_from_strava_task.delay"
+        ):
+            result, mock_db = self._run_task(payload_no_samples, activity=activity)
 
         mock_db.add.assert_not_called()
         assert activity.stream_fetch_status == "unavailable"
+
+    def test_empty_samples_enqueues_strava_fallback(self):
+        """REGRESSION GUARD: every Garmin row marked 'unavailable' must enqueue
+        the Strava fallback. The cleanup beat does this for stale rows; the
+        webhook path used to silently skip it, leaving Garmin-only athletes
+        with permanently empty pages when Garmin's detail webhook returned
+        an empty envelope. Both paths must enqueue or the asymmetry returns.
+        """
+        activity = self._make_activity()
+        payload_no_samples = {**_DETAIL_PAYLOAD, "samples": []}
+        with patch(
+            "tasks.strava_fallback_tasks.repair_garmin_activity_from_strava_task.delay"
+        ) as mock_enqueue:
+            result, mock_db = self._run_task(payload_no_samples, activity=activity)
+
+        assert activity.stream_fetch_status == "unavailable"
+        mock_enqueue.assert_called_once_with(str(activity.id))
 
     def test_dict_payload_treated_as_single_item(self):
         """Single dict payload processes as one detail item."""

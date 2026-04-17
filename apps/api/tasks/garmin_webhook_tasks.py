@@ -682,11 +682,32 @@ def _ingest_activity_detail_item(
     lap_splits = adapt_activity_detail_laps(raw_item, samples)
 
     if not samples and not lap_splits:
-        logger.debug(
-            "Activity detail garmin_activity_id=%s has no samples or laps",
+        logger.info(
+            "garmin_activity_detail_empty garmin_activity_id=%s activity_id=%s — marking unavailable and enqueueing strava fallback",
             garmin_activity_id_int,
+            activity.id,
         )
         activity.stream_fetch_status = "unavailable"
+        activity.stream_fetch_error = "garmin_detail_empty_no_samples_or_laps"
+        # Mirror the cleanup-beat behavior: every fail-closed Garmin row gets
+        # one shot at Strava-side repair.  Without this, the webhook path
+        # silently accepts permanent emptiness while the timeout path heals
+        # itself — that asymmetry is the regression that broke Larry's run
+        # and lit up "no chart" for athletes whose detail webhook returns
+        # an empty envelope.  Best-effort enqueue: a broker hiccup must not
+        # roll back the activity row.
+        try:
+            from tasks.strava_fallback_tasks import (
+                repair_garmin_activity_from_strava_task,
+            )
+
+            repair_garmin_activity_from_strava_task.delay(str(activity.id))
+        except Exception as enqueue_exc:  # pragma: no cover - logged only
+            logger.warning(
+                "strava_fallback_enqueue_failed_from_webhook activity_id=%s error=%s",
+                activity.id,
+                enqueue_exc,
+            )
         return True
 
     # All Garmin→internal channel translation delegated to adapter (source contract)
