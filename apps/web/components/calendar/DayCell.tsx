@@ -75,7 +75,7 @@ interface DayCellProps {
 }
 
 export function DayCell({ day, isToday, isSelected, onClick, compact = false, signals = [] }: DayCellProps) {
-  const { formatDistance } = useUnits();
+  const { formatDistance, formatPace } = useUnits();
   
   const dayNum = parseInt(day.date.split('-')[2], 10);
   const hasActivities = day.activities.length > 0;
@@ -181,10 +181,8 @@ export function DayCell({ day, isToday, isSelected, onClick, compact = false, si
           }
           
           if (activity.distance_m && activity.duration_s && activity.distance_m > 0) {
-            const pacePerMile = activity.duration_s / (activity.distance_m / 1609.344);
-            const mins = Math.floor(pacePerMile / 60);
-            const secs = Math.floor(pacePerMile % 60);
-            paceStr = `${mins}:${secs.toString().padStart(2, '0')}`;
+            const paceSecPerKm = activity.duration_s / (activity.distance_m / 1000);
+            paceStr = formatPace(paceSecPerKm);
           }
           
           return (
@@ -199,10 +197,10 @@ export function DayCell({ day, isToday, isSelected, onClick, compact = false, si
                   {durationStr}
                 </span>
               )}
-              {/* Pace */}
+              {/* Pace (formatPace already includes the unit suffix) */}
               {paceStr && (
                 <span className="text-[10px] text-blue-400">
-                  {paceStr}/mi
+                  {paceStr}
                 </span>
               )}
               {/* HR */}
@@ -251,13 +249,19 @@ export function DayCell({ day, isToday, isSelected, onClick, compact = false, si
                 <TooltipTrigger asChild>
                   <div className="text-[10px] text-slate-500 truncate mt-0.5">
                     {(() => {
-                      // Extract first pace (e.g., "easy: 8:04/mi" from "Paces: easy: 8:04/mi | ...")
+                      // Extract first pace from coach_notes (currently backend-formatted as
+                      // "easy: 8:04/mi"). Convert to the athlete's preferred unit so a metric
+                      // user doesn't see /mi in a calendar tooltip pulled from notes.
+                      // Long-term fix: have coach return raw seconds-per-km; until then,
+                      // parse the imperial value, convert, and re-format via formatPace.
                       const notes = day.planned_workout.coach_notes || '';
-                      const paceMatch = notes.match(/Paces:\s*(\w+):\s*([\d:]+\/mi)/);
+                      const paceMatch = notes.match(/Paces:\s*(\w+):\s*(\d+):(\d{2})\/mi/);
                       if (paceMatch) {
-                        return `${paceMatch[1]}: ${paceMatch[2]}`;
+                        const label = paceMatch[1];
+                        const secsPerMile = parseInt(paceMatch[2], 10) * 60 + parseInt(paceMatch[3], 10);
+                        const secsPerKm = secsPerMile / 1.60934;
+                        return `${label}: ${formatPace(secsPerKm)}`;
                       }
-                      // Fallback: first 30 chars
                       return notes.substring(0, 30);
                     })()}
                   </div>

@@ -183,10 +183,12 @@ export function ActivityCard({
           </div>
         )}
 
-        {activity.pace_per_mile && (
+        {activity.distance > 0 && activity.moving_time > 0 && (
           <div>
             <p className="text-xs text-slate-400">Pace</p>
-            <p className="font-semibold">{activity.pace_per_mile}</p>
+            <p className="font-semibold">
+              {formatPace(activity.moving_time / (activity.distance / 1000))}
+            </p>
           </div>
         )}
 

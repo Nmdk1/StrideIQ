@@ -215,7 +215,7 @@ export default function RouteHistory({
           <span className="text-emerald-400"> · {trendStr}</span>
         )}
         <span> · This run: </span>
-        <span className={deltaColor}>{formatDelta(summary.delta)}/mi vs avg</span>
+        <span className={deltaColor}>{formatDelta(summary.delta)}{unitSystem === 'imperial' ? '/mi' : '/km'} vs avg</span>
       </button>
 
       {/* Expanded panel */}

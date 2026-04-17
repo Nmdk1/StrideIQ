@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { Dumbbell, Bike, Mountain, Footprints, StretchHorizontal, ChevronRight } from 'lucide-react';
+import { useUnits } from '@/lib/context/UnitsContext';
 
 const SPORT_MAP: Record<string, { icon: typeof Dumbbell; label: string; color: string; bg: string }> = {
   strength:    { icon: Dumbbell, label: 'Strength', color: 'text-amber-400', bg: 'bg-amber-500/15 border-amber-500/20' },
@@ -33,17 +34,12 @@ function formatDuration(s: number): string {
   return `${mins} min`;
 }
 
-function formatDistance(m: number): string {
-  const mi = m / 1609.344;
-  return mi < 10 ? `${mi.toFixed(1)} mi` : `${Math.round(mi)} mi`;
-}
-
 function formatTime(iso: string): string {
   const d = new Date(iso);
   return d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 }
 
-function getMetrics(data: Props['data']): string {
+function buildMetrics(data: Props['data'], formatDistance: (m: number) => string): string {
   const parts: string[] = [];
   const sport = data.sport;
 
@@ -79,9 +75,10 @@ function getLocationAndTime(data: Props['data']): string {
 }
 
 export function RecentCrossTrainingCard({ data }: Props) {
+  const { formatDistance } = useUnits();
   const config = SPORT_MAP[data.sport] ?? SPORT_MAP.walking;
   const Icon = config.icon;
-  const metrics = getMetrics(data);
+  const metrics = buildMetrics(data, (m) => formatDistance(m, 1));
   const subtitle = getLocationAndTime(data);
 
   return (

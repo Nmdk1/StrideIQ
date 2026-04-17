@@ -5,6 +5,7 @@ import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
 import { useAuth } from '@/lib/hooks/useAuth';
 import { useReport } from '@/lib/hooks/queries/reports';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
+import { useUnits } from '@/lib/context/UnitsContext';
 import type {
   ReportCategory,
   ReportDay,
@@ -40,22 +41,15 @@ function secondsToHM(s: number | undefined | null): string {
   return h > 0 ? `${h}h ${m}m` : `${m}m`;
 }
 
-function metersToMiles(m: number | undefined | null): string {
-  if (!m) return '-';
-  return (m / 1609.34).toFixed(1);
-}
-
-function paceKmToMile(paceKm: number | undefined | null): string {
-  if (!paceKm) return '-';
-  const paceMi = paceKm * 1.60934;
-  const min = Math.floor(paceMi);
-  const sec = Math.round((paceMi - min) * 60);
-  return `${min}:${sec.toString().padStart(2, '0')}/mi`;
-}
-
-function kgToLbs(kg: number | undefined | null): string {
+// Weight is the only metric not covered by useUnits() today; centralize the
+// conversion here so callers don't reinvent it. UnitsContext exposes
+// `formatDistance`, `formatPace`, and `formatElevation` for everything else.
+function formatWeight(kg: number | undefined | null, unitSystem: 'imperial' | 'metric'): string {
   if (!kg) return '-';
-  return (kg * 2.20462).toFixed(1);
+  if (unitSystem === 'imperial') {
+    return `${(kg * 2.20462).toFixed(1)} lbs`;
+  }
+  return `${kg.toFixed(1)} kg`;
 }
 
 function round1(n: number | undefined | null): string {
@@ -146,6 +140,7 @@ function DayDetail({ day, healthMetrics, showActivities, showNutrition, showBody
   showNutrition: boolean;
   showBodyComp: boolean;
 }) {
+  const { formatDistance, formatPace, units } = useUnits();
   return (
     <div className="space-y-3 pt-2">
       {day.health && healthMetrics.length > 0 && (
@@ -173,8 +168,8 @@ function DayDetail({ day, healthMetrics, showActivities, showNutrition, showBody
                   <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-slate-400 mt-0.5">
                     {a.workout_type && <span className="capitalize">{a.workout_type.replace(/_/g, ' ')}</span>}
                     {a.duration_s && <span>{secondsToHM(a.duration_s)}</span>}
-                    {a.distance_m && <span>{metersToMiles(a.distance_m)} mi</span>}
-                    {a.avg_pace_min_per_km && <span>{paceKmToMile(a.avg_pace_min_per_km)}</span>}
+                    {a.distance_m && <span>{formatDistance(a.distance_m)}</span>}
+                    {a.avg_pace_min_per_km && <span>{formatPace(a.avg_pace_min_per_km * 60)}</span>}
                   </div>
                 </div>
                 <div className="text-right text-xs text-slate-400">
@@ -223,7 +218,7 @@ function DayDetail({ day, healthMetrics, showActivities, showNutrition, showBody
           {day.body_composition.weight_kg && (
             <div className="bg-slate-700/40 rounded-lg px-3 py-1.5">
               <span className="text-slate-500">Weight: </span>
-              <span className="text-white font-medium">{kgToLbs(day.body_composition.weight_kg)} lbs</span>
+              <span className="text-white font-medium">{formatWeight(day.body_composition.weight_kg, units)}</span>
             </div>
           )}
           {day.body_composition.body_fat_pct && (
@@ -286,6 +281,7 @@ function TrendSpark({ values, label, unit, color = '#60a5fa' }: {
 // ── Period averages card ─────────────────────────────────────────────
 
 function AveragesCard({ avgs, cats }: { avgs: PeriodAverages; cats: Set<ReportCategory> }) {
+  const { formatDistance, units } = useUnits();
   const items: { label: string; value: string }[] = [];
 
   if (cats.has('health')) {
@@ -298,7 +294,7 @@ function AveragesCard({ avgs, cats }: { avgs: PeriodAverages; cats: Set<ReportCa
   }
   if (cats.has('activities')) {
     items.push({ label: 'Activities', value: avgs.total_activities.toString() });
-    if (avgs.total_distance_m > 0) items.push({ label: 'Total Distance', value: `${(avgs.total_distance_m / 1609.34).toFixed(1)} mi` });
+    if (avgs.total_distance_m > 0) items.push({ label: 'Total Distance', value: formatDistance(avgs.total_distance_m) });
     if (avgs.total_duration_s > 0) items.push({ label: 'Total Time', value: secondsToHM(avgs.total_duration_s) });
     if (avgs.total_active_kcal > 0) items.push({ label: 'Activity Cal', value: Math.round(avgs.total_active_kcal).toLocaleString() });
   }
@@ -311,7 +307,7 @@ function AveragesCard({ avgs, cats }: { avgs: PeriodAverages; cats: Set<ReportCa
     items.push({ label: 'Days Logged', value: `${avgs.nutrition_days_logged}/${avgs.days}` });
   }
   if (cats.has('body_composition') && avgs.avg_weight_kg != null) {
-    items.push({ label: 'Avg Weight', value: `${kgToLbs(avgs.avg_weight_kg)} lbs` });
+    items.push({ label: 'Avg Weight', value: formatWeight(avgs.avg_weight_kg, units) });
   }
 
   if (items.length === 0) return null;
@@ -336,6 +332,7 @@ function AveragesCard({ avgs, cats }: { avgs: PeriodAverages; cats: Set<ReportCa
 
 export default function ReportsPage() {
   const { user } = useAuth();
+  const { formatDistance, units } = useUnits();
   const today = new Date().toISOString().split('T')[0];
 
   const [preset, setPreset] = useState<DatePreset>('14d');
@@ -674,7 +671,7 @@ export default function ReportsPage() {
                           {day.activities && day.activities.length > 0 && categories.has('activities') && (
                             <div className="text-[10px] text-slate-400 truncate min-w-0">
                               {day.activities.map((a) => {
-                                const dist = a.distance_m ? `${metersToMiles(a.distance_m)}mi` : secondsToHM(a.duration_s);
+                                const dist = a.distance_m ? formatDistance(a.distance_m, 1) : secondsToHM(a.duration_s);
                                 return `${(a.workout_type || a.sport || '').replace(/_/g, ' ')} ${dist}`;
                               }).join(' + ')}
                             </div>
@@ -690,7 +687,7 @@ export default function ReportsPage() {
                           {/* Weight */}
                           {day.body_composition?.weight_kg && categories.has('body_composition') && (
                             <div className="text-[10px] text-slate-400 flex-shrink-0">
-                              {kgToLbs(day.body_composition.weight_kg)}lb
+                              {formatWeight(day.body_composition.weight_kg, units)}
                             </div>
                           )}
 

@@ -11,7 +11,7 @@ import {
 } from './shared';
 
 export function HikingDetail({ activity }: { activity: CrossTrainingActivity }) {
-  const { formatDistance, formatElevation } = useUnits();
+  const { formatDistance, formatElevation, units } = useUnits();
 
   const config = SPORT_CONFIG[activity.sport_type] ?? SPORT_CONFIG.hiking;
   const Icon = config.icon;
@@ -20,9 +20,12 @@ export function HikingDetail({ activity }: { activity: CrossTrainingActivity }) 
   const hasElevation = activity.total_elevation_gain_m != null && activity.total_elevation_gain_m > 0;
   const isWalking = activity.sport_type === 'walking';
 
-  const avgSpeedMph = activity.distance_m > 0 && activity.moving_time_s > 0
-    ? (activity.distance_m / 1609.344) / (activity.moving_time_s / 3600)
+  const avgSpeed = activity.distance_m > 0 && activity.moving_time_s > 0
+    ? (units === 'imperial'
+        ? (activity.distance_m / 1609.344) / (activity.moving_time_s / 3600)
+        : (activity.distance_m / 1000) / (activity.moving_time_s / 3600))
     : null;
+  const speedUnit = units === 'imperial' ? 'mph' : 'km/h';
 
   return (
     <div className="space-y-4">
@@ -46,7 +49,7 @@ export function HikingDetail({ activity }: { activity: CrossTrainingActivity }) 
           {hasDistance && (
             <p className="text-xs text-slate-500">
               {formatDistance(activity.distance_m)} in {formatDuration(activity.moving_time_s)}
-              {avgSpeedMph != null && <>{' · '}{avgSpeedMph.toFixed(1)} mph avg</>}
+              {avgSpeed != null && <>{' · '}{avgSpeed.toFixed(1)} {speedUnit} avg</>}
             </p>
           )}
         </div>
@@ -58,10 +61,10 @@ export function HikingDetail({ activity }: { activity: CrossTrainingActivity }) 
             </span>
             <span className="text-sm text-slate-400">elevation gain</span>
           </div>
-          {hasDistance && avgSpeedMph != null && (
+          {hasDistance && avgSpeed != null && (
             <p className="text-xs text-slate-500">
               {formatDistance(activity.distance_m)} in {formatDuration(activity.moving_time_s)}
-              {' · '}{avgSpeedMph.toFixed(1)} mph avg
+              {' · '}{avgSpeed.toFixed(1)} {speedUnit} avg
             </p>
           )}
         </div>
@@ -73,8 +76,8 @@ export function HikingDetail({ activity }: { activity: CrossTrainingActivity }) 
         {hasDistance && (
           <MetricCard label="Distance" value={formatDistance(activity.distance_m)} />
         )}
-        {avgSpeedMph != null && (
-          <MetricCard label="Avg Speed" value={avgSpeedMph.toFixed(1)} unit="mph" />
+        {avgSpeed != null && (
+          <MetricCard label="Avg Speed" value={avgSpeed.toFixed(1)} unit={speedUnit} />
         )}
         {activity.average_hr != null && (
           <MetricCard label="Avg HR" value={activity.average_hr.toString()} unit="bpm" />
