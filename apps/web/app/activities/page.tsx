@@ -10,7 +10,7 @@
 
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
 
-import { useEffect, useMemo, useState } from 'react';
+import { Suspense, useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useActivities, useActivitiesSummary } from '@/lib/hooks/queries/activities';
 import { ActivityCard } from '@/components/activities/ActivityCard';
@@ -35,6 +35,15 @@ import { Activity, BarChart3, Clock, Flame, Trophy, ChevronLeft, ChevronRight } 
 import type { ActivityListParams } from '@/lib/api/services/activities';
 
 export default function ActivitiesPage() {
+  // useSearchParams must be inside a Suspense boundary per Next.js 14
+  return (
+    <Suspense fallback={null}>
+      <ActivitiesPageInner />
+    </Suspense>
+  );
+}
+
+function ActivitiesPageInner() {
   const { units, formatDistance, formatPace, distanceUnitShort, paceUnit } = useUnits();
   const { 
     isSelected, 
@@ -56,12 +65,15 @@ export default function ActivitiesPage() {
   });
   const [filterState, setFilterState] = useState<ActivityFiltersState>(EMPTY_FILTERS);
 
-  // Hydrate filter state from URL on first load (deep-link restore)
+  // Hydrate filter state from URL on first load (deep-link restore).
+  // We intentionally only run this on mount — subsequent URL changes are
+  // driven by user filter input, which already updates state directly.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (!searchParams) return;
     const restored = paramsToFilters(searchParams);
     setFilterState(restored);
-  }, []); // intentionally only on mount; URL changes after that come from us
+  }, []);
 
   // Combine sort/pagination filters with the structural filter state
   const combinedParams = useMemo<ActivityListParams>(() => {
