@@ -100,6 +100,16 @@ def get_auth_url(
 
     Access is gated by the `garmin_connect_enabled` feature flag.
     """
+    # Demo accounts must not link real provider accounts. A demo athlete
+    # is shared across viewers (race directors, prospects); allowing them
+    # to start a real Garmin OAuth flow would store private tokens on the
+    # shared account and leak data. Mirrors the Strava /auth-url guard.
+    if getattr(current_user, "is_demo", False):
+        raise HTTPException(
+            status_code=403,
+            detail="Demo accounts cannot connect to Garmin. Create a free account to link your data.",
+        )
+
     if not is_feature_enabled("garmin_connect_enabled", str(current_user.id), db):
         raise HTTPException(
             status_code=403,
@@ -172,6 +182,17 @@ def garmin_callback(
     if not athlete:
         return RedirectResponse(url="/settings?garmin=error&reason=athlete_not_found", status_code=302)
     was_connected = bool(athlete.garmin_connected)
+
+    # --- Demo guard (defense in depth) ---
+    # Even if /auth-url's guard was bypassed (e.g., reused state token from
+    # before is_demo was set), the callback must refuse to store tokens on
+    # the shared demo account. Mirrors the Strava callback double-guard.
+    if getattr(athlete, "is_demo", False):
+        logger.warning(
+            "Garmin callback blocked for demo athlete %s", athlete_id_str
+        )
+        redirect_url = _web_redirect(request, f"{return_to}?garmin=error&reason=demo")
+        return RedirectResponse(url=redirect_url, status_code=302)
 
     # --- Feature flag gate (defense in depth) ---
     # Prevents token storage and backfill for non-allowlisted athletes even if
