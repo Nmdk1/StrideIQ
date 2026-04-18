@@ -144,6 +144,49 @@ export interface FuelingProfileEntry {
   product: FuelingProduct;
 }
 
+export interface MealTemplateItem {
+  food: string;
+  grams?: number;
+  calories?: number;
+  protein_g?: number;
+  carbs_g?: number;
+  fat_g?: number;
+  fiber_g?: number;
+  source_upc?: string;
+  source_fdc_id?: number;
+}
+
+export interface MealTemplate {
+  id: number;
+  name: string | null;
+  is_user_named: boolean;
+  times_confirmed: number;
+  last_used: string | null;
+  items: MealTemplateItem[];
+  total_calories: number;
+  total_protein_g: number;
+  total_carbs_g: number;
+  total_fat_g: number;
+  total_fiber_g: number;
+}
+
+export interface MealTemplateCreate {
+  name: string;
+  items: MealTemplateItem[];
+}
+
+export interface MealTemplateUpdate {
+  name?: string;
+  items?: MealTemplateItem[];
+}
+
+export interface MealTemplateLogRequest {
+  date: string;
+  entry_type?: 'pre_activity' | 'during_activity' | 'post_activity' | 'daily';
+  activity_id?: string;
+  notes_override?: string;
+}
+
 export const nutritionService = {
   async nlParsingAvailable(): Promise<{ available: boolean }> {
     return apiClient.get<{ available: boolean }>('/v1/nutrition/parse/available', { skipAuth: true, retries: 0 });
@@ -256,6 +299,30 @@ export const nutritionService = {
   async getDailyTarget(targetDate?: string): Promise<DailyTarget | null> {
     const qs = targetDate ? `?target_date=${targetDate}` : '';
     return apiClient.get<DailyTarget | null>(`/v1/nutrition/daily-target${qs}`);
+  },
+
+  async listMeals(): Promise<MealTemplate[]> {
+    return apiClient.get<MealTemplate[]>('/v1/nutrition/meals');
+  },
+
+  async createMeal(meal: MealTemplateCreate): Promise<MealTemplate> {
+    return apiClient.post<MealTemplate>('/v1/nutrition/meals', meal);
+  },
+
+  async updateMeal(id: number, updates: MealTemplateUpdate): Promise<MealTemplate> {
+    return apiClient.patch<MealTemplate>(`/v1/nutrition/meals/${id}`, updates);
+  },
+
+  async deleteMeal(id: number): Promise<void> {
+    return apiClient.delete<void>(`/v1/nutrition/meals/${id}`);
+  },
+
+  async logMeal(id: number, body: MealTemplateLogRequest): Promise<NutritionEntry> {
+    return apiClient.post<NutritionEntry>(`/v1/nutrition/meals/${id}/log`, body);
+  },
+
+  async dismissMealNamePrompt(id: number): Promise<void> {
+    return apiClient.post<void>(`/v1/nutrition/meals/${id}/dismiss-name-prompt`, {});
   },
 
   async exportCsv(startDate: string, endDate: string): Promise<void> {

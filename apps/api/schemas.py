@@ -303,6 +303,50 @@ class BarcodeScanResponse(BaseModel):
     override_id: Optional[int] = None
 
 
+class MealTemplateItem(BaseModel):
+    """One food in a saved meal."""
+    food: str
+    grams: Optional[float] = None
+    calories: Optional[float] = None
+    protein_g: Optional[float] = None
+    carbs_g: Optional[float] = None
+    fat_g: Optional[float] = None
+    fiber_g: Optional[float] = None
+    source_upc: Optional[str] = None
+    source_fdc_id: Optional[int] = None
+
+
+class MealTemplateCreate(BaseModel):
+    name: str
+    items: list[MealTemplateItem]
+
+
+class MealTemplateUpdate(BaseModel):
+    name: Optional[str] = None
+    items: Optional[list[MealTemplateItem]] = None
+
+
+class MealTemplateResponse(BaseModel):
+    id: int
+    name: Optional[str] = None
+    is_user_named: bool
+    times_confirmed: int
+    last_used: Optional[datetime] = None
+    items: list[dict]
+    total_calories: float = 0.0
+    total_protein_g: float = 0.0
+    total_carbs_g: float = 0.0
+    total_fat_g: float = 0.0
+    total_fiber_g: float = 0.0
+
+
+class MealTemplateLogRequest(BaseModel):
+    date: date
+    entry_type: str = "daily"
+    activity_id: Optional[UUID] = None
+    notes_override: Optional[str] = None
+
+
 class FuelingProductResponse(BaseModel):
     id: int
     brand: str

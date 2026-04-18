@@ -96,7 +96,12 @@ jobs:
             tests/test_phase8_token_jwt_invariants.py \
             tests/test_phase9_backend_smoke_golden_paths.py \
             tests/test_limiter_coach_integration.py \
-            tests/test_coach_lifecycle_quality.py
+            tests/test_coach_lifecycle_quality.py \
+            tests/test_nutrition_past_day_window.py \
+            tests/test_food_override_service.py \
+            tests/test_food_override_endpoints.py \
+            tests/test_meal_template_service.py \
+            tests/test_meal_template_endpoints.py
 
   backend-test:
     name: Backend Tests

@@ -114,6 +114,20 @@ class FuelingProduct(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 class MealTemplate(Base):
+    """Recurring or user-saved meal pattern for one-tap re-logging.
+
+    Two ways a row gets created:
+      1. Implicit learning — after a confirmed photo parse the signature
+         is upserted; once `times_confirmed >= 3` we surface a "name this
+         meal" prompt to the athlete.
+      2. Explicit save — athlete taps "Save as meal" on a logged entry or
+         the meal builder; `is_user_named=True` and `name` is required.
+
+    A template's `items` is a JSONB list of {food, grams?, calories,
+    protein_g, carbs_g, fat_g, fiber_g, source_upc?, source_fdc_id?}.
+    Logging a template produces a NutritionEntry with totals from items.
+    """
+
     __tablename__ = "meal_template"
 
     id = Column(Integer, primary_key=True)
@@ -123,8 +137,18 @@ class MealTemplate(Base):
     times_confirmed = Column(Integer, server_default="1")
     last_used = Column(DateTime(timezone=True), server_default=func.now())
 
+    name = Column(Text, nullable=True)
+    is_user_named = Column(Boolean, nullable=False, server_default="false")
+    name_prompted_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
     __table_args__ = (
         UniqueConstraint("athlete_id", "meal_signature", name="uq_meal_template_athlete_sig"),
+        Index(
+            "ix_meal_template_athlete_named",
+            "athlete_id",
+            postgresql_where=text("is_user_named = true"),
+        ),
     )
 
 

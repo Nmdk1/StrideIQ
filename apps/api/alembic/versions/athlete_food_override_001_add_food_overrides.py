@@ -16,8 +16,6 @@ Idempotent:
 """
 
 from alembic import op
-import sqlalchemy as sa
-from sqlalchemy.dialects.postgresql import UUID
 
 
 revision = "athlete_food_override_001"

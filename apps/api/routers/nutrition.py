@@ -39,6 +39,10 @@ from schemas import (
     FuelingProductResponse,
     FuelingProfileAdd,
     FuelingProfileResponse,
+    MealTemplateCreate,
+    MealTemplateLogRequest,
+    MealTemplateResponse,
+    MealTemplateUpdate,
     NutritionEntryCreate,
     NutritionEntryResponse,
     NutritionEntryUpdate,
@@ -394,7 +398,7 @@ async def parse_photo(
     if result.items:
         from services.meal_template_service import find_template
         food_names = [item.food for item in result.items]
-        template_match = find_template(str(current_user.id), food_names, db)
+        template_match = find_template(current_user.id, food_names, db)
 
     items_out: list[PhotoParseItemResponse] = []
     total_cal = total_p = total_c = total_f = total_fib = 0.0
@@ -934,6 +938,202 @@ def export_nutrition_csv(
 
 
 # ---------------------------------------------------------------------------
+# Saved meals (Phase 3)
+# ---------------------------------------------------------------------------
+# An athlete can save a recurring meal under a name ("Workday Breakfast")
+# and re-log it in one tap.  The meal_template table also backs the
+# implicit-learner that suggests templates after repeat photo confirmations.
+
+def _serialize_template(t) -> MealTemplateResponse:
+    items = list(t.items or [])
+    totals = {"calories": 0.0, "protein_g": 0.0, "carbs_g": 0.0, "fat_g": 0.0, "fiber_g": 0.0}
+    for it in items:
+        for k in totals:
+            v = it.get(k) if isinstance(it, dict) else None
+            if isinstance(v, (int, float)):
+                totals[k] += float(v)
+    return MealTemplateResponse(
+        id=t.id,
+        name=t.name,
+        is_user_named=bool(t.is_user_named),
+        times_confirmed=int(t.times_confirmed or 0),
+        last_used=t.last_used,
+        items=items,
+        total_calories=totals["calories"],
+        total_protein_g=totals["protein_g"],
+        total_carbs_g=totals["carbs_g"],
+        total_fat_g=totals["fat_g"],
+        total_fiber_g=totals["fiber_g"],
+    )
+
+
+@router.get("/nutrition/meals", response_model=List[MealTemplateResponse])
+def list_meals(
+    current_user: Athlete = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """List the athlete's saved/named meals, most-recently-used first."""
+    from services.meal_template_service import list_named_templates
+
+    return [_serialize_template(t) for t in list_named_templates(current_user.id, db)]
+
+
+@router.post("/nutrition/meals", response_model=MealTemplateResponse, status_code=201)
+def create_meal(
+    meal: MealTemplateCreate,
+    current_user: Athlete = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Explicitly save a meal under a user-given name."""
+    from services.meal_template_service import TemplateItem, save_named_template
+
+    try:
+        items = [
+            TemplateItem(
+                food=i.food,
+                grams=i.grams,
+                calories=i.calories,
+                protein_g=i.protein_g,
+                carbs_g=i.carbs_g,
+                fat_g=i.fat_g,
+                fiber_g=i.fiber_g,
+                source_upc=i.source_upc,
+                source_fdc_id=i.source_fdc_id,
+            )
+            for i in meal.items
+        ]
+        row = save_named_template(current_user.id, meal.name, items, db)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    return _serialize_template(row)
+
+
+@router.patch("/nutrition/meals/{meal_id}", response_model=MealTemplateResponse)
+def update_meal(
+    meal_id: int,
+    updates: MealTemplateUpdate,
+    current_user: Athlete = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Rename a saved meal or replace its items."""
+    from services.meal_template_service import TemplateItem, update_template
+
+    new_items = None
+    if updates.items is not None:
+        new_items = [
+            TemplateItem(
+                food=i.food,
+                grams=i.grams,
+                calories=i.calories,
+                protein_g=i.protein_g,
+                carbs_g=i.carbs_g,
+                fat_g=i.fat_g,
+                fiber_g=i.fiber_g,
+                source_upc=i.source_upc,
+                source_fdc_id=i.source_fdc_id,
+            )
+            for i in updates.items
+        ]
+
+    try:
+        row = update_template(
+            meal_id, current_user.id, db, name=updates.name, items=new_items
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    if not row:
+        raise HTTPException(status_code=404, detail="Meal not found")
+    return _serialize_template(row)
+
+
+@router.delete("/nutrition/meals/{meal_id}", status_code=204)
+def delete_meal(
+    meal_id: int,
+    current_user: Athlete = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    from services.meal_template_service import delete_template
+
+    if not delete_template(meal_id, current_user.id, db):
+        raise HTTPException(status_code=404, detail="Meal not found")
+    return None
+
+
+@router.post(
+    "/nutrition/meals/{meal_id}/log",
+    response_model=NutritionEntryResponse,
+    status_code=201,
+)
+def log_meal(
+    meal_id: int,
+    body: MealTemplateLogRequest,
+    current_user: Athlete = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Log a saved meal as a NutritionEntry on the requested date."""
+    from services.meal_template_service import log_template_for_athlete
+
+    _validate_entry_date(body.date)
+
+    if body.entry_type in ("pre_activity", "during_activity", "post_activity"):
+        if not body.activity_id:
+            raise HTTPException(
+                status_code=400,
+                detail=f"activity_id required for '{body.entry_type}'",
+            )
+        activity = db.query(Activity).filter(
+            Activity.id == body.activity_id,
+            Activity.athlete_id == current_user.id,
+        ).first()
+        if not activity:
+            raise HTTPException(status_code=404, detail="Activity not found")
+    elif body.entry_type == "daily":
+        if body.activity_id is not None:
+            raise HTTPException(
+                status_code=400, detail="activity_id must be None for 'daily'"
+            )
+    else:
+        raise HTTPException(
+            status_code=400, detail=f"Invalid entry_type: '{body.entry_type}'"
+        )
+
+    entry = log_template_for_athlete(
+        meal_id,
+        current_user.id,
+        body.date,
+        body.entry_type,
+        db,
+        activity_id=body.activity_id,
+        notes_override=body.notes_override,
+    )
+    if not entry:
+        raise HTTPException(status_code=404, detail="Meal not found")
+
+    invalidate_athlete_cache(str(current_user.id))
+    invalidate_correlation_cache(str(current_user.id))
+
+    return entry
+
+
+@router.post(
+    "/nutrition/meals/{meal_id}/dismiss-name-prompt",
+    status_code=204,
+)
+def dismiss_name_prompt(
+    meal_id: int,
+    current_user: Athlete = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Record that the name-this-meal prompt has been shown so we don't nag."""
+    from services.meal_template_service import mark_name_prompt_shown
+
+    mark_name_prompt_shown(meal_id, current_user.id, db)
+    return None
+
+
+# ---------------------------------------------------------------------------
 # CRUD (existing, with new field support)
 # ---------------------------------------------------------------------------
 
@@ -986,11 +1186,22 @@ def create_nutrition_entry(
     db.commit()
     db.refresh(db_entry)
 
-    if nutrition.macro_source and nutrition.notes:
+    # Implicit meal-template learning.  Only learn from multi-item entries
+    # that look like a real meal — single-item barcode logs are noise.
+    # (upsert_template additionally guards on len(food_names) < 2.)
+    if (
+        nutrition.macro_source
+        and nutrition.notes
+        and "," in nutrition.notes
+        and nutrition.macro_source != "branded_barcode"
+    ):
         try:
             from services.meal_template_service import upsert_template
-            items = [{"food": nutrition.notes, "calories": nutrition.calories}]
-            upsert_template(str(current_user.id), [nutrition.notes], items, db)
+            food_names = [
+                n.split("(")[0].strip() for n in nutrition.notes.split(",") if n.strip()
+            ]
+            items = [{"food": fn} for fn in food_names if fn]
+            upsert_template(current_user.id, food_names, items, db)
         except Exception:
             pass
 

@@ -17,9 +17,13 @@ import {
   type NutritionGoal,
   type NutritionGoalRequest,
   type DailyTarget,
+  type MealTemplate,
+  type MealTemplateCreate,
+  type MealTemplateUpdate,
+  type MealTemplateLogRequest,
 } from '../../api/services/nutrition';
 
-export type { NutritionEntry, PhotoParseResult, BarcodeScanResult, FuelingProduct, FuelingProfileEntry, NutritionSummary, ActivityNutritionResponse, NutritionGoal, DailyTarget };
+export type { NutritionEntry, PhotoParseResult, BarcodeScanResult, FuelingProduct, FuelingProfileEntry, NutritionSummary, ActivityNutritionResponse, NutritionGoal, DailyTarget, MealTemplate, MealTemplateCreate, MealTemplateUpdate, MealTemplateLogRequest };
 
 export const nutritionKeys = {
   all: ['nutrition'] as const,
@@ -33,6 +37,7 @@ export const nutritionKeys = {
   activityLinked: (days: number) => [...nutritionKeys.all, 'activityLinked', days] as const,
   goal: () => [...nutritionKeys.all, 'goal'] as const,
   dailyTarget: (date?: string) => [...nutritionKeys.all, 'dailyTarget', date] as const,
+  meals: () => [...nutritionKeys.all, 'meals'] as const,
 } as const;
 
 export function useNLParsingAvailable() {
@@ -206,5 +211,57 @@ export function useDailyTarget(targetDate?: string) {
     queryKey: nutritionKeys.dailyTarget(targetDate),
     queryFn: () => nutritionService.getDailyTarget(targetDate),
     staleTime: 60 * 1000,
+  });
+}
+
+export function useMealTemplates() {
+  return useQuery<MealTemplate[]>({
+    queryKey: nutritionKeys.meals(),
+    queryFn: () => nutritionService.listMeals(),
+    staleTime: 30 * 1000,
+  });
+}
+
+export function useCreateMealTemplate() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (meal: MealTemplateCreate) => nutritionService.createMeal(meal),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: nutritionKeys.meals() });
+    },
+  });
+}
+
+export function useUpdateMealTemplate() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, updates }: { id: number; updates: MealTemplateUpdate }) =>
+      nutritionService.updateMeal(id, updates),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: nutritionKeys.meals() });
+    },
+  });
+}
+
+export function useDeleteMealTemplate() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: number) => nutritionService.deleteMeal(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: nutritionKeys.meals() });
+    },
+  });
+}
+
+export function useLogMealTemplate() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, body }: { id: number; body: MealTemplateLogRequest }) =>
+      nutritionService.logMeal(id, body),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: nutritionKeys.lists() });
+      queryClient.invalidateQueries({ queryKey: nutritionKeys.summary(7) });
+      queryClient.invalidateQueries({ queryKey: nutritionKeys.meals() });
+    },
   });
 }

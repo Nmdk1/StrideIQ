@@ -22,12 +22,18 @@ import {
   useNutritionGoal,
   useUpsertNutritionGoal,
   useDailyTarget,
+  useMealTemplates,
+  useCreateMealTemplate,
+  useDeleteMealTemplate,
+  useUpdateMealTemplate,
+  useLogMealTemplate,
 } from '@/lib/hooks/queries/nutrition';
+import type { MealTemplate, MealTemplateItem } from '@/lib/api/services/nutrition';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { nutritionService } from '@/lib/api/services/nutrition';
 import type { NutritionEntryCreate, DaySummary } from '@/lib/api/services/nutrition';
 
-type ActiveTab = 'log' | 'history' | 'insights';
+type ActiveTab = 'log' | 'meals' | 'history' | 'insights';
 
 function macroSourceBadge(source: string | undefined) {
   if (!source) return null;
@@ -163,6 +169,18 @@ export default function NutritionPage() {
   const upsertGoal = useUpsertNutritionGoal();
   const { data: dailyTarget } = useDailyTarget();
   const { data: historyTarget } = useDailyTarget(selectedDate !== today ? selectedDate : undefined);
+
+  const { data: meals } = useMealTemplates();
+  const createMeal = useCreateMealTemplate();
+  const deleteMeal = useDeleteMealTemplate();
+  const updateMeal = useUpdateMealTemplate();
+  const logMeal = useLogMealTemplate();
+  const [showMealForm, setShowMealForm] = useState(false);
+  const [mealForm, setMealForm] = useState<{ name: string; items: MealTemplateItem[] }>({
+    name: '',
+    items: [{ food: '', calories: undefined, protein_g: undefined, carbs_g: undefined, fat_g: undefined }],
+  });
+  const [editingMealId, setEditingMealId] = useState<number | null>(null);
 
   const [showGoalSetup, setShowGoalSetup] = useState(false);
   const [goalForm, setGoalForm] = useState({
@@ -653,7 +671,7 @@ export default function NutritionPage() {
 
           {/* Tab Bar */}
           <div className="flex bg-slate-800 rounded-xl border border-slate-700/50 p-1 gap-1">
-            {([['log', 'Log'], ['history', 'History'], ['insights', 'Insights']] as const).map(([key, label]) => (
+            {([['log', 'Log'], ['meals', 'Meals'], ['history', 'History'], ['insights', 'Insights']] as const).map(([key, label]) => (
               <button
                 key={key}
                 onClick={() => setActiveTab(key)}
@@ -1491,6 +1509,232 @@ export default function NutritionPage() {
                   ))}
                 </div>
               )}
+            </>
+          )}
+
+          {/* ======================== TAB: MEALS (Saved meals) ======================== */}
+          {activeTab === 'meals' && (
+            <>
+              <div className="bg-slate-800 rounded-xl border border-slate-700/50 p-4">
+                <div className="flex items-center justify-between mb-3">
+                  <h2 className="text-sm font-semibold">Saved meals</h2>
+                  <button
+                    onClick={() => {
+                      setEditingMealId(null);
+                      setMealForm({
+                        name: '',
+                        items: [{ food: '', calories: undefined, protein_g: undefined, carbs_g: undefined, fat_g: undefined }],
+                      });
+                      setShowMealForm(true);
+                    }}
+                    className="text-xs px-3 py-1.5 rounded-lg bg-blue-600 text-white hover:bg-blue-700 active:bg-blue-800 min-h-[36px]"
+                  >
+                    + New meal
+                  </button>
+                </div>
+                <p className="text-xs text-slate-400 mb-3">
+                  Save meals you log often (like &ldquo;Workday Breakfast&rdquo;) and re-log them in one tap.
+                </p>
+
+                {showMealForm && (
+                  <div className="mb-4 p-3 bg-slate-900 rounded-lg border border-slate-700/50 space-y-2">
+                    <input
+                      type="text"
+                      placeholder="Meal name (e.g. Workday Breakfast)"
+                      value={mealForm.name}
+                      onChange={(e) => setMealForm({ ...mealForm, name: e.target.value })}
+                      className="w-full px-3 py-2 bg-slate-800 rounded text-sm"
+                    />
+                    {mealForm.items.map((item, idx) => (
+                      <div key={idx} className="grid grid-cols-12 gap-1.5 items-center">
+                        <input
+                          type="text"
+                          placeholder="Food"
+                          value={item.food}
+                          onChange={(e) => {
+                            const items = [...mealForm.items];
+                            items[idx] = { ...items[idx], food: e.target.value };
+                            setMealForm({ ...mealForm, items });
+                          }}
+                          className="col-span-5 px-2 py-1.5 bg-slate-800 rounded text-xs"
+                        />
+                        <input
+                          type="number"
+                          placeholder="cal"
+                          value={item.calories ?? ''}
+                          onChange={(e) => {
+                            const items = [...mealForm.items];
+                            items[idx] = { ...items[idx], calories: e.target.value ? Number(e.target.value) : undefined };
+                            setMealForm({ ...mealForm, items });
+                          }}
+                          className="col-span-2 px-2 py-1.5 bg-slate-800 rounded text-xs"
+                        />
+                        <input
+                          type="number"
+                          placeholder="P"
+                          value={item.protein_g ?? ''}
+                          onChange={(e) => {
+                            const items = [...mealForm.items];
+                            items[idx] = { ...items[idx], protein_g: e.target.value ? Number(e.target.value) : undefined };
+                            setMealForm({ ...mealForm, items });
+                          }}
+                          className="col-span-1 px-1.5 py-1.5 bg-slate-800 rounded text-xs"
+                        />
+                        <input
+                          type="number"
+                          placeholder="C"
+                          value={item.carbs_g ?? ''}
+                          onChange={(e) => {
+                            const items = [...mealForm.items];
+                            items[idx] = { ...items[idx], carbs_g: e.target.value ? Number(e.target.value) : undefined };
+                            setMealForm({ ...mealForm, items });
+                          }}
+                          className="col-span-1 px-1.5 py-1.5 bg-slate-800 rounded text-xs"
+                        />
+                        <input
+                          type="number"
+                          placeholder="F"
+                          value={item.fat_g ?? ''}
+                          onChange={(e) => {
+                            const items = [...mealForm.items];
+                            items[idx] = { ...items[idx], fat_g: e.target.value ? Number(e.target.value) : undefined };
+                            setMealForm({ ...mealForm, items });
+                          }}
+                          className="col-span-1 px-1.5 py-1.5 bg-slate-800 rounded text-xs"
+                        />
+                        <button
+                          onClick={() => {
+                            const items = mealForm.items.filter((_, i) => i !== idx);
+                            setMealForm({ ...mealForm, items: items.length ? items : [{ food: '' }] });
+                          }}
+                          className="col-span-2 text-xs text-slate-400 hover:text-red-400"
+                          aria-label="Remove item"
+                        >
+                          remove
+                        </button>
+                      </div>
+                    ))}
+                    <button
+                      onClick={() => setMealForm({ ...mealForm, items: [...mealForm.items, { food: '' }] })}
+                      className="text-xs text-blue-400 hover:text-blue-300"
+                    >
+                      + add another item
+                    </button>
+                    <div className="flex gap-2 pt-2">
+                      <button
+                        onClick={async () => {
+                          const validItems = mealForm.items.filter((i) => i.food.trim());
+                          if (!mealForm.name.trim() || !validItems.length) {
+                            showToast('Name and at least one food required');
+                            return;
+                          }
+                          try {
+                            if (editingMealId) {
+                              await updateMeal.mutateAsync({
+                                id: editingMealId,
+                                updates: { name: mealForm.name.trim(), items: validItems },
+                              });
+                              showToast('Meal updated');
+                            } else {
+                              await createMeal.mutateAsync({ name: mealForm.name.trim(), items: validItems });
+                              showToast('Meal saved');
+                            }
+                            setShowMealForm(false);
+                            setEditingMealId(null);
+                          } catch {
+                            showToast('Failed to save meal');
+                          }
+                        }}
+                        className="flex-1 py-2 bg-blue-600 hover:bg-blue-700 rounded text-white text-sm"
+                      >
+                        {editingMealId ? 'Update' : 'Save meal'}
+                      </button>
+                      <button
+                        onClick={() => {
+                          setShowMealForm(false);
+                          setEditingMealId(null);
+                        }}
+                        className="px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded text-slate-300 text-sm"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {!meals && <p className="text-xs text-slate-500">Loading…</p>}
+                {meals && meals.length === 0 && !showMealForm && (
+                  <p className="text-xs text-slate-500 italic">No saved meals yet. Tap &ldquo;+ New meal&rdquo; above.</p>
+                )}
+                {meals && meals.length > 0 && (
+                  <div className="space-y-2">
+                    {meals.map((m: MealTemplate) => (
+                      <div key={m.id} className="p-3 rounded-lg bg-slate-900 border border-slate-700/50">
+                        <div className="flex items-start justify-between mb-1">
+                          <div>
+                            <div className="text-sm font-medium text-slate-100">{m.name || 'Unnamed meal'}</div>
+                            <div className="text-[11px] text-slate-400">
+                              {Math.round(m.total_calories)} cal · {Math.round(m.total_protein_g)}g P · {Math.round(m.total_carbs_g)}g C · {Math.round(m.total_fat_g)}g F
+                              {m.items?.length ? ` · ${m.items.length} item${m.items.length === 1 ? '' : 's'}` : ''}
+                            </div>
+                          </div>
+                          <div className="flex gap-1">
+                            <button
+                              onClick={async () => {
+                                try {
+                                  await logMeal.mutateAsync({
+                                    id: m.id,
+                                    body: { date: selectedDate, entry_type: 'daily' },
+                                  });
+                                  showToast(`Logged: ${m.name}`);
+                                } catch {
+                                  showToast('Failed to log');
+                                }
+                              }}
+                              className="text-xs px-3 py-1.5 rounded bg-blue-600 text-white hover:bg-blue-700 min-h-[36px]"
+                            >
+                              Log
+                            </button>
+                            <button
+                              onClick={() => {
+                                setEditingMealId(m.id);
+                                setMealForm({
+                                  name: m.name || '',
+                                  items: (m.items as MealTemplateItem[]) || [{ food: '' }],
+                                });
+                                setShowMealForm(true);
+                              }}
+                              className="text-xs px-2 py-1.5 rounded bg-slate-700 text-slate-300 hover:bg-slate-600 min-h-[36px]"
+                            >
+                              Edit
+                            </button>
+                            <button
+                              onClick={async () => {
+                                if (!confirm(`Delete "${m.name}"?`)) return;
+                                try {
+                                  await deleteMeal.mutateAsync(m.id);
+                                  showToast('Deleted');
+                                } catch {
+                                  showToast('Failed to delete');
+                                }
+                              }}
+                              className="text-xs px-2 py-1.5 rounded bg-slate-700 text-slate-400 hover:text-red-400 min-h-[36px]"
+                              aria-label="Delete meal"
+                            >
+                              ×
+                            </button>
+                          </div>
+                        </div>
+                        {m.items && m.items.length > 0 && (
+                          <div className="text-[11px] text-slate-500 truncate">
+                            {m.items.map((i) => i.food).filter(Boolean).join(', ')}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             </>
           )}
 
