@@ -410,6 +410,9 @@ class FuelingLogRequest(BaseModel):
     activity_id: Optional[UUID] = None
     quantity: float = 1.0
     timing: Optional[datetime] = None
+    # Optional explicit date so the shelf-tap one-tap log can backfill prior days.
+    # Defaults to athlete-local today when omitted.
+    date: Optional[date] = None
 
 
 class WorkPatternCreate(BaseModel):

@@ -146,6 +146,12 @@ export default function NutritionPage() {
   const [activeTab, setActiveTab] = useState<ActiveTab>('log');
   const [selectedDate, setSelectedDate] = useState(today);
 
+  // Date that all entry-create flows should target. On the History tab the user
+  // can pick any past day; everywhere else this stays today. Single source of
+  // truth so Photo / Scan / NL parse / Shelf / Type-it can all backfill.
+  const entryDate = activeTab === 'history' ? selectedDate : today;
+  const isBackfill = entryDate !== today;
+
   const { data: entries, isLoading } = useNutritionEntries({ start_date: today, end_date: today });
   const { data: nlAvailable } = useNLParsingAvailable();
   const { data: shelfItems } = useFuelingProfile();
@@ -244,12 +250,6 @@ export default function NutritionPage() {
     calories?: number; protein_g?: number; carbs_g?: number; fat_g?: number; notes?: string;
   }>({});
 
-  const [showHistoryAddForm, setShowHistoryAddForm] = useState(false);
-  const [historyAddForm, setHistoryAddForm] = useState<{
-    calories?: number; protein_g?: number; carbs_g?: number; fat_g?: number;
-    fiber_g?: number; notes: string;
-  }>({ notes: '' });
-
   const photoRef = useRef<HTMLInputElement>(null);
   const scannerRef = useRef<unknown>(null);
 
@@ -346,7 +346,7 @@ export default function NutritionPage() {
     try {
       await createEntry.mutateAsync({
         athlete_id: user?.id || '',
-        date: today,
+        date: entryDate,
         entry_type: 'daily',
         calories: Math.round(totalCal),
         protein_g: Math.round(totalP),
@@ -356,7 +356,7 @@ export default function NutritionPage() {
         notes,
         macro_source: primarySource,
       });
-      showToast('Meal logged');
+      showToast(isBackfill ? `Logged to ${formatDateShort(entryDate)}` : 'Meal logged');
       setPhotoPreview(null);
       setPhotoItems(null);
       setTemplateMatch(null);
@@ -459,7 +459,7 @@ export default function NutritionPage() {
     try {
       await createEntry.mutateAsync({
         athlete_id: user?.id || '',
-        date: today,
+        date: entryDate,
         entry_type: 'daily',
         calories: Math.round(barcodeResult.calories * s),
         protein_g: Math.round(barcodeResult.protein_g * s),
@@ -470,7 +470,7 @@ export default function NutritionPage() {
         source_upc: barcodeResult.upc,
         source_fdc_id: barcodeResult.fdc_id,
       });
-      showToast('Logged');
+      showToast(isBackfill ? `Logged to ${formatDateShort(entryDate)}` : 'Logged');
       setBarcodeResult(null);
     } catch {
       showToast('Failed to save');
@@ -479,8 +479,17 @@ export default function NutritionPage() {
 
   const handleShelfTap = async (productId: number, productName: string) => {
     try {
-      await logFueling.mutateAsync({ product_id: productId, entry_type: 'daily' });
-      showToast(`Logged: ${productName}`);
+      await logFueling.mutateAsync({
+        product_id: productId,
+        entry_type: 'daily',
+        // Backend defaults to today when omitted; always send so backfill works.
+        date: entryDate,
+      });
+      showToast(
+        isBackfill
+          ? `Logged: ${productName} → ${formatDateShort(entryDate)}`
+          : `Logged: ${productName}`,
+      );
     } catch {
       showToast('Failed to log');
     }
@@ -495,7 +504,10 @@ export default function NutritionPage() {
       setFormData((prev) => ({
         ...prev,
         athlete_id: user?.id || draft.athlete_id || prev.athlete_id,
-        date: draft.date || prev.date,
+        // Always use the active entry date (today on Today tab, selected day on
+        // History tab). The parser returns athlete-local today which would
+        // silently break past-day logging.
+        date: entryDate,
         entry_type: draft.entry_type || prev.entry_type,
         calories: draft.calories,
         protein_g: draft.protein_g,
@@ -515,7 +527,7 @@ export default function NutritionPage() {
     e.preventDefault();
     try {
       await createEntry.mutateAsync(formData);
-      showToast('Logged');
+      showToast(formData.date && formData.date !== today ? `Logged to ${formatDateShort(formData.date)}` : 'Logged');
       setShowForm(false);
       setFormData({
         athlete_id: user?.id || '',
@@ -589,39 +601,6 @@ export default function NutritionPage() {
     }
   };
 
-  const handleHistoryAdd = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const trimmedNotes = historyAddForm.notes.trim();
-    if (!trimmedNotes && historyAddForm.calories === undefined) {
-      showToast('Add at least a name or calories');
-      return;
-    }
-    try {
-      await createEntry.mutateAsync({
-        athlete_id: user?.id || '',
-        date: selectedDate,
-        entry_type: 'daily',
-        calories: historyAddForm.calories,
-        protein_g: historyAddForm.protein_g,
-        carbs_g: historyAddForm.carbs_g,
-        fat_g: historyAddForm.fat_g,
-        fiber_g: historyAddForm.fiber_g,
-        notes: trimmedNotes || undefined,
-        macro_source: 'manual',
-      });
-      setHistoryAddForm({ notes: '' });
-      setShowHistoryAddForm(false);
-      showToast(
-        selectedDate === today
-          ? 'Logged'
-          : `Logged to ${formatDateShort(selectedDate)}`
-      );
-    } catch (err) {
-      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
-      showToast(detail || 'Failed to add entry');
-    }
-  };
-
   const handleHistorySaveEdit = async () => {
     if (!editingEntryId) return;
     try {
@@ -690,6 +669,139 @@ export default function NutritionPage() {
           {toast && (
             <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 bg-green-800/90 text-green-100 px-4 py-2 rounded-lg text-sm shadow-lg">
               {toast}
+            </div>
+          )}
+
+          {/* Hidden photo capture input — must live at root so it stays mounted
+              across tabs. Both Today and History trigger photoRef.current.click(). */}
+          <input
+            ref={photoRef}
+            type="file"
+            accept="image/*"
+            capture="environment"
+            className="hidden"
+            onChange={handlePhotoCapture}
+          />
+
+          {/* Manual / NL-parse entry form. Mounted at root so the same form
+              works whether the user opened it from the Today or History tab.
+              The form's own date picker defaults to entryDate when opened. */}
+          {showForm && (activeTab === 'log' || activeTab === 'history') && (
+            <div className="bg-slate-800 rounded-xl border border-slate-700/50 p-4 space-y-4">
+              {isBackfill && (
+                <div className="text-xs text-amber-300 bg-amber-900/20 border border-amber-700/30 rounded px-2 py-1">
+                  Adding to {formatDateShort(entryDate)} (backfill)
+                </div>
+              )}
+              {nlAvailable?.available && (
+                <form onSubmit={handleParse}>
+                  <label className="block text-sm font-medium mb-2">Describe what you ate</label>
+                  <div className="flex gap-2">
+                    <input
+                      value={nlText}
+                      onChange={(e) => setNlText(e.target.value)}
+                      className="flex-1 px-3 py-2 bg-slate-900 border border-slate-700/50 rounded-lg text-white text-sm min-h-[44px]"
+                      placeholder='"oatmeal and black coffee"'
+                    />
+                    <button
+                      type="submit"
+                      disabled={parseText.isPending || !nlText.trim()}
+                      className="px-4 py-2 bg-slate-700 hover:bg-slate-600 disabled:bg-slate-800 disabled:cursor-not-allowed rounded-lg text-slate-200 text-sm font-medium min-h-[44px]"
+                    >
+                      {parseText.isPending ? <LoadingSpinner size="sm" /> : 'Parse'}
+                    </button>
+                  </div>
+                </form>
+              )}
+
+              <form onSubmit={handleSubmit} className="space-y-3">
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-medium mb-1 text-slate-400">Type</label>
+                    <select
+                      value={formData.entry_type}
+                      onChange={(e) => setFormData({ ...formData, entry_type: e.target.value as NutritionEntryCreate['entry_type'] })}
+                      className="w-full px-3 py-2 bg-slate-900 border border-slate-700/50 rounded-lg text-white text-sm min-h-[44px]"
+                    >
+                      <option value="daily">Daily</option>
+                      <option value="pre_activity">Pre-Run</option>
+                      <option value="during_activity">During Run</option>
+                      <option value="post_activity">Post-Run</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium mb-1 text-slate-400">Date</label>
+                    <input
+                      type="date"
+                      value={formData.date}
+                      onChange={(e) => setFormData({ ...formData, date: e.target.value })}
+                      className="w-full px-3 py-2 bg-slate-900 border border-slate-700/50 rounded-lg text-white text-sm min-h-[44px]"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  {[
+                    { label: 'Calories', key: 'calories' as const },
+                    { label: 'Protein (g)', key: 'protein_g' as const },
+                    { label: 'Carbs (g)', key: 'carbs_g' as const },
+                    { label: 'Fat (g)', key: 'fat_g' as const },
+                  ].map(({ label, key }) => (
+                    <div key={key}>
+                      <label className="block text-xs font-medium mb-1 text-slate-400">{label}</label>
+                      <input
+                        type="number"
+                        step="0.1"
+                        value={formData[key] ?? ''}
+                        onChange={(e) => setFormData({ ...formData, [key]: e.target.value ? parseFloat(e.target.value) : undefined })}
+                        className="w-full px-3 py-2 bg-slate-900 border border-slate-700/50 rounded-lg text-white text-sm min-h-[44px]"
+                        placeholder="—"
+                      />
+                    </div>
+                  ))}
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium mb-1 text-slate-400">Notes</label>
+                  <input
+                    value={formData.notes || ''}
+                    onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
+                    className="w-full px-3 py-2 bg-slate-900 border border-slate-700/50 rounded-lg text-white text-sm min-h-[44px]"
+                    placeholder="e.g., Pre-run oatmeal"
+                  />
+                </div>
+
+                <div className="flex gap-2">
+                  <button
+                    type="submit"
+                    disabled={createEntry.isPending}
+                    className="flex-1 py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-700 rounded-lg text-white font-medium text-sm min-h-[44px]"
+                  >
+                    {createEntry.isPending ? <LoadingSpinner size="sm" /> : 'Log Entry'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowForm(false);
+                      setNlText('');
+                      setFormData({
+                        athlete_id: user?.id || '',
+                        date: entryDate,
+                        entry_type: 'daily',
+                        calories: undefined,
+                        protein_g: undefined,
+                        carbs_g: undefined,
+                        fat_g: undefined,
+                        fiber_g: undefined,
+                        notes: '',
+                      });
+                    }}
+                    className="px-4 py-3 bg-slate-700 hover:bg-slate-600 rounded-lg text-slate-300 text-sm min-h-[44px]"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </form>
             </div>
           )}
 
@@ -1226,7 +1338,10 @@ export default function NutritionPage() {
                       <span className="text-xs text-slate-400">Scan</span>
                     </button>
                     <button
-                      onClick={() => setShowForm(true)}
+                      onClick={() => {
+                        setFormData((prev) => ({ ...prev, date: entryDate }));
+                        setShowForm(true);
+                      }}
                       className="flex flex-col items-center justify-center gap-2 bg-slate-800 rounded-xl border border-slate-700/50 p-4 min-h-[88px] active:bg-slate-700 transition-colors"
                     >
                       <svg className="w-7 h-7 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
@@ -1235,15 +1350,6 @@ export default function NutritionPage() {
                       <span className="text-xs text-slate-400">Type it</span>
                     </button>
                   </div>
-
-                  <input
-                    ref={photoRef}
-                    type="file"
-                    accept="image/*"
-                    capture="environment"
-                    className="hidden"
-                    onChange={handlePhotoCapture}
-                  />
                 </>
               )}
 
@@ -1281,121 +1387,6 @@ export default function NutritionPage() {
                   ) : (
                     <p className="text-xs text-slate-500">Tap &quot;+ Add products&quot; to build your fueling shelf for one-tap logging.</p>
                   )}
-                </div>
-              )}
-
-              {/* Text / Custom Entry Form */}
-              {showForm && (
-                <div className="bg-slate-800 rounded-xl border border-slate-700/50 p-4 space-y-4">
-                  {nlAvailable?.available && (
-                    <form onSubmit={handleParse}>
-                      <label className="block text-sm font-medium mb-2">Describe what you ate</label>
-                      <div className="flex gap-2">
-                        <input
-                          value={nlText}
-                          onChange={(e) => setNlText(e.target.value)}
-                          className="flex-1 px-3 py-2 bg-slate-900 border border-slate-700/50 rounded-lg text-white text-sm min-h-[44px]"
-                          placeholder='"oatmeal and black coffee"'
-                        />
-                        <button
-                          type="submit"
-                          disabled={parseText.isPending || !nlText.trim()}
-                          className="px-4 py-2 bg-slate-700 hover:bg-slate-600 disabled:bg-slate-800 disabled:cursor-not-allowed rounded-lg text-slate-200 text-sm font-medium min-h-[44px]"
-                        >
-                          {parseText.isPending ? <LoadingSpinner size="sm" /> : 'Parse'}
-                        </button>
-                      </div>
-                    </form>
-                  )}
-
-                  <form onSubmit={handleSubmit} className="space-y-3">
-                    <div className="grid grid-cols-2 gap-3">
-                      <div>
-                        <label className="block text-xs font-medium mb-1 text-slate-400">Type</label>
-                        <select
-                          value={formData.entry_type}
-                          onChange={(e) => setFormData({ ...formData, entry_type: e.target.value as NutritionEntryCreate['entry_type'] })}
-                          className="w-full px-3 py-2 bg-slate-900 border border-slate-700/50 rounded-lg text-white text-sm min-h-[44px]"
-                        >
-                          <option value="daily">Daily</option>
-                          <option value="pre_activity">Pre-Run</option>
-                          <option value="during_activity">During Run</option>
-                          <option value="post_activity">Post-Run</option>
-                        </select>
-                      </div>
-                      <div>
-                        <label className="block text-xs font-medium mb-1 text-slate-400">Date</label>
-                        <input
-                          type="date"
-                          value={formData.date}
-                          onChange={(e) => setFormData({ ...formData, date: e.target.value })}
-                          className="w-full px-3 py-2 bg-slate-900 border border-slate-700/50 rounded-lg text-white text-sm min-h-[44px]"
-                        />
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-3">
-                      {[
-                        { label: 'Calories', key: 'calories' as const },
-                        { label: 'Protein (g)', key: 'protein_g' as const },
-                        { label: 'Carbs (g)', key: 'carbs_g' as const },
-                        { label: 'Fat (g)', key: 'fat_g' as const },
-                      ].map(({ label, key }) => (
-                        <div key={key}>
-                          <label className="block text-xs font-medium mb-1 text-slate-400">{label}</label>
-                          <input
-                            type="number"
-                            step="0.1"
-                            value={formData[key] ?? ''}
-                            onChange={(e) => setFormData({ ...formData, [key]: e.target.value ? parseFloat(e.target.value) : undefined })}
-                            className="w-full px-3 py-2 bg-slate-900 border border-slate-700/50 rounded-lg text-white text-sm min-h-[44px]"
-                            placeholder="—"
-                          />
-                        </div>
-                      ))}
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-medium mb-1 text-slate-400">Notes</label>
-                      <input
-                        value={formData.notes || ''}
-                        onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-                        className="w-full px-3 py-2 bg-slate-900 border border-slate-700/50 rounded-lg text-white text-sm min-h-[44px]"
-                        placeholder="e.g., Pre-run oatmeal"
-                      />
-                    </div>
-
-                    <div className="flex gap-2">
-                      <button
-                        type="submit"
-                        disabled={createEntry.isPending}
-                        className="flex-1 py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-700 rounded-lg text-white font-medium text-sm min-h-[44px]"
-                      >
-                        {createEntry.isPending ? <LoadingSpinner size="sm" /> : 'Log Entry'}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setShowForm(false);
-                          setNlText('');
-                          setFormData({
-                            athlete_id: user?.id || '',
-                            date: today,
-                            entry_type: 'daily',
-                            calories: undefined,
-                            protein_g: undefined,
-                            carbs_g: undefined,
-                            fat_g: undefined,
-                            fiber_g: undefined,
-                            notes: '',
-                          });
-                        }}
-                        className="px-4 py-3 bg-slate-700 hover:bg-slate-600 rounded-lg text-slate-300 text-sm min-h-[44px]"
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  </form>
                 </div>
               )}
 
@@ -1817,128 +1808,84 @@ export default function NutritionPage() {
                 })()}
               </div>
 
-              {/* Add entry to selected date (past-day backfill) */}
-              {!showHistoryAddForm ? (
-                <button
-                  onClick={() => setShowHistoryAddForm(true)}
-                  className="w-full py-2.5 bg-slate-800 hover:bg-slate-700 active:bg-slate-700 border border-slate-700/50 rounded-xl text-sm font-medium text-blue-400 min-h-[44px] transition-colors flex items-center justify-center gap-2"
-                  data-testid="history-add-entry-button"
-                >
-                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
-                  </svg>
-                  Add entry to {selectedDate === today ? 'today' : formatDateShort(selectedDate)}
-                </button>
-              ) : (
-                <form
-                  onSubmit={handleHistoryAdd}
+              {/* Add entry to selected date — same input modes as Today, but
+                  every flow targets `entryDate` (= selectedDate on this tab).
+                  Hidden while a flow is mid-action so the user isn't shown two
+                  competing surfaces. */}
+              {!showForm && !photoPreview && !barcodeResult && !scannerOpen && (
+                <div
                   className="bg-slate-800 rounded-xl border border-slate-700/50 p-4 space-y-3"
                   data-testid="history-add-entry-form"
                 >
                   <div className="flex items-center justify-between">
                     <h2 className="text-sm font-semibold text-white">
-                      Add to {formatDateShort(selectedDate)}
+                      Add to {selectedDate === today ? 'today' : formatDateShort(selectedDate)}
                     </h2>
-                    {selectedDate !== today && (
+                    {isBackfill && (
                       <span className="text-[10px] text-amber-400 bg-amber-900/30 border border-amber-700/40 rounded px-1.5 py-0.5">
                         backfill
                       </span>
                     )}
                   </div>
-                  <input
-                    autoFocus
-                    placeholder="What did you eat? (e.g. oatmeal with banana)"
-                    value={historyAddForm.notes}
-                    onChange={(e) =>
-                      setHistoryAddForm({ ...historyAddForm, notes: e.target.value })
-                    }
-                    className="w-full px-3 py-2 bg-slate-900 border border-slate-700/50 rounded-lg text-white text-sm min-h-[44px]"
-                    data-testid="history-add-notes"
-                  />
-                  <div className="grid grid-cols-4 gap-2">
-                    <div>
-                      <label className="block text-[10px] text-slate-500 mb-0.5">Cal</label>
-                      <input
-                        type="number"
-                        inputMode="numeric"
-                        value={historyAddForm.calories ?? ''}
-                        onChange={(e) =>
-                          setHistoryAddForm({
-                            ...historyAddForm,
-                            calories: e.target.value ? Number(e.target.value) : undefined,
-                          })
-                        }
-                        className="w-full px-2 py-1.5 bg-slate-900 border border-slate-700/50 rounded text-white text-sm"
-                        data-testid="history-add-cal"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-[10px] text-slate-500 mb-0.5">Protein</label>
-                      <input
-                        type="number"
-                        inputMode="numeric"
-                        value={historyAddForm.protein_g ?? ''}
-                        onChange={(e) =>
-                          setHistoryAddForm({
-                            ...historyAddForm,
-                            protein_g: e.target.value ? Number(e.target.value) : undefined,
-                          })
-                        }
-                        className="w-full px-2 py-1.5 bg-slate-900 border border-slate-700/50 rounded text-white text-sm"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-[10px] text-slate-500 mb-0.5">Carbs</label>
-                      <input
-                        type="number"
-                        inputMode="numeric"
-                        value={historyAddForm.carbs_g ?? ''}
-                        onChange={(e) =>
-                          setHistoryAddForm({
-                            ...historyAddForm,
-                            carbs_g: e.target.value ? Number(e.target.value) : undefined,
-                          })
-                        }
-                        className="w-full px-2 py-1.5 bg-slate-900 border border-slate-700/50 rounded text-white text-sm"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-[10px] text-slate-500 mb-0.5">Fat</label>
-                      <input
-                        type="number"
-                        inputMode="numeric"
-                        value={historyAddForm.fat_g ?? ''}
-                        onChange={(e) =>
-                          setHistoryAddForm({
-                            ...historyAddForm,
-                            fat_g: e.target.value ? Number(e.target.value) : undefined,
-                          })
-                        }
-                        className="w-full px-2 py-1.5 bg-slate-900 border border-slate-700/50 rounded text-white text-sm"
-                      />
-                    </div>
-                  </div>
-                  <div className="flex gap-2 justify-end">
+
+                  <div className="grid grid-cols-3 gap-3">
                     <button
-                      type="button"
+                      onClick={() => photoRef.current?.click()}
+                      className="flex flex-col items-center justify-center gap-2 bg-slate-900 rounded-xl border border-slate-700/50 p-3 min-h-[80px] active:bg-slate-700 transition-colors"
+                      data-testid="history-add-photo"
+                    >
+                      <svg className="w-6 h-6 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M6.827 6.175A2.31 2.31 0 015.186 7.23c-.38.054-.757.112-1.134.175C2.999 7.58 2.25 8.507 2.25 9.574V18a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9.574c0-1.067-.75-1.994-1.802-2.169a47.865 47.865 0 00-1.134-.175 2.31 2.31 0 01-1.64-1.055l-.822-1.316a2.192 2.192 0 00-1.736-1.039 48.774 48.774 0 00-5.232 0 2.192 2.192 0 00-1.736 1.039l-.821 1.316z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 12.75a4.5 4.5 0 11-9 0 4.5 4.5 0 019 0z" />
+                      </svg>
+                      <span className="text-[11px] text-slate-400">Photo</span>
+                    </button>
+                    <button
+                      onClick={startScanner}
+                      className="flex flex-col items-center justify-center gap-2 bg-slate-900 rounded-xl border border-slate-700/50 p-3 min-h-[80px] active:bg-slate-700 transition-colors"
+                      data-testid="history-add-scan"
+                    >
+                      <svg className="w-6 h-6 text-purple-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 4.875c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5A1.125 1.125 0 013.75 9.375v-4.5zM3.75 14.625c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5a1.125 1.125 0 01-1.125-1.125v-4.5zM13.5 4.875c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5A1.125 1.125 0 0113.5 9.375v-4.5z" />
+                      </svg>
+                      <span className="text-[11px] text-slate-400">Scan</span>
+                    </button>
+                    <button
                       onClick={() => {
-                        setShowHistoryAddForm(false);
-                        setHistoryAddForm({ notes: '' });
+                        setFormData((prev) => ({ ...prev, date: entryDate }));
+                        setShowForm(true);
                       }}
-                      className="px-3 py-2 text-slate-400 text-sm hover:bg-slate-700 rounded min-h-[40px]"
+                      className="flex flex-col items-center justify-center gap-2 bg-slate-900 rounded-xl border border-slate-700/50 p-3 min-h-[80px] active:bg-slate-700 transition-colors"
+                      data-testid="history-add-typeit"
                     >
-                      Cancel
-                    </button>
-                    <button
-                      type="submit"
-                      disabled={createEntry.isPending}
-                      className="px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:bg-slate-700 text-white text-sm font-medium rounded min-h-[40px]"
-                      data-testid="history-add-submit"
-                    >
-                      {createEntry.isPending ? 'Saving...' : 'Save'}
+                      <svg className="w-6 h-6 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10" />
+                      </svg>
+                      <span className="text-[11px] text-slate-400">Type / look up</span>
                     </button>
                   </div>
-                </form>
+
+                  {/* Quick re-log from the fueling shelf — also respects entryDate. */}
+                  {shelfItems && shelfItems.length > 0 && (
+                    <div>
+                      <p className="text-[11px] text-slate-500 mb-1.5">Quick from your shelf</p>
+                      <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1 scrollbar-none">
+                        {shelfItems.map((item) => (
+                          <button
+                            key={item.id}
+                            onClick={() => handleShelfTap(item.product.id, `${item.product.brand} ${item.product.product_name}`)}
+                            className="flex-shrink-0 flex flex-col items-start bg-slate-700/60 rounded-lg border border-slate-600/50 px-2.5 py-1.5 min-w-[100px] max-w-[130px] min-h-[48px] active:bg-slate-600 transition-colors"
+                          >
+                            <span className="text-[10px] text-slate-500 leading-tight">{item.product.brand}</span>
+                            <span className="text-[11px] font-medium text-white leading-tight line-clamp-2">
+                              {item.product.product_name}{item.product.variant ? ` ${item.product.variant}` : ''}
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
               )}
 
               {/* Selected Date Entries */}

@@ -23,6 +23,7 @@ from main import app
 from core.database import SessionLocal
 from core.security import create_access_token
 from models import Activity, Athlete, NutritionEntry
+from models.nutrition import FuelingProduct
 from routers.nutrition import MAX_BACKLOG_DAYS, _validate_entry_date
 
 client = TestClient(app)
@@ -286,3 +287,91 @@ class TestGetReadsPastDates:
         assert r.status_code == 200, r.text
         rows = r.json()
         assert any(row.get("notes") == "yesterday meal" for row in rows)
+
+
+# ---------------------------------------------------------------------------
+# POST /v1/nutrition/log-fueling — backfill via shelf one-tap log
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def fueling_product():
+    db = SessionLocal()
+    try:
+        existing = (
+            db.query(FuelingProduct)
+            .filter(FuelingProduct.brand == "TestBrand", FuelingProduct.product_name == "Past-Day Gel")
+            .first()
+        )
+        if existing:
+            yield existing
+            return
+        p = FuelingProduct(
+            brand="TestBrand",
+            product_name="Past-Day Gel",
+            category="gel",
+            calories=100,
+            protein_g=0,
+            carbs_g=24,
+            fat_g=0,
+            caffeine_mg=20,
+            fluid_ml=0,
+        )
+        db.add(p)
+        db.commit()
+        db.refresh(p)
+        yield p
+    finally:
+        db.close()
+
+
+class TestLogFuelingAcceptsPastDates:
+    def test_log_fueling_defaults_to_today_when_date_omitted(self, athlete, fueling_product):
+        r = client.post(
+            "/v1/nutrition/log-fueling",
+            json={"product_id": fueling_product.id, "entry_type": "daily"},
+            headers=_auth_headers(athlete),
+        )
+        assert r.status_code == 201, r.text
+        assert r.json()["date"] == date.today().isoformat()
+
+    def test_log_fueling_backfills_explicit_yesterday(self, athlete, fueling_product):
+        d = date.today() - timedelta(days=1)
+        r = client.post(
+            "/v1/nutrition/log-fueling",
+            json={
+                "product_id": fueling_product.id,
+                "entry_type": "daily",
+                "date": d.isoformat(),
+            },
+            headers=_auth_headers(athlete),
+        )
+        assert r.status_code == 201, r.text
+        assert r.json()["date"] == d.isoformat()
+
+    def test_log_fueling_rejects_future_date(self, athlete, fueling_product):
+        d = date.today() + timedelta(days=2)
+        r = client.post(
+            "/v1/nutrition/log-fueling",
+            json={
+                "product_id": fueling_product.id,
+                "entry_type": "daily",
+                "date": d.isoformat(),
+            },
+            headers=_auth_headers(athlete),
+        )
+        assert r.status_code == 400
+        assert "future" in r.json().get("detail", "").lower()
+
+    def test_log_fueling_rejects_older_than_window(self, athlete, fueling_product):
+        d = date.today() - timedelta(days=MAX_BACKLOG_DAYS + 5)
+        r = client.post(
+            "/v1/nutrition/log-fueling",
+            json={
+                "product_id": fueling_product.id,
+                "entry_type": "daily",
+                "date": d.isoformat(),
+            },
+            headers=_auth_headers(athlete),
+        )
+        assert r.status_code == 400
