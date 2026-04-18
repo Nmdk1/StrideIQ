@@ -194,6 +194,26 @@ ingestion time from the corresponding GarminDay data.
 - Coachable moments still show raw metric labels in some cases
 - Cadence in segment table still "--" for some activities
 
+**Queued — Run Shape Canvas redesign (Apr 18, 2026):** Founder flagged
+the current canvas as not telling the story well visually, with the
+two-toggle layout being unreadable. A redesign proposal is pending. The
+canvas is the centerpiece visual of the activity page; the redesign
+sets the visual vocabulary that every other tab (especially Compare)
+inherits.
+
+**Queued — Compare tab redesign (Apr 18, 2026):** The current Compare
+panel is the weakest tab in the product per founder's own assessment.
+Full discussion and decisions captured in
+`docs/specs/COMPARE_REDESIGN.md`. Direction: shape-resolved feature
+comparison (rep N vs rep N, climb vs climb, fade vs fade) with a
+single delta strip — NOT a two-stream overlay chart. Top-line metric
+deltas (pace, time, HR, heat-adjusted twin) carry the "have I improved
+generally" question in the header. Picker on the right rail swaps the
+comparable in place — never navigate away. Empty state with dignity
+when no comparable exists. **Sequenced behind the Run Shape Canvas
+redesign** because Compare's visual vocabulary inherits from the
+canvas; building Compare first means redoing it after.
+
 #### Personal Operating Manual (`/manual`) — PRIMARY NAV (Apr 4, 2026)
 
 **Current state:** V2 shipped. Four sections: Race Character (pace-gap
