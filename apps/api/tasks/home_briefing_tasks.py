@@ -727,12 +727,35 @@ def generate_home_briefing_task(self: Task, athlete_id: str) -> Dict:
         if raw_voice:
             voice_check = validate_voice_output(raw_voice, field="morning_voice")
             if not voice_check["valid"]:
-                validation_flags["voice_valid"] = False
-                logger.warning(
-                    f"morning_voice failed validation ({voice_check.get('reason')}) "
-                    f"for {athlete_id}; using fallback"
-                )
-                result["morning_voice"] = voice_check["fallback"]
+                # Strip-and-recover: try removing the offending sentences
+                # before publishing the deterministic fallback. The 80%
+                # of good content in a partially-bad briefing is worth
+                # preserving when we can.
+                from routers.home import _strip_disallowed_sentences as _strip
+                stripped = _strip(raw_voice)
+                recovered = False
+                if stripped["removed"] and stripped["text"]:
+                    recheck = validate_voice_output(
+                        stripped["text"], field="morning_voice"
+                    )
+                    if recheck.get("valid"):
+                        logger.info(
+                            "morning_voice recovered via strip "
+                            "(reasons=%s) for %s",
+                            stripped["reasons"], athlete_id,
+                        )
+                        result["morning_voice"] = (
+                            recheck.get("truncated_text") or stripped["text"]
+                        )
+                        recovered = True
+                if not recovered:
+                    validation_flags["voice_valid"] = False
+                    logger.warning(
+                        f"morning_voice failed validation "
+                        f"({voice_check.get('reason')}) for "
+                        f"{athlete_id}; using fallback"
+                    )
+                    result["morning_voice"] = voice_check["fallback"]
             elif voice_check.get("truncated_text"):
                 result["morning_voice"] = voice_check["truncated_text"]
         else:
@@ -783,12 +806,43 @@ def generate_home_briefing_task(self: Task, athlete_id: str) -> Dict:
         if raw_noticed:
             noticed_check = validate_voice_output(raw_noticed, field="coach_noticed")
             if not noticed_check["valid"]:
-                validation_flags["coach_noticed_cleared"] = True
-                logger.warning(
-                    f"coach_noticed failed validation ({noticed_check.get('reason')}) "
-                    f"for {athlete_id}; clearing field"
-                )
-                result["coach_noticed"] = None
+                # Strip-and-recover: if only a single sentence trips a
+                # content gate (interrogative / multi_topic / meta_preamble)
+                # remove that sentence and re-validate. This preserves the
+                # 80% of coach_noticed content that is good. Only fall back
+                # to clearing the field when nothing usable remains.
+                from routers.home import _strip_disallowed_sentences as _strip
+                stripped = _strip(raw_noticed)
+                if stripped["removed"] and stripped["text"]:
+                    recheck = validate_voice_output(
+                        stripped["text"], field="coach_noticed"
+                    )
+                    if recheck.get("valid"):
+                        logger.info(
+                            "coach_noticed recovered via strip "
+                            "(reasons=%s) for %s",
+                            stripped["reasons"], athlete_id,
+                        )
+                        result["coach_noticed"] = stripped["text"]
+                    else:
+                        validation_flags["coach_noticed_cleared"] = True
+                        logger.warning(
+                            "coach_noticed strip-and-recover failed "
+                            "(initial=%s, post-strip=%s) for %s; "
+                            "clearing field",
+                            noticed_check.get("reason"),
+                            recheck.get("reason"),
+                            athlete_id,
+                        )
+                        result["coach_noticed"] = None
+                else:
+                    validation_flags["coach_noticed_cleared"] = True
+                    logger.warning(
+                        f"coach_noticed failed validation "
+                        f"({noticed_check.get('reason')}) for "
+                        f"{athlete_id}; clearing field"
+                    )
+                    result["coach_noticed"] = None
 
         raw_why = result.get("workout_why")
         if raw_why:

@@ -582,6 +582,49 @@ _VOICE_FALLBACK = (
     "Your training data is ready. Check your workout below for today's plan."
 )
 
+# 2026-04-18 — content-quality gates added after the founder showed a
+# specific bad briefing. The skeleton is good in ~80% of generations;
+# these gates catch the remaining ~20% where the LLM:
+#   - asks the athlete a literal question instead of coaching,
+#   - stitches two unrelated findings together with "Separately, ...",
+#   - prefaces with "Your data shows a pattern worth discussing" filler,
+#   - exceeds the 2-3 sentence morning_voice contract.
+# All gates support strip-and-recover via _strip_disallowed_sentences:
+# remove only the offending sentence and re-validate the remainder.
+# Blanket fallback is the last resort, never the first.
+
+# Multi-topic transitions — the LLM's tell that it is smuggling a second
+# finding past the ONE-NEW-THING rule. Match at sentence start (after
+# capital-letter normalisation) to avoid catching "see also" in valid
+# coaching prose.
+_VOICE_MULTI_TOPIC_TRANSITIONS = (
+    "separately,",
+    "additionally,",
+    "also,",
+    "meanwhile,",
+    "on another note,",
+    "beyond that,",
+)
+
+# Meta-preamble phrases — talking *about* having an observation rather
+# than stating it. These are the LLM's hedge when the underlying signal
+# is weak; better to say nothing than to preface emptiness.
+_VOICE_META_PREAMBLE = (
+    "your data shows",
+    "worth discussing",
+    "worth noting",
+    "i've noticed a pattern",
+    "looking at your data",
+    "the data suggests",
+    "there's a pattern worth",
+)
+
+# Hard cap on morning_voice sentences. The prompt asks for 2-3; we allow
+# 3 and truncate above that. The cap is enforced after strip-and-recover
+# so we don't punish a clean three-sentence rewrite of a bad five-line
+# original.
+_VOICE_SENTENCE_CAP = 3
+
 # ---------------------------------------------------------------------------
 # Sleep source contract helpers
 # ---------------------------------------------------------------------------
@@ -1019,6 +1062,95 @@ def _strip_ungrounded_sleep_sentences(
     return {"text": sanitized, "removed": removed_any}
 
 
+def _split_sentences(text: str) -> list:
+    """Sentence-split that preserves terminators and does not break decimals.
+
+    Returns list of sentences each ending with their original terminator
+    (`.`, `!`, `?`). Terminator preservation is required for the
+    interrogative gate to detect `?`-ending sentences after splitting.
+
+    The pattern matches a run of non-terminator chars followed by an
+    optional terminator. Decimal handling is enforced by a negative
+    lookbehind+lookahead on the terminator (so 7.5 stays a single token).
+    """
+    import re
+
+    if not text:
+        return []
+    # Each sentence is one-or-more body chars (anything that is NOT a
+    # sentence terminator, OR a `.`/`!`/`?` that sits between digits and
+    # therefore belongs to a number like 7.5), optionally followed by a
+    # real terminator (one not between digits). The mid-number dot
+    # accommodation is what makes "7.5 hours" stay a single token while
+    # still allowing the trailing period of the sentence to be captured.
+    pattern = re.compile(
+        r"(?:[^.!?]|(?<=\d)[.!?](?=\d))+(?:(?<!\d)[.!?](?!\d))?"
+    )
+    return [m.group(0).strip() for m in pattern.finditer(text) if m.group(0).strip()]
+
+
+def _sentence_has_disallowed_content(sentence: str) -> Optional[str]:
+    """Return a reason string if the sentence trips a content gate.
+
+    Gates checked (in order):
+      1. interrogative — sentence contains a literal question mark.
+      2. multi_topic   — starts with a banned transition phrase.
+      3. meta_preamble — contains any banned meta-preamble phrase.
+
+    Returns None if the sentence is clean.
+    """
+    if not sentence:
+        return None
+    lower = sentence.lower().lstrip()
+
+    if "?" in sentence:
+        return "interrogative"
+
+    for transition in _VOICE_MULTI_TOPIC_TRANSITIONS:
+        if lower.startswith(transition):
+            return f"multi_topic:{transition.rstrip(',')}"
+
+    for preamble in _VOICE_META_PREAMBLE:
+        if preamble in lower:
+            return f"meta_preamble:{preamble}"
+
+    return None
+
+
+def _strip_disallowed_sentences(text: str) -> dict:
+    """Remove sentences that trip content gates; preserve the rest.
+
+    Used by the morning_voice and coach_noticed validators as the
+    strip-and-recover pass before falling back to the deterministic
+    string. Keeps the 80% of good content intact when only a single
+    sentence is bad.
+
+    Returns:
+        {"text": str, "removed": bool, "reasons": list[str]}
+    """
+    if not text:
+        return {"text": text, "removed": False, "reasons": []}
+
+    sentences = _split_sentences(text)
+    kept: list = []
+    reasons: list = []
+
+    for s in sentences:
+        reason = _sentence_has_disallowed_content(s)
+        if reason is not None:
+            reasons.append(reason)
+            continue
+        kept.append(s)
+
+    if not reasons:
+        return {"text": text, "removed": False, "reasons": []}
+
+    sanitized = " ".join(kept).strip()
+    if sanitized and sanitized[-1] not in ".!?":
+        sanitized += "."
+    return {"text": sanitized, "removed": True, "reasons": reasons}
+
+
 def validate_voice_output(text: str, field: str = "morning_voice") -> dict:
     """
     Post-generation validator for LLM-produced morning_voice / workout_why.
@@ -1150,6 +1282,56 @@ def validate_voice_output(text: str, field: str = "morning_voice") -> dict:
                     "fallback": _VOICE_FALLBACK,
                 }
 
+    # 6. Content quality gates (added 2026-04-18).
+    # Scope: morning_voice and coach_noticed. workout_why is a conceptual
+    # one-liner and exempt — see test_workout_why_may_contain_question_mark.
+    if field in ("morning_voice", "coach_noticed"):
+        for sentence in _split_sentences(text):
+            reason = _sentence_has_disallowed_content(sentence)
+            if reason is not None:
+                logger.info(
+                    "voice gate fired field=%s reason=%s sentence=%r",
+                    field, reason, sentence[:120],
+                )
+                return {
+                    "valid": False,
+                    "reason": reason,
+                    "fallback": _VOICE_FALLBACK,
+                }
+
+    # 7. Sentence cap for morning_voice (max 3 sentences, contract is 2-3).
+    # If over the cap, truncate to the first three and signal via
+    # truncated_text so the caller can substitute it. We only keep the
+    # truncated text when it still satisfies the earlier gates (numeric
+    # grounding + length + specificity) — otherwise we fall back so we
+    # never publish a half-thought.
+    if field == "morning_voice":
+        sentences = _split_sentences(text)
+        if len(sentences) > _VOICE_SENTENCE_CAP:
+            truncated = ". ".join(sentences[:_VOICE_SENTENCE_CAP]).strip()
+            if truncated and truncated[-1] not in ".!?":
+                truncated += "."
+            # Re-check the truncated text against the cheap gates that
+            # could regress (numeric grounding, length, specificity, and
+            # the same content gates). If anything fires, we surface the
+            # cap reason so the caller chooses fallback over silently
+            # publishing a degraded shorter version.
+            recheck = validate_voice_output(truncated, field=field)
+            if recheck.get("valid") and not recheck.get("truncated_text"):
+                logger.warning(
+                    "morning_voice exceeded sentence cap (%d > %d); truncated",
+                    len(sentences), _VOICE_SENTENCE_CAP,
+                )
+                return {"valid": True, "truncated_text": truncated}
+            return {
+                "valid": False,
+                "reason": (
+                    f"sentence_cap:{len(sentences)}>"
+                    f"{_VOICE_SENTENCE_CAP}"
+                ),
+                "fallback": _VOICE_FALLBACK,
+            }
+
     return {"valid": True}
 
 
@@ -1177,7 +1359,25 @@ def _normalize_cached_briefing_payload(
     if raw_voice:
         voice_check = validate_voice_output(raw_voice, field="morning_voice")
         if not voice_check.get("valid"):
-            out["morning_voice"] = voice_check.get("fallback", _VOICE_FALLBACK)
+            # Strip-and-recover before falling back to the deterministic
+            # string. Old cache entries from before the content gates
+            # were added contain partially-bad text that is fully
+            # recoverable by removing the offending sentence(s).
+            stripped = _strip_disallowed_sentences(raw_voice)
+            recovered = False
+            if stripped["removed"] and stripped["text"]:
+                recheck = validate_voice_output(
+                    stripped["text"], field="morning_voice"
+                )
+                if recheck.get("valid"):
+                    out["morning_voice"] = (
+                        recheck.get("truncated_text") or stripped["text"]
+                    )
+                    recovered = True
+            if not recovered:
+                out["morning_voice"] = voice_check.get(
+                    "fallback", _VOICE_FALLBACK
+                )
         elif voice_check.get("truncated_text"):
             out["morning_voice"] = voice_check["truncated_text"]
 
@@ -2595,7 +2795,11 @@ def generate_coach_home_briefing(
         from services.fingerprint_context import build_fingerprint_prompt_section
         from uuid import UUID as _lane_UUID
         fp = build_fingerprint_prompt_section(
-            _lane_UUID(athlete_id), db, verbose=False, max_findings=3,
+            _lane_UUID(athlete_id),
+            db,
+            verbose=False,
+            max_findings=3,
+            include_emerging_question=False,
         )
         if fp:
             fingerprint_summary = fp
@@ -2962,7 +3166,13 @@ def _build_rich_intelligence_context(athlete_id: str, db: Session) -> str:
     # 8. Personal Fingerprint — confirmed, persisted correlation findings with layer data
     try:
         from services.fingerprint_context import build_fingerprint_prompt_section
-        fp_section = build_fingerprint_prompt_section(athlete_uuid, db, verbose=True, max_findings=8)
+        fp_section = build_fingerprint_prompt_section(
+            athlete_uuid,
+            db,
+            verbose=True,
+            max_findings=8,
+            include_emerging_question=False,
+        )
         if fp_section:
             sections.append(fp_section)
     except Exception as e:

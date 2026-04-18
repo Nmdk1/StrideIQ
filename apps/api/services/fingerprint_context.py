@@ -368,12 +368,21 @@ def build_fingerprint_prompt_section(
     db: Session,
     verbose: bool = False,
     max_findings: int = 8,
+    include_emerging_question: bool = True,
 ) -> Optional[str]:
     """
     Build the full fingerprint prompt section for injection.
 
     verbose=True: used by morning voice (full layer detail with newlines).
     verbose=False: used by coach brief (compact single-line per finding).
+
+    include_emerging_question: when False, the EMERGING PATTERN block is
+    rewritten as an *observation* with no "ASK ABOUT THIS FIRST" framing
+    and no "Suggested question" template. The morning_voice lane sets
+    this False because the briefing is one-way; the conversational coach
+    keeps it True because a follow-up question is appropriate there.
+    Added 2026-04-18 after a production briefing surfaced a literal
+    "What do you think is driving this?" to the athlete.
 
     Phase 4: findings are grouped by lifecycle state. Closed findings are
     compressed to a single summary line. Emerging findings get an explicit
@@ -477,30 +486,50 @@ def build_fingerprint_prompt_section(
 
         evidence_block = ". ".join(evidence_parts) + "." if evidence_parts else ""
 
-        question = (
-            f"Your data shows a pattern: your {out} {direction_word} "
-            f"based on {inp}. {ef.times_confirmed}x observed. "
-            f"{evidence_block} "
-            f"What do you think is driving this?"
-        )
-        sections.append(
-            f"=== EMERGING PATTERN — ASK ABOUT THIS FIRST ===\n"
-            f"Before discussing other training data, ask the athlete about "
-            f"this pattern. Be SPECIFIC — include the threshold, observation "
-            f"count, and direction. Frame as curiosity, not statistics.\n"
-            f"\n"
-            f"Your data suggests {inp} {direction_word} your {out}. "
-            f"{age_str} Observed {ef.times_confirmed}x so far — not yet "
-            f"confirmed as a durable pattern.\n"
-        )
-        if evidence_block:
-            sections[-1] += f"Evidence detail: {evidence_block}\n"
-        sections[-1] += (
-            f"\n"
-            f'Suggested question (rewrite in your coaching voice, keeping '
-            f'the specifics): "{question}"\n'
-            f"=== END EMERGING ==="
-        )
+        if include_emerging_question:
+            question = (
+                f"Your data shows a pattern: your {out} {direction_word} "
+                f"based on {inp}. {ef.times_confirmed}x observed. "
+                f"{evidence_block} "
+                f"What do you think is driving this?"
+            )
+            sections.append(
+                f"=== EMERGING PATTERN — ASK ABOUT THIS FIRST ===\n"
+                f"Before discussing other training data, ask the athlete "
+                f"about this pattern. Be SPECIFIC — include the threshold, "
+                f"observation count, and direction. Frame as curiosity, "
+                f"not statistics.\n"
+                f"\n"
+                f"Your data suggests {inp} {direction_word} your {out}. "
+                f"{age_str} Observed {ef.times_confirmed}x so far — not "
+                f"yet confirmed as a durable pattern.\n"
+            )
+            if evidence_block:
+                sections[-1] += f"Evidence detail: {evidence_block}\n"
+            sections[-1] += (
+                f"\n"
+                f'Suggested question (rewrite in your coaching voice, '
+                f'keeping the specifics): "{question}"\n'
+                f"=== END EMERGING ==="
+            )
+        else:
+            # Morning-voice lane: do NOT ask the athlete a question. The
+            # briefing is one-way. State the emerging pattern as an
+            # observation only, and keep it gated behind the "not yet
+            # confirmed" qualifier so the LLM treats it as low-confidence
+            # context, not a finding to lead with.
+            sections.append(
+                f"=== EMERGING PATTERN (low confidence — context only) ===\n"
+                f"An emerging pattern is being tracked: {inp} appears to "
+                f"{direction_word.replace('s', '')} {out}, observed "
+                f"{ef.times_confirmed}x so far. Not yet confirmed as a "
+                f"durable finding.\n"
+                f"USAGE: Do NOT lead the briefing with this. Do NOT ask "
+                f"the athlete a question about it. You may reference it "
+                f"only if it is directly relevant to today's session, and "
+                f"only as an observation, never as advice.\n"
+                f"=== END EMERGING ==="
+            )
 
     if verbose:
         header = (
