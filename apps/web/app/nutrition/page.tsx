@@ -225,6 +225,12 @@ export default function NutritionPage() {
     calories?: number; protein_g?: number; carbs_g?: number; fat_g?: number; notes?: string;
   }>({});
 
+  const [showHistoryAddForm, setShowHistoryAddForm] = useState(false);
+  const [historyAddForm, setHistoryAddForm] = useState<{
+    calories?: number; protein_g?: number; carbs_g?: number; fat_g?: number;
+    fiber_g?: number; notes: string;
+  }>({ notes: '' });
+
   const photoRef = useRef<HTMLInputElement>(null);
   const scannerRef = useRef<unknown>(null);
 
@@ -557,6 +563,56 @@ export default function NutritionPage() {
       showToast('Entry updated');
     } catch {
       showToast('Failed to update');
+    }
+  };
+
+  const handleHistoryAdd = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const trimmedNotes = historyAddForm.notes.trim();
+    if (!trimmedNotes && historyAddForm.calories === undefined) {
+      showToast('Add at least a name or calories');
+      return;
+    }
+    try {
+      await createEntry.mutateAsync({
+        athlete_id: user?.id || '',
+        date: selectedDate,
+        entry_type: 'daily',
+        calories: historyAddForm.calories,
+        protein_g: historyAddForm.protein_g,
+        carbs_g: historyAddForm.carbs_g,
+        fat_g: historyAddForm.fat_g,
+        fiber_g: historyAddForm.fiber_g,
+        notes: trimmedNotes || undefined,
+        macro_source: 'manual',
+      });
+      setHistoryAddForm({ notes: '' });
+      setShowHistoryAddForm(false);
+      showToast(
+        selectedDate === today
+          ? 'Logged'
+          : `Logged to ${formatDateShort(selectedDate)}`
+      );
+    } catch (err) {
+      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      showToast(detail || 'Failed to add entry');
+    }
+  };
+
+  const handleHistorySaveEdit = async () => {
+    if (!editingEntryId) return;
+    try {
+      // Send the selected date so the entry stays attached to the day being viewed,
+      // even if the user navigates dates after opening the editor.
+      await updateEntry.mutateAsync({
+        id: editingEntryId,
+        updates: { ...editForm, date: selectedDate },
+      });
+      setEditingEntryId(null);
+      showToast('Entry updated');
+    } catch (err) {
+      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      showToast(detail || 'Failed to update');
     }
   };
 
@@ -1502,40 +1558,258 @@ export default function NutritionPage() {
                 })()}
               </div>
 
+              {/* Add entry to selected date (past-day backfill) */}
+              {!showHistoryAddForm ? (
+                <button
+                  onClick={() => setShowHistoryAddForm(true)}
+                  className="w-full py-2.5 bg-slate-800 hover:bg-slate-700 active:bg-slate-700 border border-slate-700/50 rounded-xl text-sm font-medium text-blue-400 min-h-[44px] transition-colors flex items-center justify-center gap-2"
+                  data-testid="history-add-entry-button"
+                >
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+                  </svg>
+                  Add entry to {selectedDate === today ? 'today' : formatDateShort(selectedDate)}
+                </button>
+              ) : (
+                <form
+                  onSubmit={handleHistoryAdd}
+                  className="bg-slate-800 rounded-xl border border-slate-700/50 p-4 space-y-3"
+                  data-testid="history-add-entry-form"
+                >
+                  <div className="flex items-center justify-between">
+                    <h2 className="text-sm font-semibold text-white">
+                      Add to {formatDateShort(selectedDate)}
+                    </h2>
+                    {selectedDate !== today && (
+                      <span className="text-[10px] text-amber-400 bg-amber-900/30 border border-amber-700/40 rounded px-1.5 py-0.5">
+                        backfill
+                      </span>
+                    )}
+                  </div>
+                  <input
+                    autoFocus
+                    placeholder="What did you eat? (e.g. oatmeal with banana)"
+                    value={historyAddForm.notes}
+                    onChange={(e) =>
+                      setHistoryAddForm({ ...historyAddForm, notes: e.target.value })
+                    }
+                    className="w-full px-3 py-2 bg-slate-900 border border-slate-700/50 rounded-lg text-white text-sm min-h-[44px]"
+                    data-testid="history-add-notes"
+                  />
+                  <div className="grid grid-cols-4 gap-2">
+                    <div>
+                      <label className="block text-[10px] text-slate-500 mb-0.5">Cal</label>
+                      <input
+                        type="number"
+                        inputMode="numeric"
+                        value={historyAddForm.calories ?? ''}
+                        onChange={(e) =>
+                          setHistoryAddForm({
+                            ...historyAddForm,
+                            calories: e.target.value ? Number(e.target.value) : undefined,
+                          })
+                        }
+                        className="w-full px-2 py-1.5 bg-slate-900 border border-slate-700/50 rounded text-white text-sm"
+                        data-testid="history-add-cal"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] text-slate-500 mb-0.5">Protein</label>
+                      <input
+                        type="number"
+                        inputMode="numeric"
+                        value={historyAddForm.protein_g ?? ''}
+                        onChange={(e) =>
+                          setHistoryAddForm({
+                            ...historyAddForm,
+                            protein_g: e.target.value ? Number(e.target.value) : undefined,
+                          })
+                        }
+                        className="w-full px-2 py-1.5 bg-slate-900 border border-slate-700/50 rounded text-white text-sm"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] text-slate-500 mb-0.5">Carbs</label>
+                      <input
+                        type="number"
+                        inputMode="numeric"
+                        value={historyAddForm.carbs_g ?? ''}
+                        onChange={(e) =>
+                          setHistoryAddForm({
+                            ...historyAddForm,
+                            carbs_g: e.target.value ? Number(e.target.value) : undefined,
+                          })
+                        }
+                        className="w-full px-2 py-1.5 bg-slate-900 border border-slate-700/50 rounded text-white text-sm"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] text-slate-500 mb-0.5">Fat</label>
+                      <input
+                        type="number"
+                        inputMode="numeric"
+                        value={historyAddForm.fat_g ?? ''}
+                        onChange={(e) =>
+                          setHistoryAddForm({
+                            ...historyAddForm,
+                            fat_g: e.target.value ? Number(e.target.value) : undefined,
+                          })
+                        }
+                        className="w-full px-2 py-1.5 bg-slate-900 border border-slate-700/50 rounded text-white text-sm"
+                      />
+                    </div>
+                  </div>
+                  <div className="flex gap-2 justify-end">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowHistoryAddForm(false);
+                        setHistoryAddForm({ notes: '' });
+                      }}
+                      className="px-3 py-2 text-slate-400 text-sm hover:bg-slate-700 rounded min-h-[40px]"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={createEntry.isPending}
+                      className="px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:bg-slate-700 text-white text-sm font-medium rounded min-h-[40px]"
+                      data-testid="history-add-submit"
+                    >
+                      {createEntry.isPending ? 'Saving...' : 'Save'}
+                    </button>
+                  </div>
+                </form>
+              )}
+
               {/* Selected Date Entries */}
               {historyEntries && historyEntries.length > 0 && (
                 <div className="space-y-2">
                   <h2 className="text-sm font-semibold text-slate-400 px-1">Entries</h2>
                   {historyEntries.map((entry) => (
                     <div key={entry.id} className="bg-slate-800 rounded-xl border border-slate-700/50 p-3">
-                      <div className="flex justify-between items-start">
-                        <div className="min-w-0 flex-1">
-                          {entry.notes && <p className="text-sm text-white truncate">{entry.notes}</p>}
-                          <div className="flex items-center gap-2 text-xs text-slate-400 mt-0.5">
-                            <span className="capitalize">{entry.entry_type.replace(/_/g, ' ')}</span>
-                            {macroSourceBadge(entry.macro_source)}
+                      {editingEntryId === entry.id ? (
+                        <div className="space-y-3" data-testid={`history-edit-form-${entry.id}`}>
+                          <div>
+                            <label className="block text-xs text-slate-500 mb-1">Notes</label>
+                            <input
+                              value={editForm.notes ?? ''}
+                              onChange={(e) => setEditForm({ ...editForm, notes: e.target.value })}
+                              className="w-full px-3 py-2 bg-slate-900 border border-slate-700/50 rounded-lg text-white text-sm min-h-[44px]"
+                            />
                           </div>
-                        </div>
-                        <div className="flex items-center gap-2 flex-shrink-0 ml-2">
-                          <div className="text-right text-xs text-slate-300">
-                            {entry.calories != null && <div>{Math.round(entry.calories)} cal</div>}
-                            <div className="text-slate-500">
-                              {entry.protein_g != null && `${Math.round(entry.protein_g)}P `}
-                              {entry.carbs_g != null && `${Math.round(entry.carbs_g)}C `}
-                              {entry.fat_g != null && `${Math.round(entry.fat_g)}F`}
+                          <div className="grid grid-cols-4 gap-2">
+                            <div>
+                              <label className="block text-[10px] text-slate-500 mb-0.5">Cal</label>
+                              <input
+                                type="number"
+                                value={editForm.calories ?? ''}
+                                onChange={(e) =>
+                                  setEditForm({
+                                    ...editForm,
+                                    calories: e.target.value ? Number(e.target.value) : undefined,
+                                  })
+                                }
+                                className="w-full px-2 py-1.5 bg-slate-900 border border-slate-700/50 rounded text-white text-sm"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-[10px] text-slate-500 mb-0.5">Protein</label>
+                              <input
+                                type="number"
+                                value={editForm.protein_g ?? ''}
+                                onChange={(e) =>
+                                  setEditForm({
+                                    ...editForm,
+                                    protein_g: e.target.value ? Number(e.target.value) : undefined,
+                                  })
+                                }
+                                className="w-full px-2 py-1.5 bg-slate-900 border border-slate-700/50 rounded text-white text-sm"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-[10px] text-slate-500 mb-0.5">Carbs</label>
+                              <input
+                                type="number"
+                                value={editForm.carbs_g ?? ''}
+                                onChange={(e) =>
+                                  setEditForm({
+                                    ...editForm,
+                                    carbs_g: e.target.value ? Number(e.target.value) : undefined,
+                                  })
+                                }
+                                className="w-full px-2 py-1.5 bg-slate-900 border border-slate-700/50 rounded text-white text-sm"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-[10px] text-slate-500 mb-0.5">Fat</label>
+                              <input
+                                type="number"
+                                value={editForm.fat_g ?? ''}
+                                onChange={(e) =>
+                                  setEditForm({
+                                    ...editForm,
+                                    fat_g: e.target.value ? Number(e.target.value) : undefined,
+                                  })
+                                }
+                                className="w-full px-2 py-1.5 bg-slate-900 border border-slate-700/50 rounded text-white text-sm"
+                              />
                             </div>
                           </div>
-                          <button
-                            onClick={() => handleDeleteEntry(entry.id)}
-                            disabled={deleteEntry.isPending}
-                            className="min-w-[44px] min-h-[44px] flex items-center justify-center text-slate-600 hover:text-red-400 transition-colors"
-                          >
-                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                              <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                            </svg>
-                          </button>
+                          <div className="flex gap-2 justify-end">
+                            <button
+                              onClick={() => handleDeleteEntry(entry.id)}
+                              disabled={deleteEntry.isPending}
+                              className="px-3 py-1.5 text-red-400 text-xs hover:bg-red-400/10 rounded min-h-[36px]"
+                            >
+                              Delete
+                            </button>
+                            <button
+                              onClick={() => setEditingEntryId(null)}
+                              className="px-3 py-1.5 text-slate-400 text-xs hover:bg-slate-700 rounded min-h-[36px]"
+                            >
+                              Cancel
+                            </button>
+                            <button
+                              onClick={handleHistorySaveEdit}
+                              disabled={updateEntry.isPending}
+                              className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white text-xs rounded min-h-[36px]"
+                              data-testid={`history-edit-save-${entry.id}`}
+                            >
+                              {updateEntry.isPending ? 'Saving...' : 'Save'}
+                            </button>
+                          </div>
                         </div>
-                      </div>
+                      ) : (
+                        <button
+                          onClick={() => startEditing(entry)}
+                          className="w-full text-left"
+                          data-testid={`history-entry-${entry.id}`}
+                        >
+                          <div className="flex justify-between items-start">
+                            <div className="min-w-0 flex-1">
+                              {entry.notes && <p className="text-sm text-white truncate">{entry.notes}</p>}
+                              <div className="flex items-center gap-2 text-xs text-slate-400 mt-0.5">
+                                <span className="capitalize">{entry.entry_type.replace(/_/g, ' ')}</span>
+                                {macroSourceBadge(entry.macro_source)}
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2 flex-shrink-0 ml-2">
+                              <div className="text-right text-xs text-slate-300">
+                                {entry.calories != null && <div>{Math.round(entry.calories)} cal</div>}
+                                <div className="text-slate-500">
+                                  {entry.protein_g != null && `${Math.round(entry.protein_g)}P `}
+                                  {entry.carbs_g != null && `${Math.round(entry.carbs_g)}C `}
+                                  {entry.fat_g != null && `${Math.round(entry.fat_g)}F`}
+                                </div>
+                              </div>
+                              <svg className="w-3.5 h-3.5 text-slate-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931z" />
+                              </svg>
+                            </div>
+                          </div>
+                        </button>
+                      )}
                     </div>
                   ))}
                 </div>

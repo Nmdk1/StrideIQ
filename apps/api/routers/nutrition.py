@@ -59,6 +59,38 @@ router = APIRouter(prefix="/v1", tags=["nutrition"])
 
 
 # ---------------------------------------------------------------------------
+# Past-day add/edit window
+# ---------------------------------------------------------------------------
+# Athletes can backfill or correct meals up to MAX_BACKLOG_DAYS in the past.
+# Future-dated entries are never accepted (would corrupt correlation analytics
+# and "today vs plan" rollups).
+
+MAX_BACKLOG_DAYS = 60
+
+
+def _validate_entry_date(entry_date: date) -> None:
+    """Reject future dates and dates older than the backlog window.
+
+    Raises:
+        HTTPException(400) — with a human-readable detail message.
+    """
+    today = date.today()
+    if entry_date > today:
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot log nutrition for a future date.",
+        )
+    if (today - entry_date).days > MAX_BACKLOG_DAYS:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Cannot log nutrition older than {MAX_BACKLOG_DAYS} days. "
+                "Older entries can only be edited or deleted, not created."
+            ),
+        )
+
+
+# ---------------------------------------------------------------------------
 # Capability checks
 # ---------------------------------------------------------------------------
 
@@ -771,6 +803,8 @@ def create_nutrition_entry(
     current_user: Athlete = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    _validate_entry_date(nutrition.date)
+
     if nutrition.entry_type in ("pre_activity", "during_activity", "post_activity"):
         if not nutrition.activity_id:
             raise HTTPException(status_code=400, detail=f"activity_id required for '{nutrition.entry_type}'")
@@ -872,6 +906,8 @@ def update_nutrition_entry(
     if db_entry.athlete_id != current_user.id:
         raise HTTPException(status_code=403, detail="Access denied")
 
+    _validate_entry_date(nutrition.date)
+
     if nutrition.entry_type in ("pre_activity", "during_activity", "post_activity"):
         if not nutrition.activity_id:
             raise HTTPException(status_code=400, detail=f"activity_id required for '{nutrition.entry_type}'")
@@ -927,6 +963,8 @@ def patch_nutrition_entry(
         raise HTTPException(status_code=403, detail="Access denied")
 
     patch_data = updates.model_dump(exclude_unset=True)
+    if "date" in patch_data and patch_data["date"] is not None:
+        _validate_entry_date(patch_data["date"])
     for field, value in patch_data.items():
         if field in ("calories", "protein_g", "carbs_g", "fat_g", "fiber_g"):
             setattr(db_entry, field, Decimal(str(value)) if value is not None else None)
