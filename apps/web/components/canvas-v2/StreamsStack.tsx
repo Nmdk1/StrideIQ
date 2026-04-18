@@ -171,6 +171,7 @@ export function StreamsStack({ track, width }: StreamsStackProps) {
 
   const paceSeries = useMemo(() => buildSeries(track, (p) => p.pace), [track]);
   const hrSeries = useMemo(() => buildSeries(track, (p) => p.hr), [track]);
+  const elevationSeries = useMemo(() => buildSeries(track, (p) => p.altitude), [track]);
 
   const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
     if (!containerRef.current) return;
@@ -214,6 +215,16 @@ export function StreamsStack({ track, width }: StreamsStackProps) {
         width={width}
         colorClass="text-rose-400"
         formatValue={(v) => Math.round(v).toString()}
+        scrubT={position}
+      />
+      <div className="h-px bg-slate-800/50" />
+      <Band
+        title="Elevation"
+        unit="ft"
+        series={elevationSeries}
+        width={width}
+        colorClass="text-amber-400"
+        formatValue={(meters) => Math.round(meters * 3.28084).toString()}
         scrubT={position}
       />
     </div>
