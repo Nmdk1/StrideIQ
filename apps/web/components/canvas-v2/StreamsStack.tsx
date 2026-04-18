@@ -42,8 +42,13 @@ function buildSmoothPath(series: SeriesPoint[], width: number, vMin: number, vMa
   const range = vMax - vMin || 1;
   const yFor = (v: number) => {
     const norm = (v - vMin) / range;
-    const inverted = invertY ? 1 - norm : norm;
-    return CHART_PADDING_TOP + inverted * PLOT_HEIGHT;
+    // SVG y is top-down: y=0 is the top of the chart.
+    // Default (invertY=false): higher data value → drawn higher on screen
+    //   (HR, Elevation: peaks read as peaks).
+    // invertY=true: higher data value → drawn lower on screen
+    //   (Pace where lower = faster: a fast moment reads as a peak).
+    const fractionFromTop = invertY ? norm : 1 - norm;
+    return CHART_PADDING_TOP + fractionFromTop * PLOT_HEIGHT;
   };
   const xFor = (t: number) => t * width;
 
