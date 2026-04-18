@@ -12,6 +12,12 @@ export interface StravaStatus {
    * banner for athletes who only ever used Garmin.
    */
   previously_connected?: boolean;
+  /**
+   * True iff Garmin is the active ingestion source. Garmin is primary and
+   * Strava is the fallback, so when Garmin is connected we should never nag
+   * the athlete to reconnect Strava.
+   */
+  garmin_connected?: boolean;
   strava_athlete_id?: number;
   last_sync?: string;
 }

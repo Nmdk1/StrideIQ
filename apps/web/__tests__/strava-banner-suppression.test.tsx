@@ -1,7 +1,9 @@
 import React from 'react';
 import { render, screen } from '@testing-library/react';
 
-let mockStatus: { connected: boolean; previously_connected?: boolean } | undefined = undefined;
+let mockStatus:
+  | { connected: boolean; previously_connected?: boolean; garmin_connected?: boolean }
+  | undefined = undefined;
 
 jest.mock('next/navigation', () => ({
   usePathname: () => '/home',
@@ -55,5 +57,14 @@ describe('StravaBanner suppression', () => {
     mockStatus = undefined;
     const { container } = render(<StravaBanner />);
     expect(container).toBeEmptyDOMElement();
+  });
+
+  it('hides for athletes who previously connected Strava but have Garmin actively connected', () => {
+    // Garmin is primary; if it is connected we should never nag the athlete
+    // to reconnect Strava, even if they once had a Strava token.
+    mockStatus = { connected: false, previously_connected: true, garmin_connected: true };
+    const { container } = render(<StravaBanner />);
+    expect(container).toBeEmptyDOMElement();
+    expect(screen.queryByText(/Strava disconnected/i)).toBeNull();
   });
 });
