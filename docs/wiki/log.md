@@ -1,5 +1,76 @@
 # Wiki Log
 
+## [2026-04-18] demo-pipeline-and-intelligence-honesty | Demo athlete cloning + interval/cooldown gates + briefing fingerprint + Compare redesign decision
+
+Three commits + one decision doc. The day's theme: stop the briefing and Athlete Intelligence panel from inventing structure that isn't there, and stop them from missing structure that is.
+
+**Activity Intelligence + Home Briefing Honesty (`apps/api/services/run_intelligence.py`, `apps/api/routers/home.py`, `apps/api/tasks/home_briefing_tasks.py`):**
+- `_is_interval_workout()` widened from a single-signal gate (`workout_type` only) to a three-signal OR: explicit `workout_type` ∈ canonical interval set, `run_shape.summary.workout_classification` ∈ `STRUCTURED_SHAPE_CLASSIFICATIONS` frozenset, or `workout_name` matches rep-notation regex (`6x800`, `4 x mile`) / structured-workout keywords (interval, repeats, fartlek, tempo, cruise, threshold, hill repeats). Founder regression: Garmin labelled a "Meridian — 2 x 2 x mile" workout as `medium_long_run` and `run_shape` classified as `anomaly`; old gate missed it, new gate catches it via name.
+- New `_label_cooldown()` finds the trailing post-rep split that meets four gates: position after last rep, slower than work pace (but not >3.0× work pace — excludes walking-pace recovery jogs), avg HR ≥12 bpm below avg work-rep HR, substantial duration (≥0.4 mi or ≥3 min). Heat-aware: HR-drop floor relaxes to ≥6 bpm when `dew_point_f ≥ 60` or `heat_adjustment_pct ≥ 2.5%` (cardiac drift masks the normal post-effort HR drop). Result surfaced into LLM data context as `intervals.cooldown` so summaries say "the last mile was a cooldown" instead of "you hit a wall."
+- System prompt updated to interpret `intervals.cooldown`, `workout_name`, and `shape_classification` correctly; explicitly forbids inferring planned reps from workout names.
+- `_build_data_fingerprint()` (in `home_briefing_tasks.py`) now includes `Activity.workout_type`, `ActivitySplit` count, and `run_shape.summary.workout_classification`. Cache invalidates and brief regenerates when these async data points arrive — root cause of the "describes mile repeats as continuous effort" regression where the brief generated before splits landed and never re-ran.
+- `routers/home.py` workout-structure prompt logic refactored into `_render_workout_structure_block()` with three honest branches: structured workout found (with shape-classification cross-check), splits available but no structure detected, splits not yet processed. New `splits_available` flag prevents prompts from falsely claiming splits were "examined" when they hadn't been processed.
+
+**Demo Athlete Cloning Pipeline (`apps/api/scripts/clone_athlete_to_demo.py`, `apps/api/routers/garmin.py`):**
+- New script clones a real athlete's full data into a demo account (e.g., `demo@strideiq.run`) for race-director / partner / investor walkthroughs. Transactional dry-run/commit modes; `COPY_TABLES` / `SKIP_TABLES` classification; dynamic schema introspection via `information_schema` to tolerate model-vs-DB drift; FK remapping with special case for `athlete_id`-as-PK 1:1 tables; "demo-" prefix on `external_activity_id` to dodge `uq_activity_provider_external_id`; Redis cache invalidation post-commit.
+- Garmin OAuth guards added: `is_demo` flag on `Athlete` blocks `/auth-url` (403) and `/callback` (redirect to error). Mirrors existing Strava pattern. Demo viewers can navigate but cannot connect their own Garmin/Strava or modify the source athlete's data.
+- Verified end-to-end on production for `demo@strideiq.run` — full data cloned, briefing regenerated through standard K2.5 pathway.
+
+**Compare Tab Redesign — Strategic Decision (`docs/specs/COMPARE_REDESIGN.md`, `docs/DESIGN_PHILOSOPHY_AND_SITE_ROADMAP.md`):**
+- Founder identified the activity-page Compare tab as the weakest tab in the product. Decision captured: build "shape-resolved comparison" (rep N vs rep N, climb vs climb, fade vs fade) with single delta strip + per-feature cards + in-place picker. Top-line metric deltas (pace/time/HR/heat-adjusted) carry the "have I improved generally" question in the header. Empty-state with dignity when no comparable.
+- **Sequenced behind Run Shape Canvas redesign** (founder flagged the current canvas as not telling the story well; redesign proposal pending) because Compare inherits the canvas's visual vocabulary. Direction 2 (pairwise gap decomposition / attribution bar) deferred to v2 pending honest pairwise attribution. Direction 3 (performance space scatter) deferred pending per-athlete-per-route expected pace model.
+
+**Tests:** 11 new tests for heat-aware cooldown, 7 new tests for interval gate multi-signal, 4 new tests for prompt honesty, 3 new tests for fingerprint expansion, plus Garmin guard tests + cloning correctness/safety tests. Full `test_run_intelligence.py` suite green.
+
+## [2026-04-18] briefing-morning-voice-quality-gates | Tighten morning_voice content gates without breaking the 80% good
+
+The founder showed a production briefing that asked the athlete a literal question, stitched two findings together with "Separately,", and exceeded the 2-3 sentence morning_voice contract. About 80% of briefings are exceptional and improving; this change is purely additive so the good output keeps shipping unchanged.
+
+**Root cause:** `build_fingerprint_prompt_section`'s EMERGING PATTERN block literally instructed the LLM to "rewrite in your coaching voice" the question "What do you think is driving this?". That framing is correct for the conversational coach but wrong for the one-way morning briefing.
+
+**Three-layer fix in `services/coaching/_context.py`, `services/voice_validator.py`, `tasks/home_briefing_tasks.py`, `routers/home.py`:**
+1. **Source:** `build_fingerprint_prompt_section` gains `include_emerging_question` kwarg. The morning_voice lane in `generate_coach_home_briefing` and `_build_rich_intelligence_context` now passes `False`, which rewrites the EMERGING block as a low-confidence observation with explicit "do not lead, do not ask a question" guidance. The chat coach (`coach_tools/brief.py`) keeps the question.
+2. **Defense in depth:** `validate_voice_output` gains four content gates for `morning_voice` + `coach_noticed`:
+   - `interrogative` (any "?" in the field)
+   - `multi_topic` ("Separately,", "Additionally,", "Also,", "Meanwhile,", "On another note,", "Beyond that,")
+   - `meta_preamble` ("Your data shows", "worth discussing/noting", "I've noticed a pattern", "Looking at your data", "The data suggests")
+   - `sentence_cap` (>3 sentences in morning_voice)
+3. **Recovery:** new `_strip_disallowed_sentences` helper removes only the sentences that trip the content gates and re-validates the remainder. The worker (`home_briefing_tasks`) and the read-time normaliser (`_normalize_cached_briefing_payload`) both call strip-and-recover before falling back to the deterministic string. Preserves the 80% of good content in a partially-bad briefing — only when nothing usable remains do we publish the fallback.
+
+**Sentence splitter** now preserves terminators (required for the interrogative gate to detect "?"-ending sentences after splitting) and keeps mid-decimal dots together (so "7.5 hours" stays one token, which the existing sleep-grounding strip relies on).
+
+**Tests:** 30 new tests in `test_home_voice_quality_gates.py` against the verbatim bad text from the production screenshot — every gate is covered and the verbatim good `coach_noticed` from the same screenshot is asserted to keep passing. Existing 274 briefing/coach tests stay green.
+
+## [2026-04-18] nutrition-phases-1-2-3-end-to-end | Past-day editing, per-athlete food overrides, saved meals (meal templates)
+
+Three product phases + two follow-up fixes shipped in one morning. Athletes can backfill missed meals on past days, the system remembers macro corrections per athlete, and recurring meals can be saved by name and re-logged in one tap.
+
+**Phase 1 — Past-day editing (60-day window) (`apps/api/routers/nutrition.py`, `apps/web/app/nutrition/page.tsx`):**
+- New `_validate_entry_date()` helper + `MAX_BACKLOG_DAYS=60` constant. Wired into `POST /v1/nutrition`, `PUT /v1/nutrition/{id}`, `PATCH /v1/nutrition/{id}`. Future dates → 400; >60d old → 400; today..today-60 allowed.
+- **Phase 1 redo (commit `501e823`):** the first pass shipped a macros-only inline form on the History tab. That defeated the whole point — food database, photo parser, barcode scanner, NL parser, and fueling shelf were all unreachable when adding to a prior day. The redo introduces a shared `entryDate` state (today on Today tab, `selectedDate` on History) threaded through every create path: photo confirm, barcode confirm, NL parse draft, manual form, and shelf one-tap log. The hidden file input and Type/NL form are lifted to page root so they stay mounted across tab switches. `FuelingLogRequest` gains an optional `entry_date`; `log_fueling` defaults to athlete-local today and runs through `_validate_entry_date` so shelf-tap backfill respects the same window. Toast copy distinguishes today vs backfill ("Logged to Apr 17"). The originally-shipped pass was sub-par; the redo is the change that should have shipped first.
+- **Field rename (commit `53fe7d7`):** `FuelingLogRequest.date` → `entry_date`. Pydantic v2 was silently coercing the new `Optional[date]` field to `None` because the field name `date` shadowed the imported `date` type during annotation evaluation, so every backfill request returned 422 `none_required` ("Input should be None"). Renaming eliminates the shadowing.
+
+**Phase 2 — Per-athlete food overrides (`athlete_food_override_001` migration, `services/food_override_service.py`):**
+- When the user edits the macros of a logged food that came from a barcode scan or USDA lookup, persist that correction as an `athlete_food_override` keyed on `(athlete_id, identifier)`. Next scan/parse for the same food returns the corrected values automatically and tags the response with `is_athlete_override=true` so the UI can show a "Your values" chip.
+- New `athlete_food_override` table with one-identifier check constraint covering UPC, FDC ID, and `fueling_product_id`, plus unique partial indexes per identifier. New `source_fdc_id` and `source_upc` columns on `nutrition_entry` so the edit handler can attribute the entry back to a food.
+- `food_override_service`: `find_override` (precedence UPC > FPID > FDC), `upsert_override`, `record_override_applied`, schema-light response patcher.
+- Wires: `scan_barcode` and `parse_photo` apply overrides; both also honour overrides for foods we don't have in our catalog yet. `create_nutrition_entry` / `update_nutrition_entry` / `patch_nutrition_entry` persist source ids and auto-learn an override on macro edits (best-effort, never blocks the user's save).
+- **Edit auto-learn fix (commit `8d08436`):** `_maybe_learn_override_from_entry` was passing `fluid_ml=None` and `sodium_mg=None` to `upsert_override`, but `upsert_override` only accepts `sodium_mg`. The TypeError was swallowed by the helper's broad `except`, so edits silently failed to persist any override. Both unsupported kwargs dropped.
+
+**Phase 3 — Saved meals + name-this-meal prompt (`meal_template_named_001` migration, `services/meal_template_service.py`):**
+- Athletes can save recurring meals ("Workday Breakfast") under a name and re-log them in one tap. Implicitly learned meal patterns now surface a "name this meal" prompt once they've been confirmed three times so they become reusable.
+- Schema: `meal_template` gains `name`, `is_user_named`, `name_prompted_at`, `created_at`. Partial index on `(athlete_id) WHERE is_user_named = true` for the named-meals picker.
+- Service rewrite: `TemplateItem` dataclass + `save_named_template` that promotes an existing implicit row instead of duplicating; `list_named_templates` / `get` / `update` / `delete` CRUD; `log_template_for_athlete` that builds a `NutritionEntry` with summed macros and `macro_source = "meal_template"`; `mark_name_prompt_shown` (idempotent); `find_template` returns `should_prompt_name` + `is_user_named`.
+- **Critical fix:** `upsert_template` now skips single-item entries to stop the implicit learner from polluting the table with single barcode logs (this was the root of the "templates are noise" bug).
+- Endpoints: `GET/POST/PATCH/DELETE /v1/nutrition/meals`, `POST /v1/nutrition/meals/{id}/log` (respects 60-day past-day window), `POST /v1/nutrition/meals/{id}/dismiss-name-prompt`. `create_nutrition_entry` no longer upserts noise — only learns from comma-separated, multi-item, non-barcode entries.
+- Frontend: new "Meals" tab with create/edit form (name + per-item macros), saved-meals list, one-tap "Log" / "Edit" / delete. Logs land on `selectedDate` so the same picker doubles as a backfill tool.
+
+**CI:** Phase 1/2/3 nutrition tests added to the Backend Smoke (Golden Paths) job so they actually run on every push (Backend Tests was gated to schedule/dispatch only, which had silently skipped Phase 2). `EXPECTED_HEADS` bumped to `meal_template_named_001`.
+
+**Tests:** Override service unit tests (identifier validation, upsert/find roundtrip, precedence, list, record-applied, response patcher) + endpoint integration tests for the full scan→log→edit→rescan loop, PATCH auto-learn, per-athlete isolation. Meal template service unit tests (signature normalization, single-item skip, threshold gating, named promotion, list filter, rename, item replace, delete, log totals, idempotent name-prompt) + endpoint integration tests (create + list, log creates entry with correct macros, log respects past-day/future-date guard, rename, delete, per-athlete isolation). 14 cases in `test_nutrition_past_day_window.py` covering validator boundaries, POST window, PUT window, GET roundtrip on backfilled day.
+
+**Known gap (carried forward):** the Meals-tab create form takes per-item macros as raw inputs — it does not yet wire to `/v1/nutrition/parse` or USDA autocomplete, so first-time saved-meal creation still requires typing macros. Wiring is the next nutrition task.
+
 ## [2026-04-15] test-suite-root-cause-fixes | 53 test failures root-caused and fixed (3584 pass, 0 fail)
 
 Following the project reorg (models/, services/sync/, services/intelligence/, services/coaching/, services/coach_tools/ package splits), 53 tests failed. All were diagnosed to root causes across 9 categories and fixed with production-quality corrections — not test patches.

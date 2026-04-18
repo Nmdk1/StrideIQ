@@ -48,7 +48,13 @@ Threshold: `median * 0.92` (must be ≥8% faster than median to qualify as "work
 
 **Prompt authority:** When `shape_classification` disagrees with structure detection, the prompt tells the LLM to trust `run_shape` and treat structure as secondary context.
 
-**Explicit null-structure guardrail:** When `_summarize_workout_structure` returns `None`, the prompt injects: "NO WORKOUT STRUCTURE DETECTED — the analysis system examined the splits and determined this was a CONTINUOUS run, NOT intervals or repeats. Do NOT describe this run as intervals, reps, repeats, or any structured workout. Do NOT invent split-level data." This `else` branch (line ~2273 in `home.py`) was added to kill the interval hallucination bug at the prompt level — the LLM was inventing structure even when the detection system found none.
+**Honest workout-structure prompt (Apr 18, 2026):** Workout-structure prompt logic lives in `_render_workout_structure_block(c)` in `routers/home.py` and has three branches driven by `c["workout_structure"]` and the new `c["splits_available"]` flag:
+
+1. **Structure found** — prompt names the structure and cross-checks against `run_shape.summary.workout_classification`. If they agree (track_intervals, threshold_intervals, hill_repeats, fartlek, tempo, over_under, progression, strides, anomaly), the LLM is told the average pace blends warmup/work/rest and to coach from the split breakdown. If they disagree, the LLM is told to trust the run_shape and treat the structure as secondary context.
+2. **Splits available, no structure** — prompt says "NO STRUCTURED WORKOUT PATTERN — split-level analysis ran and found no interval/rep structure." Forbids inventing split-level data (fastest rep, slowest rep, rep count). Requires describing the run from overall metrics only.
+3. **Splits not yet processed** — prompt says "SPLIT-LEVEL ANALYSIS NOT YET AVAILABLE — describe it using overall metrics only." Forbids inventing split-level data and forbids making claims about whether the run was structured. Replaces the older false claim that "the analysis system examined the splits and determined this was a CONTINUOUS run" — that wording lied when splits hadn't landed yet.
+
+The `splits_available` flag is computed in both the request path (`routers/home.py`) and the worker path (`tasks/home_briefing_tasks.py`) by checking `ActivitySplit` rows for `today_actual.id`. The flag also feeds `_build_data_fingerprint`, so the brief regenerates when splits land asynchronously.
 
 ### Guardrails
 
@@ -57,6 +63,16 @@ Threshold: `median * 0.92` (must be ≥8% faster than median to qualify as "work
 - **Date labels:** All activity dates include pre-computed relative labels — LLM never computes relative time
 - **Deterministic path:** `compute_coach_noticed` provides deterministic signals separate from LLM generation
 - **No prescriptive claims:** Briefing acknowledges cross-training load but does not predict how the athlete will feel
+- **Morning-voice content gates (Apr 18, 2026):** `validate_voice_output` enforces four content gates on the `morning_voice` and `coach_noticed` fields. Failures trigger `_strip_disallowed_sentences`, which removes only the offending sentences and re-validates the remainder; only when nothing usable remains do we publish the deterministic fallback. Preserves the ~80% of good content in a partially-bad briefing instead of nuking it.
+
+  | Gate | Trigger | Why |
+  |------|---------|-----|
+  | `interrogative` | any `?` in the field | morning_voice is one-way; questions belong to the chat coach |
+  | `multi_topic` | "Separately,", "Additionally,", "Also,", "Meanwhile,", "On another note,", "Beyond that," | morning_voice should land one specific point, not a digest |
+  | `meta_preamble` | "Your data shows", "worth discussing/noting", "I've noticed a pattern", "Looking at your data", "The data suggests" | the athlete already knows we looked at their data |
+  | `sentence_cap` | >3 sentences in `morning_voice` | enforces the 2-3 sentence contract |
+
+  **Source-side fix (paired):** `build_fingerprint_prompt_section` gains `include_emerging_question` kwarg. The morning_voice lane in `generate_coach_home_briefing` and `_build_rich_intelligence_context` passes `False`, which rewrites the EMERGING PATTERN block as a low-confidence observation with explicit "do not lead, do not ask a question" guidance. The chat coach (`coach_tools/brief.py`) keeps the question.
 
 ### Scheduling
 

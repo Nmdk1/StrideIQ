@@ -30,11 +30,13 @@ Full nutrition tracking with three input modes (photo, barcode, text), a fueling
 
 | Table | Purpose |
 |-------|---------|
-| `nutrition_entry` | Per-entry log: date, entry_type, macros, caffeine, fluid, timing, notes, macro_source, fueling_product_id |
+| `nutrition_entry` | Per-entry log: date, entry_type, macros, caffeine, fluid, timing, notes, macro_source, fueling_product_id, **source_fdc_id**, **source_upc** |
 | `nutrition_goal` | Athlete targets: goal_type, protein_g_per_kg, carb_pct, fat_pct, caffeine, load_adaptive, load_multipliers |
 | `usda_food` | 1.8M branded foods from USDA FoodData Central with UPCs |
 | `fueling_product` | 97 endurance products (gels, drink mixes, bars, chews) with verified macros |
 | `athlete_fueling_profile` | Per-athlete shelf of favorite fueling products |
+| `athlete_food_override` | Per-athlete macro corrections keyed on UPC / FDC ID / fueling_product_id (Apr 18, 2026) |
+| `meal_template` | Saved or implicitly-learned meal patterns: name, is_user_named, name_prompted_at, items (Apr 18, 2026) |
 
 ### Entry Types
 
@@ -103,8 +105,9 @@ The coach sees nutrition via two mechanisms:
 
 | Tab | Content |
 |-----|---------|
-| **Log** | Today's entries (tap-to-edit, delete), input modes, fueling shelf, daily target progress |
-| **History** | Date navigation, per-day entries with target comparison, 7-day summary, CSV export |
+| **Today** | Today's entries (tap-to-edit, delete), input modes, fueling shelf, daily target progress |
+| **History** | Date navigation, per-day entries with target comparison, 7-day summary, CSV export, **inline backfill via the same input modes** (photo / barcode / NL parse / shelf / manual), tap-to-edit any past entry within the 60-day window (Apr 18, 2026) |
+| **Meals** | Saved meal templates: create, name, edit per-item macros, one-tap log to any selected day, delete (Apr 18, 2026) |
 | **Insights** | Weekly averages, 30-day trend chart, pre-run fueling linked to activities |
 
 ### API Endpoints
@@ -123,6 +126,40 @@ The coach sees nutrition via two mechanisms:
 | `POST /v1/nutrition/scan-barcode` | UPC → product lookup |
 | `GET/POST /v1/nutrition/goal` | Nutrition goal CRUD |
 | `GET /v1/nutrition/daily-target` | Computed daily targets + actuals + pacing |
+| `POST /v1/nutrition/log-fueling` | One-tap shelf log (accepts optional `entry_date` for backfill) |
+| `GET/POST/PATCH/DELETE /v1/nutrition/meals` | Saved meal templates CRUD |
+| `POST /v1/nutrition/meals/{id}/log` | Log a saved meal to today or a selected past day (60-day window) |
+| `POST /v1/nutrition/meals/{id}/dismiss-name-prompt` | Dismiss the "name this meal" prompt for a learned pattern |
+
+### Past-Day Window (Apr 18, 2026)
+
+`_validate_entry_date()` enforces a 60-day backfill window on every write path: `POST /v1/nutrition`, `PUT /v1/nutrition/{id}`, `PATCH /v1/nutrition/{id}`, `POST /v1/nutrition/log-fueling`, `POST /v1/nutrition/meals/{id}/log`. Future dates → 400. Anything older than `MAX_BACKLOG_DAYS = 60` → 400. Today through 60 days back → allowed. The window keeps correlation analytics clean while letting athletes correct missed meals.
+
+## Per-Athlete Food Overrides (Apr 18, 2026)
+
+When an athlete edits the macros of a logged food that came from a barcode scan or USDA lookup, the correction is persisted as an `athlete_food_override` row keyed on `(athlete_id, identifier)`. The next scan or parse for the same food returns the corrected values automatically, and the response is tagged `is_athlete_override=true` so the UI shows a **"Your values"** chip.
+
+| Identifier | Precedence | Source |
+|------------|------------|--------|
+| `upc_normalized` | 1 (highest) | Barcode scans |
+| `fueling_product_id` | 2 | Shelf logs |
+| `fdc_id` | 3 | USDA lookups (text/photo parse) |
+
+A check constraint on `athlete_food_override` enforces exactly one identifier per row. Edit auto-learn is best-effort and never blocks the user's save; failures log a warning. Service: `services/food_override_service.py`. Wires: `scan_barcode`, `parse_photo`, `create_nutrition_entry`, `update_nutrition_entry`, `patch_nutrition_entry`.
+
+## Saved Meals — Meal Templates (Apr 18, 2026)
+
+Athletes save recurring meals ("Workday Breakfast", "Long-run Pre-fuel") under a name and re-log them in one tap. Implicitly-learned patterns (the system already detected via `find_template`) surface a **"name this meal"** prompt once they've been confirmed three times so they become reusable.
+
+- **Schema:** `meal_template` carries `name`, `is_user_named`, `name_prompted_at`, `created_at`. Partial index on `(athlete_id) WHERE is_user_named = true` for the named-meals picker.
+- **Promotion, not duplication:** `save_named_template` promotes an existing implicit row in place rather than creating a duplicate.
+- **Logging:** `log_template_for_athlete` builds a `NutritionEntry` with summed macros and `macro_source = "meal_template"`. Logs land on the user's `selectedDate` so the picker doubles as a backfill tool.
+- **Noise control:** `upsert_template` skips single-item entries — the implicit learner only acts on comma-separated, multi-item, non-barcode entries. Prevents single barcode logs from polluting the table.
+- Service: `services/meal_template_service.py`.
+
+## Known Gap
+
+The Meals-tab create form takes per-item macros as raw inputs (food name + cal/protein/carbs/fat). It does not yet wire to `/v1/nutrition/parse` or USDA autocomplete, so first-time saved-meal creation still requires typing macros. Wiring the parser into the meal builder is the next nutrition task.
 
 ## Nutrition as a First-Class Metric
 
