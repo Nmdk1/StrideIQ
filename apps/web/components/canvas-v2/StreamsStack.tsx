@@ -1,0 +1,221 @@
+'use client';
+
+/**
+ * StreamsStack — two stacked SVG line charts (Pace + HR) sharing one x-axis.
+ *
+ * Coordinated scrub: mousemove computes t in [0, 1] and writes to ScrubProvider.
+ * Mouseleave clears. The terrain panel reads the same context and renders the
+ * runner marker; the moment readout reads the same context and shows values.
+ *
+ * Plain SVG (no recharts) — full control over scrub interaction, no library
+ * coupling, and the stream is already LTTB-downsampled to ≤500 pts so a
+ * single SVG path renders fast.
+ */
+
+import React, { useMemo, useRef } from 'react';
+import { useScrubState } from './hooks/useScrubState';
+import type { TrackPoint } from './hooks/useResampledTrack';
+
+const CHART_HEIGHT = 96;
+const CHART_PADDING_TOP = 8;
+const CHART_PADDING_BOTTOM = 8;
+const PLOT_HEIGHT = CHART_HEIGHT - CHART_PADDING_TOP - CHART_PADDING_BOTTOM;
+
+interface SeriesPoint {
+  t: number;
+  v: number;
+}
+
+function buildSeries(track: TrackPoint[], pick: (p: TrackPoint) => number | null): SeriesPoint[] {
+  const out: SeriesPoint[] = [];
+  for (const p of track) {
+    const v = pick(p);
+    if (v !== null && Number.isFinite(v)) {
+      out.push({ t: p.t, v });
+    }
+  }
+  return out;
+}
+
+function buildSmoothPath(series: SeriesPoint[], width: number, vMin: number, vMax: number, invertY: boolean): string {
+  if (series.length < 2) return '';
+  const range = vMax - vMin || 1;
+  const yFor = (v: number) => {
+    const norm = (v - vMin) / range;
+    const inverted = invertY ? 1 - norm : norm;
+    return CHART_PADDING_TOP + inverted * PLOT_HEIGHT;
+  };
+  const xFor = (t: number) => t * width;
+
+  let d = `M ${xFor(series[0].t).toFixed(2)} ${yFor(series[0].v).toFixed(2)}`;
+  for (let i = 1; i < series.length; i++) {
+    d += ` L ${xFor(series[i].t).toFixed(2)} ${yFor(series[i].v).toFixed(2)}`;
+  }
+  return d;
+}
+
+function buildAreaPath(series: SeriesPoint[], width: number, vMin: number, vMax: number, invertY: boolean): string {
+  const linePath = buildSmoothPath(series, width, vMin, vMax, invertY);
+  if (!linePath) return '';
+  const lastX = (series[series.length - 1].t * width).toFixed(2);
+  const firstX = (series[0].t * width).toFixed(2);
+  const baseY = CHART_PADDING_TOP + PLOT_HEIGHT;
+  return `${linePath} L ${lastX} ${baseY} L ${firstX} ${baseY} Z`;
+}
+
+function paceSecondsToMinSec(seconds: number): string {
+  const m = Math.floor(seconds / 60);
+  const s = Math.round(seconds % 60);
+  return `${m}:${s.toString().padStart(2, '0')}`;
+}
+
+/**
+ * Internal: one stacked band. Renders title + path + scrub vertical line.
+ */
+interface BandProps {
+  title: string;
+  unit: string;
+  series: SeriesPoint[];
+  width: number;
+  /** Color of the line/area (Tailwind text colors mapped to currentColor). */
+  colorClass: string;
+  /** Pace is "lower is better" → invert so lower pace draws as higher peaks. */
+  invertY?: boolean;
+  /** Format the value for the inline scrub label. */
+  formatValue: (v: number) => string;
+  scrubT: number | null;
+}
+
+function Band({ title, unit, series, width, colorClass, invertY = false, formatValue, scrubT }: BandProps) {
+  const { vMin, vMax, line, area, scrubValue } = useMemo(() => {
+    if (series.length === 0) {
+      return { vMin: 0, vMax: 1, line: '', area: '', scrubValue: null as number | null };
+    }
+    let lo = Infinity;
+    let hi = -Infinity;
+    for (const p of series) {
+      if (p.v < lo) lo = p.v;
+      if (p.v > hi) hi = p.v;
+    }
+    if (lo === hi) {
+      lo -= 1;
+      hi += 1;
+    }
+    let scrubV: number | null = null;
+    if (scrubT !== null && series.length > 0) {
+      // Binary search for nearest t.
+      let lo2 = 0;
+      let hi2 = series.length - 1;
+      while (lo2 < hi2) {
+        const mid = (lo2 + hi2) >> 1;
+        if (series[mid].t < scrubT) lo2 = mid + 1;
+        else hi2 = mid;
+      }
+      scrubV = series[lo2].v;
+    }
+    return {
+      vMin: lo,
+      vMax: hi,
+      line: buildSmoothPath(series, width, lo, hi, invertY),
+      area: buildAreaPath(series, width, lo, hi, invertY),
+      scrubValue: scrubV,
+    };
+  }, [series, width, invertY, scrubT]);
+
+  return (
+    <div className="relative">
+      <div className="absolute top-1.5 left-2 z-10 text-[10px] uppercase tracking-wider text-slate-500 pointer-events-none">
+        {title}
+      </div>
+      {scrubT !== null && scrubValue !== null && (
+        <div
+          className="absolute top-1.5 right-2 z-10 text-xs tabular-nums text-slate-300 pointer-events-none"
+        >
+          {formatValue(scrubValue)} <span className="text-slate-500">{unit}</span>
+        </div>
+      )}
+      <svg
+        width={width}
+        height={CHART_HEIGHT}
+        viewBox={`0 0 ${width} ${CHART_HEIGHT}`}
+        className={`block ${colorClass}`}
+        role="img"
+        aria-label={title}
+      >
+        <path d={area} fill="currentColor" opacity={0.12} />
+        <path d={line} stroke="currentColor" strokeWidth={1.4} fill="none" />
+        {scrubT !== null && (
+          <line
+            x1={scrubT * width}
+            x2={scrubT * width}
+            y1={CHART_PADDING_TOP - 2}
+            y2={CHART_HEIGHT - CHART_PADDING_BOTTOM + 2}
+            stroke="rgba(255,255,255,0.45)"
+            strokeWidth={1}
+          />
+        )}
+      </svg>
+    </div>
+  );
+}
+
+export interface StreamsStackProps {
+  track: TrackPoint[];
+  /** Container width in CSS pixels. Caller must measure (responsive). */
+  width: number;
+}
+
+export function StreamsStack({ track, width }: StreamsStackProps) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const { position, setPosition, clear } = useScrubState();
+
+  const paceSeries = useMemo(() => buildSeries(track, (p) => p.pace), [track]);
+  const hrSeries = useMemo(() => buildSeries(track, (p) => p.hr), [track]);
+
+  const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!containerRef.current) return;
+    const rect = containerRef.current.getBoundingClientRect();
+    if (rect.width <= 0) return;
+    const x = e.clientX - rect.left;
+    setPosition(x / rect.width);
+  };
+
+  if (track.length === 0) {
+    return (
+      <div className="rounded-xl border border-slate-800/60 bg-slate-900/30 p-6 text-sm text-slate-500">
+        No stream data available for this activity.
+      </div>
+    );
+  }
+
+  return (
+    <div
+      ref={containerRef}
+      onPointerMove={handlePointerMove}
+      onPointerLeave={clear}
+      className="relative rounded-xl overflow-hidden border border-slate-800/60 bg-slate-900/30 cursor-crosshair select-none touch-none"
+      style={{ touchAction: 'none' }}
+    >
+      <Band
+        title="Pace"
+        unit="/mi"
+        series={paceSeries}
+        width={width}
+        colorClass="text-emerald-400"
+        invertY
+        formatValue={(secPerKm) => paceSecondsToMinSec(secPerKm * 1.609344)}
+        scrubT={position}
+      />
+      <div className="h-px bg-slate-800/50" />
+      <Band
+        title="Heart Rate"
+        unit="bpm"
+        series={hrSeries}
+        width={width}
+        colorClass="text-rose-400"
+        formatValue={(v) => Math.round(v).toString()}
+        scrubT={position}
+      />
+    </div>
+  );
+}
