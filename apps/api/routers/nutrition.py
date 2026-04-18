@@ -369,6 +369,45 @@ def parse_nutrition(
     )
 
 
+# Per-item meal parsing -- powers the meal builder's "paste your meal"
+# textarea. Returns a list of editable items rather than one merged total.
+
+class MealParseItemResponse(BaseModel):
+    food: str
+    calories: Optional[float] = None
+    protein_g: Optional[float] = None
+    carbs_g: Optional[float] = None
+    fat_g: Optional[float] = None
+    fiber_g: Optional[float] = None
+    macro_source: str = "llm_estimated"
+
+
+class MealParseResponse(BaseModel):
+    items: list[MealParseItemResponse]
+
+
+@router.post("/nutrition/parse-meal", response_model=MealParseResponse, status_code=200)
+def parse_meal(
+    payload: NutritionParseRequest,
+    current_user: Athlete = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    text = (payload.text or "").strip()
+    if not text:
+        raise HTTPException(status_code=422, detail="text is required")
+
+    try:
+        items = nutrition_parser.parse_meal_items(text, db=db)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=f"Meal parsing unavailable: {e}")
+
+    return MealParseResponse(
+        items=[MealParseItemResponse(**item) for item in items]
+    )
+
+
 # ---------------------------------------------------------------------------
 # Photo parsing
 # ---------------------------------------------------------------------------

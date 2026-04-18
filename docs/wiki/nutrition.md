@@ -121,8 +121,9 @@ The coach sees nutrition via two mechanisms:
 | `GET /v1/nutrition/summary` | Rolling window summary |
 | `GET /v1/nutrition/activity-linked` | Activities with pre/during/post nutrition |
 | `GET /v1/nutrition/export` | CSV download |
-| `POST /v1/nutrition/parse-text` | NL text → macros |
-| `POST /v1/nutrition/parse-photo` | Photo → macros |
+| `POST /v1/nutrition/parse` | NL text → single merged entry (Today-tab "Type" input) |
+| `POST /v1/nutrition/parse-meal` | NL text → list of per-item entries (meal builder textarea) |
+| `POST /v1/nutrition/parse-photo` | Photo → per-item entries |
 | `POST /v1/nutrition/scan-barcode` | UPC → product lookup |
 | `GET/POST /v1/nutrition/goal` | Nutrition goal CRUD |
 | `GET /v1/nutrition/daily-target` | Computed daily targets + actuals + pacing |
@@ -157,9 +158,13 @@ Athletes save recurring meals ("Workday Breakfast", "Long-run Pre-fuel") under a
 - **Noise control:** `upsert_template` skips single-item entries — the implicit learner only acts on comma-separated, multi-item, non-barcode entries. Prevents single barcode logs from polluting the table.
 - Service: `services/meal_template_service.py`.
 
-## Known Gap
+### Meal Builder Parse (Apr 18, 2026)
 
-The Meals-tab create form takes per-item macros as raw inputs (food name + cal/protein/carbs/fat). It does not yet wire to `/v1/nutrition/parse` or USDA autocomplete, so first-time saved-meal creation still requires typing macros. Wiring the parser into the meal builder is the next nutrition task.
+The meal builder has a "Paste your meal" textarea above the item rows. Athletes type free text ("2 eggs scrambled, 1 slice whole wheat toast, 1 tbsp peanut butter") and `POST /v1/nutrition/parse-meal` returns a list of structured items that pre-populate the rows. Each row stays editable so the athlete can adjust quantities or correct macros before saving.
+
+**Service:** `services/nutrition_parser.py::parse_meal_items()`. Same provider order as the single-entry parser (Kimi K2.5 primary, OpenAI fallback). Per-item USDA enrichment fills only the macros the LLM left null — never overwrites a value the LLM already produced. Empty input → 422. Both providers fail → 503.
+
+The endpoint mirrors `/v1/nutrition/parse` but returns `{items: [{food, calories, protein_g, carbs_g, fat_g, fiber_g, macro_source}]}` instead of one merged total. Use `/parse` for the Today-tab "Type" input (single entry) and `/parse-meal` for the meal builder (per-item array).
 
 ## Nutrition as a First-Class Metric
 

@@ -27,6 +27,7 @@ import {
   useDeleteMealTemplate,
   useUpdateMealTemplate,
   useLogMealTemplate,
+  useParseMealItems,
 } from '@/lib/hooks/queries/nutrition';
 import type { MealTemplate, MealTemplateItem } from '@/lib/api/services/nutrition';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
@@ -187,6 +188,8 @@ export default function NutritionPage() {
     items: [{ food: '', calories: undefined, protein_g: undefined, carbs_g: undefined, fat_g: undefined }],
   });
   const [editingMealId, setEditingMealId] = useState<number | null>(null);
+  const parseMealItems = useParseMealItems();
+  const [mealParseText, setMealParseText] = useState('');
 
   const [showGoalSetup, setShowGoalSetup] = useState(false);
   const [goalForm, setGoalForm] = useState({
@@ -1538,6 +1541,62 @@ export default function NutritionPage() {
                       onChange={(e) => setMealForm({ ...mealForm, name: e.target.value })}
                       className="w-full px-3 py-2 bg-slate-800 rounded text-sm"
                     />
+
+                    {nlAvailable?.available && (
+                      <div className="space-y-1.5">
+                        <label className="block text-xs text-slate-400">
+                          Paste your meal and we&rsquo;ll fill in the macros
+                        </label>
+                        <div className="flex gap-2">
+                          <textarea
+                            value={mealParseText}
+                            onChange={(e) => setMealParseText(e.target.value)}
+                            rows={2}
+                            placeholder='"2 eggs scrambled, 1 slice whole wheat toast, 1 tbsp peanut butter"'
+                            className="flex-1 px-2 py-1.5 bg-slate-800 rounded text-xs resize-y"
+                          />
+                          <button
+                            type="button"
+                            disabled={parseMealItems.isPending || !mealParseText.trim()}
+                            onClick={async () => {
+                              const text = mealParseText.trim();
+                              if (!text) return;
+                              try {
+                                const result = await parseMealItems.mutateAsync(text);
+                                if (!result.items.length) {
+                                  showToast('Couldn\u2019t recognize any foods');
+                                  return;
+                                }
+                                const parsedItems: MealTemplateItem[] = result.items.map((it) => ({
+                                  food: it.food,
+                                  calories: it.calories,
+                                  protein_g: it.protein_g,
+                                  carbs_g: it.carbs_g,
+                                  fat_g: it.fat_g,
+                                  fiber_g: it.fiber_g,
+                                }));
+                                // Replace the empty starter row, otherwise
+                                // append. Either way every parsed item is
+                                // editable in the rows below.
+                                const existing = mealForm.items.filter((i) => i.food.trim());
+                                setMealForm({
+                                  ...mealForm,
+                                  items: existing.length ? [...existing, ...parsedItems] : parsedItems,
+                                });
+                                setMealParseText('');
+                                showToast(`Added ${parsedItems.length} item${parsedItems.length === 1 ? '' : 's'}`);
+                              } catch {
+                                showToast('Couldn\u2019t parse that meal');
+                              }
+                            }}
+                            className="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 disabled:bg-slate-800 disabled:cursor-not-allowed rounded text-xs text-slate-200 self-start"
+                          >
+                            {parseMealItems.isPending ? <LoadingSpinner size="sm" /> : 'Parse'}
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
                     {mealForm.items.map((item, idx) => (
                       <div key={idx} className="grid grid-cols-12 gap-1.5 items-center">
                         <input

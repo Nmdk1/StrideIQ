@@ -187,6 +187,20 @@ export interface MealTemplateLogRequest {
   notes_override?: string;
 }
 
+export interface MealParseItem {
+  food: string;
+  calories?: number;
+  protein_g?: number;
+  carbs_g?: number;
+  fat_g?: number;
+  fiber_g?: number;
+  macro_source: string;
+}
+
+export interface MealParseResponse {
+  items: MealParseItem[];
+}
+
 export const nutritionService = {
   async nlParsingAvailable(): Promise<{ available: boolean }> {
     return apiClient.get<{ available: boolean }>('/v1/nutrition/parse/available', { skipAuth: true, retries: 0 });
@@ -194,6 +208,10 @@ export const nutritionService = {
 
   async parseText(text: string): Promise<NutritionEntryCreate> {
     return apiClient.post<NutritionEntryCreate>('/v1/nutrition/parse', { text }, { retries: 0 });
+  },
+
+  async parseMeal(text: string): Promise<MealParseResponse> {
+    return apiClient.post<MealParseResponse>('/v1/nutrition/parse-meal', { text }, { retries: 0 });
   },
 
   async parsePhoto(imageFile: File): Promise<PhotoParseResult> {

@@ -101,7 +101,9 @@ jobs:
             tests/test_food_override_service.py \
             tests/test_food_override_endpoints.py \
             tests/test_meal_template_service.py \
-            tests/test_meal_template_endpoints.py
+            tests/test_meal_template_endpoints.py \
+            tests/test_nutrition_meal_parser.py \
+            tests/test_nutrition_parse_api.py
 
   backend-test:
     name: Backend Tests

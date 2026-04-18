@@ -87,6 +87,13 @@ export function useParseNutritionText() {
   });
 }
 
+export function useParseMealItems() {
+  return useMutation({
+    mutationFn: (text: string) => nutritionService.parseMeal(text),
+    retry: false,
+  });
+}
+
 export function useParsePhoto() {
   return useMutation<PhotoParseResult, Error, File>({
     mutationFn: (file: File) => nutritionService.parsePhoto(file),
