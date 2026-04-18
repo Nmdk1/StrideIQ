@@ -114,8 +114,6 @@ def _maybe_learn_override_from_entry(
             fat_g=_f(entry.fat_g),
             fiber_g=_f(entry.fiber_g),
             caffeine_mg=_f(entry.caffeine_mg),
-            fluid_ml=None,
-            sodium_mg=None,
         )
     except Exception:
         # Auto-learn is a nice-to-have; never fail the user's edit because

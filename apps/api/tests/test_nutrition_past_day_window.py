@@ -91,12 +91,15 @@ class TestValidateEntryDate:
     def test_one_day_past_max_backlog_is_rejected(self):
         with pytest.raises(Exception) as exc:
             _validate_entry_date(date.today() - timedelta(days=MAX_BACKLOG_DAYS + 1))
-        assert "60" in str(exc.value) or "older" in str(exc.value).lower()
+        # FastAPI HTTPException stringifies to '' but the detail carries the message.
+        msg = str(getattr(exc.value, "detail", exc.value)).lower()
+        assert "60" in msg or "older" in msg
 
     def test_tomorrow_is_rejected(self):
         with pytest.raises(Exception) as exc:
             _validate_entry_date(date.today() + timedelta(days=1))
-        assert "future" in str(exc.value).lower()
+        msg = str(getattr(exc.value, "detail", exc.value)).lower()
+        assert "future" in msg
 
     def test_far_future_is_rejected(self):
         with pytest.raises(Exception):
