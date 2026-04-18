@@ -141,7 +141,7 @@ export function useRemoveFromProfile() {
 export function useLogFueling() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (data: { product_id: number; entry_type?: string; activity_id?: string; quantity?: number; date?: string }) =>
+    mutationFn: (data: { product_id: number; entry_type?: string; activity_id?: string; quantity?: number; entry_date?: string }) =>
       nutritionService.logFueling(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: nutritionKeys.lists() });

@@ -483,7 +483,9 @@ export default function NutritionPage() {
         product_id: productId,
         entry_type: 'daily',
         // Backend defaults to today when omitted; always send so backfill works.
-        date: entryDate,
+        // Field is `entry_date` (not `date`) because the Pydantic schema avoids
+        // shadowing the imported `date` type.
+        entry_date: entryDate,
       });
       showToast(
         isBackfill

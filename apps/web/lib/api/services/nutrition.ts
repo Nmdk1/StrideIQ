@@ -277,7 +277,7 @@ export const nutritionService = {
     activity_id?: string;
     quantity?: number;
     timing?: string;
-    date?: string;
+    entry_date?: string;
   }): Promise<NutritionEntry> {
     return apiClient.post<NutritionEntry>('/v1/nutrition/log-fueling', data);
   },

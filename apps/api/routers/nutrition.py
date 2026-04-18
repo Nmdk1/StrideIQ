@@ -686,7 +686,7 @@ def log_fueling(
             raise HTTPException(status_code=404, detail="Activity not found")
 
     qty = payload.quantity or 1.0
-    entry_date = payload.date or athlete_local_today(get_athlete_timezone(current_user))
+    entry_date = payload.entry_date or athlete_local_today(get_athlete_timezone(current_user))
     _validate_entry_date(entry_date)
     entry = NutritionEntry(
         athlete_id=current_user.id,

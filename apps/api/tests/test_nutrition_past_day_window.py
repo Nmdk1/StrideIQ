@@ -342,7 +342,7 @@ class TestLogFuelingAcceptsPastDates:
             json={
                 "product_id": fueling_product.id,
                 "entry_type": "daily",
-                "date": d.isoformat(),
+                "entry_date": d.isoformat(),
             },
             headers=_auth_headers(athlete),
         )
@@ -356,7 +356,7 @@ class TestLogFuelingAcceptsPastDates:
             json={
                 "product_id": fueling_product.id,
                 "entry_type": "daily",
-                "date": d.isoformat(),
+                "entry_date": d.isoformat(),
             },
             headers=_auth_headers(athlete),
         )
@@ -370,7 +370,7 @@ class TestLogFuelingAcceptsPastDates:
             json={
                 "product_id": fueling_product.id,
                 "entry_type": "daily",
-                "date": d.isoformat(),
+                "entry_date": d.isoformat(),
             },
             headers=_auth_headers(athlete),
         )

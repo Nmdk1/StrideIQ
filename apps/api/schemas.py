@@ -410,9 +410,12 @@ class FuelingLogRequest(BaseModel):
     activity_id: Optional[UUID] = None
     quantity: float = 1.0
     timing: Optional[datetime] = None
-    # Optional explicit date so the shelf-tap one-tap log can backfill prior days.
-    # Defaults to athlete-local today when omitted.
-    date: Optional[date] = None
+    # Optional explicit calendar day so the shelf-tap one-tap log can backfill
+    # prior days. Defaults to athlete-local today when omitted. Field is named
+    # `entry_date` (not `date`) to avoid shadowing the imported `date` type
+    # during Pydantic v2 annotation evaluation, which silently coerces the
+    # field's type to `None`.
+    entry_date: Optional[date] = None
 
 
 class WorkPatternCreate(BaseModel):
