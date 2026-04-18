@@ -63,7 +63,7 @@ def _build_data_fingerprint(
     db: Session,
 ) -> str:
     """Build a fingerprint of the athlete's current data state."""
-    from models import Activity, Athlete, DailyCheckin, TrainingPlan
+    from models import Activity, ActivitySplit, Athlete, DailyCheckin, TrainingPlan
 
     today = date.today()
     parts = [athlete_id, f"schema:{BRIEFING_FINGERPRINT_VERSION}", f"date:{today.isoformat()}"]
@@ -81,14 +81,51 @@ def _build_data_fingerprint(
         pass
 
     try:
+        # Pull richer signal so async-arriving stream analysis triggers
+        # cache invalidation. Prior versions only watched id+start_time,
+        # which is set at upload time -- splits, run_shape, and
+        # workout_type all land later asynchronously, and without them
+        # in the fingerprint the cached "no workout structure" brief
+        # froze even after the structured workout context arrived.
+        # (Founder regression, 2026-04-18.)
         latest_activity = (
-            db.query(Activity.id, Activity.start_time)
+            db.query(
+                Activity.id,
+                Activity.start_time,
+                Activity.workout_type,
+                Activity.run_shape,
+            )
             .filter(Activity.athlete_id == athlete_id, Activity.sport == "run")
             .order_by(desc(Activity.start_time))
             .first()
         )
         if latest_activity:
             parts.append(f"act:{latest_activity.id}:{latest_activity.start_time}")
+
+            wt = latest_activity.workout_type or ""
+            parts.append(f"wt:{wt}")
+
+            # Splits arrive asynchronously; use count + presence so the
+            # fingerprint flips both when splits first land AND when
+            # additional segments arrive in a follow-up sync.
+            split_count = (
+                db.query(ActivitySplit.id)
+                .filter(ActivitySplit.activity_id == latest_activity.id)
+                .count()
+            )
+            parts.append(f"splits:{split_count}")
+
+            # run_shape.summary.workout_classification is the stream
+            # analyzer's bucket. We hash on its presence + value so the
+            # brief regenerates when classification flips from absent
+            # to "anomaly", "intervals", "tempo", etc.
+            shape_cls = ""
+            rs = latest_activity.run_shape
+            if isinstance(rs, dict):
+                summary = rs.get("summary") or {}
+                if isinstance(summary, dict):
+                    shape_cls = summary.get("workout_classification") or ""
+            parts.append(f"shape:{shape_cls}")
     except Exception:
         pass
 
@@ -206,7 +243,17 @@ def _build_briefing_prompt(athlete_id: str, db: Session) -> Optional[tuple]:
                 "heat_adjustment_pct": round(float(today_actual.heat_adjustment_pct), 1) if today_actual.heat_adjustment_pct is not None else None,
             }
             try:
+                from models import ActivitySplit
                 from routers.home import _summarize_workout_structure
+                # Tell the prompt branch whether splits actually exist yet.
+                # Without this the "no structure detected" prompt would
+                # falsely claim splits were examined when they hadn't been
+                # processed -- the 2026-04-18 founder regression.
+                today_completed["splits_available"] = (
+                    db.query(ActivitySplit.id)
+                    .filter(ActivitySplit.activity_id == today_actual.id)
+                    .first()
+                ) is not None
                 ws = _summarize_workout_structure(today_actual.id, db)
                 if ws:
                     today_completed["workout_structure"] = ws

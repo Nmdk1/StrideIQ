@@ -1946,6 +1946,83 @@ def _fetch_llm_briefing_sync(
     return result
 
 
+# run_shape classifications that do NOT contradict a detected split-derived
+# workout structure.  Used by _render_workout_structure_block to decide
+# whether to lead with "WORKOUT STRUCTURE" (confirmed) vs "POSSIBLE
+# WORKOUT STRUCTURE" (run_shape disagrees).
+_STRUCTURE_AGREEING_SHAPE_CLASSIFICATIONS = frozenset({
+    "track_intervals",
+    "threshold_intervals",
+    "hill_repeats",
+    "fartlek",
+    "tempo",
+    "over_under",
+    "progression",
+    "strides",
+    "anomaly",  # anomaly = "doesn't fit a clean bucket" -- usually intervals
+    "",
+})
+
+
+def _render_workout_structure_block(c: dict) -> str:
+    """Build the workout-structure prompt block for today's run.
+
+    Three honest branches:
+
+    1. workout_structure present
+       -> render the structure with a confidence prefix based on whether
+          the run_shape classification agrees with structured work
+
+    2. splits_available=True, no workout_structure
+       -> tell the LLM the splits were examined and showed no structured
+          pattern.  Safe assertion -- splits really were inspected.
+
+    3. splits_available=False (or missing)
+       -> tell the LLM that split-level analysis is not yet available
+          for this run.  Do NOT claim splits were inspected.  This was
+          the founder's 2026-04-18 regression: brief fired before async
+          split processing finished, the prompt asserted "examined the
+          splits and determined CONTINUOUS", and the LLM faithfully
+          described an interval workout as a continuous fade.
+    """
+    workout_structure = c.get("workout_structure")
+    if workout_structure:
+        shape_class = c.get("shape_classification", "")
+        structure_agrees = shape_class in _STRUCTURE_AGREEING_SHAPE_CLASSIFICATIONS
+        if structure_agrees:
+            return (
+                f"WORKOUT STRUCTURE (from split data — confirmed by stream analysis):\n  "
+                f"{workout_structure}\n"
+                "The average pace blends warmup, work intervals, and rest jogs. "
+                "Coach from the split breakdown for this structured workout."
+            )
+        return (
+            f"POSSIBLE WORKOUT STRUCTURE (from split data — stream analysis classified this as "
+            f"'{shape_class}', which may indicate natural pace variation rather than structured "
+            f"intervals):\n  {workout_structure}\n"
+            "Use judgment: if the run_shape classification and this structure disagree, "
+            "trust the run_shape and mention the structure only as secondary context."
+        )
+
+    splits_available = c.get("splits_available")
+    if splits_available is True:
+        return (
+            "NO STRUCTURED WORKOUT PATTERN — split-level analysis ran on the splits "
+            "for this run and found no interval/rep structure. "
+            "Do NOT describe this run as intervals, reps, repeats, or any structured workout. "
+            "Do NOT invent split-level data (fastest rep, slowest rep, rep count). "
+            "Describe it from the overall distance, pace, HR, and elevation data only."
+        )
+
+    return (
+        "SPLIT-LEVEL ANALYSIS NOT YET AVAILABLE for this run -- describe it using "
+        "the overall metrics only (distance, pace, HR, elevation, conditions). "
+        "Do NOT invent split-level data (fastest rep, slowest rep, rep count). "
+        "Do NOT make claims about whether this was a structured workout or not -- "
+        "the split data simply hasn't been processed yet."
+    )
+
+
 def _summarize_workout_structure(activity_id, db: Session) -> Optional[str]:
     """
     Detect structured workouts (intervals, tempo w/ warmup) from split data
@@ -2531,35 +2608,7 @@ def generate_coach_home_briefing(
         if c.get("heat_adjustment_pct") is not None and c["heat_adjustment_pct"] > 0:
             today_line += f" (heat-adjusted pace ≈ {c['heat_adjustment_pct']}% slower)"
         parts.append(today_line)
-        workout_structure = c.get("workout_structure")
-        if workout_structure:
-            shape_class = c.get("shape_classification", "")
-            structure_agrees = shape_class in (
-                'track_intervals', 'threshold_intervals', 'hill_repeats',
-                'fartlek', 'tempo', 'over_under', 'progression', 'strides', '',
-            )
-            if structure_agrees:
-                parts.append(
-                    f"WORKOUT STRUCTURE (from split data — confirmed by stream analysis):\n  {workout_structure}\n"
-                    "The average pace blends warmup, work intervals, and rest jogs. "
-                    "Coach from the split breakdown for this structured workout."
-                )
-            else:
-                parts.append(
-                    f"POSSIBLE WORKOUT STRUCTURE (from split data — stream analysis classified this as '{shape_class}', "
-                    f"which may indicate natural pace variation rather than structured intervals):\n  {workout_structure}\n"
-                    "Use judgment: if the run_shape classification and this structure disagree, "
-                    "trust the run_shape and mention the structure only as secondary context."
-                )
-        else:
-            parts.append(
-                "NO WORKOUT STRUCTURE DETECTED — the analysis system examined the splits "
-                "and determined this was a CONTINUOUS run, NOT intervals or repeats. "
-                "Do NOT describe this run as intervals, reps, repeats, or any structured workout. "
-                "Do NOT invent split-level data (fastest rep, slowest rep, rep count). "
-                "Describe it as the continuous run it was, using only the overall distance, "
-                "pace, HR, and elevation data provided."
-            )
+        parts.append(_render_workout_structure_block(c))
         if planned_workout and planned_workout.get("has_workout"):
             plan_mi = planned_workout.get("distance_mi")
             plan_type = planned_workout.get("title") or planned_workout.get("workout_type")
@@ -4105,10 +4154,18 @@ async def get_home_data(
                         "heat_adjustment_pct": round(float(today_actual.heat_adjustment_pct), 1) if today_actual.heat_adjustment_pct is not None else None,
                     }
                     try:
+                        from models import ActivitySplit as _ActivitySplit
+                        # See _render_workout_structure_block: this flag
+                        # keeps the "no structure" prompt branch honest
+                        # when splits haven't been processed yet.
+                        today_completed["splits_available"] = (
+                            db.query(_ActivitySplit.id)
+                            .filter(_ActivitySplit.activity_id == today_actual.id)
+                            .first()
+                        ) is not None
                         ws = _summarize_workout_structure(today_actual.id, db)
                         if ws:
                             today_completed["workout_structure"] = ws
-                        # Pass shape classification for prompt authority gating
                         if today_actual.run_shape and isinstance(today_actual.run_shape, dict):
                             sc = today_actual.run_shape.get('summary', {}).get('workout_classification', '')
                             if sc:

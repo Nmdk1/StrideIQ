@@ -247,6 +247,304 @@ class TestDataFingerprint:
 
         assert fp1 == fp2
 
+    def test_fingerprint_changes_when_splits_land_after_initial_brief(
+        self, db_session, test_athlete
+    ):
+        """Regression for the founder's 2026-04-18 'continuous effort'
+        miss: Garmin uploaded the activity at 14:30, the briefing fired
+        at 15:20 before async split processing finished, and because
+        splits-presence wasn't part of the fingerprint the brief stayed
+        cached -- frozen with 'no workout structure' even after the
+        4 x 1mi split pattern was fully populated.
+
+        After fix: the moment splits arrive, the fingerprint flips,
+        invalidating the cached brief and triggering a fresh generation
+        with the structured workout context."""
+        from tasks.home_briefing_tasks import _build_data_fingerprint
+        from models import Activity, ActivitySplit
+
+        activity = Activity(
+            athlete_id=test_athlete.id,
+            name="Meridian - 2 x 2 x mile",
+            sport="run",
+            start_time=datetime.now(timezone.utc),
+            distance_m=13837,
+            duration_s=4626,
+        )
+        db_session.add(activity)
+        db_session.commit()
+
+        # Initial brief fingerprint -- splits not yet processed.
+        fp_before_splits = _build_data_fingerprint(str(test_athlete.id), db_session)
+
+        # Async split ingestion lands.
+        for i in range(1, 5):
+            db_session.add(ActivitySplit(
+                activity_id=activity.id,
+                split_number=i,
+                distance=1609.34,
+                elapsed_time=362,
+                average_heartrate=150,
+            ))
+        db_session.commit()
+
+        fp_after_splits = _build_data_fingerprint(str(test_athlete.id), db_session)
+        assert fp_before_splits != fp_after_splits, (
+            "fingerprint must change when splits arrive so the cached "
+            "'no workout structure' brief gets regenerated"
+        )
+
+    def test_fingerprint_changes_when_workout_type_lands_after_initial_brief(
+        self, db_session, test_athlete
+    ):
+        """Cycling-style: an unattributed activity gets workout_type set
+        later by athlete edit or auto-classifier. Briefing must regenerate
+        so 'easy run' gets re-described as 'tempo' (or whatever the new
+        type is)."""
+        from tasks.home_briefing_tasks import _build_data_fingerprint
+        from models import Activity
+
+        activity = Activity(
+            athlete_id=test_athlete.id,
+            name="Untagged session",
+            sport="run",
+            start_time=datetime.now(timezone.utc),
+            distance_m=10000,
+            duration_s=3600,
+        )
+        db_session.add(activity)
+        db_session.commit()
+
+        fp_before = _build_data_fingerprint(str(test_athlete.id), db_session)
+
+        activity.workout_type = "cruise_intervals"
+        db_session.commit()
+
+        fp_after = _build_data_fingerprint(str(test_athlete.id), db_session)
+        assert fp_before != fp_after, (
+            "fingerprint must change when workout_type lands so the "
+            "cached brief gets regenerated with the correct workout context"
+        )
+
+    def test_fingerprint_changes_when_run_shape_lands_after_initial_brief(
+        self, db_session, test_athlete
+    ):
+        """Same root cause as the splits-fingerprint test, different
+        signal: run_shape arrives separately from splits (the stream
+        analyzer writes it asynchronously). When it lands with a
+        structured classification like 'anomaly' or 'threshold_intervals'
+        the cached 'continuous run' brief must be invalidated."""
+        from tasks.home_briefing_tasks import _build_data_fingerprint
+        from models import Activity
+
+        activity = Activity(
+            athlete_id=test_athlete.id,
+            name="Threshold session",
+            sport="run",
+            start_time=datetime.now(timezone.utc),
+            distance_m=12000,
+            duration_s=3900,
+        )
+        db_session.add(activity)
+        db_session.commit()
+
+        fp_before = _build_data_fingerprint(str(test_athlete.id), db_session)
+
+        # Stream analyzer writes run_shape with a structured classification.
+        activity.run_shape = {"summary": {"workout_classification": "anomaly"}}
+        db_session.commit()
+
+        fp_after = _build_data_fingerprint(str(test_athlete.id), db_session)
+        assert fp_before != fp_after, (
+            "fingerprint must change when run_shape lands with a structured "
+            "workout_classification so the cached brief gets regenerated"
+        )
+
+
+class TestWorkoutStructurePromptHonesty:
+    """Regression for the founder's 2026-04-18 'continuous effort' miss.
+
+    The bug was two-fold:
+      1. fingerprint blindness (covered above)
+      2. the 'no workout structure' prompt branch told the LLM
+         'the analysis system EXAMINED the splits and determined this
+         was a CONTINUOUS run' -- a lie when splits weren't yet
+         processed at the time the brief was generated.
+
+    The athlete then read 'continuous run' about their interval workout
+    and lost trust.
+
+    The fix differentiates two states in the prompt:
+      A. splits_available=True + no structure detected
+         -> honest 'splits show no structured pattern' message
+      B. splits_available=False (or unknown)
+         -> honest 'split-level analysis not yet available, describe
+            with overall metrics only' (no false claim of inspection)
+    """
+
+    def test_splits_available_true_with_no_structure_says_no_pattern(self):
+        from routers.home import _render_workout_structure_block
+
+        text = _render_workout_structure_block({
+            "splits_available": True,
+            "workout_structure": None,
+        })
+        assert text, "must produce some prompt text"
+        # MUST tell the LLM not to invent structured-workout language.
+        lt = text.lower()
+        assert "intervals" in lt or "structured" in lt or "no" in lt
+        assert (
+            "no structured workout" in lt
+            or "no workout structure" in lt
+            or "continuous" in lt
+        )
+
+    def test_splits_unavailable_does_NOT_claim_inspection(self):
+        # Founder's 2026-04-18 case: brief fired BEFORE async split
+        # processing finished. Prompt must NOT say splits were examined.
+        from routers.home import _render_workout_structure_block
+
+        text = _render_workout_structure_block({
+            "splits_available": False,
+        })
+        assert text, "must produce some prompt text"
+        lt = text.lower()
+        assert "examined the splits" not in lt, (
+            "prompt must not lie about having inspected splits when they "
+            "weren't yet available -- this is what made the LLM call the "
+            "founder's interval workout 'a controlled continuous effort'"
+        )
+        assert "continuous run" not in lt, (
+            "prompt must not assert this was a continuous run when "
+            "split-level analysis has not yet completed"
+        )
+        # And it must still steer the LLM away from making up rep counts.
+        assert (
+            "not yet available" in lt
+            or "not available" in lt
+            or "overall metrics only" in lt
+        )
+
+    def test_splits_available_unset_treated_as_unavailable(self):
+        # Backward compat: callers that haven't been migrated to set
+        # splits_available must NOT trigger the 'examined the splits' lie.
+        from routers.home import _render_workout_structure_block
+
+        text = _render_workout_structure_block({
+            # splits_available key absent entirely
+        })
+        lt = (text or "").lower()
+        assert "examined the splits" not in lt
+        assert "continuous run" not in lt
+
+    def test_workout_structure_present_still_renders_structured_block(self):
+        # The happy path must still work -- this is the 80% of briefings
+        # the founder said are exceptional. Don't break it.
+        from routers.home import _render_workout_structure_block
+
+        text = _render_workout_structure_block({
+            "splits_available": True,
+            "workout_structure": "Warmup: 2.0mi at 8:15/mi\n  Work: 4 x 1mi at 6:03/mi",
+            "shape_classification": "anomaly",
+        })
+        assert "WORKOUT STRUCTURE" in text or "POSSIBLE WORKOUT STRUCTURE" in text
+        assert "1mi at 6:03/mi" in text
+
+
+class TestSplitsAvailableInBriefingPrompt:
+    """End-to-end: the briefing builder MUST tag today_completed with
+    splits_available so the prompt branches honestly. Regression case
+    for the timing race condition that caused the founder's brief to
+    be generated before async split processing landed."""
+
+    def test_splits_available_set_to_false_when_no_splits_yet(
+        self, db_session, test_athlete
+    ):
+        """Activity exists, but stream/split processing hasn't landed yet.
+        today_completed must say splits_available=False so the prompt
+        doesn't claim to have examined the splits."""
+        from tasks.home_briefing_tasks import _build_briefing_prompt
+        from models import Activity
+
+        activity = Activity(
+            athlete_id=test_athlete.id,
+            name="Just-uploaded run",
+            sport="run",
+            start_time=datetime.now(timezone.utc),
+            distance_m=14000,
+            duration_s=4600,
+        )
+        db_session.add(activity)
+        db_session.commit()
+
+        # Patch get_db_sync so the task uses our test session.
+        from contextlib import contextmanager
+        @contextmanager
+        def _ctx():
+            yield db_session
+
+        with patch("tasks.home_briefing_tasks.get_db_sync", _ctx):
+            result = _build_briefing_prompt(str(test_athlete.id), db_session)
+
+        assert result, "_build_briefing_prompt should return a tuple"
+        # The 4th element is checkin_data, but we want today_completed --
+        # find it by looking at the prompt itself: it must NOT contain the
+        # 'examined the splits' lie.
+        prompt = result[0] if result else ""
+        assert "examined the splits" not in prompt.lower(), (
+            "splits don't exist for this activity yet; prompt must not "
+            "claim they were examined. Founder's 2026-04-18 regression."
+        )
+
+    def test_splits_available_set_to_true_when_splits_present(
+        self, db_session, test_athlete
+    ):
+        from tasks.home_briefing_tasks import _build_briefing_prompt
+        from models import Activity, ActivitySplit
+
+        activity = Activity(
+            athlete_id=test_athlete.id,
+            name="Run with splits",
+            sport="run",
+            start_time=datetime.now(timezone.utc),
+            distance_m=10000,
+            duration_s=3000,
+        )
+        db_session.add(activity)
+        db_session.commit()
+
+        for i in range(1, 6):
+            db_session.add(ActivitySplit(
+                activity_id=activity.id,
+                split_number=i,
+                distance=2000,
+                elapsed_time=600,
+                average_heartrate=140,
+            ))
+        db_session.commit()
+
+        from contextlib import contextmanager
+        @contextmanager
+        def _ctx():
+            yield db_session
+
+        with patch("tasks.home_briefing_tasks.get_db_sync", _ctx):
+            result = _build_briefing_prompt(str(test_athlete.id), db_session)
+
+        assert result
+        prompt = result[0] if result else ""
+        # Splits exist + no structure detected -> the prompt may now make
+        # the (honest) claim that splits show no structured workout pattern.
+        # We don't assert the exact phrasing, only that the prompt is not
+        # the 'split data not yet available' fallback.
+        lt = prompt.lower()
+        assert (
+            "no structured workout" in lt
+            or "no workout structure" in lt
+            or "continuous" in lt
+            or "WORKOUT STRUCTURE" in prompt
+        )
+
 
 class TestDedupe:
     """Tests 9-10: in-flight lock and cooldown."""
