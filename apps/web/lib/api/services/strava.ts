@@ -6,6 +6,12 @@ import { apiClient } from '../client';
 
 export interface StravaStatus {
   connected: boolean;
+  /**
+   * True iff the athlete has ever connected Strava (we retain strava_athlete_id
+   * across disconnect for audit). Used to suppress the "Strava disconnected"
+   * banner for athletes who only ever used Garmin.
+   */
+  previously_connected?: boolean;
   strava_athlete_id?: number;
   last_sync?: string;
 }

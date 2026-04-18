@@ -115,10 +115,17 @@ def get_strava_status(
     Get Strava connection status for current user.
     """
     is_connected = bool(current_user.strava_access_token)
+    # An athlete has "previously connected" Strava if a Strava athlete id was ever
+    # captured. We retain strava_athlete_id on disconnect for audit, so this stays
+    # truthy even after the user disconnects. Athletes who only ever used Garmin
+    # (or no provider) will have this as None and should NOT be nagged with the
+    # "Strava disconnected" banner.
+    previously_connected = current_user.strava_athlete_id is not None
     last_sync = current_user.last_strava_sync.isoformat() if current_user.last_strava_sync else None
-    
+
     return {
         "connected": is_connected,
+        "previously_connected": previously_connected,
         "strava_athlete_id": current_user.strava_athlete_id,
         "last_sync": last_sync,
     }

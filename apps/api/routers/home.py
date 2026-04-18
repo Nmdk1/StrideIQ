@@ -459,7 +459,8 @@ def generate_trajectory_sentence(
     quality_completed: int = 0,
     quality_planned: int = 0,
     activities_this_week: int = 0,
-    tsb_context: Optional[str] = None
+    tsb_context: Optional[str] = None,
+    preferred_units: Optional[str] = None,
 ) -> Optional[str]:
     """
     Generate a sparse trajectory sentence.
@@ -468,32 +469,37 @@ def generate_trajectory_sentence(
     Includes TSB context when available.
 
     remaining_mi: Only counts today + future planned miles (excludes missed past days)
+    Units are formatted per the athlete's preferred_units ("metric" -> km, else miles).
     """
-    # Use remaining_mi (today + future) not (planned - completed) to avoid confusion
+    is_metric = (preferred_units or "imperial").lower() == "metric"
+    unit = "km" if is_metric else "mi"
+
+    def _fmt(value_mi: float) -> str:
+        v = value_mi * 1.60934 if is_metric else value_mi
+        return f"{v:.0f} {unit}"
+
     remaining = remaining_mi if remaining_mi > 0 else max(0, planned_mi - completed_mi)
 
     if status == "no_plan":
-        # Still provide insight for users without a plan
         if completed_mi > 0:
             if activities_this_week == 1:
-                return f"{completed_mi:.0f} mi logged this week. Consistency compounds."
+                return f"{_fmt(completed_mi)} logged this week. Consistency compounds."
             elif activities_this_week > 1:
-                base = f"{completed_mi:.0f} mi across {activities_this_week} runs this week."
+                base = f"{_fmt(completed_mi)} across {activities_this_week} runs this week."
                 if tsb_context:
                     return f"{base} {tsb_context}"
                 return base
         return None
 
     if status == "ahead":
-        base = f"Ahead of schedule. {completed_mi:.0f} mi done of {planned_mi:.0f} mi planned."
+        base = f"Ahead of schedule. {_fmt(completed_mi)} done of {_fmt(planned_mi)} planned."
     elif status == "on_track":
-        base = f"On track. {remaining:.0f} mi remaining this week."
+        base = f"On track. {_fmt(remaining)} remaining this week."
     elif status == "behind":
-        base = f"Behind schedule. {remaining:.0f} mi to go."
+        base = f"Behind schedule. {_fmt(remaining)} to go."
     else:
         return None
 
-    # Append TSB context if available (but keep it short)
     if tsb_context and len(base) < 60:
         return f"{base}"
 
@@ -3656,7 +3662,8 @@ async def get_home_data(
         planned_mi=round(planned_mi, 1),
         remaining_mi=round(remaining_mi, 1),
         activities_this_week=activities_this_week,
-        tsb_context=tsb_short_context
+        tsb_context=tsb_short_context,
+        preferred_units=getattr(current_user, "preferred_units", None),
     )
 
     week_progress = WeekProgress(

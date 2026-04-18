@@ -10,6 +10,23 @@ jest.mock('@/components/home/TrialBanner', () => ({ TrialBanner: () => null }));
 jest.mock('@/components/home/FirstInsightsBanner', () => ({ FirstInsightsBanner: () => null }));
 jest.mock('@/components/home/AdaptationProposalCard', () => ({ AdaptationProposalCard: () => null }));
 
+jest.mock('@/lib/context/UnitsContext', () => ({
+  useUnits: () => ({
+    units: 'imperial' as const,
+    formatDistance: (m: number) => `${(m / 1609.344).toFixed(1)} mi`,
+    formatPace: (s: number) => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, '0')}/mi`,
+    formatElevation: (m: number) => `${Math.round(m * 3.28084)} ft`,
+    convertDistance: (m: number) => m / 1609.344,
+    convertPace: (s: number) => s * 1.60934,
+    distanceUnit: 'miles',
+    distanceUnitShort: 'mi',
+    paceUnit: 'min/mi',
+    elevationUnit: 'ft',
+    isLoading: false,
+    setUnits: () => Promise.resolve(),
+  }),
+}));
+
 jest.mock('@/lib/hooks/queries/insights', () => ({
   useInsightFeed: () => ({ data: { cards: [] }, isLoading: false, error: null }),
 }));

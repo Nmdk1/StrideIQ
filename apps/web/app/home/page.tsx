@@ -13,6 +13,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
 import { useHomeData, useQuickCheckin, useInvalidateHome } from '@/lib/hooks/queries/home';
+import { useUnits } from '@/lib/context/UnitsContext';
 import { LastRunHero } from '@/components/home/LastRunHero';
 import { CompactPMC } from '@/components/home/CompactPMC';
 import { RecentCrossTrainingCard } from '@/components/home/RecentCrossTrainingCard';
@@ -665,6 +666,29 @@ function BriefingPendingPlaceholder({
 export default function HomePage() {
   const invalidateHome = useInvalidateHome();
   const { data, isLoading, error } = useHomeData();
+  const { units, formatDistance } = useUnits();
+  const MI_TO_M = 1609.344;
+  const formatMiles = (mi: number | null | undefined, decimals: number = 1) =>
+    mi === null || mi === undefined ? '-' : formatDistance(mi * MI_TO_M, decimals);
+  const formatMilesNoUnit = (mi: number | null | undefined, decimals: number = 1) =>
+    mi === null || mi === undefined
+      ? '-'
+      : (units === 'metric' ? mi * 1.60934 : mi).toFixed(decimals);
+  const rewriteImperialToMetric = (text: string | null | undefined): string | null | undefined => {
+    if (!text || units !== 'metric') return text;
+    let out = text.replace(/(\d+):(\d{2})\s*\/\s*mi\b/gi, (_match, mm, ss) => {
+      const totalSecPerMi = parseInt(mm, 10) * 60 + parseInt(ss, 10);
+      const secPerKm = Math.round(totalSecPerMi / 1.60934);
+      const m = Math.floor(secPerKm / 60);
+      const s = secPerKm % 60;
+      return `${m}:${s.toString().padStart(2, '0')}/km`;
+    });
+    out = out.replace(/(\d+(?:\.\d+)?)\s*mi\b/gi, (_match, mi) => {
+      const km = parseFloat(mi) * 1.60934;
+      return `${km.toFixed(km < 10 ? 1 : 0)} km`;
+    });
+    return out;
+  };
 
   // Briefing pending state + 30s timeout fallback
   const briefingState = data?.briefing_state;
@@ -883,9 +907,9 @@ export default function HomePage() {
                 </p>
               )}
               <p className="text-xs text-slate-500 mt-1.5">
-                {today.distance_mi && <span>{today.distance_mi} mi</span>}
+                {today.distance_mi && <span>{formatMiles(today.distance_mi)}</span>}
                 {today.distance_mi && today.pace_guidance && <span> · </span>}
-                {today.pace_guidance && <span>{today.pace_guidance}</span>}
+                {today.pace_guidance && <span>{rewriteImperialToMetric(today.pace_guidance)}</span>}
                 {today.week_number && <span> · Week {today.week_number}</span>}
                 {today.phase && <span> · {today.phase}</span>}
               </p>
@@ -994,12 +1018,12 @@ export default function HomePage() {
                         ) : day.completed && day.distance_mi ? (
                           <span className="flex flex-col items-center gap-0.5">
                             <CheckCircle2 className="w-3.5 h-3.5" />
-                            <span className="text-[10px]">{day.distance_mi}</span>
+                            <span className="text-[10px]">{formatMilesNoUnit(day.distance_mi)}</span>
                           </span>
                         ) : day.workout_type === 'rest' ? (
                           <span className="text-slate-600">&mdash;</span>
                         ) : day.distance_mi ? (
-                          <span>{day.distance_mi}</span>
+                          <span>{formatMilesNoUnit(day.distance_mi)}</span>
                         ) : (
                           <span className="text-slate-600">&mdash;</span>
                         )}
@@ -1027,11 +1051,11 @@ export default function HomePage() {
                     <>
                       <div className="flex items-center justify-center gap-2 mb-1">
                         <Footprints className="w-4 h-4 text-orange-500" />
-                        <span className="text-lg font-bold text-white">{week.completed_mi} mi</span>
+                        <span className="text-lg font-bold text-white">{formatMiles(week.completed_mi)}</span>
                         <span className="text-xs text-slate-500">logged</span>
                       </div>
                       {week.trajectory_sentence && (
-                        <p className="text-xs text-slate-400">{week.trajectory_sentence}</p>
+                        <p className="text-xs text-slate-400">{rewriteImperialToMetric(week.trajectory_sentence)}</p>
                       )}
                     </>
                   ) : (
@@ -1057,8 +1081,8 @@ export default function HomePage() {
                   )}
                   <div className="flex items-center justify-between">
                     <div className="flex items-baseline gap-1.5">
-                      <span className="text-lg font-bold text-white">{week.completed_mi}</span>
-                      <span className="text-sm text-slate-500">/ {week.planned_mi} mi</span>
+                      <span className="text-lg font-bold text-white">{formatMilesNoUnit(week.completed_mi)}</span>
+                      <span className="text-sm text-slate-500">/ {formatMiles(week.planned_mi)}</span>
                     </div>
                     {getStatusBadge(week.status)}
                   </div>
@@ -1067,10 +1091,10 @@ export default function HomePage() {
                       {coach_briefing?.week_assessment ? (
                         <div className="flex gap-2">
                           <Sparkles className="w-3.5 h-3.5 text-orange-400 flex-shrink-0 mt-0.5" />
-                          <p className="text-xs text-slate-300">{coach_briefing.week_assessment}</p>
+                          <p className="text-xs text-slate-300">{rewriteImperialToMetric(coach_briefing.week_assessment)}</p>
                         </div>
                       ) : (
-                        <p className="text-xs text-slate-400">{week.trajectory_sentence}</p>
+                        <p className="text-xs text-slate-400">{rewriteImperialToMetric(week.trajectory_sentence)}</p>
                       )}
                     </div>
                   )}

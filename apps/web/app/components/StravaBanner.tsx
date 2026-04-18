@@ -31,8 +31,11 @@ export default function StravaBanner() {
   );
 
   if (!isAuthenticated || shouldHide) return null;
-  // Only show when we have status data and Strava is NOT connected
+  // Only show when we have status data, Strava is NOT connected, AND the athlete
+  // had previously connected Strava (i.e. the connection was lost). Athletes who
+  // only ever used Garmin should not see this banner.
   if (!status || status.connected) return null;
+  if (!status.previously_connected) return null;
 
   const handleReconnect = async () => {
     setConnecting(true);
