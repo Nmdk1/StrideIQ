@@ -78,7 +78,19 @@ logger = logging.getLogger("clone_athlete_to_demo")
 # date_filter_col: str | None — restrict to rows on/before through_date
 COPY_TABLES: Dict[str, Dict[str, Any]] = {
     # --- Athlete-scoped parents whose IDs are referenced elsewhere ---
-    "activity":                 {"track_pk": True,  "date_filter_col": "start_time"},
+    # Activity has unique (provider, external_activity_id) and
+    # (athlete_id, garmin_activity_id) constraints. Prefix external IDs
+    # with "demo-" on copy so the demo's rows can coexist alongside the
+    # source athlete's rows in the same DB.
+    "activity":                 {
+        "track_pk": True,
+        "date_filter_col": "start_time",
+        # Activity has UNIQUE(provider, external_activity_id). Prefix with
+        # "demo-" so the demo can carry rows with the same provider as
+        # the source athlete. garmin_activity_id is a bigint with no
+        # unique constraint, so it's fine to leave alone.
+        "prefix_fields": ("external_activity_id",),
+    },
     "training_plan":            {"track_pk": True},
     "meal_template":            {"track_pk": True},
     "correlation_finding":      {"track_pk": True},
@@ -98,7 +110,7 @@ COPY_TABLES: Dict[str, Dict[str, Any]] = {
     "planned_workout":          {"extra_remap": {"plan_id": "training_plan", "completed_activity_id": "activity"}},
     "plan_modification_log":    {"extra_remap": {"plan_id": "training_plan"}},
     "plan_adaptation_proposal": {"extra_remap": {"plan_id": "training_plan"}},
-    "plan_preview":             {"extra_remap": {"plan_id": "training_plan"}},
+    "plan_preview":             {"extra_remap": {"promoted_plan_id": "training_plan"}},
     "training_availability":    {},
     "calendar_note":            {"extra_remap": {"activity_id": "activity"}},
     "calendar_insight":         {"extra_remap": {"activity_id": "activity"}},
@@ -151,9 +163,10 @@ COPY_TABLES: Dict[str, Dict[str, Any]] = {
     "coach_chat":               {"extra_remap": {"context_plan_id": "training_plan"}},
     "coach_intent_snapshot":    {},
     "coach_usage":              {},
-    "coach_briefing_input":     {},
-    # Note: coach_briefing intentionally NOT copied — see SKIP_TABLES. We
-    # want fresh K2.5 generation against the cloned data on first /home view.
+    # Note: coach_briefing AND coach_briefing_input intentionally NOT
+    # copied — see SKIP_TABLES. We want fresh K2.5 generation against the
+    # cloned data on first /home view, and the input audit row without
+    # its briefing is meaningless.
 }
 
 
@@ -182,7 +195,8 @@ SKIP_TABLES: Dict[str, str] = {
     "runtoon_image":   "AI images tied to specific real activities; regenerated on demand",
 
     # --- Coach output cache (regen on first /home view) ---
-    "coach_briefing":  "regenerate against cloned data so demo gets a fresh briefing",
+    "coach_briefing":        "regenerate against cloned data so demo gets a fresh briefing",
+    "coach_briefing_input":  "audit row for coach_briefing; pointless without the briefing it describes",
 
     # --- Configuration / global lookup tables ---
     "athlete_investigation_config": "global config, not athlete-scoped data",
@@ -289,6 +303,27 @@ def _copy_athlete_profile_fields(source: Athlete, demo: Athlete) -> List[str]:
     return copied
 
 
+def _existing_tables(db: Session) -> Set[str]:
+    """Set of table names that actually exist in the connected database.
+
+    Some declared models haven't reached prod yet via Alembic. We must
+    skip those silently rather than crash on UndefinedTable.
+    """
+    rows = db.execute(text(
+        "SELECT table_name FROM information_schema.tables "
+        "WHERE table_schema = current_schema()"
+    )).all()
+    return {row[0] for row in rows}
+
+
+def _existing_columns(db: Session, table_name: str) -> Set[str]:
+    rows = db.execute(text(
+        "SELECT column_name FROM information_schema.columns "
+        "WHERE table_schema = current_schema() AND table_name = :t"
+    ), {"t": table_name}).all()
+    return {row[0] for row in rows}
+
+
 def _wipe_demo_data(db: Session, demo_id: uuid.UUID) -> Dict[str, int]:
     """
     Wipe all rows owned by the demo athlete across COPY_TABLES, in
@@ -299,6 +334,7 @@ def _wipe_demo_data(db: Session, demo_id: uuid.UUID) -> Dict[str, int]:
     a subquery on Activity.athlete_id == demo_id.
     """
     counts: Dict[str, int] = {}
+    live_tables = _existing_tables(db)
 
     activity_id_subq = (
         f"SELECT id FROM activity WHERE athlete_id = '{demo_id}'"
@@ -327,7 +363,7 @@ def _wipe_demo_data(db: Session, demo_id: uuid.UUID) -> Dict[str, int]:
         ("planned_workout",             f"plan_id IN ({plan_id_subq})"),
         ("plan_modification_log",       f"plan_id IN ({plan_id_subq})"),
         ("plan_adaptation_proposal",    f"plan_id IN ({plan_id_subq})"),
-        ("plan_preview",                f"plan_id IN ({plan_id_subq})"),
+        ("plan_preview",                f"athlete_id = '{demo_id}'"),
         ("workout_selection_audit_event", f"athlete_id = '{demo_id}'"),
         ("training_availability",       f"athlete_id = '{demo_id}'"),
         ("calendar_note",               f"athlete_id = '{demo_id}'"),
@@ -396,6 +432,9 @@ def _wipe_demo_data(db: Session, demo_id: uuid.UUID) -> Dict[str, int]:
     for table_name, where in delete_order:
         if table_name not in Base.metadata.tables:
             continue
+        if table_name not in live_tables:
+            # Declared model exists in code but no migration on this DB yet.
+            continue
         result = db.execute(text(f"DELETE FROM {table_name} WHERE {where}"))
         counts[table_name] = result.rowcount or 0
 
@@ -433,7 +472,13 @@ def _copy_table(
         logger.warning("table %s not in metadata, skipping", table_name)
         return 0
 
-    cols = list(table.columns)
+    # Intersect declared columns with what actually exists in the live
+    # DB. Some model columns may not have reached prod via Alembic yet.
+    live_cols = _existing_columns(db, table_name)
+    cols = [c for c in table.columns if c.name in live_cols]
+    if not cols:
+        logger.info("table %s has no live columns matching model; skipping", table_name)
+        return 0
     col_names = [c.name for c in cols]
     pk_cols = [c for c in cols if c.primary_key]
     if len(pk_cols) != 1:
@@ -486,12 +531,21 @@ def _copy_table(
     pk_python_type = pk_col.type.python_type if hasattr(pk_col.type, "python_type") else None
 
     inserted = 0
+    prefix_fields: Tuple[str, ...] = config.get("prefix_fields") or ()
+
     for row in rows:
         new_row = dict(row)
 
         # Remap athlete_id.
         if has_athlete_id:
             new_row["athlete_id"] = demo_id
+
+        # Prefix external IDs to avoid colliding with the source
+        # athlete's rows under the same unique (provider, external_id)
+        # constraint. Only prefixes non-null values.
+        for field in prefix_fields:
+            if field in new_row and new_row[field] is not None:
+                new_row[field] = f"demo-{new_row[field]}"
 
         # Remap extra FKs to copied parents.
         for fk_col, parent_table in extra_remap.items():
@@ -515,7 +569,16 @@ def _copy_table(
 
         # Remap primary key.
         old_pk = row[pk_col.name]
-        if pk_python_type is uuid.UUID:
+        if pk_col.name == "athlete_id":
+            # Special case: PK *is* athlete_id (1:1 tables like
+            # athlete_calibrated_model). The athlete_id remap above
+            # already produced the correct PK; do NOT generate a new
+            # UUID or we'll insert with a random key that no Athlete
+            # row exists for.
+            new_pk = demo_id
+            if track_pk:
+                id_maps.setdefault(table_name, {})[old_pk] = new_pk
+        elif pk_python_type is uuid.UUID:
             new_pk = uuid.uuid4()
             new_row[pk_col.name] = new_pk
             if track_pk:
@@ -696,7 +759,7 @@ def main() -> int:
             "n1_insight_suppression",
             # Coach state
             "coaching_recommendation", "coach_chat",
-            "coach_intent_snapshot", "coach_usage", "coach_briefing_input",
+            "coach_intent_snapshot", "coach_usage",
         ]
 
         # Sanity check: every entry must be in COPY_TABLES.
@@ -706,9 +769,19 @@ def main() -> int:
             db.rollback()
             return 9
 
+        live_tables = _existing_tables(db)
+        skipped_missing = [t for t in copy_order if t not in live_tables]
+        if skipped_missing:
+            print(f"Note: {len(skipped_missing)} declared tables not present in DB (no migration yet); skipping:")
+            for t in skipped_missing:
+                print(f"  ~ {t}")
+            print()
+
         id_maps: Dict[str, Dict[Any, Any]] = {}
         copy_counts: Dict[str, int] = {}
         for table_name in copy_order:
+            if table_name not in live_tables:
+                continue
             try:
                 n = _copy_table(
                     db=db,
