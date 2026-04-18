@@ -866,6 +866,169 @@ class TestLabelCooldown:
         assert _label_cooldown(reps, splits) is None
 
 
+class TestLabelCooldownHeatAware:
+    """Cardiac-drift edge case (founder's 2026-04-18 conversation):
+
+    On a hot or humid day, HR stays elevated through the cooldown jog
+    even when the athlete is genuinely easing off -- cardiac drift is
+    real and well-known to coaches. The strict 12 bpm drop rule misses
+    legitimate cooldowns on every hot interval workout.
+
+    The relaxed gate kicks in when EITHER:
+      - dew_point_f >= 60F  (the "noticeable" threshold from the
+                             validated runner heat model), OR
+      - heat_adjustment_pct >= 0.025  (heat model predicts >=2.5% pace
+                                       slowdown -- run was hot enough
+                                       that drift is plausible)
+    Under relaxed mode the HR drop floor falls from 12 bpm to 6 bpm.
+    Pace, position, and substantial gates do NOT change -- they're not
+    affected by heat.
+    """
+
+    def _hot_workout_reps(self):
+        # 4 x 1mi reps at avg HR 152 -- the founder's typical interval
+        # workload. Reps spread split_numbers 5/8/12/15.
+        return [
+            {"rep": 1, "split_number": 5,  "pace_s_km": 225, "avg_hr": 150},
+            {"rep": 2, "split_number": 8,  "pace_s_km": 225, "avg_hr": 152},
+            {"rep": 3, "split_number": 12, "pace_s_km": 222, "avg_hr": 153},
+            {"rep": 4, "split_number": 15, "pace_s_km": 224, "avg_hr": 153},
+        ]
+
+    def _cooldown_split_with_hr(self, hr, split_number=18):
+        # 1mi cooldown @ 9:30/mi, with caller-controlled HR.
+        return _split_obj(1609, 568, hr=hr, split_number=split_number)
+
+    def test_hot_run_with_8bpm_drop_now_labeled_cooldown(self):
+        # avg work HR = 152, cooldown HR = 144 -> drop = 8 bpm.
+        # Strict rule: rejected. Heat-relaxed rule: accepted.
+        # This is the case heat-aware mode exists for.
+        reps = self._hot_workout_reps()
+        splits = [self._cooldown_split_with_hr(144)]
+        activity = _make_activity(dew_point_f=66.0, heat_adjustment_pct=0.045)
+        cd = _label_cooldown(reps, splits, activity=activity)
+        assert cd is not None, (
+            "8 bpm drop on a dew-point-66F run is well within drift -- "
+            "must be labeled cooldown so the LLM doesn't read it as a fade"
+        )
+        assert cd["split_number"] == 18
+
+    def test_hot_run_with_no_hr_drop_still_suppressed(self):
+        # Even in heat, a TRUE fade (HR stays flat or rises) must NOT
+        # be tagged cooldown. The relaxed 6 bpm floor is the safety net.
+        reps = self._hot_workout_reps()
+        splits = [self._cooldown_split_with_hr(153)]  # +1 bpm vs avg work
+        activity = _make_activity(dew_point_f=68.0, heat_adjustment_pct=0.05)
+        cd = _label_cooldown(reps, splits, activity=activity)
+        assert cd is None, (
+            "no HR drop = the athlete didn't actually ease off, "
+            "even on a hot day -- this is a genuine fade, not a cooldown"
+        )
+
+    def test_cool_run_8bpm_drop_still_suppressed(self):
+        # Same 8 bpm drop, but no heat signal -> strict 12 bpm rule
+        # applies. Suppression over speculation.
+        reps = self._hot_workout_reps()
+        splits = [self._cooldown_split_with_hr(144)]
+        activity = _make_activity(dew_point_f=45.0, heat_adjustment_pct=None)
+        cd = _label_cooldown(reps, splits, activity=activity)
+        assert cd is None, (
+            "without a heat signal, the athletically-correct call is "
+            "still 'silent over wrong' -- 8 bpm drop on a cool day "
+            "could be a slow second half, not a cooldown"
+        )
+
+    def test_relaxed_threshold_via_dew_point_alone(self):
+        # heat_adjustment_pct missing (older activity, no backfill)
+        # but dew_point_f signals heat -> relaxed mode kicks in.
+        reps = self._hot_workout_reps()
+        splits = [self._cooldown_split_with_hr(144)]
+        activity = _make_activity(dew_point_f=62.0, heat_adjustment_pct=None)
+        cd = _label_cooldown(reps, splits, activity=activity)
+        assert cd is not None
+
+    def test_relaxed_threshold_via_heat_adjustment_alone(self):
+        # dew_point_f missing but heat_adjustment_pct says hot.
+        reps = self._hot_workout_reps()
+        splits = [self._cooldown_split_with_hr(144)]
+        activity = _make_activity(dew_point_f=None, heat_adjustment_pct=0.03)
+        cd = _label_cooldown(reps, splits, activity=activity)
+        assert cd is not None
+
+    def test_strict_threshold_when_no_weather_data(self):
+        # Both heat signals missing -> strict 12 bpm rule (cannot
+        # relax -- we have no evidence of heat).
+        reps = self._hot_workout_reps()
+        splits = [self._cooldown_split_with_hr(144)]
+        activity = _make_activity(dew_point_f=None, heat_adjustment_pct=None)
+        cd = _label_cooldown(reps, splits, activity=activity)
+        assert cd is None
+
+    def test_dew_point_just_below_threshold_stays_strict(self):
+        # 59F dew point is "ok" not "noticeable" per the validated
+        # runner-meaningful tier table -- no relaxation.
+        reps = self._hot_workout_reps()
+        splits = [self._cooldown_split_with_hr(144)]  # 8 bpm drop
+        activity = _make_activity(dew_point_f=59.0, heat_adjustment_pct=0.018)
+        cd = _label_cooldown(reps, splits, activity=activity)
+        assert cd is None
+
+    def test_dew_point_at_threshold_relaxes(self):
+        # Boundary: 60F dew point is the "noticeable" line.
+        reps = self._hot_workout_reps()
+        splits = [self._cooldown_split_with_hr(144)]
+        activity = _make_activity(dew_point_f=60.0, heat_adjustment_pct=None)
+        cd = _label_cooldown(reps, splits, activity=activity)
+        assert cd is not None
+
+    def test_heat_aware_does_not_affect_pace_or_substantial_gates(self):
+        # Even on a hot day, a 200m walking-pace post-rep jog is NOT
+        # a cooldown. Heat only relaxes HR -- not pace, not distance.
+        reps = self._hot_workout_reps()
+        splits = [_split_obj(200, 90, hr=140, split_number=18)]  # 0.12mi, 1:30
+        activity = _make_activity(dew_point_f=68.0, heat_adjustment_pct=0.05)
+        cd = _label_cooldown(reps, splits, activity=activity)
+        assert cd is None
+
+    def test_meridian_still_works_without_activity_arg(self):
+        # Backward compat: existing callers (and existing tests) pass
+        # only (reps, splits). Activity is optional.
+        cd = _label_cooldown(
+            [
+                {"rep": 1, "split_number": 5,  "pace_s_km": 225, "avg_hr": 144},
+                {"rep": 2, "split_number": 8,  "pace_s_km": 225, "avg_hr": 143},
+                {"rep": 3, "split_number": 12, "pace_s_km": 222, "avg_hr": 156},
+                {"rep": 4, "split_number": 15, "pace_s_km": 224, "avg_hr": 159},
+            ],
+            _meridian_2026_04_18_splits(),
+        )
+        assert cd is not None
+        assert cd["split_number"] == 18
+
+    def test_meridian_via_full_pipeline_with_heat_data(self):
+        # Same fixture, but routed through _get_interval_analysis with
+        # heat-flagged activity. Strict 14 bpm drop already labels
+        # cooldown; heat path must not regress that.
+        activity = _make_activity(
+            workout_type=None,
+            name="Meridian - 2 x 2 x mile",
+            run_shape=_shape("anomaly"),
+            dew_point_f=58.0,    # not hot enough to relax
+            heat_adjustment_pct=0.005,
+        )
+        db = MagicMock()
+        db.query.return_value.filter.return_value.order_by.return_value.all.return_value = (
+            _meridian_2026_04_18_splits()
+        )
+        with patch(
+            "services.run_intelligence._get_interval_history", return_value=None
+        ):
+            result = _get_interval_analysis(activity, db)
+        assert result is not None
+        assert "cooldown" in result
+        assert result["cooldown"]["split_number"] == 18
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Data context surfaces workout name + shape classification to the LLM.
 # Even when the gate misfires, the LLM should at least see the truth in the

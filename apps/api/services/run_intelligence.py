@@ -277,21 +277,54 @@ def _is_interval_workout(activity: Activity) -> bool:
 # cooldowns pace-wise.
 
 COOLDOWN_HR_DROP_BPM = 12
+# Heat-relaxed HR drop floor.  On a hot/humid day, cardiac drift keeps
+# HR elevated through the cooldown jog even when the athlete genuinely
+# eased off -- coaches account for this by discounting HR.  6 bpm is
+# still strict enough to suppress a flat-or-rising HR (genuine fade).
+COOLDOWN_HR_DROP_BPM_HEAT_RELAXED = 6
 COOLDOWN_MIN_DISTANCE_M = 644   # 0.4 mi
 COOLDOWN_MIN_DURATION_S = 180   # 3 min
 # Cooldown is jogging, not walking.  Anything slower than 3x the work pace
 # is a between-rep recovery walk (e.g. 38:00/mi after a 6:00/mi rep is
 # clearly walking, not winding down).
 COOLDOWN_MAX_PACE_MULTIPLIER = 3.0
+# Heat thresholds for relaxing the HR drop floor.  Either signal alone
+# is sufficient.  Dew point is the primary runner-meaningful heat
+# variable (see SYSTEM_PROMPT) -- 60F is the validated "noticeable"
+# tier.  heat_adjustment_pct is the integrated heat-model output
+# expressed as a fraction (0.025 == 2.5% pace slowdown predicted).
+HEAT_RELAX_DEW_POINT_F = 60.0
+HEAT_RELAX_ADJUSTMENT_PCT = 0.025
+
+
+def _is_heat_flagged(activity: Optional[Activity]) -> bool:
+    """True if the activity's weather signals indicate enough heat for
+    cardiac drift to plausibly mask a cooldown's HR response."""
+    if activity is None:
+        return False
+    dew = getattr(activity, "dew_point_f", None)
+    if dew is not None and float(dew) >= HEAT_RELAX_DEW_POINT_F:
+        return True
+    hap = getattr(activity, "heat_adjustment_pct", None)
+    if hap is not None and float(hap) >= HEAT_RELAX_ADJUSTMENT_PCT:
+        return True
+    return False
 
 
 def _label_cooldown(
     reps: List[Dict[str, Any]],
     splits: List[Any],
+    activity: Optional[Activity] = None,
 ) -> Optional[Dict[str, Any]]:
     """Find the post-rep cooldown split, if any. Returns a dict with
     split_number, distance_m, elapsed_s, pace_per_mile, pace_s_km, avg_hr.
-    Returns None when no trailing split meets all four cooldown gates."""
+    Returns None when no trailing split meets all four cooldown gates.
+
+    When ``activity`` carries weather data that flags the run as hot
+    (dew point >= 60F, or heat_adjustment_pct >= 2.5%), the HR drop
+    floor relaxes from 12 bpm to 6 bpm to account for cardiac drift.
+    Pace, position, and substantial gates are not affected by heat.
+    """
     if not reps or not splits:
         return None
 
@@ -308,6 +341,12 @@ def _label_cooldown(
     )
     if last_rep_split is None:
         return None
+
+    hr_drop_floor = (
+        COOLDOWN_HR_DROP_BPM_HEAT_RELAXED
+        if _is_heat_flagged(activity)
+        else COOLDOWN_HR_DROP_BPM
+    )
 
     # Walk the splits AFTER the last rep and find the LAST one that
     # satisfies all four gates.  A cooldown is by convention the closing
@@ -331,7 +370,7 @@ def _label_cooldown(
         hr = s.average_heartrate
         if hr is None:
             continue
-        if (avg_work_hr - float(hr)) < COOLDOWN_HR_DROP_BPM:
+        if (avg_work_hr - float(hr)) < hr_drop_floor:
             continue
 
         pace = elapsed / (dist / 1000)
@@ -526,7 +565,7 @@ def _get_interval_analysis(activity: Activity, db: Session) -> Optional[Dict[str
     # looked like.  Otherwise a busted rep would drag the work-HR baseline
     # down and cause us to under-call cooldowns.
     clean_reps = [r for r in reps if not r["busted"]]
-    cooldown = _label_cooldown(clean_reps or reps, splits)
+    cooldown = _label_cooldown(clean_reps or reps, splits, activity=activity)
 
     result = {
         "type": "interval",
