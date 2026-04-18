@@ -18,6 +18,9 @@ from services.run_intelligence import (
     _build_data_context,
     _get_pre_state,
     _is_interval_workout,
+    _workout_name_suggests_intervals,
+    _label_cooldown,
+    STRUCTURED_SHAPE_CLASSIFICATIONS,
     _derive_reps_from_unmarked_splits,
     _get_interval_analysis,
     INTERVAL_WORKOUT_TYPES,
@@ -49,7 +52,13 @@ def _make_activity(**overrides):
     a.heat_adjustment_pct = overrides.get("heat_adjustment_pct", None)
     a.weather_condition = overrides.get("weather_condition", None)
     a.avg_cadence = overrides.get("avg_cadence", None)
+    a.run_shape = overrides.get("run_shape", None)
     return a
+
+
+def _shape(classification):
+    """Build a minimal run_shape JSONB dict with the given classification."""
+    return {"summary": {"workout_classification": classification}}
 
 
 class TestFormatHelpers:
@@ -554,3 +563,380 @@ class TestDeriveRepsFromUnmarkedSplits:
         assert result is not None
         assert result["total_reps"] == 3
         assert result["derived_from_pace"] is False
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Multi-signal interval gate (regression: founder's 2026-04-18 run)
+#
+# The activity that triggered this work:
+#   • workout_type = NULL on Activity row (Garmin never tagged it)
+#   • activity.name = "Meridian - 2 x 2 x mile"
+#   • run_shape.summary.workout_classification = "anomaly"
+#   • splits show clean 4 x 1mi @ ~6:00-6:05/mi with full standing recoveries
+#
+# Old gate (workout_type only) returned False -> fell through to the
+# continuous-run branch -> Kimi wrote a "you faded late" narrative for what
+# was actually a textbook interval session with a planned cooldown.
+#
+# The new gate must accept ANY of these signals to keep the LLM from being
+# fed pacing decay context for structured workouts.
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class TestWorkoutNameSuggestsIntervals:
+    """Pure-string parser. No DB, no model."""
+
+    @pytest.mark.parametrize(
+        "name",
+        [
+            # The exact name on the founder's run that broke this:
+            "Meridian - 2 x 2 x mile",
+            # Common Garmin / TrainingPeaks naming patterns:
+            "4 x 1 mile",
+            "4x1mi @ T",
+            "8 x 400m",
+            "6x800",
+            "10 x 200m",
+            "3 x 1k",
+            "5x1km repeats",
+            "Mile Repeats",
+            "400 repeats",
+            "Track intervals",
+            "Threshold intervals",
+            "Cruise intervals",
+            "Fartlek 8x1min",
+            "Hill repeats",
+            "Hill repeats x10",
+        ],
+    )
+    def test_recognized_patterns(self, name):
+        assert _workout_name_suggests_intervals(name) is True, (
+            f"name {name!r} should be flagged as intervals"
+        )
+
+    @pytest.mark.parametrize(
+        "name",
+        [
+            "Morning Run",
+            "Easy 6 miler",
+            "Long run",
+            "Sunday long",
+            "Recovery jog",
+            "Marathon pace 8mi",
+            "Road race",
+            "",
+            None,
+        ],
+    )
+    def test_non_interval_names_are_not_flagged(self, name):
+        assert _workout_name_suggests_intervals(name) is False, (
+            f"name {name!r} should NOT be flagged as intervals"
+        )
+
+
+class TestStructuredShapeClassifications:
+    """The set of run_shape.workout_classification values that mean
+    'this run had structured work, treat it as intervals downstream'."""
+
+    @pytest.mark.parametrize(
+        "cls",
+        [
+            "anomaly",  # the founder's case
+            "intervals",
+            "track_intervals",
+            "threshold_intervals",
+            "tempo",
+            "over_under",
+            "hill_repeats",
+            "progression",
+            "fartlek",
+        ],
+    )
+    def test_structured_classifications_are_in_set(self, cls):
+        assert cls in STRUCTURED_SHAPE_CLASSIFICATIONS
+
+    @pytest.mark.parametrize(
+        "cls",
+        ["easy_run", "long_run", "medium_long_run", "gray_zone_run", "strides"],
+    )
+    def test_easy_classifications_are_NOT_in_set(self, cls):
+        assert cls not in STRUCTURED_SHAPE_CLASSIFICATIONS
+
+
+class TestIsIntervalWorkoutMultiSignal:
+    """The expanded gate: any of (workout_type, run_shape, name) can flip it."""
+
+    def test_workout_type_alone_still_works(self):
+        a = _make_activity(workout_type="cruise_intervals", name=None, run_shape=None)
+        assert _is_interval_workout(a) is True
+
+    def test_run_shape_anomaly_flips_gate_when_workout_type_is_none(self):
+        # The exact founder case.
+        a = _make_activity(
+            workout_type=None, name=None, run_shape=_shape("anomaly")
+        )
+        assert _is_interval_workout(a) is True
+
+    def test_run_shape_threshold_intervals_flips_gate(self):
+        a = _make_activity(
+            workout_type=None, name=None, run_shape=_shape("threshold_intervals")
+        )
+        assert _is_interval_workout(a) is True
+
+    def test_run_shape_easy_run_does_NOT_flip_gate(self):
+        a = _make_activity(
+            workout_type=None, name="Morning Run", run_shape=_shape("easy_run")
+        )
+        assert _is_interval_workout(a) is False
+
+    def test_workout_name_flips_gate_when_other_signals_missing(self):
+        # The other half of the founder case: even without run_shape, the
+        # name "2 x 2 x mile" should be enough.
+        a = _make_activity(
+            workout_type=None,
+            name="Meridian - 2 x 2 x mile",
+            run_shape=None,
+        )
+        assert _is_interval_workout(a) is True
+
+    def test_easy_run_with_easy_shape_and_easy_name_stays_continuous(self):
+        a = _make_activity(
+            workout_type="easy_run",
+            name="Morning easy 6",
+            run_shape=_shape("easy_run"),
+        )
+        assert _is_interval_workout(a) is False
+
+    def test_long_run_with_no_signals_stays_continuous(self):
+        a = _make_activity(
+            workout_type="long_run", name="Sunday long", run_shape=_shape("long_run")
+        )
+        assert _is_interval_workout(a) is False
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Cooldown labeling (rule agreed with founder):
+#   A trailing split is cooldown ONLY IF all four hold:
+#     1. Position: comes after the last detected work rep
+#     2. Pace: slower than the avg work-rep pace
+#     3. HR drop: avg HR >= 12 bpm below avg work-rep HR
+#     4. Substantial: distance >= 0.4 mi OR duration >= 3 min
+#
+#  HR drop is the load-bearing signal. The founder's threshold workout-with-
+#  floats case proved that a fixed 30% pace gap is too rigid (cruise-interval
+#  floats look identical pace-wise to a true cooldown), but HR responds only
+#  when an athlete genuinely eases off.
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def _split_obj(distance_m, elapsed_s, hr=None, lap_type=None, split_number=1):
+    return _make_split(
+        distance_m=distance_m, elapsed_s=elapsed_s, hr=hr,
+        lap_type=lap_type, split_number=split_number,
+    )
+
+
+def _meridian_2026_04_18_splits():
+    """Real splits for the founder's 2026-04-18 run that triggered this work.
+
+    Workout was 4 x 1mi @ ~6:00-6:05 with a 1mi cooldown at 9:10/HR 137
+    after work HR averaged 151. Split 18 (the cooldown mile) is the one
+    we must label correctly.
+    """
+    return [
+        # warmup 1-3
+        _split_obj(1593, 506, hr=120, split_number=1),
+        _split_obj(1593, 475, hr=133, split_number=2),
+        _split_obj(1593, 459, hr=140, split_number=3),
+        # standing rest
+        _split_obj(26, 317, hr=None, split_number=4),
+        # rep 1
+        _split_obj(1593, 362, hr=144, split_number=5),
+        _split_obj(6, 3, hr=None, split_number=6),
+        # recovery jog
+        _split_obj(161, 179, hr=131, split_number=7),
+        # rep 2
+        _split_obj(1593, 362, hr=143, split_number=8),
+        _split_obj(8, 3, hr=None, split_number=9),
+        # recovery jog
+        _split_obj(145, 179, hr=139, split_number=10),
+        # set break
+        _split_obj(274, 475, hr=111, split_number=11),
+        # rep 3
+        _split_obj(1593, 356, hr=156, split_number=12),
+        _split_obj(10, 3, hr=None, split_number=13),
+        # recovery jog
+        _split_obj(177, 237, hr=138, split_number=14),
+        # rep 4
+        _split_obj(1593, 361, hr=159, split_number=15),
+        _split_obj(5, 2, hr=None, split_number=16),
+        # recovery jog
+        _split_obj(161, 374, hr=132, split_number=17),
+        # cooldown mile (must be labeled cooldown)
+        _split_obj(1593, 547, hr=137, split_number=18),
+        # tail debris
+        _split_obj(20, 30, hr=None, split_number=19),
+        _split_obj(8, 12, hr=None, split_number=20),
+    ]
+
+
+class TestLabelCooldown:
+    def _reps_meridian(self):
+        # Just enough for _label_cooldown to know what "work" looked like.
+        return [
+            {"rep": 1, "split_number": 5,  "pace_s_km": 225, "avg_hr": 144},
+            {"rep": 2, "split_number": 8,  "pace_s_km": 225, "avg_hr": 143},
+            {"rep": 3, "split_number": 12, "pace_s_km": 222, "avg_hr": 156},
+            {"rep": 4, "split_number": 15, "pace_s_km": 224, "avg_hr": 159},
+        ]
+
+    def test_meridian_cooldown_mile_is_labeled(self):
+        # Real founder run -- this is the regression that started this work.
+        cd = _label_cooldown(self._reps_meridian(), _meridian_2026_04_18_splits())
+        assert cd is not None, "split 18 (9:10/mi at HR 137) must be labeled cooldown"
+        assert cd["split_number"] == 18
+        assert cd["distance_m"] == 1593
+        # Pace and HR should be surfaced for the LLM context.
+        assert cd["avg_hr"] == 137
+        assert "pace_per_mile" in cd
+
+    def test_returns_none_when_no_trailing_split_after_last_rep(self):
+        # Last rep is split 5 and there's nothing after it.
+        reps = [{"rep": 1, "split_number": 5, "pace_s_km": 225, "avg_hr": 150}]
+        splits = [_split_obj(1593, 362, hr=150, split_number=5)]
+        assert _label_cooldown(reps, splits) is None
+
+    def test_busted_final_rep_is_NOT_labeled_cooldown(self):
+        # Final "trailing" split is slower-paced but HR is still elevated --
+        # athlete was cooked, not cooling down. Must not get a cooldown pass.
+        reps = [
+            {"rep": 1, "split_number": 1, "pace_s_km": 225, "avg_hr": 155},
+            {"rep": 2, "split_number": 2, "pace_s_km": 225, "avg_hr": 156},
+            {"rep": 3, "split_number": 3, "pace_s_km": 225, "avg_hr": 158},
+        ]
+        splits = [
+            _split_obj(1593, 362, hr=155, split_number=1),
+            _split_obj(1593, 362, hr=156, split_number=2),
+            _split_obj(1593, 362, hr=158, split_number=3),
+            # "Final rep" but blew up: slower, HR went UP not down.
+            _split_obj(1593, 405, hr=162, split_number=4),
+        ]
+        assert _label_cooldown(reps, splits) is None
+
+    def test_cruise_intervals_with_real_cooldown(self):
+        # The cruise-intervals-with-floats case the founder explicitly raised:
+        # work 6:30 @ 165, floats between reps 7:30 @ 155 (excluded by
+        # position), final cooldown 7:45 @ 135 (must be labeled).
+        reps = [
+            {"rep": 1, "split_number": 2, "pace_s_km": 242, "avg_hr": 165},
+            {"rep": 2, "split_number": 4, "pace_s_km": 242, "avg_hr": 165},
+            {"rep": 3, "split_number": 6, "pace_s_km": 242, "avg_hr": 165},
+        ]
+        splits = [
+            _split_obj(1609, 390, hr=140, split_number=1),  # warmup
+            _split_obj(1609, 390, hr=165, split_number=2),  # rep 1
+            _split_obj(800,  220, hr=155, split_number=3),  # float
+            _split_obj(1609, 390, hr=165, split_number=4),  # rep 2
+            _split_obj(800,  220, hr=155, split_number=5),  # float
+            _split_obj(1609, 390, hr=165, split_number=6),  # rep 3
+            _split_obj(1609, 465, hr=135, split_number=7),  # cooldown
+        ]
+        cd = _label_cooldown(reps, splits)
+        assert cd is not None and cd["split_number"] == 7
+
+    def test_short_post_rep_jog_is_NOT_cooldown(self):
+        # Trailing split is only 200m -- below the 0.4mi / 3min threshold.
+        reps = [
+            {"rep": 1, "split_number": 1, "pace_s_km": 225, "avg_hr": 160},
+        ]
+        splits = [
+            _split_obj(1609, 362, hr=160, split_number=1),
+            _split_obj(200,  90,  hr=130, split_number=2),  # too short
+        ]
+        assert _label_cooldown(reps, splits) is None
+
+    def test_hr_missing_means_no_cooldown_label(self):
+        reps = [
+            {"rep": 1, "split_number": 1, "pace_s_km": 225, "avg_hr": 160},
+        ]
+        splits = [
+            _split_obj(1609, 362, hr=160, split_number=1),
+            _split_obj(1609, 600, hr=None, split_number=2),  # no HR
+        ]
+        assert _label_cooldown(reps, splits) is None
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Data context surfaces workout name + shape classification to the LLM.
+# Even when the gate misfires, the LLM should at least see the truth in the
+# raw data so it doesn't write a confident wrong story.
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class TestBuildDataContextSurfacesWorkoutSignals:
+    @patch("services.run_intelligence._get_athlete_notes", return_value=None)
+    @patch("services.run_intelligence._get_drift_history_avg", return_value=None)
+    @patch("services.run_intelligence._get_efficiency_vs_peers", return_value=None)
+    @patch("services.run_intelligence._get_stream_drift", return_value=None)
+    @patch("services.run_intelligence._get_split_pacing", return_value=None)
+    @patch("services.run_intelligence._get_interval_analysis", return_value=None)
+    def test_workout_name_surfaced_when_set(self, *mocks):
+        a = _make_activity(name="Meridian - 2 x 2 x mile")
+        ctx = _build_data_context(a, MagicMock())
+        assert ctx["workout_name"] == "Meridian - 2 x 2 x mile"
+
+    @patch("services.run_intelligence._get_athlete_notes", return_value=None)
+    @patch("services.run_intelligence._get_drift_history_avg", return_value=None)
+    @patch("services.run_intelligence._get_efficiency_vs_peers", return_value=None)
+    @patch("services.run_intelligence._get_stream_drift", return_value=None)
+    @patch("services.run_intelligence._get_split_pacing", return_value=None)
+    @patch("services.run_intelligence._get_interval_analysis", return_value=None)
+    def test_shape_classification_surfaced_when_present(self, *mocks):
+        a = _make_activity(run_shape=_shape("anomaly"))
+        ctx = _build_data_context(a, MagicMock())
+        assert ctx["shape_classification"] == "anomaly"
+
+    @patch("services.run_intelligence._get_athlete_notes", return_value=None)
+    @patch("services.run_intelligence._get_drift_history_avg", return_value=None)
+    @patch("services.run_intelligence._get_efficiency_vs_peers", return_value=None)
+    @patch("services.run_intelligence._get_stream_drift", return_value=None)
+    @patch("services.run_intelligence._get_split_pacing", return_value=None)
+    @patch("services.run_intelligence._get_interval_analysis", return_value=None)
+    def test_omitted_when_unset(self, *mocks):
+        a = _make_activity(name=None, run_shape=None)
+        ctx = _build_data_context(a, MagicMock())
+        assert "workout_name" not in ctx
+        assert "shape_classification" not in ctx
+
+    @patch("services.run_intelligence._get_athlete_notes", return_value=None)
+    @patch("services.run_intelligence._get_drift_history_avg", return_value=None)
+    @patch("services.run_intelligence._get_efficiency_vs_peers", return_value=None)
+    @patch("services.run_intelligence._get_stream_drift", return_value=None)
+    @patch("services.run_intelligence._get_split_pacing", return_value=None)
+    def test_intervals_branch_runs_for_anomaly_shape(self, *mocks):
+        """End-to-end: shape=anomaly + meridian splits => interval analysis
+        runs and produces reps + cooldown, NOT split_pacing decay."""
+        a = _make_activity(
+            workout_type=None,
+            name="Meridian - 2 x 2 x mile",
+            run_shape=_shape("anomaly"),
+            distance_m=13837,
+            duration_s=4626,
+            avg_hr=146,
+        )
+        db = MagicMock()
+        db.query.return_value.filter.return_value.order_by.return_value.all.return_value = (
+            _meridian_2026_04_18_splits()
+        )
+        with patch(
+            "services.run_intelligence._get_interval_history", return_value=None
+        ):
+            ctx = _build_data_context(a, db)
+        assert "intervals" in ctx, (
+            "anomaly-shape + name-suggests-intervals + clean rep pattern "
+            "must route to the intervals branch, not the continuous one"
+        )
+        assert ctx["intervals"]["total_reps"] == 4
+        # And the cooldown mile must be tagged so the LLM doesn't read it as a fade.
+        assert "cooldown" in ctx["intervals"]
+        assert ctx["intervals"]["cooldown"]["split_number"] == 18

@@ -14,6 +14,7 @@ from datetime import timedelta
 from typing import List, Dict, Optional, Any
 import json
 import logging
+import re
 
 from sqlalchemy.orm import Session
 
@@ -40,6 +41,16 @@ from the pace pattern of the splits because the watch did not tag reps \
 explicitly. The reps are real and the paces are accurate, but if there is \
 genuine ambiguity about rep boundaries you may say "around N reps". Never \
 mention "the algorithm" or "we inferred" -- just describe the workout.
+- If `intervals.cooldown` is present, the trailing slow split was a deliberate \
+cooldown (HR dropped, pace eased, athlete chose to ease off). Do NOT describe \
+it as fading, hitting a wall, or losing form. You may briefly note the cooldown \
+when contextually useful, but the run "ended" with the last work rep.
+- If `workout_name` is present, treat it as informational only. Do NOT use it \
+to infer planned rep counts, distances, or paces. Reps are what the data shows, \
+not what the name suggests.
+- If `shape_classification` is present, it is the stream analyzer's bucket \
+for this run's structural shape (e.g. "intervals", "tempo", "anomaly", \
+"long_run"). Use it as a sanity check; don't quote it.
 - Never state the obvious (distance, duration, avg pace) — the athlete sees those.
 - Focus on what THIS run reveals: pacing execution, cardiac response, \
 rep quality, drift, fade, efficiency trends, conditions impact.
@@ -137,11 +148,210 @@ INTERVAL_WORKOUT_TYPES = frozenset({
 })
 
 
-def _is_interval_workout(activity: Activity) -> bool:
-    wt = getattr(activity, "workout_type", None)
-    if not wt:
+# Values of run_shape.summary.workout_classification (from
+# services.shape_extractor._derive_classification) that mean "this run had
+# structured work, treat it as intervals downstream".  Easy/long/gray
+# classifications are deliberately excluded so we never run pace-pattern
+# rep detection on a steady run.
+STRUCTURED_SHAPE_CLASSIFICATIONS = frozenset({
+    "anomaly",                # shape doesn't fit any clean bucket — usually intervals
+    "intervals",
+    "track_intervals",
+    "threshold_intervals",
+    "tempo",
+    "over_under",
+    "hill_repeats",
+    "progression",
+    "fartlek",
+})
+
+
+# Pattern matches "N x M unit" rep notation common in Garmin / TrainingPeaks
+# workout names.  Examples: "4 x 1 mile", "8x400m", "2 x 2 x mile",
+# "3x1k", "10 x 200m".  The unit is required to avoid false positives
+# like "Marathon prep x 2" or "Run x easy".
+_REP_NOTATION_RE = re.compile(
+    r"\b\d+\s*[x×]\s*(?:\d+\s*[x×]\s*)?"
+    r"(?:\d+\s*)?"
+    r"(?:m|mi|mile|miles|k|km|kilometers|metres|meters|min|minutes|sec|seconds|s)\b",
+    re.IGNORECASE,
+)
+
+# Unit-less track-distance pattern.  Garmin / Strava names commonly drop
+# the unit when the second number is a canonical track distance.  Examples
+# that must match: "6x800", "10 x 400", "8x1600".  Won't match "1x2" or
+# "training x 4".
+_REP_TRACK_DISTANCE_RE = re.compile(
+    r"\b\d{1,3}\s*[x×]\s*"
+    r"(?:200|300|400|500|600|800|1000|1200|1500|1600|2000|3000|5000|10000)\b",
+    re.IGNORECASE,
+)
+
+# Standalone keywords that almost always indicate structured work when they
+# appear in a workout name.  "tempo" alone is intentionally excluded -- a
+# "tempo" workout might be a continuous tempo run, which the existing gate
+# handles correctly via _get_split_pacing.  "track" alone is also excluded
+# (could be the venue, not the structure).
+_STRUCTURED_NAME_KEYWORDS = (
+    "interval",
+    "intervals",
+    "repeat",
+    "repeats",
+    "repetition",
+    "fartlek",
+    "hill repeat",
+    "hill repeats",
+    "mile repeats",
+    "track intervals",
+    "track repeats",
+    "threshold intervals",
+    "cruise intervals",
+)
+
+
+def _workout_name_suggests_intervals(name: Optional[str]) -> bool:
+    """Pure-string parser. True if the workout name contains either a
+    rep-notation pattern (e.g. "4 x 1 mile") or a structured-workout
+    keyword (e.g. "intervals", "repeats")."""
+    if not name:
         return False
-    return wt.lower() in INTERVAL_WORKOUT_TYPES
+    text = name.lower()
+    if _REP_NOTATION_RE.search(name):
+        return True
+    if _REP_TRACK_DISTANCE_RE.search(name):
+        return True
+    return any(kw in text for kw in _STRUCTURED_NAME_KEYWORDS)
+
+
+def _shape_classification(activity: Activity) -> Optional[str]:
+    """Pull workout_classification out of Activity.run_shape JSONB safely."""
+    rs = getattr(activity, "run_shape", None)
+    if not isinstance(rs, dict):
+        return None
+    summary = rs.get("summary")
+    if not isinstance(summary, dict):
+        return None
+    cls = summary.get("workout_classification")
+    return cls if isinstance(cls, str) else None
+
+
+def _is_interval_workout(activity: Activity) -> bool:
+    """Multi-signal gate. True if any of:
+    1. Explicit workout_type is in the canonical interval set
+    2. run_shape classification says this had structured work
+    3. The workout name uses rep notation or a structured-workout keyword
+
+    History (the bug that drove this expansion): the founder's 2026-04-18
+    run had workout_type=NULL, run_shape=anomaly, name="Meridian - 2 x 2
+    x mile", and split data showing a textbook 4x1mi session.  The old
+    workout_type-only gate said "no", so the LLM got pacing-decay context
+    and described the planned cooldown mile as "hitting a wall".
+    """
+    wt = getattr(activity, "workout_type", None)
+    if wt and wt.lower() in INTERVAL_WORKOUT_TYPES:
+        return True
+
+    cls = _shape_classification(activity)
+    if cls and cls in STRUCTURED_SHAPE_CLASSIFICATIONS:
+        return True
+
+    name = getattr(activity, "name", None)
+    if _workout_name_suggests_intervals(name):
+        return True
+
+    return False
+
+
+# ── Cooldown labeling ──────────────────────────────────────────────────
+#
+# A trailing split is labeled cooldown ONLY if all four hold:
+#   1. Position: comes after the last detected work rep
+#   2. Pace:     slower than the avg work-rep pace
+#   3. HR drop:  avg HR >= COOLDOWN_HR_DROP_BPM below avg work-rep HR
+#   4. Substantial: distance >= COOLDOWN_MIN_DISTANCE_M
+#                   OR duration >= COOLDOWN_MIN_DURATION_S
+#
+# HR drop is the load-bearing signal because cardiac response can't be
+# faked -- it only drops when the athlete genuinely eases off.  Pace alone
+# doesn't work because cruise-interval floats look identical to true
+# cooldowns pace-wise.
+
+COOLDOWN_HR_DROP_BPM = 12
+COOLDOWN_MIN_DISTANCE_M = 644   # 0.4 mi
+COOLDOWN_MIN_DURATION_S = 180   # 3 min
+# Cooldown is jogging, not walking.  Anything slower than 3x the work pace
+# is a between-rep recovery walk (e.g. 38:00/mi after a 6:00/mi rep is
+# clearly walking, not winding down).
+COOLDOWN_MAX_PACE_MULTIPLIER = 3.0
+
+
+def _label_cooldown(
+    reps: List[Dict[str, Any]],
+    splits: List[Any],
+) -> Optional[Dict[str, Any]]:
+    """Find the post-rep cooldown split, if any. Returns a dict with
+    split_number, distance_m, elapsed_s, pace_per_mile, pace_s_km, avg_hr.
+    Returns None when no trailing split meets all four cooldown gates."""
+    if not reps or not splits:
+        return None
+
+    work_hrs = [r["avg_hr"] for r in reps if r.get("avg_hr")]
+    work_paces = [r["pace_s_km"] for r in reps if r.get("pace_s_km")]
+    if not work_hrs or not work_paces:
+        return None
+    avg_work_hr = sum(work_hrs) / len(work_hrs)
+    avg_work_pace = sum(work_paces) / len(work_paces)
+
+    last_rep_split = max(
+        (r.get("split_number") for r in reps if r.get("split_number") is not None),
+        default=None,
+    )
+    if last_rep_split is None:
+        return None
+
+    # Walk the splits AFTER the last rep and find the LAST one that
+    # satisfies all four gates.  A cooldown is by convention the closing
+    # wind-down -- when there's a recovery jog AND a cooldown after the
+    # last rep (founder's 2026-04-18 case: split 17 = 0.10mi recovery
+    # jog, split 18 = 0.99mi cooldown), the cooldown is the trailing
+    # piece.  Picking the last qualifying split also naturally filters
+    # out tail debris (sub-50m fragments fail the substantial gate).
+    candidate = None
+    for s in splits:
+        sn = getattr(s, "split_number", None)
+        if sn is None or sn <= last_rep_split:
+            continue
+        dist = float(s.distance) if s.distance else 0.0
+        elapsed = float(s.elapsed_time) if s.elapsed_time else 0.0
+        if dist < 50 or elapsed <= 0:
+            continue
+        if dist < COOLDOWN_MIN_DISTANCE_M and elapsed < COOLDOWN_MIN_DURATION_S:
+            continue
+
+        hr = s.average_heartrate
+        if hr is None:
+            continue
+        if (avg_work_hr - float(hr)) < COOLDOWN_HR_DROP_BPM:
+            continue
+
+        pace = elapsed / (dist / 1000)
+        if pace <= avg_work_pace:
+            # "Cooldown" must be at least as slow as the work pace.
+            continue
+        if pace > avg_work_pace * COOLDOWN_MAX_PACE_MULTIPLIER:
+            # Walking-pace recovery between reps -- not a cooldown.
+            continue
+
+        candidate = {
+            "split_number": sn,
+            "distance_m": round(dist),
+            "elapsed_s": round(elapsed, 1),
+            "pace_per_mile": _fmt_pace_per_mile(pace),
+            "pace_s_km": round(pace, 1),
+            "avg_hr": int(hr),
+        }
+
+    return candidate
 
 
 # ── Data gathering ─────────────────────────────────────────────────────
@@ -239,6 +449,8 @@ def _derive_reps_from_unmarked_splits(splits) -> Optional[List[Dict[str, Any]]]:
                 hr_den += g["elapsed_s"]
         avg_hr = int(round(hr_num / hr_den)) if hr_den > 0 else None
 
+        last_split_num = group[-1]["split"].split_number if group else None
+
         reps.append({
             "rep": i + 1,
             "distance_m": round(total_dist),
@@ -246,6 +458,7 @@ def _derive_reps_from_unmarked_splits(splits) -> Optional[List[Dict[str, Any]]]:
             "pace_per_mile": _fmt_pace_per_mile(pace),
             "pace_s_km": round(pace, 1),
             "avg_hr": avg_hr,
+            "split_number": last_split_num,
         })
 
     return reps
@@ -281,6 +494,7 @@ def _get_interval_analysis(activity: Activity, db: Session) -> Optional[Dict[str
                 "pace_per_mile": _fmt_pace_per_mile(pace_s_km),
                 "pace_s_km": round(pace_s_km, 1),
                 "avg_hr": hr,
+                "split_number": getattr(s, "split_number", None),
             })
     else:
         derived = _derive_reps_from_unmarked_splits(splits)
@@ -308,7 +522,13 @@ def _get_interval_analysis(activity: Activity, db: Session) -> Optional[Dict[str
 
     history = _get_interval_history(activity, reps[0]["distance_m"], db)
 
-    return {
+    # Cooldown labeling: only the clean (non-busted) reps define what "work"
+    # looked like.  Otherwise a busted rep would drag the work-HR baseline
+    # down and cause us to under-call cooldowns.
+    clean_reps = [r for r in reps if not r["busted"]]
+    cooldown = _label_cooldown(clean_reps or reps, splits)
+
+    result = {
         "type": "interval",
         "reps": reps,
         "clean_avg_pace_per_mile": _fmt_pace_per_mile(avg_pace),
@@ -321,6 +541,9 @@ def _get_interval_analysis(activity: Activity, db: Session) -> Optional[Dict[str
         "history": history,
         "derived_from_pace": derived_from_pace,
     }
+    if cooldown is not None:
+        result["cooldown"] = cooldown
+    return result
 
 
 def _get_interval_history(
@@ -601,6 +824,17 @@ def _build_data_context(activity: Activity, db: Session) -> Dict[str, Any]:
         "avg_hr": int(activity.avg_hr) if activity.avg_hr else None,
         "max_hr": int(activity.max_hr) if activity.max_hr else None,
     }
+
+    # Surface the raw workout name and shape classification.  The LLM uses
+    # these for context only -- the SYSTEM_PROMPT forbids inferring planned
+    # rep counts from names.  But when our gate misfires, the LLM at least
+    # sees the truth in front of it instead of a contradicting summary.
+    name = getattr(activity, "name", None)
+    if name:
+        ctx["workout_name"] = name
+    cls = _shape_classification(activity)
+    if cls:
+        ctx["shape_classification"] = cls
 
     elev = getattr(activity, "total_elevation_gain", None)
     if elev and float(elev) > 30:
