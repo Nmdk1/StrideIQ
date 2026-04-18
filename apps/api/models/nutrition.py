@@ -54,10 +54,25 @@ class NutritionEntry(Base):
     glucose_fructose_ratio = Column(Float, nullable=True)
     macro_source = Column(Text, nullable=True)  # 'usda_local', 'usda_api', 'llm_estimated', 'product_library', 'branded_barcode'
     fueling_product_id = Column(Integer, ForeignKey("fueling_product.id"), nullable=True)
+    # Source identifier of the food this entry was created from. Set by the
+    # frontend when the entry comes from a barcode scan or USDA lookup so the
+    # backend can auto-learn per-athlete corrections (AthleteFoodOverride).
+    source_fdc_id = Column(Integer, nullable=True)
+    source_upc = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
     __table_args__ = (
         Index("ix_nutrition_athlete_date", "athlete_id", "date"),
+        Index(
+            "ix_nutrition_entry_source_fdc",
+            "source_fdc_id",
+            postgresql_where=text("source_fdc_id IS NOT NULL"),
+        ),
+        Index(
+            "ix_nutrition_entry_source_upc",
+            "source_upc",
+            postgresql_where=text("source_upc IS NOT NULL"),
+        ),
     )
 
 class USDAFood(Base):
@@ -110,5 +125,85 @@ class MealTemplate(Base):
 
     __table_args__ = (
         UniqueConstraint("athlete_id", "meal_signature", name="uq_meal_template_athlete_sig"),
+    )
+
+
+class AthleteFoodOverride(Base):
+    """Per-athlete corrections to scanned/branded food macros.
+
+    When an athlete edits the auto-populated values from a barcode scan or
+    a USDA lookup, we remember the correction keyed on (athlete, identifier)
+    and replay it the next time the same food is scanned. Solves the
+    "David's protein bar always shows wrong calories" class of bug.
+
+    Exactly one of (upc, fdc_id, fueling_product_id) must be set, enforced
+    by a CHECK constraint and partial unique indexes.
+    """
+
+    __tablename__ = "athlete_food_override"
+
+    id = Column(BigInteger, primary_key=True)
+    athlete_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("athlete.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    upc = Column(Text, nullable=True)
+    fdc_id = Column(Integer, nullable=True)
+    fueling_product_id = Column(
+        Integer,
+        ForeignKey("fueling_product.id", ondelete="CASCADE"),
+        nullable=True,
+    )
+
+    food_name = Column(Text, nullable=True)
+
+    serving_size_g = Column(Float, nullable=True)
+    calories = Column(Float, nullable=True)
+    protein_g = Column(Float, nullable=True)
+    carbs_g = Column(Float, nullable=True)
+    fat_g = Column(Float, nullable=True)
+    fiber_g = Column(Float, nullable=True)
+    caffeine_mg = Column(Float, nullable=True)
+    sodium_mg = Column(Float, nullable=True)
+
+    times_applied = Column(Integer, nullable=False, server_default="0")
+    last_applied_at = Column(DateTime(timezone=True), nullable=True)
+
+    created_at = Column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+    __table_args__ = (
+        CheckConstraint(
+            "(CASE WHEN upc IS NOT NULL THEN 1 ELSE 0 END + "
+            "CASE WHEN fdc_id IS NOT NULL THEN 1 ELSE 0 END + "
+            "CASE WHEN fueling_product_id IS NOT NULL THEN 1 ELSE 0 END) = 1",
+            name="ck_athlete_food_override_one_identifier",
+        ),
+        Index(
+            "uq_athlete_food_override_upc",
+            "athlete_id",
+            "upc",
+            unique=True,
+            postgresql_where=text("upc IS NOT NULL"),
+        ),
+        Index(
+            "uq_athlete_food_override_fdc",
+            "athlete_id",
+            "fdc_id",
+            unique=True,
+            postgresql_where=text("fdc_id IS NOT NULL"),
+        ),
+        Index(
+            "uq_athlete_food_override_fpid",
+            "athlete_id",
+            "fueling_product_id",
+            unique=True,
+            postgresql_where=text("fueling_product_id IS NOT NULL"),
+        ),
     )
 

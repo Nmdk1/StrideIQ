@@ -205,10 +205,18 @@ class NutritionEntryCreate(BaseModel):
     glucose_fructose_ratio: Optional[float] = None
     macro_source: Optional[str] = None
     fueling_product_id: Optional[int] = None
+    # Source identifier of the food this entry was created from. Set by the
+    # frontend when the entry comes from a barcode scan or USDA lookup so the
+    # backend can auto-learn per-athlete macro corrections on edit.
+    source_fdc_id: Optional[int] = None
+    source_upc: Optional[str] = None
 
 
 class NutritionEntryUpdate(BaseModel):
     """Schema for partial update of a nutrition entry (all fields optional)."""
+    date: Optional[date] = None
+    entry_type: Optional[str] = None
+    activity_id: Optional[UUID] = None
     calories: Optional[float] = None
     protein_g: Optional[float] = None
     carbs_g: Optional[float] = None
@@ -219,6 +227,9 @@ class NutritionEntryUpdate(BaseModel):
     fluid_ml: Optional[float] = None
     carb_source: Optional[str] = None
     macro_source: Optional[str] = None
+    fueling_product_id: Optional[int] = None
+    source_fdc_id: Optional[int] = None
+    source_upc: Optional[str] = None
 
 
 class NutritionEntryResponse(BaseModel):
@@ -241,6 +252,8 @@ class NutritionEntryResponse(BaseModel):
     glucose_fructose_ratio: Optional[float] = None
     macro_source: Optional[str] = None
     fueling_product_id: Optional[int] = None
+    source_fdc_id: Optional[int] = None
+    source_upc: Optional[str] = None
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
@@ -256,6 +269,8 @@ class PhotoParseItemResponse(BaseModel):
     fiber_g: float
     macro_source: str
     fdc_id: Optional[int] = None
+    is_athlete_override: bool = False
+    override_id: Optional[int] = None
 
 
 class PhotoParseResponse(BaseModel):
@@ -283,6 +298,9 @@ class BarcodeScanResponse(BaseModel):
     fiber_g: Optional[float] = None
     macro_source: str = "branded_barcode"
     fdc_id: Optional[int] = None
+    upc: Optional[str] = None
+    is_athlete_override: bool = False
+    override_id: Optional[int] = None
 
 
 class FuelingProductResponse(BaseModel):

@@ -199,6 +199,7 @@ export default function NutritionPage() {
   const [barcodeResult, setBarcodeResult] = useState<{
     food_name: string; calories: number; protein_g: number;
     carbs_g: number; fat_g: number; servings: number; fdc_id?: number;
+    upc?: string; is_athlete_override?: boolean;
   } | null>(null);
   const [templateMatch, setTemplateMatch] = useState<{
     meal_signature: string; items: Record<string, unknown>[]; times_confirmed: number;
@@ -396,6 +397,8 @@ export default function NutritionPage() {
               fat_g: scan.fat_g || 0,
               servings: 1,
               fdc_id: scan.fdc_id,
+              upc: scan.upc || decodedText,
+              is_athlete_override: scan.is_athlete_override,
             });
           } else {
             showToast('Product not found — try a photo instead');
@@ -446,6 +449,8 @@ export default function NutritionPage() {
         fat_g: Math.round(barcodeResult.fat_g * s),
         notes: barcodeResult.food_name,
         macro_source: 'branded_barcode',
+        source_upc: barcodeResult.upc,
+        source_fdc_id: barcodeResult.fdc_id,
       });
       showToast('Logged');
       setBarcodeResult(null);
@@ -1020,7 +1025,17 @@ export default function NutritionPage() {
           {/* Barcode Result */}
           {barcodeResult && (
             <div className="bg-slate-800 rounded-xl border border-slate-700/50 p-4 space-y-3">
-              <h2 className="text-sm font-semibold">{barcodeResult.food_name}</h2>
+              <div className="flex items-center gap-2 flex-wrap">
+                <h2 className="text-sm font-semibold">{barcodeResult.food_name}</h2>
+                {barcodeResult.is_athlete_override && (
+                  <span
+                    className="text-[10px] uppercase tracking-wide font-medium px-2 py-0.5 rounded bg-emerald-900/40 text-emerald-300 border border-emerald-700/40"
+                    title="Showing your saved correction for this food"
+                  >
+                    Your values
+                  </span>
+                )}
+              </div>
               <p className="text-xs text-slate-400">
                 Per serving: {barcodeResult.calories} cal &middot; {barcodeResult.protein_g}g P &middot; {barcodeResult.carbs_g}g C &middot; {barcodeResult.fat_g}g F
               </p>

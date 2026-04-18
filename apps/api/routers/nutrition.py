@@ -68,6 +68,60 @@ router = APIRouter(prefix="/v1", tags=["nutrition"])
 MAX_BACKLOG_DAYS = 60
 
 
+def _maybe_learn_override_from_entry(
+    db: Session,
+    athlete_id,
+    entry: NutritionEntry,
+) -> None:
+    """If the entry is tied to a UPC/fdc_id/fueling_product, persist the user's
+    macros as an override for that food. Best-effort: errors never bubble up.
+    """
+    try:
+        from services.food_override_service import (
+            OverrideIdentifier,
+            upsert_override,
+        )
+
+        # Identifier precedence: UPC > fueling_product_id > fdc_id.
+        # Only one identifier may be set per override row, so we pick the
+        # most-specific available signal.
+        if entry.source_upc:
+            identifier = OverrideIdentifier(upc=entry.source_upc)
+        elif entry.fueling_product_id is not None:
+            identifier = OverrideIdentifier(
+                fueling_product_id=entry.fueling_product_id
+            )
+        elif entry.source_fdc_id is not None:
+            identifier = OverrideIdentifier(fdc_id=entry.source_fdc_id)
+        else:
+            return  # nothing to learn against
+
+        def _f(v):
+            return float(v) if v is not None else None
+
+        upsert_override(
+            db,
+            athlete_id,
+            identifier,
+            food_name=entry.notes if entry.notes else None,
+            calories=_f(entry.calories),
+            protein_g=_f(entry.protein_g),
+            carbs_g=_f(entry.carbs_g),
+            fat_g=_f(entry.fat_g),
+            fiber_g=_f(entry.fiber_g),
+            caffeine_mg=_f(entry.caffeine_mg),
+            fluid_ml=None,
+            sodium_mg=None,
+        )
+    except Exception:
+        # Auto-learn is a nice-to-have; never fail the user's edit because
+        # we couldn't memoise their correction.
+        try:
+            db.rollback()
+        except Exception:
+            pass
+
+
 def _validate_entry_date(entry_date: date) -> None:
     """Reject future dates and dates older than the backlog window.
 
@@ -333,6 +387,7 @@ async def parse_photo(
         raise HTTPException(status_code=422, detail="Image exceeds 10MB limit")
 
     from services.nutrition_photo_parser import parse_food_photo
+    from services.food_override_service import find_override, record_override_applied
     result = parse_food_photo(image_bytes, db)
 
     template_match = None
@@ -341,26 +396,64 @@ async def parse_photo(
         food_names = [item.food for item in result.items]
         template_match = find_template(str(current_user.id), food_names, db)
 
-    return PhotoParseResponse(
-        items=[
+    items_out: list[PhotoParseItemResponse] = []
+    total_cal = total_p = total_c = total_f = total_fib = 0.0
+    for item in result.items:
+        is_override = False
+        override_id: Optional[int] = None
+        cal, p, c, f, fib = (
+            item.calories, item.protein_g, item.carbs_g, item.fat_g, item.fiber_g
+        )
+        if item.fdc_id is not None:
+            override = find_override(db, current_user.id, fdc_id=item.fdc_id)
+            if override and item.grams and item.grams > 0:
+                # Photo parser items are absolute (already scaled to grams).
+                # Override values are stored per the *user's normal serving*
+                # — which for photo parses we treat as 100g (USDAFood basis).
+                # Scale override values by the same grams ratio.
+                scale = item.grams / 100.0
+                if override.calories is not None:
+                    cal = override.calories * scale
+                if override.protein_g is not None:
+                    p = override.protein_g * scale
+                if override.carbs_g is not None:
+                    c = override.carbs_g * scale
+                if override.fat_g is not None:
+                    f = override.fat_g * scale
+                if override.fiber_g is not None:
+                    fib = override.fiber_g * scale
+                is_override = True
+                override_id = override.id
+                record_override_applied(db, override)
+
+        items_out.append(
             PhotoParseItemResponse(
                 food=item.food,
                 grams=item.grams,
-                calories=item.calories,
-                protein_g=item.protein_g,
-                carbs_g=item.carbs_g,
-                fat_g=item.fat_g,
-                fiber_g=item.fiber_g,
+                calories=cal,
+                protein_g=p,
+                carbs_g=c,
+                fat_g=f,
+                fiber_g=fib,
                 macro_source=item.macro_source,
                 fdc_id=item.fdc_id,
+                is_athlete_override=is_override,
+                override_id=override_id,
             )
-            for item in result.items
-        ],
-        total_calories=result.total_calories,
-        total_protein_g=result.total_protein_g,
-        total_carbs_g=result.total_carbs_g,
-        total_fat_g=result.total_fat_g,
-        total_fiber_g=result.total_fiber_g,
+        )
+        total_cal += cal or 0
+        total_p += p or 0
+        total_c += c or 0
+        total_f += f or 0
+        total_fib += fib or 0
+
+    return PhotoParseResponse(
+        items=items_out,
+        total_calories=total_cal,
+        total_protein_g=total_p,
+        total_carbs_g=total_c,
+        total_fat_g=total_f,
+        total_fiber_g=total_fib,
         template_match=template_match,
     )
 
@@ -376,22 +469,69 @@ def scan_barcode(
     db: Session = Depends(get_db),
 ):
     from services.barcode_lookup import lookup_barcode
+    from services.food_override_service import find_override, record_override_applied
+
     match = lookup_barcode(payload.upc, db)
 
-    if not match:
+    # An athlete might register an override for a UPC that we don't have in
+    # the catalog yet — honour it even when the catalog lookup misses.
+    override = find_override(
+        db,
+        current_user.id,
+        upc=payload.upc,
+        fdc_id=match.fdc_id if match else None,
+    )
+
+    if not match and not override:
         return BarcodeScanResponse(found=False)
+
+    if match:
+        food_name = match.description
+        serving = 100
+        cal = match.calories_per_100g
+        p = match.protein_per_100g
+        c = match.carbs_per_100g
+        f = match.fat_per_100g
+        fib = match.fiber_per_100g
+        fdc_id = match.fdc_id
+    else:
+        # Pure-override hit (UPC unknown to catalog)
+        food_name = None
+        serving = None
+        cal = p = c = f = fib = None
+        fdc_id = None
+
+    if override:
+        if override.food_name is not None:
+            food_name = override.food_name
+        if override.serving_size_g is not None:
+            serving = override.serving_size_g
+        if override.calories is not None:
+            cal = override.calories
+        if override.protein_g is not None:
+            p = override.protein_g
+        if override.carbs_g is not None:
+            c = override.carbs_g
+        if override.fat_g is not None:
+            f = override.fat_g
+        if override.fiber_g is not None:
+            fib = override.fiber_g
+        record_override_applied(db, override)
 
     return BarcodeScanResponse(
         found=True,
-        food_name=match.description,
-        serving_size_g=100,
-        calories=match.calories_per_100g,
-        protein_g=match.protein_per_100g,
-        carbs_g=match.carbs_per_100g,
-        fat_g=match.fat_per_100g,
-        fiber_g=match.fiber_per_100g,
+        food_name=food_name,
+        serving_size_g=serving,
+        calories=cal,
+        protein_g=p,
+        carbs_g=c,
+        fat_g=f,
+        fiber_g=fib,
         macro_source="branded_barcode",
-        fdc_id=match.fdc_id,
+        fdc_id=fdc_id,
+        upc=payload.upc,
+        is_athlete_override=override is not None,
+        override_id=override.id if override else None,
     )
 
 
@@ -836,6 +976,8 @@ def create_nutrition_entry(
         glucose_fructose_ratio=nutrition.glucose_fructose_ratio,
         macro_source=nutrition.macro_source,
         fueling_product_id=nutrition.fueling_product_id,
+        source_fdc_id=nutrition.source_fdc_id,
+        source_upc=nutrition.source_upc,
         timing=nutrition.timing,
         notes=nutrition.notes,
     )
@@ -937,11 +1079,17 @@ def update_nutrition_entry(
     db_entry.glucose_fructose_ratio = nutrition.glucose_fructose_ratio
     db_entry.macro_source = nutrition.macro_source
     db_entry.fueling_product_id = nutrition.fueling_product_id
+    if nutrition.source_fdc_id is not None:
+        db_entry.source_fdc_id = nutrition.source_fdc_id
+    if nutrition.source_upc is not None:
+        db_entry.source_upc = nutrition.source_upc
     db_entry.timing = nutrition.timing
     db_entry.notes = nutrition.notes
 
     db.commit()
     db.refresh(db_entry)
+
+    _maybe_learn_override_from_entry(db, current_user.id, db_entry)
 
     invalidate_athlete_cache(str(current_user.id))
     invalidate_correlation_cache(str(current_user.id))
@@ -965,6 +1113,10 @@ def patch_nutrition_entry(
     patch_data = updates.model_dump(exclude_unset=True)
     if "date" in patch_data and patch_data["date"] is not None:
         _validate_entry_date(patch_data["date"])
+    macro_touched = any(
+        k in patch_data
+        for k in ("calories", "protein_g", "carbs_g", "fat_g", "fiber_g", "caffeine_mg")
+    )
     for field, value in patch_data.items():
         if field in ("calories", "protein_g", "carbs_g", "fat_g", "fiber_g"):
             setattr(db_entry, field, Decimal(str(value)) if value is not None else None)
@@ -973,6 +1125,9 @@ def patch_nutrition_entry(
 
     db.commit()
     db.refresh(db_entry)
+
+    if macro_touched:
+        _maybe_learn_override_from_entry(db, current_user.id, db_entry)
 
     invalidate_athlete_cache(str(current_user.id))
     invalidate_correlation_cache(str(current_user.id))

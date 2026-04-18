@@ -23,6 +23,8 @@ export interface NutritionEntry {
   glucose_fructose_ratio?: number;
   macro_source?: string;
   fueling_product_id?: number;
+  source_fdc_id?: number;
+  source_upc?: string;
   created_at: string;
 }
 
@@ -44,6 +46,8 @@ export interface NutritionEntryCreate {
   glucose_fructose_ratio?: number;
   macro_source?: string;
   fueling_product_id?: number;
+  source_fdc_id?: number;
+  source_upc?: string;
 }
 
 export interface NutritionEntryUpdate {
@@ -57,6 +61,13 @@ export interface NutritionEntryUpdate {
   fiber_g?: number;
   timing?: string;
   notes?: string;
+  caffeine_mg?: number;
+  fluid_ml?: number;
+  carb_source?: string;
+  macro_source?: string;
+  fueling_product_id?: number;
+  source_fdc_id?: number;
+  source_upc?: string;
 }
 
 export interface PhotoParseItem {
@@ -69,6 +80,8 @@ export interface PhotoParseItem {
   fiber_g: number;
   macro_source: string;
   fdc_id?: number;
+  is_athlete_override?: boolean;
+  override_id?: number;
 }
 
 export interface PhotoParseResult {
@@ -97,6 +110,9 @@ export interface BarcodeScanResult {
   fiber_g?: number;
   macro_source: string;
   fdc_id?: number;
+  upc?: string;
+  is_athlete_override?: boolean;
+  override_id?: number;
 }
 
 export interface FuelingProduct {
