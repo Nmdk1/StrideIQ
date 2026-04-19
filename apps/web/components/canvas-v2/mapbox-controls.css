@@ -54,3 +54,20 @@
 .canvas-v2-mapbox-pane .mapboxgl-ctrl-attrib a {
   color: #cbd5e1;
 }
+
+/* When the wrapper enters fullscreen, the inner container is locked to
+ * 480px by Tailwind. Override so the canvas fills the screen and the
+ * route gets the full viewport instead of a 480px letterbox.
+ *
+ * :fullscreen is the spec selector; -webkit:-webkit-full-screen is for
+ * older WebKit. Keep both. */
+.canvas-v2-mapbox-pane:fullscreen,
+.canvas-v2-mapbox-pane:-webkit-full-screen {
+  border-radius: 0;
+  border: 0;
+}
+
+.canvas-v2-mapbox-pane:fullscreen > div,
+.canvas-v2-mapbox-pane:-webkit-full-screen > div {
+  height: 100vh !important;
+}

@@ -82,6 +82,7 @@ export function CanvasHelpButton({ onReplayHint }: CanvasHelpButtonProps) {
             <li>Right-click drag to rotate.</li>
             <li>Scroll to zoom; two-finger drag tilts on touch.</li>
             <li>Click the compass to reset the view.</li>
+            <li>Click the fullscreen button to expand the map; Esc to exit.</li>
           </Section>
 
           <Section title="What you see">

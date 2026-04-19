@@ -81,6 +81,7 @@ function pickAt(track: TrackPoint[], t: number): TrackPoint | null {
 
 export function TerrainMap3D({ track, bounds }: TerrainMap3DProps) {
   const token = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
+  const wrapRef = useRef<HTMLDivElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<mapboxgl.Map | null>(null);
   const markerRef = useRef<mapboxgl.Marker | null>(null);
@@ -121,8 +122,15 @@ export function TerrainMap3D({ track, bounds }: TerrainMap3DProps) {
           ],
           // Repeat pitch/bearing in fitBoundsOptions so the camera-for-bounds
           // calculation accounts for the tilted view (otherwise fit assumes
-          // pitch=0 and the bounds shift after we tilt).
-          fitBoundsOptions: { padding: 60, pitch: 62, bearing: -20 },
+          // pitch=0 and the bounds shift after we tilt). Padding is asymmetric:
+          // bottom needs extra room for the attribution strip; top is the far
+          // plane under tilt and projects small, so it can be tight; sides
+          // leave just enough breathing room for the controls.
+          fitBoundsOptions: {
+            padding: { top: 24, bottom: 56, left: 32, right: 60 },
+            pitch: 62,
+            bearing: -20,
+          },
           attributionControl: true,
           cooperativeGestures: false,
         });
@@ -146,6 +154,18 @@ export function TerrainMap3D({ track, bounds }: TerrainMap3DProps) {
         'top-right',
       );
 
+      // Fullscreen target = the outer pane, not the inner canvas. This
+      // keeps `.canvas-v2-mapbox-pane` as an ancestor of the controls
+      // when fullscreen is active so our scoped overrides (slate
+      // backdrop, light icons) still apply. If the wrapper ref hasn't
+      // mounted, fall back to the default (the map container itself).
+      map.addControl(
+        new mapboxgl.FullscreenControl({
+          container: wrapRef.current ?? undefined,
+        }),
+        'top-right',
+      );
+
       map.on('error', (ev) => {
         const msg = ev?.error?.message ?? String(ev?.error ?? 'unknown error');
         // eslint-disable-next-line no-console
@@ -160,6 +180,22 @@ export function TerrainMap3D({ track, bounds }: TerrainMap3DProps) {
         // not engaging on the initial constructor fit for reasons we
         // haven't pinned down. jumpTo is instant, no animation race.
         map.jumpTo({ pitch: 62, bearing: -20 });
+
+        // After the style settles, push in a touch further. Even with
+        // tight padding the route still floats in a bit too much
+        // surrounding map; +0.6 zoom feels like the route owns the
+        // canvas without losing the lakes/road context. eased instead
+        // of jumped so the entrance feels like a camera move, not a
+        // jump-cut.
+        map.once('idle', () => {
+          if (cancelled) return;
+          map.easeTo({
+            zoom: map.getZoom() + 0.6,
+            pitch: 62,
+            bearing: -20,
+            duration: 600,
+          });
+        });
 
         map.addSource('mapbox-dem', {
           type: 'raster-dem',
@@ -262,7 +298,10 @@ export function TerrainMap3D({ track, bounds }: TerrainMap3DProps) {
   }
 
   return (
-    <div className="canvas-v2-mapbox-pane relative rounded-2xl overflow-hidden border border-slate-800/60 bg-slate-900/30">
+    <div
+      ref={wrapRef}
+      className="canvas-v2-mapbox-pane relative rounded-2xl overflow-hidden border border-slate-800/60 bg-slate-900/30"
+    >
       <div ref={containerRef} className="h-[480px] w-full" />
       {mountError ? (
         <div
