@@ -322,8 +322,14 @@ class TestQualityScorer:
     def test_quality_score_attached_to_result(self):
         """quality_score is populated on WorkoutNarrativeResult for non-suppressed narratives."""
         good_text = "After last week's easy build in week 6, today's tempo in build phase sits nicely."
+        # Note: ``gemini_client`` is accepted for backward compat but ignored;
+        # the generator routes through ``_call_narrative_llm``. Patch that
+        # directly so the test does not depend on a real LLM provider being
+        # configured in the CI environment.
         with patch("services.workout_narrative_generator._build_context") as mock_ctx, \
              patch("services.workout_narrative_generator._get_recent_narratives", return_value=[]), \
+             patch("services.intelligence.workout_narrative_generator._call_narrative_llm",
+                   return_value=(good_text, 80, 25, 120)), \
              patch.dict(os.environ, {KILL_SWITCH_3B_ENV: "false"}):
             mock_ctx.return_value = {
                 "workout": {"type": "threshold", "subtype": None, "title": "Tempo Run",
