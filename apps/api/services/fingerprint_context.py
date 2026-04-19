@@ -31,7 +31,12 @@ _SUPPRESSED_SIGNALS: frozenset = frozenset({
     "garmin_steps",         # counts driving, stairs, fidgeting — not reliable
     "daily_step_count",     # alias
     "garmin_active_time_s", # passive accelerometer, same noise source
-    "garmin_body_battery_end",  # unreliable per founder
+    "garmin_body_battery_end",   # proprietary model output (founder rule)
+    "garmin_avg_stress",         # proprietary model output (founder rule)
+    "garmin_max_stress",         # proprietary model output (founder rule)
+    "garmin_aerobic_te",         # proprietary model output (founder rule)
+    "garmin_anaerobic_te",       # proprietary model output (founder rule)
+    "garmin_body_battery_impact",  # proprietary model output (founder rule)
 })
 
 _ENVIRONMENT_SIGNALS: frozenset = frozenset({
@@ -70,8 +75,9 @@ SIGNAL_UNITS: Dict[str, str] = {
     "heart_rate_avg": "bpm", "overnight_avg_hr": "bpm",
     "garmin_min_hr": "bpm",
     "hrv_rmssd": "ms", "hrv_sdnn": "ms", "garmin_hrv_5min_high": "ms",
-    "garmin_sleep_score": "/100", "garmin_body_battery_end": "/100",
-    "garmin_avg_stress": "/100", "garmin_max_stress": "/100",
+    "garmin_sleep_score": "/100",
+    # garmin_body_battery_end / garmin_avg_stress / garmin_max_stress are
+    # Garmin proprietary model outputs and intentionally not registered.
     "garmin_vo2max": "",
     "soreness_1_5": "/5", "sleep_quality_1_5": "/5", "readiness_1_5": "/5",
     "stress_1_5": "/5", "confidence_1_5": "/5", "enjoyment_1_5": "/5",
@@ -94,9 +100,11 @@ SIGNAL_UNITS: Dict[str, str] = {
     "ct_flexibility_sessions_7d": "sessions",
     "intensity_score": "", "activity_intensity_score": "",
     "daily_session_stress": "",
-    "avg_cadence": "spm", "avg_power_w": "W",
+    "avg_cadence": "spm", "max_cadence": "spm",
+    "avg_power_w": "W", "max_power_w": "W",
     "avg_stride_length_m": "m", "avg_ground_contact_ms": "ms",
     "avg_vertical_oscillation_cm": "cm", "avg_vertical_ratio_pct": "%",
+    "total_descent_m": "ft", "moving_time_s": "min",
     "garmin_steps": "steps",
     "garmin_sleep_deep_s": "min", "garmin_sleep_rem_s": "min",
     "garmin_sleep_awake_s": "min",
@@ -105,8 +113,13 @@ SIGNAL_UNITS: Dict[str, str] = {
     "hrv_rhr_ratio": "",
     "garmin_resting_hr": "bpm",
     "garmin_hrv_overnight_avg": "ms",
-    "garmin_aerobic_te": "", "garmin_anaerobic_te": "",
-    "garmin_perceived_effort": "/10", "garmin_body_battery_impact": "",
+    # NOTE: garmin_aerobic_te / garmin_anaerobic_te / garmin_body_battery_impact
+    # intentionally NOT registered. They are Garmin proprietary model outputs,
+    # not measurements, and we do not surface them in correlations or coach
+    # context. The columns remain on Activity for backward compat but are no
+    # longer populated. garmin_perceived_effort is also omitted here; it is
+    # surfaced (with attribution) only via services/effort_resolver when the
+    # athlete has not provided their own ActivityFeedback.perceived_effort.
     "active_kcal": "kcal",
     "weight_kg": "lbs", "muscle_mass_kg": "lbs",
     "daily_calories": "kcal", "daily_protein_g": "g", "daily_carbs_g": "g",
@@ -179,7 +192,7 @@ COACHING_LANGUAGE: Dict[str, str] = {
     "daily_session_stress": "session intensity",
     "atl": "recent training load",
     "consecutive_run_days": "consecutive running days",
-    "garmin_body_battery_end": "body battery / recovery",
+    # garmin_body_battery_end is proprietary — no coaching language registered.
     "sleep_hours": "sleep duration",
     "days_since_quality": "days since last quality session",
     "days_since_rest": "days since rest",

@@ -121,9 +121,8 @@ FRIENDLY_NAMES: Dict[str, str] = {
     "garmin_sleep_deep_s": "deep sleep time",
     "garmin_sleep_rem_s": "REM sleep time",
     "garmin_sleep_awake_s": "awake time during sleep",
-    "garmin_body_battery_end": "end-of-day body battery",
-    "garmin_avg_stress": "Garmin stress score",
-    "garmin_max_stress": "peak daily stress",
+    # garmin_body_battery_*, garmin_avg_stress, garmin_max_stress are
+    # Garmin proprietary model outputs and intentionally not surfaced here.
     "garmin_steps": "daily step count",
     "garmin_active_time_s": "daily active time",
     "garmin_moderate_intensity_s": "moderate intensity time",
@@ -147,10 +146,13 @@ FRIENDLY_NAMES: Dict[str, str] = {
     "avg_vertical_oscillation_cm": "vertical bounce",
     "avg_vertical_ratio_pct": "vertical ratio",
     "avg_power_w": "running power",
-    "garmin_aerobic_te": "aerobic training effect",
-    "garmin_anaerobic_te": "anaerobic training effect",
-    "garmin_perceived_effort": "Garmin perceived effort",
-    "garmin_body_battery_impact": "body battery drain",
+    "max_power_w": "peak power",
+    "total_descent_m": "descent",
+    "moving_time_s": "moving time",
+    # garmin_aerobic_te, garmin_anaerobic_te, garmin_body_battery_impact
+    # are Garmin proprietary models — not used. garmin_perceived_effort is
+    # surfaced (with attribution) only via services/effort_resolver when no
+    # ActivityFeedback exists for the activity.
     "activity_intensity_score": "session intensity",
     "active_kcal": "calories burned",
     "run_start_hour": "time of day",

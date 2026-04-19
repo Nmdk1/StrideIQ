@@ -303,6 +303,20 @@ class ActivitySplit(Base):
     lap_type = Column(Text, nullable=True)  # warm_up, work, rest, cool_down
     interval_number = Column(Integer, nullable=True)  # 1-indexed for work intervals only
 
+    # --- FIT-DERIVED PER-LAP METRICS (fit_run_001) ---
+    # Populated from FIT lap messages by services/sync/fit_run_parser.
+    # First-class so the correlation engine can scan them. Long-tail metrics
+    # (W/kg, GCT balance, per-lap kcal/temp) live in `extras` JSONB below.
+    total_ascent_m = Column(Float, nullable=True)
+    total_descent_m = Column(Float, nullable=True)
+    avg_power_w = Column(Integer, nullable=True)
+    max_power_w = Column(Integer, nullable=True)
+    avg_stride_length_m = Column(Float, nullable=True)
+    avg_ground_contact_ms = Column(Float, nullable=True)
+    avg_vertical_oscillation_cm = Column(Float, nullable=True)
+    avg_vertical_ratio_pct = Column(Float, nullable=True)
+    extras = Column(JSONB, nullable=True)  # GCT balance, w/kg, per-lap temp/kcal, etc.
+
     # --- RELATIONSHIPS ---
     activity = relationship("Activity", back_populates="splits")
 

@@ -46,7 +46,11 @@ from services.garmin_adapter import (
     _ACCEPTED_SPORTS,
 )
 from services.activity_deduplication import match_activities, TIME_WINDOW_S
-from services.garmin_backfill import request_deep_garmin_backfill, request_garmin_backfill
+from services.garmin_backfill import (
+    request_activity_files_backfill,
+    request_deep_garmin_backfill,
+    request_garmin_backfill,
+)
 
 logger = logging.getLogger(__name__)
 _BACKFILL_PROGRESS_TTL_S = 24 * 60 * 60
@@ -1187,6 +1191,62 @@ def request_garmin_backfill_task(self, athlete_id: str) -> Dict[str, Any]:
 
 
 @celery_app.task(
+    name="request_garmin_activity_files_backfill_task",
+    bind=True,
+    max_retries=2,
+    default_retry_delay=300,
+    time_limit=120,
+)
+def request_garmin_activity_files_backfill_task(
+    self,
+    athlete_id: str,
+    days: int = 30,
+) -> Dict[str, Any]:
+    """
+    Request a Garmin activity-files backfill (FIT files) for the past `days`
+    for one athlete. Garmin replies 202 and pushes the FIT files to our
+    existing webhook handler, which calls the FIT run parser.
+
+    Manually invoked, not auto-triggered on connect (see fit_run_001 plan).
+
+    Range limit: 30 days per request. For deeper backfill, schedule multiple
+    invocations with non-overlapping windows.
+
+    Args:
+        athlete_id: Internal athlete UUID string.
+        days:       Backfill depth in days (1..30, clamped server-side).
+
+    Returns:
+        {"status": "ok"|"skipped"|"aborted"|"deferred", ...}
+    """
+    db = get_db_sync()
+    try:
+        athlete = _find_athlete_in_db(athlete_id, db)
+        if athlete is None:
+            logger.warning(
+                "request_garmin_activity_files_backfill_task: athlete %s not found",
+                athlete_id,
+            )
+            return {"status": "skipped", "reason": "athlete_not_found"}
+
+        result = request_activity_files_backfill(athlete, db, days=days)
+        logger.info(
+            "request_garmin_activity_files_backfill_task: athlete=%s days=%d result=%s",
+            athlete_id, days, result,
+        )
+        return result
+    except Exception as exc:
+        db.rollback()
+        logger.exception(
+            "request_garmin_activity_files_backfill_task failed for athlete %s: %s",
+            athlete_id, exc,
+        )
+        raise self.retry(exc=exc)
+    finally:
+        db.close()
+
+
+@celery_app.task(
     name="request_deep_garmin_backfill_task",
     bind=True,
     max_retries=2,
@@ -1492,42 +1552,9 @@ def process_garmin_activity_file_task(
         len(fit_bytes), athlete_id, summary_id,
     )
 
-    from services.fit_parser import extract_exercise_sets_from_fit
-    parsed_data = extract_exercise_sets_from_fit(fit_bytes)
-
-    exercise_sets = parsed_data.get("exerciseSets", [])
-    active_sets = [s for s in exercise_sets if s.get("setType") == "ACTIVE"]
-
-    if not active_sets:
-        logger.info(
-            "process_activity_file: no active exercise sets in FIT file for athlete=%s summary=%s (total messages: %d)",
-            athlete_id, summary_id, len(exercise_sets),
-        )
-        return {"status": "ok", "reason": "no_exercise_sets", "file_type": file_type}
-
     db = get_db_sync()
     try:
-        activity = None
-
-        if summary_id:
-            activity = (
-                db.query(Activity)
-                .filter(
-                    Activity.athlete_id == athlete_id,
-                    Activity.garmin_activity_id == str(summary_id),
-                )
-                .first()
-            )
-
-        if activity is None and summary_id:
-            activity = (
-                db.query(Activity)
-                .filter(
-                    Activity.athlete_id == athlete_id,
-                    Activity.external_id == str(summary_id),
-                )
-                .first()
-            )
+        activity = _find_activity_for_summary_id(db, athlete_id, summary_id)
 
         if activity is None:
             logger.warning(
@@ -1536,37 +1563,65 @@ def process_garmin_activity_file_task(
             )
             raise self.retry(countdown=30)
 
-        if activity.sport != "strength":
+        # --- Strength path ---
+        if activity.sport == "strength":
+            from services.fit_parser import extract_exercise_sets_from_fit
+            from services.strength_parser import process_strength_activity
+
+            parsed = extract_exercise_sets_from_fit(fit_bytes)
+            exercise_sets = parsed.get("exerciseSets", [])
+            active_sets = [s for s in exercise_sets if s.get("setType") == "ACTIVE"]
+            if not active_sets:
+                logger.info(
+                    "process_activity_file: no active exercise sets for athlete=%s summary=%s (total messages: %d)",
+                    athlete_id, summary_id, len(exercise_sets),
+                )
+                return {"status": "ok", "reason": "no_exercise_sets", "file_type": file_type}
+
+            result = process_strength_activity(db, activity, parsed)
+            db.commit()
             logger.info(
-                "process_activity_file: activity %s is %s, not strength — skipping exercise parsing",
-                activity.id, activity.sport,
+                "Exercise sets processed for activity=%s: %d sets, type=%s",
+                activity.id, result["sets_written"], result["session_type"],
             )
-            return {"status": "ok", "reason": "not_strength", "sport": activity.sport}
+            if result.get("unknown_exercises"):
+                logger.warning(
+                    "Unknown exercises in FIT file for activity=%s: %s",
+                    activity.id, result["unknown_exercises"],
+                )
+            return {
+                "status": "ok",
+                "activity_id": str(activity.id),
+                "sets_written": result["sets_written"],
+                "session_type": result["session_type"],
+            }
 
-        from services.strength_parser import process_strength_activity
-        result = process_strength_activity(db, activity, parsed_data)
-        db.commit()
+        # --- Endurance path (run / cycling / walking / hiking) ---
+        if activity.sport in ("run", "cycling", "walking", "hiking"):
+            from services.sync.fit_run_parser import parse_run_fit
+            from services.sync.fit_run_apply import apply_fit_run_data
 
+            parsed = parse_run_fit(fit_bytes)
+            applied = apply_fit_run_data(db, activity, parsed)
+            db.commit()
+            logger.info(
+                "FIT run/endurance applied for activity=%s sport=%s session=%s laps=%d",
+                activity.id, activity.sport, applied["session_applied"], applied["laps_written"],
+            )
+            return {
+                "status": "ok",
+                "activity_id": str(activity.id),
+                "sport": activity.sport,
+                "session_applied": applied["session_applied"],
+                "laps_written": applied["laps_written"],
+            }
+
+        # --- Anything else (yoga / pilates / etc.) ---
         logger.info(
-            "Exercise sets from FIT file processed for activity=%s: %d sets, type=%s",
-            activity.id,
-            result["sets_written"],
-            result["session_type"],
+            "process_activity_file: activity %s sport=%s — no FIT enrichment defined",
+            activity.id, activity.sport,
         )
-
-        if result.get("unknown_exercises"):
-            logger.warning(
-                "Unknown exercises in FIT file for activity=%s: %s",
-                activity.id,
-                result["unknown_exercises"],
-            )
-
-        return {
-            "status": "ok",
-            "activity_id": str(activity.id),
-            "sets_written": result["sets_written"],
-            "session_type": result["session_type"],
-        }
+        return {"status": "ok", "reason": "no_handler_for_sport", "sport": activity.sport}
 
     except self.MaxRetriesExceededError:
         logger.error(
@@ -1576,3 +1631,26 @@ def process_garmin_activity_file_task(
         return {"status": "error", "reason": "max_retries_exceeded"}
     finally:
         db.close()
+
+
+def _find_activity_for_summary_id(db, athlete_id, summary_id):
+    """Look up the Activity row that matches the activity-file `summaryId`.
+
+    Garmin's activity-files webhook ships `summaryId` (string), which maps to
+    `Activity.external_activity_id` in our schema. The legacy code path in
+    this file also tried `Activity.garmin_activity_id == str(summary_id)`,
+    but that column is BigInteger and `summaryId` is the SUMMARY id (not the
+    `activityId`). The legacy fallback referenced `Activity.external_id`
+    which doesn't exist on the model. Both cases would AttributeError or
+    silently never match. Single source of truth here.
+    """
+    if not summary_id:
+        return None
+    return (
+        db.query(Activity)
+        .filter(
+            Activity.athlete_id == athlete_id,
+            Activity.external_activity_id == str(summary_id),
+        )
+        .first()
+    )

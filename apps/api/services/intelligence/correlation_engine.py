@@ -794,10 +794,12 @@ def aggregate_daily_inputs(
         ("garmin_min_hr", "min_hr"),
         ("garmin_resting_hr", "resting_hr"),
         ("garmin_vo2max", "vo2max"),
-        # Body battery + stress — wearable-derived readiness/stress proxies
-        ("garmin_body_battery_end", "body_battery_end"),
-        ("garmin_avg_stress", "avg_stress"),
-        ("garmin_max_stress", "max_stress"),
+        # Garmin Body Battery, average/max stress, and sleep-derived
+        # readiness scores are proprietary model outputs — not direct
+        # measurements. Per founder rule (real measured metrics only),
+        # they are not registered as correlation signals. The columns
+        # remain on GarminDay for backward compat but are no longer
+        # consumed by the engine.
     ]
 
     for input_key, attr in _GARMIN_SIGNALS:
@@ -848,23 +850,30 @@ def aggregate_activity_level_inputs(
         if d not in by_date or (a.distance_m or 0) > (by_date[d].distance_m or 0):
             by_date[d] = a
 
+    # Activity signals discoverable by the correlation engine. Garmin's
+    # proprietary scores (aerobic/anaerobic Training Effect, Body Battery
+    # impact) are intentionally excluded — those are model outputs, not
+    # measurements, and we do not feed them into correlations. Garmin
+    # perceived effort is also excluded here; it is treated as a low-
+    # confidence fallback by services/effort_resolver and gated behind
+    # ActivityFeedback.perceived_effort when present.
     _ACTIVITY_SIGNALS = [
         ("dew_point_f", "dew_point_f"),
         ("heat_adjustment_pct", "heat_adjustment_pct"),
         ("temperature_f", "temperature_f"),
         ("humidity_pct", "humidity_pct"),
         ("elevation_gain_m", "total_elevation_gain"),
+        ("total_descent_m", "total_descent_m"),
         ("avg_cadence", "avg_cadence"),
         ("avg_stride_length_m", "avg_stride_length_m"),
         ("avg_ground_contact_ms", "avg_ground_contact_ms"),
         ("avg_vertical_oscillation_cm", "avg_vertical_oscillation_cm"),
         ("avg_vertical_ratio_pct", "avg_vertical_ratio_pct"),
         ("avg_power_w", "avg_power_w"),
-        ("garmin_aerobic_te", "garmin_aerobic_te"),
-        ("garmin_anaerobic_te", "garmin_anaerobic_te"),
-        ("garmin_perceived_effort", "garmin_perceived_effort"),
+        ("max_power_w", "max_power_w"),
         ("activity_intensity_score", "intensity_score"),
         ("active_kcal", "active_kcal"),
+        ("moving_time_s", "moving_time_s"),
     ]
 
     for signal_key, attr in _ACTIVITY_SIGNALS:

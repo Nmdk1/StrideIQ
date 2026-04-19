@@ -167,6 +167,13 @@ _ACTIVITY_BACKFILL_ENDPOINTS = {
     "/rest/backfill/activityDetails",
 }
 
+# Activity-files backfill is intentionally NOT in the auto-triggered list.
+# It is requested explicitly by request_garmin_activity_files_backfill_task
+# so that we can re-pull FIT files for the historical corpus without
+# auto-firing on every new connect. Garmin pushes back to the existing
+# webhook handler — no new code path on the receive side.
+_ACTIVITY_FILES_ENDPOINT = "/rest/backfill/activityFiles"
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -375,6 +382,63 @@ def request_garmin_backfill(athlete: Any, db: Any) -> Dict[str, Any]:
         failed,
     )
     return {"status": "ok", "requested": requested, "failed": failed}
+
+
+# ---------------------------------------------------------------------------
+# Activity-files backfill (FIT-derived metrics for historical runs)
+# ---------------------------------------------------------------------------
+
+
+def request_activity_files_backfill(
+    athlete: Any,
+    db: Any,
+    days: int = 30,
+) -> Dict[str, Any]:
+    """
+    Request a Garmin backfill for `activityFiles` only.
+
+    Garmin replies 202 and asynchronously pushes the FIT files for the
+    historical window to our existing activity-files webhook handler
+    (process_garmin_activity_file_task), which then calls the FIT run parser.
+
+    Use cases:
+      - Bring FIT-derived metrics (power, running dynamics, total ascent/
+        descent, intensity minutes) into existing activities that were
+        ingested before the FIT pipeline existed.
+      - Re-pull a single athlete's history after a FIT-parser bug fix.
+
+    Garmin range limit for activityFiles: 30 days per request. Caller may
+    invoke multiple times with non-overlapping windows for deeper backfill;
+    duplicate (409) windows are silently skipped.
+
+    Args:
+        athlete: SQLAlchemy Athlete ORM instance.
+        db:      Active session for token refresh.
+        days:    Backfill depth in days (clamped to 1..30).
+
+    Returns:
+        {"status": "ok" | "aborted" | "deferred",
+         "code": int, "reason": str | None}
+    """
+    access_token = ensure_fresh_garmin_token(athlete, db)
+    if not access_token:
+        return {"status": "aborted", "reason": "no_token", "code": 0}
+
+    days = max(1, min(int(days), _BACKFILL_DEPTH_DAYS_ACTIVITY))
+    now = datetime.now(timezone.utc)
+    start = now - timedelta(days=days)
+    headers = {"Authorization": f"Bearer {access_token}"}
+    params = {
+        "summaryStartTimeInSeconds": int(start.timestamp()),
+        "summaryEndTimeInSeconds": int(now.timestamp()),
+    }
+
+    result = _request_single_backfill(_ACTIVITY_FILES_ENDPOINT, headers, params)
+    logger.info(
+        "activityFiles backfill for athlete %s days=%d → %s",
+        athlete.id, days, result,
+    )
+    return result
 
 
 # ---------------------------------------------------------------------------
