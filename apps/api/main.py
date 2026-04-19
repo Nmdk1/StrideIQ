@@ -430,6 +430,14 @@ try:
 except ImportError as e:
     logger.warning(f"Could not include Strength v1 router: {e}")
 
+# Body-area symptom log — niggles/aches/pains/injury, gated behind the
+# same strength.v1 flag (see docs/specs/STRENGTH_V1_SCOPE.md §6.5).
+try:
+    from routers import symptoms_v1 as symptoms_v1_router
+    app.include_router(symptoms_v1_router.router)
+except ImportError as e:
+    logger.warning(f"Could not include symptoms v1 router: {e}")
+
 # Runtoon — AI-generated personalized run images (feature-flagged)
 try:
     from routers import runtoon as runtoon_router

@@ -70,7 +70,7 @@ function StrengthIndexInner() {
         </p>
       </header>
 
-      <section className="px-4 pt-4">
+      <section className="px-4 pt-4 space-y-2">
         <button
           type="button"
           onClick={() => router.push('/strength/log')}
@@ -78,6 +78,12 @@ function StrengthIndexInner() {
         >
           + Log a strength session
         </button>
+        <Link
+          href="/strength/symptoms"
+          className="block w-full py-3 rounded-md border border-slate-700 text-slate-200 text-center text-sm hover:border-slate-500"
+        >
+          Niggles, aches & injuries
+        </Link>
       </section>
 
       <section className="px-4 pt-8">
