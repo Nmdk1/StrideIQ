@@ -13,17 +13,21 @@ import React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { FeedbackModal } from '../FeedbackModal';
+// Module-level jest.fn instances so the jest.mock factory below can
+// reference them via closure (instead of requiring a `require()` to
+// pull the mocked module back out, which Next's strict ESLint config
+// forbids via @typescript-eslint/no-require-imports and no-var-requires).
+const mockGet = jest.fn();
+const mockPost = jest.fn();
+const mockPut = jest.fn();
 
 jest.mock('@/lib/api/client', () => ({
   apiClient: {
-    get: jest.fn(),
-    post: jest.fn(),
-    put: jest.fn(),
+    get: (...args: unknown[]) => mockGet(...args),
+    post: (...args: unknown[]) => mockPost(...args),
+    put: (...args: unknown[]) => mockPut(...args),
   },
 }));
-
-// eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-var-requires
-const { apiClient } = require('@/lib/api/client');
 
 function renderModal(overrides: Partial<React.ComponentProps<typeof FeedbackModal>> = {}) {
   const onSaved = jest.fn();
@@ -50,10 +54,10 @@ function renderModal(overrides: Partial<React.ComponentProps<typeof FeedbackModa
 }
 
 beforeEach(() => {
-  apiClient.get.mockReset();
-  apiClient.post.mockReset();
-  apiClient.put.mockReset();
-  apiClient.get.mockResolvedValue({
+  mockGet.mockReset();
+  mockPost.mockReset();
+  mockPut.mockReset();
+  mockGet.mockResolvedValue({
     options: [
       { value: 'easy_run', label: 'Easy Run', zone: 'recovery', description: 'Easy aerobic' },
       { value: 'tempo_run', label: 'Tempo Run', zone: 'stamina', description: 'Sustained threshold' },
@@ -113,9 +117,9 @@ describe('FeedbackModal — dismissal', () => {
 
 describe('FeedbackModal — save flow', () => {
   test('successful save calls all three endpoints then fires onSaved', async () => {
-    apiClient.post.mockResolvedValueOnce({}); // reflection
-    apiClient.post.mockResolvedValueOnce({}); // feedback
-    apiClient.put.mockResolvedValueOnce({}); // workout-type (none existing → POST… actually we PUT only if dirty; new type → PUT)
+    mockPost.mockResolvedValueOnce({}); // reflection
+    mockPost.mockResolvedValueOnce({}); // feedback
+    mockPut.mockResolvedValueOnce({}); // workout-type (PUT only fires when dirty)
 
     const { onSaved } = renderModal({
       existingWorkoutType: {
@@ -142,19 +146,19 @@ describe('FeedbackModal — save flow', () => {
     // Reflection POST + feedback POST.  Workout type is unchanged (Looks
     // right with no value change) so no PUT — this is a feature, not a
     // bug: we never write redundantly to the backend.
-    expect(apiClient.post).toHaveBeenCalledWith(
+    expect(mockPost).toHaveBeenCalledWith(
       '/v1/activities/act-1/reflection',
       { response: 'expected' },
     );
-    expect(apiClient.post).toHaveBeenCalledWith(
+    expect(mockPost).toHaveBeenCalledWith(
       '/v1/activity-feedback',
       { activity_id: 'act-1', perceived_effort: 5 },
     );
-    expect(apiClient.put).not.toHaveBeenCalled();
+    expect(mockPut).not.toHaveBeenCalled();
   });
 
   test('failed save leaves the modal open with selections intact', async () => {
-    apiClient.post.mockRejectedValueOnce(new Error('network down'));
+    mockPost.mockRejectedValueOnce(new Error('network down'));
 
     const { onSaved } = renderModal({
       existingWorkoutType: {
