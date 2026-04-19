@@ -173,6 +173,7 @@ services:
       context: ./apps/web
       args:
         - NEXT_PUBLIC_API_URL=https://strideiq.run
+        - NEXT_PUBLIC_MAPBOX_TOKEN=${NEXT_PUBLIC_MAPBOX_TOKEN:-}
     container_name: strideiq_web
     restart: unless-stopped
     environment:

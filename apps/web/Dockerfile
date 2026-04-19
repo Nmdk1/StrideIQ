@@ -2,9 +2,13 @@ FROM node:18-alpine AS builder
 
 WORKDIR /app/web
 
-# Build-time argument for API URL (baked into Next.js bundle)
+# Build-time arguments baked into the Next.js bundle.
+# NEXT_PUBLIC_* vars are inlined at build time, not read at runtime,
+# so they must be passed through here from docker-compose build args.
 ARG NEXT_PUBLIC_API_URL=http://localhost:8000
 ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
+ARG NEXT_PUBLIC_MAPBOX_TOKEN=
+ENV NEXT_PUBLIC_MAPBOX_TOKEN=$NEXT_PUBLIC_MAPBOX_TOKEN
 
 COPY package*.json ./
 RUN npm ci
