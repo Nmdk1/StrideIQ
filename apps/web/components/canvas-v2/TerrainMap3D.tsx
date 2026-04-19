@@ -8,13 +8,15 @@
  * line and a position marker that follows the shared scrub state.
  *
  * Spike scope (binding for v0):
- *   - outdoors-v12 style + setTerrain('mapbox-dem', exaggeration 2.5)
- *   - boost the BUILT-IN hillshade layer's paint properties (don't add
- *     a second one — outdoors-v12 ships with id 'hillshade' already)
- *   - camera starts pitched (62°) and bearing'd (-20°) directly in the
- *     constructor — no race between fitBounds and a deferred easeTo
- *   - emerald route line + glow (high contrast on warm topo, doesn't
- *     blend with lakes the way blue would)
+ *   - outdoors-v12 style + setTerrain('mapbox-dem', exaggeration 3.0)
+ *   - DON'T touch the built-in 'hillshade' layer — setPaintProperty on
+ *     it threw a hard JS exception in style.load that broke route +
+ *     marker setup. Relief comes from setTerrain alone.
+ *   - camera tilt forced THREE ways (constructor pitch/bearing,
+ *     fitBoundsOptions pitch/bearing, jumpTo on style.load) so something
+ *     has to win
+ *   - three-layer route: white casing under, emerald glow around,
+ *     emerald line on top — readable on every basemap color
  *   - position marker bound to useScrubState
  *
  * Token: reads NEXT_PUBLIC_MAPBOX_TOKEN. If absent, renders a clear
@@ -109,13 +111,16 @@ export function TerrainMap3D({ track, bounds }: TerrainMap3DProps) {
         map = new mapboxgl.Map({
           container: containerRef.current,
           style: 'mapbox://styles/mapbox/outdoors-v12',
+          // Set initial pitch/bearing on the constructor itself.
+          pitch: 62,
+          bearing: -20,
           bounds: [
             [bounds.minLng, bounds.minLat],
             [bounds.maxLng, bounds.maxLat],
           ],
-          // Pitch/bearing in the constructor (not deferred easeTo) so they
-          // commit alongside the initial bounds fit. Previous spike used
-          // easeTo on style.load and the camera stayed flat.
+          // Repeat pitch/bearing in fitBoundsOptions so the camera-for-bounds
+          // calculation accounts for the tilted view (otherwise fit assumes
+          // pitch=0 and the bounds shift after we tilt).
           fitBoundsOptions: { padding: 60, pitch: 62, bearing: -20 },
           attributionControl: true,
           cooperativeGestures: false,
@@ -137,29 +142,23 @@ export function TerrainMap3D({ track, bounds }: TerrainMap3DProps) {
       map.on('style.load', () => {
         if (cancelled) return;
 
+        // Force the camera tilt explicitly. fitBoundsOptions pitch was
+        // not engaging on the initial constructor fit for reasons we
+        // haven't pinned down. jumpTo is instant, no animation race.
+        map.jumpTo({ pitch: 62, bearing: -20 });
+
         map.addSource('mapbox-dem', {
           type: 'raster-dem',
           url: 'mapbox://mapbox.mapbox-terrain-dem-v1',
           tileSize: 512,
           maxzoom: 14,
         });
-        // 2.5 exaggeration — Bonita has ~550ft of relief over 4.6mi with
-        // 15% pitches and is rolling-hills terrain (not Colorado, but
-        // genuinely hilly for southeast running). 1.4 was flat, 2.0 was
-        // shy, 2.5 makes the climbs actually read at this zoom.
-        map.setTerrain({ source: 'mapbox-dem', exaggeration: 2.5 });
-
-        // Outdoors-v12 already ships with a hillshade layer (id 'hillshade'
-        // and source 'mapbox-dem'). Adding our own caused a duplicate-id
-        // collision and silently fell back to the default mild styling —
-        // a chunk of the missing topographic drama. Boost the existing
-        // layer's paint instead of adding a competing one.
-        if (map.getLayer('hillshade')) {
-          map.setPaintProperty('hillshade', 'hillshade-exaggeration', 0.85);
-          map.setPaintProperty('hillshade', 'hillshade-shadow-color', '#0f172a');
-          map.setPaintProperty('hillshade', 'hillshade-highlight-color', '#fef3c7');
-          map.setPaintProperty('hillshade', 'hillshade-accent-color', '#78350f');
-        }
+        // 3.0 exaggeration — Bonita has ~550ft of relief over 4.6mi with
+        // 15% pitches. 1.4 flat, 2.0 shy, 2.5 still mild on this zoom,
+        // 3.0 should finally read as the rolling-hills terrain it is.
+        // Outdoors-v12's built-in hillshade does the shading; we just
+        // drive the geometry harder via setTerrain.
+        map.setTerrain({ source: 'mapbox-dem', exaggeration: 3.0 });
 
         const coordinates = track.map((p) => [p.lng, p.lat] as [number, number]);
         map.addSource('route', {
@@ -170,6 +169,23 @@ export function TerrainMap3D({ track, bounds }: TerrainMap3DProps) {
             geometry: { type: 'LineString', coordinates },
           },
         });
+        // Three layers, bottom to top:
+        //   1. white casing — sharp edge for contrast against any color
+        //   2. emerald glow — wide blurred halo, makes route findable
+        //   3. emerald line — saturated stroke on top
+        // Stroke widths chosen so the trail is unmissable at the default
+        // bounds zoom (~14) without being cartoonish.
+        map.addLayer({
+          id: 'route-casing',
+          type: 'line',
+          source: 'route',
+          layout: { 'line-cap': 'round', 'line-join': 'round' },
+          paint: {
+            'line-color': '#ffffff',
+            'line-width': 8,
+            'line-opacity': 0.7,
+          },
+        });
         map.addLayer({
           id: 'route-glow',
           type: 'line',
@@ -177,9 +193,9 @@ export function TerrainMap3D({ track, bounds }: TerrainMap3DProps) {
           layout: { 'line-cap': 'round', 'line-join': 'round' },
           paint: {
             'line-color': '#10b981',
-            'line-width': 11,
-            'line-opacity': 0.35,
-            'line-blur': 5,
+            'line-width': 14,
+            'line-opacity': 0.45,
+            'line-blur': 6,
           },
         });
         map.addLayer({
@@ -188,18 +204,18 @@ export function TerrainMap3D({ track, bounds }: TerrainMap3DProps) {
           source: 'route',
           layout: { 'line-cap': 'round', 'line-join': 'round' },
           paint: {
-            'line-color': '#34d399',
-            'line-width': 3.5,
+            'line-color': '#059669',
+            'line-width': 4,
           },
         });
 
         const el = document.createElement('div');
-        el.style.width = '14px';
-        el.style.height = '14px';
+        el.style.width = '20px';
+        el.style.height = '20px';
         el.style.borderRadius = '50%';
         el.style.background = '#fbbf24';
-        el.style.border = '2px solid #fef3c7';
-        el.style.boxShadow = '0 0 12px rgba(251,191,36,0.7)';
+        el.style.border = '3px solid #ffffff';
+        el.style.boxShadow = '0 0 18px rgba(251,191,36,0.9), 0 0 4px rgba(0,0,0,0.6)';
         const marker = new mapboxgl.Marker({ element: el, anchor: 'center' })
           .setLngLat([track[0].lng, track[0].lat])
           .addTo(map);
