@@ -214,22 +214,22 @@ export function StreamsStack({ track, width }: StreamsStackProps) {
       />
       <div className="h-px bg-slate-800/50" />
       <Band
-        title="Heart Rate"
-        unit="bpm"
-        series={hrSeries}
-        width={width}
-        colorClass="text-rose-400"
-        formatValue={(v) => Math.round(v).toString()}
-        scrubT={position}
-      />
-      <div className="h-px bg-slate-800/50" />
-      <Band
         title="Elevation"
         unit="ft"
         series={elevationSeries}
         width={width}
         colorClass="text-amber-400"
         formatValue={(meters) => Math.round(meters * 3.28084).toString()}
+        scrubT={position}
+      />
+      <div className="h-px bg-slate-800/50" />
+      <Band
+        title="Heart Rate"
+        unit="bpm"
+        series={hrSeries}
+        width={width}
+        colorClass="text-rose-400"
+        formatValue={(v) => Math.round(v).toString()}
         scrubT={position}
       />
     </div>
