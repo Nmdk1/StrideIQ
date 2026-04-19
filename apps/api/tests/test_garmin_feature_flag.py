@@ -39,6 +39,11 @@ def _make_athlete(athlete_id: str, **kwargs) -> MagicMock:
     a.garmin_oauth_access_token = kwargs.get("garmin_oauth_access_token", None)
     a.garmin_user_id = kwargs.get("garmin_user_id", None)
     a.last_garmin_sync = None
+    # Demo guard: explicitly mark non-demo so the defense-in-depth check
+    # in routers.garmin (added after this test was written) doesn't 403
+    # on every MagicMock-truthy is_demo attribute. Tests that need to
+    # exercise the demo path can override via kwargs.
+    a.is_demo = kwargs.get("is_demo", False)
     return a
 
 

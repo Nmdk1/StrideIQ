@@ -50,6 +50,10 @@ def _make_mock_athlete(connected=True):
     a.id = uuid.UUID(ATHLETE_ID)
     a.garmin_connected = connected
     a.garmin_oauth_access_token = "enc-token" if connected else None
+    # Demo guard: explicitly mark non-demo so the defense-in-depth check
+    # in routers.garmin doesn't 403/redirect on every MagicMock-truthy
+    # is_demo attribute.
+    a.is_demo = False
     return a
 
 
@@ -454,6 +458,8 @@ class TestCallbackTriggersBackfill:
                 "code_verifier": "verifier123",
                 "return_to": "/settings",
             },
+        ), patch(
+            "routers.garmin.is_feature_enabled", return_value=True
         ), patch(
             "routers.garmin.exchange_code_for_token", return_value=token_data
         ), patch(
