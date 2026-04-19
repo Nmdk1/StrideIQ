@@ -51,9 +51,15 @@ from sqlalchemy.orm import Session
 
 logger = logging.getLogger(__name__)
 
+# NOTE: garmin_body_battery_end was a member of this set until 2026-04-19.
+# It was a Garmin proprietary model output (not a measurement), and per the
+# founder rule the engine no longer ingests proprietary scores. The column
+# remains on GarminDay for backward compat but is no longer populated, so a
+# finding can never name it. Removed from this set so the COACHING_LANGUAGE
+# / INPUT_TO_LIMITER_TYPE coverage tests stay green.
 LREC_INPUT_NAMES = frozenset({
     "tsb", "daily_session_stress", "atl", "consecutive_run_days",
-    "garmin_body_battery_end", "sleep_hours",
+    "sleep_hours",
 })
 
 LREC_STRONG_INPUTS = frozenset({"daily_session_stress", "atl"})
@@ -82,7 +88,8 @@ INPUT_TO_LIMITER_TYPE: Dict[str, str] = {
     "daily_session_stress": "L-REC",
     "atl": "L-REC",
     "consecutive_run_days": "L-REC",
-    "garmin_body_battery_end": "L-REC",
+    # garmin_body_battery_end deliberately excluded (proprietary model
+    # output, no longer ingested — see LREC_INPUT_NAMES note above).
     "sleep_hours": "L-REC",
     "days_since_quality": "L-THRESH",
     "days_since_rest": "L-CON",

@@ -1634,15 +1634,16 @@ def process_garmin_activity_file_task(
 
 
 def _find_activity_for_summary_id(db, athlete_id, summary_id):
-    """Look up the Activity row that matches the activity-file `summaryId`.
+    """Look up the Activity row that matches the activity-file summary id.
 
-    Garmin's activity-files webhook ships `summaryId` (string), which maps to
-    `Activity.external_activity_id` in our schema. The legacy code path in
-    this file also tried `Activity.garmin_activity_id == str(summary_id)`,
-    but that column is BigInteger and `summaryId` is the SUMMARY id (not the
-    `activityId`). The legacy fallback referenced `Activity.external_id`
-    which doesn't exist on the model. Both cases would AttributeError or
-    silently never match. Single source of truth here.
+    The activity-files webhook ships a summary id (string) which maps to
+    Activity.external_activity_id in our schema. The legacy code path in
+    this file also tried Activity.garmin_activity_id == str(summary_id),
+    but that column is BigInteger and the summary id is the summary id
+    (not the per-activity id). The legacy fallback referenced
+    Activity.external_id which doesn't exist on the model. Both cases
+    would AttributeError or silently never match. Single source of truth
+    here.
     """
     if not summary_id:
         return None

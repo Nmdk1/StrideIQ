@@ -14,6 +14,22 @@ export interface Split {
   gap_seconds_per_mile: number | null;
   lap_type: string | null;       // warm_up, work, rest, cool_down
   interval_number: number | null;
+
+  // FIT-derived per-lap metrics (Phase 1 / fit_run_001).
+  // All nullable: only populated when a FIT file landed and the athlete
+  // wears a sensor that records the metric (e.g., HRM-Pro for running
+  // dynamics, Stryd / Forerunner Pro for power).
+  total_ascent_m?: number | null;
+  total_descent_m?: number | null;
+  avg_power_w?: number | null;
+  max_power_w?: number | null;
+  avg_stride_length_m?: number | null;
+  avg_ground_contact_ms?: number | null;
+  avg_vertical_oscillation_cm?: number | null;
+  avg_vertical_ratio_pct?: number | null;
+  // Long-tail metrics — GCT balance, normalized power, max cadence,
+  // per-lap kcal/temp/lap-trigger. Bag of name->number.
+  extras?: Record<string, number | string | null> | null;
 }
 
 export interface IntervalSummary {

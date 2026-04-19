@@ -1,7 +1,7 @@
 from pydantic import BaseModel, ConfigDict
 from datetime import datetime, date
 from uuid import UUID
-from typing import Optional, List, Dict
+from typing import Any, Dict, List, Optional
 
 
 class AthleteCreate(BaseModel):
@@ -58,7 +58,12 @@ class ActivityCreate(BaseModel):
 
 
 class ActivitySplitResponse(BaseModel):
-    """Schema for individual mile splits within an activity"""
+    """Schema for individual mile splits within an activity.
+
+    The fit-derived columns (total_ascent_m onward) are only populated
+    when the activity ingested a FIT file with lap messages. They are
+    nullable for legacy activities and for partial uploads.
+    """
     split_number: int  # Split number (mile number)
     distance: Optional[float] = None
     elapsed_time: Optional[int] = None
@@ -69,6 +74,17 @@ class ActivitySplitResponse(BaseModel):
     gap_seconds_per_mile: Optional[float] = None
     lap_type: Optional[str] = None
     interval_number: Optional[int] = None
+
+    # FIT-derived per-lap metrics (fit_run_001).
+    total_ascent_m: Optional[float] = None
+    total_descent_m: Optional[float] = None
+    avg_power_w: Optional[int] = None
+    max_power_w: Optional[int] = None
+    avg_stride_length_m: Optional[float] = None
+    avg_ground_contact_ms: Optional[float] = None
+    avg_vertical_oscillation_cm: Optional[float] = None
+    avg_vertical_ratio_pct: Optional[float] = None
+    extras: Optional[Dict[str, Any]] = None
 
     model_config = ConfigDict(from_attributes=True)
 

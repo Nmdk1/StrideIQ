@@ -397,8 +397,14 @@ def get_activity_splits(
     from services.interval_detector import detect_interval_structure
     analysis = detect_interval_structure(splits)
 
+    # Index FIT-derived fields by split_number so we can pass them through
+    # the inferred-labels path. The interval detector returns LabeledSplit
+    # dataclasses that don't carry the new running-dynamics columns.
+    fit_extras_by_num = {s.split_number: s for s in splits}
+
     split_responses = []
     for ls in analysis.labeled_splits:
+        src = fit_extras_by_num.get(ls.split_number)
         split_responses.append(ActivitySplitResponse(
             split_number=ls.split_number,
             distance=ls.distance,
@@ -410,6 +416,15 @@ def get_activity_splits(
             gap_seconds_per_mile=float(ls.gap_seconds_per_mile) if ls.gap_seconds_per_mile is not None else None,
             lap_type=ls.lap_type,
             interval_number=ls.interval_number,
+            total_ascent_m=getattr(src, "total_ascent_m", None),
+            total_descent_m=getattr(src, "total_descent_m", None),
+            avg_power_w=getattr(src, "avg_power_w", None),
+            max_power_w=getattr(src, "max_power_w", None),
+            avg_stride_length_m=getattr(src, "avg_stride_length_m", None),
+            avg_ground_contact_ms=getattr(src, "avg_ground_contact_ms", None),
+            avg_vertical_oscillation_cm=getattr(src, "avg_vertical_oscillation_cm", None),
+            avg_vertical_ratio_pct=getattr(src, "avg_vertical_ratio_pct", None),
+            extras=getattr(src, "extras", None),
         ))
 
     interval_summary = None

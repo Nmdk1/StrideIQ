@@ -555,11 +555,15 @@ def get_activity(
         "start_time": activity.start_time.isoformat() if activity.start_time else None,
         "distance_m": activity.distance_m,
         "elapsed_time_s": activity.duration_s,
-        "moving_time_s": activity.duration_s,
+        # `moving_time_s` from FIT is true moving time (excludes auto-pause).
+        # Falls back to elapsed time for activities ingested before the FIT
+        # pipeline existed.
+        "moving_time_s": activity.moving_time_s if activity.moving_time_s else activity.duration_s,
         "average_hr": activity.avg_hr,
         "max_hr": activity.max_hr,
         "average_cadence": derived_avg_cadence,
         "total_elevation_gain_m": float(activity.total_elevation_gain) if activity.total_elevation_gain else None,
+        "total_descent_m": float(activity.total_descent_m) if activity.total_descent_m else None,
         "average_temp_c": float(activity.temperature_f - 32) * 5/9 if activity.temperature_f else None,
         "provider": activity.provider,
         "strava_activity_id": activity.external_activity_id if activity.provider == "strava" else None,
@@ -610,6 +614,36 @@ def get_activity(
         "active_kcal": activity.active_kcal,
         "avg_cadence_device": activity.avg_cadence,
         "max_cadence": activity.max_cadence,
+
+        # FIT-derived activity-level metrics (fit_run_001).
+        # All nullable: present iff a FIT file landed for this activity.
+        "avg_power_w": activity.avg_power_w,
+        "max_power_w": activity.max_power_w,
+        "avg_stride_length_m": (
+            float(activity.avg_stride_length_m)
+            if activity.avg_stride_length_m is not None else None
+        ),
+        "avg_ground_contact_ms": (
+            float(activity.avg_ground_contact_ms)
+            if activity.avg_ground_contact_ms is not None else None
+        ),
+        "avg_ground_contact_balance_pct": (
+            float(activity.avg_ground_contact_balance_pct)
+            if activity.avg_ground_contact_balance_pct is not None else None
+        ),
+        "avg_vertical_oscillation_cm": (
+            float(activity.avg_vertical_oscillation_cm)
+            if activity.avg_vertical_oscillation_cm is not None else None
+        ),
+        "avg_vertical_ratio_pct": (
+            float(activity.avg_vertical_ratio_pct)
+            if activity.avg_vertical_ratio_pct is not None else None
+        ),
+        # Garmin self-evaluation (low-confidence fallback only — the
+        # athlete's own ActivityFeedback always wins on the UI surface;
+        # see effort_resolver in Phase 3).
+        "garmin_feel": activity.garmin_feel,
+        "garmin_perceived_effort": activity.garmin_perceived_effort,
     }
 
     # --- Cross-training enrichment (non-run only) ---

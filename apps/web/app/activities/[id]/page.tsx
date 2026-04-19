@@ -36,6 +36,8 @@ import { WhyThisRun } from '@/components/activities/WhyThisRun';
 import { RunIntelligence } from '@/components/activities/RunIntelligence';
 import { AnalysisTabPanel } from '@/components/activities/AnalysisTabPanel';
 import { ComparablesPanel } from '@/components/activities/ComparablesPanel';
+import { RunDetailsGrid } from '@/components/activities/RunDetailsGrid';
+import { GarminEffortFallback } from '@/components/activities/GarminEffortFallback';
 import dynamic from 'next/dynamic';
 
 // Canvas v2 hero — replaces the in-tab RunShapeCanvas + 2D map combo
@@ -128,6 +130,21 @@ interface Activity {
   active_kcal: number | null;
   avg_cadence_device: number | null;
   max_cadence: number | null;
+
+  // FIT-derived activity-level metrics (Phase 1).
+  // All nullable: present only when a FIT file landed and the athlete
+  // wears a sensor that records the metric.
+  total_descent_m: number | null;
+  avg_power_w: number | null;
+  max_power_w: number | null;
+  avg_stride_length_m: number | null;
+  avg_ground_contact_ms: number | null;
+  avg_ground_contact_balance_pct: number | null;
+  avg_vertical_oscillation_cm: number | null;
+  avg_vertical_ratio_pct: number | null;
+  // Garmin self-evaluation (low-confidence fallback only).
+  garmin_feel: string | null;
+  garmin_perceived_effort: number | null;
 
   // GPS / map
   gps_track: [number, number][] | null;
@@ -572,6 +589,23 @@ export default function ActivityDetailPage() {
           />
         </div>
 
+        {/* Phase 2 (fit_run_001): self-suppressing FIT cards.  Renders only
+            when at least one Garmin running-dynamic / power metric is
+            populated. Older Strava-only activities and watch-only setups
+            see nothing here — keeps the page clean. */}
+        <div className="mb-5">
+          <RunDetailsGrid
+            avgPowerW={activity.avg_power_w}
+            maxPowerW={activity.max_power_w}
+            avgStrideLengthM={activity.avg_stride_length_m}
+            avgGroundContactMs={activity.avg_ground_contact_ms}
+            avgGroundContactBalancePct={activity.avg_ground_contact_balance_pct}
+            avgVerticalOscillationCm={activity.avg_vertical_oscillation_cm}
+            avgVerticalRatioPct={activity.avg_vertical_ratio_pct}
+            totalDescentM={activity.total_descent_m}
+          />
+        </div>
+
         <ActivityTabs
           activeTab={activeTab}
           onTabChange={setActiveTab}
@@ -604,6 +638,11 @@ export default function ActivityDetailPage() {
             // (what was happening before the run), then deep analysis charts.
             coach: (
               <div className="space-y-6">
+                <GarminEffortFallback
+                  garminPerceivedEffort={activity.garmin_perceived_effort}
+                  garminFeel={activity.garmin_feel}
+                  athleteRpe={feedbackCompletion.feedback?.perceived_effort ?? null}
+                />
                 <RunIntelligence activityId={activityId} />
                 <FindingsCards findings={findings} />
                 <WhyThisRun activityId={activityId} />
