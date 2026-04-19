@@ -78,7 +78,7 @@ function StrengthIndexInner() {
         >
           + Log a strength session
         </button>
-        <div className="grid grid-cols-3 gap-2">
+        <div className="grid grid-cols-2 gap-2">
           <Link
             href="/strength/routines"
             className="block py-2 rounded-md border border-slate-700 text-slate-200 text-center text-xs hover:border-slate-500"
@@ -90,6 +90,12 @@ function StrengthIndexInner() {
             className="block py-2 rounded-md border border-slate-700 text-slate-200 text-center text-xs hover:border-slate-500"
           >
             Goals
+          </Link>
+          <Link
+            href="/strength/bodyweight"
+            className="block py-2 rounded-md border border-slate-700 text-slate-200 text-center text-xs hover:border-slate-500"
+          >
+            Bodyweight
           </Link>
           <Link
             href="/strength/symptoms"
