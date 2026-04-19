@@ -591,8 +591,10 @@ export default function ActivityDetailPage() {
 
         {/* Phase 2 (fit_run_001): self-suppressing FIT cards.  Renders only
             when at least one Garmin running-dynamic / power metric is
-            populated. Older Strava-only activities and watch-only setups
-            see nothing here — keeps the page clean. */}
+            populated. For runs / walks / hikes / cycles that DON'T have
+            FIT data (historical activities synced before the FIT pipeline
+            existed), we render a one-line note instead of disappearing —
+            so the gap is visible truth, not a missing feature. */}
         <div className="mb-5">
           <RunDetailsGrid
             avgPowerW={activity.avg_power_w}
@@ -603,6 +605,11 @@ export default function ActivityDetailPage() {
             avgVerticalOscillationCm={activity.avg_vertical_oscillation_cm}
             avgVerticalRatioPct={activity.avg_vertical_ratio_pct}
             totalDescentM={activity.total_descent_m}
+            showMissingNote={
+              ['run', 'running', 'walking', 'walk', 'hiking', 'hike', 'cycling', 'cycle'].includes(
+                (activity.sport_type || '').toLowerCase(),
+              )
+            }
           />
         </div>
 

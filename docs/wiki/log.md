@@ -1,5 +1,22 @@
 # Wiki Log
 
+## [2026-04-19] garmin-fit-backfill quarantined + activity page tells the truth on missing FIT data
+
+After Phase 3 of `fit_run_001` shipped, the founder asked why no FIT cards were visible on the activity page in production. Audit revealed the truth:
+
+- The components (`RunDetailsGrid`, `SplitsTable` columns, `GarminEffortFallback`) **are** deployed and bundled correctly.
+- They render only when the underlying FIT fields are populated. Across 24,186 historical run activities in prod, every FIT-derived activity-level field (`avg_power_w`, `avg_stride_length_m`, `avg_ground_contact_ms`, `avg_vertical_oscillation_cm`, `moving_time_s`) was 0 / NULL. `total_descent_m` was present in only ~1.8% of runs. `garmin_feel` was NULL for all activities.
+- New runs synced going forward will populate these fields via the live `activityFiles` webhook PING. Historical activities synced before the FIT pipeline existed will not.
+- We tried to backfill the historical gap with `request_activity_files_backfill`. Garmin returned **404 from `/wellness-api/rest/backfill/activityFiles` on every attempt**, across multiple agents over multiple sessions. The endpoint is not a real capability against our scopes. Continued attempts wasted Garmin rate-limit headroom.
+
+**Actions:**
+
+1. **Backfill quarantined.** `services/sync/garmin_backfill.request_activity_files_backfill` now raises `ActivityFilesBackfillUnavailable` immediately. The matching Celery task `request_garmin_activity_files_backfill_task` returns `{"status": "unavailable", "reason": "garmin_activity_files_backfill_not_supported"}` instead of attempting the call. Import of the quarantined function was removed from `garmin_webhook_tasks.py`. Locked in by `apps/api/tests/test_activity_files_backfill_quarantined.py` (3 tests: function raises, task returns stable envelope, task module does not import the quarantined function).
+2. **Activity page tells the truth.** `RunDetailsGrid` no longer silently disappears for runs / walks / hikes / cycles missing FIT data. It renders one small line: *"Power, stride, and form metrics weren't captured for this run."* As soon as any FIT field is present, the line is replaced by the real cards. Sports where these metrics never apply (strength, yoga, swim) still suppress fully. New `showMissingNote` prop on `RunDetailsGrid`; gated in `apps/web/app/activities/[id]/page.tsx` by sport_type. Test coverage added for both states (note shown when empty, note hidden when any metric present).
+3. **Documentation updated.** `docs/wiki/garmin-integration.md` "Known Issues" rewritten to reflect that activityFiles backfill is permanently unavailable, not "tracked for future fix." `docs/wiki/activity-processing.md` documents the empty-state truth line.
+
+**The deeper rule going forward:** when our UI suppresses for a real, common reason (missing data, missing source, missing connection), the suppression must be visible enough that an athlete can tell whether the feature shipped or not. Silent disappearance is the same failure mode as a hallucinated narrative — both leave the athlete uncertain about what's real.
+
 ## [2026-04-19] garmin-fit-run-pipeline | `fit_run_001` — full FIT ingest for run/walk/hike/cycle, activity-page surfacing, coach context with effort attribution
 
 A three-phase ingest-to-coach pipeline that closes the gap between "what Garmin records" and "what StrideIQ uses." Triggered by the founder showing a side-by-side of our activity page vs. the Garmin app: missing power, stride length, ground contact, vertical oscillation, true moving time, and total descent.

@@ -389,56 +389,49 @@ def request_garmin_backfill(athlete: Any, db: Any) -> Dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 
+class ActivityFilesBackfillUnavailable(RuntimeError):
+    """Raised whenever code tries to call the activityFiles backfill path.
+
+    Garmin does not expose a working backfill endpoint for activityFiles
+    against our scopes. The published path
+    `/wellness-api/rest/backfill/activityFiles` returns 404 across every
+    attempt we have made, by every agent who has tried it. The webhook PING
+    is the only mechanism that ever delivers a FIT file: when the activity
+    is first synced, Garmin pushes the URL exactly once.
+
+    Calling this path again wastes Garmin rate limits and produces noise
+    in our logs that looks like a fixable bug. It isn't fixable from our
+    side. Don't try.
+
+    If you genuinely need historical FIT data for a specific athlete, the
+    only working path is to ask the athlete to re-sync the original
+    activities from Garmin Connect (which re-fires PINGs). There is no
+    server-side equivalent.
+    """
+
+
 def request_activity_files_backfill(
     athlete: Any,
     db: Any,
     days: int = 30,
 ) -> Dict[str, Any]:
+    """Quarantined — see :class:`ActivityFilesBackfillUnavailable`.
+
+    Multiple attempts (across multiple agents and sessions) confirmed
+    that Garmin returns 404 for `/wellness-api/rest/backfill/activityFiles`
+    regardless of window, scope, or token freshness. We are not going to
+    keep hitting this. Calls now raise immediately so any caller is
+    obvious in the stack trace.
+
+    Going forward, FIT data lands only via live webhook PINGs at sync
+    time. Historical runs synced before the FIT run parser existed
+    (Apr 19, 2026 — `fit_run_001`) will not have FIT-derived metrics.
     """
-    Request a Garmin backfill for `activityFiles` only.
-
-    Garmin replies 202 and asynchronously pushes the FIT files for the
-    historical window to our existing activity-files webhook handler
-    (process_garmin_activity_file_task), which then calls the FIT run parser.
-
-    Use cases:
-      - Bring FIT-derived metrics (power, running dynamics, total ascent/
-        descent, intensity minutes) into existing activities that were
-        ingested before the FIT pipeline existed.
-      - Re-pull a single athlete's history after a FIT-parser bug fix.
-
-    Garmin range limit for activityFiles: 30 days per request. Caller may
-    invoke multiple times with non-overlapping windows for deeper backfill;
-    duplicate (409) windows are silently skipped.
-
-    Args:
-        athlete: SQLAlchemy Athlete ORM instance.
-        db:      Active session for token refresh.
-        days:    Backfill depth in days (clamped to 1..30).
-
-    Returns:
-        {"status": "ok" | "aborted" | "deferred",
-         "code": int, "reason": str | None}
-    """
-    access_token = ensure_fresh_garmin_token(athlete, db)
-    if not access_token:
-        return {"status": "aborted", "reason": "no_token", "code": 0}
-
-    days = max(1, min(int(days), _BACKFILL_DEPTH_DAYS_ACTIVITY))
-    now = datetime.now(timezone.utc)
-    start = now - timedelta(days=days)
-    headers = {"Authorization": f"Bearer {access_token}"}
-    params = {
-        "summaryStartTimeInSeconds": int(start.timestamp()),
-        "summaryEndTimeInSeconds": int(now.timestamp()),
-    }
-
-    result = _request_single_backfill(_ACTIVITY_FILES_ENDPOINT, headers, params)
-    logger.info(
-        "activityFiles backfill for athlete %s days=%d → %s",
-        athlete.id, days, result,
+    raise ActivityFilesBackfillUnavailable(
+        "activityFiles backfill is not a real Garmin capability against our scopes; "
+        f"call site for athlete {getattr(athlete, 'id', '?')} should be removed. "
+        "FIT data lands only via the live activity-files webhook at sync time."
     )
-    return result
 
 
 # ---------------------------------------------------------------------------

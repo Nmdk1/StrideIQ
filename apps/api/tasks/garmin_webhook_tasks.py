@@ -47,7 +47,6 @@ from services.garmin_adapter import (
 )
 from services.activity_deduplication import match_activities, TIME_WINDOW_S
 from services.garmin_backfill import (
-    request_activity_files_backfill,
     request_deep_garmin_backfill,
     request_garmin_backfill,
 )
@@ -1202,48 +1201,30 @@ def request_garmin_activity_files_backfill_task(
     athlete_id: str,
     days: int = 30,
 ) -> Dict[str, Any]:
+    """Quarantined — Garmin's activityFiles backfill endpoint does not work.
+
+    See ``services.sync.garmin_backfill.ActivityFilesBackfillUnavailable``
+    for the full history. This task no longer attempts the call; it
+    returns a structured "unavailable" result so any scheduled invocation
+    or manual op surfaces the truth instead of producing 404 spam in the
+    logs and burning Garmin rate-limit headroom.
+
+    Do not re-enable this task. FIT files arrive only via the live
+    activity-files webhook at sync time. Historical activities synced
+    before the FIT run parser existed (``fit_run_001``, Apr 19, 2026)
+    will not be backfilled by us.
     """
-    Request a Garmin activity-files backfill (FIT files) for the past `days`
-    for one athlete. Garmin replies 202 and pushes the FIT files to our
-    existing webhook handler, which calls the FIT run parser.
-
-    Manually invoked, not auto-triggered on connect (see fit_run_001 plan).
-
-    Range limit: 30 days per request. For deeper backfill, schedule multiple
-    invocations with non-overlapping windows.
-
-    Args:
-        athlete_id: Internal athlete UUID string.
-        days:       Backfill depth in days (1..30, clamped server-side).
-
-    Returns:
-        {"status": "ok"|"skipped"|"aborted"|"deferred", ...}
-    """
-    db = get_db_sync()
-    try:
-        athlete = _find_athlete_in_db(athlete_id, db)
-        if athlete is None:
-            logger.warning(
-                "request_garmin_activity_files_backfill_task: athlete %s not found",
-                athlete_id,
-            )
-            return {"status": "skipped", "reason": "athlete_not_found"}
-
-        result = request_activity_files_backfill(athlete, db, days=days)
-        logger.info(
-            "request_garmin_activity_files_backfill_task: athlete=%s days=%d result=%s",
-            athlete_id, days, result,
-        )
-        return result
-    except Exception as exc:
-        db.rollback()
-        logger.exception(
-            "request_garmin_activity_files_backfill_task failed for athlete %s: %s",
-            athlete_id, exc,
-        )
-        raise self.retry(exc=exc)
-    finally:
-        db.close()
+    logger.warning(
+        "request_garmin_activity_files_backfill_task called for athlete=%s days=%d — "
+        "endpoint does not work; returning unavailable.",
+        athlete_id, days,
+    )
+    return {
+        "status": "unavailable",
+        "reason": "garmin_activity_files_backfill_not_supported",
+        "athlete_id": athlete_id,
+        "days": days,
+    }
 
 
 @celery_app.task(

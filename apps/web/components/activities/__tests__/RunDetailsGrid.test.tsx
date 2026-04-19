@@ -15,9 +15,24 @@ jest.mock('@/lib/context/UnitsContext', () => ({
 }));
 
 describe('RunDetailsGrid', () => {
-  test('renders nothing when every metric is null', () => {
+  test('renders nothing when every metric is null and showMissingNote is not set', () => {
     const { container } = render(<RunDetailsGrid />);
     expect(container).toBeEmptyDOMElement();
+  });
+
+  test('renders the honest missing-data line when showMissingNote=true and all metrics are null', () => {
+    render(<RunDetailsGrid showMissingNote />);
+    expect(
+      screen.getByText(/Power, stride, and form metrics weren['’]t captured for this run/i),
+    ).toBeInTheDocument();
+  });
+
+  test('does NOT render the missing-data line when at least one metric is present', () => {
+    render(<RunDetailsGrid showMissingNote avgPowerW={245} />);
+    expect(screen.getByText('245 W')).toBeInTheDocument();
+    expect(
+      screen.queryByText(/weren['’]t captured/i),
+    ).not.toBeInTheDocument();
   });
 
   test('renders only the cards whose metrics are populated', () => {

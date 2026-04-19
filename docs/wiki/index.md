@@ -1,6 +1,6 @@
 # StrideIQ Internal Wiki
 
-**Last updated:** April 19, 2026 (Garmin FIT run pipeline + effort resolver shipped)
+**Last updated:** April 19, 2026 (Garmin activityFiles backfill quarantined; activity page now tells the truth on missing FIT data)
 
 This is the single onboarding document. Read this instead of the 12-document read order.
 

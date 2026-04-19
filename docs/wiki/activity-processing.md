@@ -176,6 +176,8 @@ Sport-specific detail pages branch on `activity.sport`:
 
 Surfaced via `RunDetailsGrid` (self-suppressing card grid below the hero) and the `SplitsTable` "Columns" toggle. Each cell suppresses individually when its metric is null; the whole `RunDetailsGrid` suppresses when no card has data, keeping the page clean for older Strava-only activities and watch-only setups (no HRM-Pro / no Stryd / no Forerunner Pro).
 
+**Empty-state truth (Apr 19, 2026):** For activities where FIT metrics *should* exist (runs, walks, hikes, cycles) but none arrived — typically because the activity was synced before the FIT pipeline existed — `RunDetailsGrid` no longer disappears silently. It renders a single small line: *"Power, stride, and form metrics weren't captured for this run."* This makes the data gap visible instead of looking like the feature didn't ship. As soon as any FIT field is populated the line is replaced by the real cards. Sports where these metrics don't apply (strength, yoga, swim) still suppress entirely.
+
 `GarminEffortFallback` renders the watch's self-eval just above the Coach tab content **only** when the athlete hasn't reflected via the FeedbackModal. Once the athlete logs their own RPE, the fallback disappears entirely.
 
 ## Known Issues

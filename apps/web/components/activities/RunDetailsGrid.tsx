@@ -5,9 +5,17 @@
  *
  * Each card is *self-suppressing*: if the underlying metric is null
  * (no FIT file yet, or the athlete's sensor doesn't record it), the
- * card is not rendered. If no cards have data, the whole grid suppresses
- * — keeping the page clean for older Strava-only activities and for
- * watch-only setups (no HRM-Pro / no Stryd / no Forerunner Pro).
+ * card is not rendered.
+ *
+ * Empty-state policy (added Apr 19, 2026):
+ *   When no cards have data we still owe the athlete the truth, because
+ *   silently disappearing makes the page look broken (the founder asked
+ *   "did they ship it or not?" when this happened on historical runs).
+ *   If `showMissingNote` is true and the activity *should* have had FIT
+ *   data (a real outdoor movement: run, walk, hike, cycle), we render a
+ *   single honest line instead of nothing. For sports where FIT
+ *   running-dynamics never apply (strength, yoga, swim, etc.) the
+ *   component still suppresses entirely.
  *
  * No template narration. The cards display a measured number with
  * its unit. Interpretation belongs in the coach brief, not here.
@@ -35,6 +43,15 @@ export interface RunDetailsGridProps {
   avgVerticalRatioPct?: number | null;
   /** Total descent in meters. */
   totalDescentM?: number | null;
+  /**
+   * When true and no cards have data, render a single small line
+   * explaining that FIT-derived metrics weren't captured for this
+   * activity (instead of suppressing entirely).
+   *
+   * Caller is expected to gate on sport_type so we don't show it for
+   * activities where these metrics never apply (strength, yoga, swim).
+   */
+  showMissingNote?: boolean;
 }
 
 interface Card {
@@ -92,7 +109,19 @@ export function RunDetailsGrid(props: RunDetailsGridProps): React.ReactElement |
     });
   }
 
-  if (cards.length === 0) return null;
+  if (cards.length === 0) {
+    if (!props.showMissingNote) return null;
+    return (
+      <section
+        aria-label="Run details"
+        className="rounded-xl border border-slate-700/40 bg-slate-900/30 px-4 py-3"
+      >
+        <p className="text-[11px] text-slate-500 leading-snug">
+          Power, stride, and form metrics weren&apos;t captured for this run.
+        </p>
+      </section>
+    );
+  }
 
   return (
     <section

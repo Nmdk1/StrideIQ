@@ -116,14 +116,13 @@ Cross-training activities flow through the same pipeline but skip run-specific p
 
 - **Exercise set data empty for existing activities:** The FIT file webhook was built Apr 6, 2026. Activities synced before that date have no exercise set data. Brian Levesque's strength activities show "Exercise sets: (none)" because the webhook wasn't live during those syncs.
 - **Run FIT data empty for activities synced before Apr 19, 2026:** Same shape as the strength gap. Going forward, every new run that ships a FIT file picks up power / running dynamics / true moving time. Historical activities only get FIT enrichment if Garmin re-pushes the file.
-- **`activityFiles` backfill endpoint returns 404:** `request_activity_files_backfill` posts to `/wellness-api/rest/backfill/activityFiles` but Garmin returns 404 — the path appears wrong (or the endpoint is not exposed for this scope). Live webhook pushes still work; only the on-demand historical backfill is broken. Tracked for future fix in `services/sync/garmin_backfill.py`.
+- **`activityFiles` backfill is QUARANTINED — Garmin endpoint does not work:** Multiple agents over multiple sessions tried hitting `/wellness-api/rest/backfill/activityFiles` and Garmin returned 404 against our scopes every time. As of Apr 19, 2026 the Python helper raises `ActivityFilesBackfillUnavailable` immediately and the matching Celery task returns `{"status": "unavailable", "reason": "garmin_activity_files_backfill_not_supported"}` instead of attempting the call. Do not re-enable. Live webhook pushes are the only path that works — Garmin pushes the FIT URL exactly once when the activity is first synced. If a specific athlete genuinely needs historical FIT data, the only working path is for them to re-sync those activities from Garmin Connect (which re-fires PINGs). Locked in by `apps/api/tests/test_activity_files_backfill_quarantined.py`.
+- **Activity page tells the truth on the gap:** For runs / walks / hikes / cycles synced before the FIT pipeline existed, `RunDetailsGrid` no longer silently disappears. It renders one small line: *"Power, stride, and form metrics weren't captured for this run."* New runs populate normally; the line goes away as soon as any FIT field arrives.
 - **Garmin rate limits:** Not currently an issue but could become one at scale
 
 ## What's Next
 
-- Fix `activityFiles` backfill path so we can pull historical FIT files
-- Exercise set backfill for historical strength activities (requires re-downloading FIT files)
-- Run-FIT backfill for historical run/walk/hike activities (depends on the path fix above)
+- Exercise set backfill for historical strength activities — open question; same Garmin-side limitation likely applies
 - Swimming-specific data parsing (lap/stroke data)
 
 ## Sources
