@@ -44,6 +44,14 @@ class Athlete(Base):
     # without rewriting endpoint guard patterns. This is intentionally lightweight
     # (JSONB) until Phase 6+ stabilizes billing/employee auth architecture.
     admin_permissions = Column(JSONB, nullable=False, default=list)
+
+    # --- Strength v1 baseline (strength_v1_002) ---
+    # Captured during the optional ``strength_baseline`` onboarding stage.
+    # All nullable; nothing in the runtime depends on these being set.
+    # See docs/specs/STRENGTH_V1_SCOPE.md §5.5 / §11.1.
+    lifts_currently = Column(Text, nullable=True)
+    lift_days_per_week = Column(Float, nullable=True)
+    lift_experience_bucket = Column(Text, nullable=True)
     
     @property
     def has_active_subscription(self) -> bool:

@@ -10,6 +10,7 @@ from .correlation import AthleteFinding, InsightFeedback, ThresholdCalibrationLo
 from .nutrition import NutritionGoal, NutritionEntry, USDAFood, FuelingProduct, MealTemplate, AthleteFoodOverride  # noqa: F401
 from .plan import WorkoutTemplate, WorkoutSelectionAuditEvent, TrainingPlan, PlannedWorkout, PlanModificationLog, TrainingAvailability, CalendarNote, CalendarInsight, WorkoutDefinition, PhaseDefinition, ScalingRule, PlanTemplate, PlanAdaptationProposal, PlanPreview  # noqa: F401
 from .system import InviteAllowlist, Subscription, StripeEvent, PlanPurchase, InviteAuditEvent, AdminAuditEvent, AthleteIngestionState, AthleteDataImportJob, FeatureFlag, ConsentAuditLog, Purchase, RacePromoCode, GarminDay, PageView, ToolTelemetryEvent, RuntoonImage, ExperienceAuditLog  # noqa: F401
+from .strength_v1 import StrengthRoutine, StrengthGoal, BodyAreaSymptomLog  # noqa: F401
 
 __all__ = [
     "Activity",
@@ -104,4 +105,7 @@ __all__ = [
     "ToolTelemetryEvent",
     "RuntoonImage",
     "ExperienceAuditLog",
+    "StrengthRoutine",
+    "StrengthGoal",
+    "BodyAreaSymptomLog",
 ]
