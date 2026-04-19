@@ -50,9 +50,16 @@ export interface CanvasV2Props {
   };
   title: string;
   subtitle: string;
+  /**
+   * When true, suppress the internal title/subtitle/help block so the
+   * canvas integrates cleanly under a page-level header that already
+   * provides those affordances. Used by the production activity page
+   * where the page chrome owns the title + Help/Reflect/Share buttons.
+   */
+  chromeless?: boolean;
 }
 
-export function CanvasV2({ activityId, summary, title, subtitle }: CanvasV2Props) {
+export function CanvasV2({ activityId, summary, title, subtitle, chromeless = false }: CanvasV2Props) {
   const streamQuery = useStreamAnalysis(activityId);
   const stream = isAnalysisData(streamQuery.data) ? streamQuery.data.stream : null;
 
@@ -69,14 +76,20 @@ export function CanvasV2({ activityId, summary, title, subtitle }: CanvasV2Props
     <ScrubProvider>
       <CanvasHelpHint key={forceHint} force={forceHint > 0} />
       <div className="space-y-4">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <p className="text-xs uppercase tracking-wider text-amber-500/70">Sandbox · Canvas v2</p>
-            <h1 className="text-xl font-semibold mt-1">{title}</h1>
-            <p className="text-sm text-slate-500 mt-1">{subtitle}</p>
+        {chromeless ? (
+          <div className="flex justify-end">
+            <CanvasHelpButton onReplayHint={() => setForceHint((n) => n + 1)} />
           </div>
-          <CanvasHelpButton onReplayHint={() => setForceHint((n) => n + 1)} />
-        </div>
+        ) : (
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="text-xs uppercase tracking-wider text-amber-500/70">Sandbox · Canvas v2</p>
+              <h1 className="text-xl font-semibold mt-1">{title}</h1>
+              <p className="text-sm text-slate-500 mt-1">{subtitle}</p>
+            </div>
+            <CanvasHelpButton onReplayHint={() => setForceHint((n) => n + 1)} />
+          </div>
+        )}
 
         <SummaryCardsRow {...summary} />
 

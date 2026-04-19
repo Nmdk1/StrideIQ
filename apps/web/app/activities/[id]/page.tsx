@@ -15,7 +15,6 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/lib/hooks/useAuth';
 import { useUnits } from '@/lib/context/UnitsContext';
 import { API_CONFIG } from '@/lib/api/config';
-import { RunShapeCanvas } from '@/components/activities/rsi/RunShapeCanvas';
 import { useStreamAnalysis, isAnalysisData } from '@/components/activities/rsi/hooks/useStreamAnalysis';
 import { ReflectionPrompt } from '@/components/activities/ReflectionPrompt';
 import { WorkoutTypeSelector } from '@/components/activities/WorkoutTypeSelector';
@@ -35,6 +34,22 @@ import { WhyThisRun } from '@/components/activities/WhyThisRun';
 import { RunIntelligence } from '@/components/activities/RunIntelligence';
 import { AnalysisTabPanel } from '@/components/activities/AnalysisTabPanel';
 import { ComparablesPanel } from '@/components/activities/ComparablesPanel';
+import dynamic from 'next/dynamic';
+
+// Canvas v2 hero — replaces the in-tab RunShapeCanvas + 2D map combo
+// for runs. Lazy-loaded so the ~700kB mapbox-gl chunk doesn't ship in
+// the main bundle and so non-run sports never load it at all.
+const CanvasV2 = dynamic(
+  () => import('@/components/canvas-v2/CanvasV2').then((m) => m.CanvasV2),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="rounded-2xl border border-slate-800/60 bg-slate-900/30 h-[520px] flex items-center justify-center text-sm text-slate-500">
+        Loading canvas…
+      </div>
+    ),
+  },
+);
 
 interface Activity {
   id: string;
@@ -126,6 +141,19 @@ function normalizeCadenceToSpm(raw: number | null | undefined): number | null {
   return v < 120 ? v * 2 : v;
 }
 
+function maxGradeFromStream(
+  stream: { grade: number | null }[] | null | undefined,
+): number | null {
+  if (!stream || stream.length === 0) return null;
+  let max: number | null = null;
+  for (const p of stream) {
+    if (p.grade !== null && Number.isFinite(p.grade)) {
+      if (max === null || p.grade > max) max = p.grade;
+    }
+  }
+  return max;
+}
+
 export default function ActivityDetailPage() {
   const params = useParams();
   const router = useRouter();
@@ -184,11 +212,6 @@ export default function ActivityDetailPage() {
   const streamAnalysis = useStreamAnalysis(activityId);
   const analysisData = isAnalysisData(streamAnalysis.data) ? streamAnalysis.data : null;
   const [activeTab, setActiveTab] = useState<ActivityTabId>('overview');
-  /** Avoid SSR/client mismatch — first paint matches server (no map), then client mounts. */
-  const [clientReady, setClientReady] = useState(false);
-  useEffect(() => {
-    setClientReady(true);
-  }, []);
 
   const splitTableRowRefs = useRef<Map<number, HTMLTableRowElement>>(new Map());
 
@@ -495,85 +518,62 @@ export default function ActivityDetailPage() {
           preSleepH={activity.pre_sleep_h}
         />
 
+        {/* ── Canvas v2 hero — always visible above tabs.
+              Replaces the in-tab RunShapeCanvas + 2D map combo for runs.
+              Phase 1 leaves the existing 6-tab structure intact; Phase 2
+              collapses to 3 tabs (Splits/Coach/Compare). ── */}
+        <div className="mb-5 -mx-4 sm:mx-0">
+          <CanvasV2
+            activityId={activityId}
+            chromeless
+            title={displayTitle}
+            subtitle={`${formatDate(activity.start_time)} at ${formatTime(activity.start_time)}`}
+            summary={{
+              cardiacDriftPct: analysisData?.drift?.cardiac_pct ?? null,
+              avgHrBpm: activity.average_hr ?? null,
+              avgCadenceSpm: normalizeCadenceToSpm(activity.average_cadence),
+              maxGradePct: maxGradeFromStream(analysisData?.stream),
+              totalMovingTimeS: activity.moving_time_s ?? activity.elapsed_time_s ?? null,
+            }}
+          />
+        </div>
+
         <ActivityTabs
           activeTab={activeTab}
           onTabChange={setActiveTab}
           panels={{
             overview: (
               <>
-                {/* Hero: RunShapeCanvas full width */}
-                <div className="mb-5 -mx-4 sm:mx-0">
-                  <RunShapeCanvas
-                    activityId={activityId}
-                    splits={splits ?? null}
-                    intervalSummary={intervalSummary}
-                    provider={activity.provider}
-                    deviceName={activity.device_name}
-                    heatAdjustmentPct={activity.heat_adjustment_pct}
-                    temperatureF={activity.temperature_f}
-                    splitTableRowRefs={splitTableRowRefs}
-                  />
-                </div>
-
-                {/* Intelligence card — directly below the chart it describes */}
+                {/* Phase 1: RunShapeCanvas + 2D RouteContext map removed —
+                    Canvas v2 hero (rendered above tabs) replaces both. */}
                 <div className="mb-5">
                   <RunIntelligence activityId={activityId} />
                 </div>
 
-                {/* Two-column on desktop: splits left, map right. Stacked on mobile. */}
-                <div className="flex flex-col md:flex-row md:gap-5 md:items-start mb-5">
-                  {/* Splits */}
-                  {splits && splits.length > 0 && (
-                    <div className="w-full md:w-[55%] min-w-0 mb-4 md:mb-0">
-                      <ActivitySplitsTabPanel
-                        activityId={activityId}
-                        gpsTrack={null}
-                        startCoords={activity.start_coords}
-                        sportType={activity.sport_type || 'run'}
-                        startTime={activity.start_time}
-                        distanceM={activity.distance_m}
-                        durationS={activity.moving_time_s || activity.elapsed_time_s}
-                        temperatureF={activity.temperature_f}
-                        weatherCondition={activity.weather_condition}
-                        humidityPct={activity.humidity_pct}
-                        heatAdjustmentPct={activity.heat_adjustment_pct}
-                        splits={splits}
-                        intervalSummary={intervalSummary}
-                        provider={activity.provider}
-                        deviceName={activity.device_name}
-                        stream={analysisData?.stream}
-                        splitTableRowRefs={splitTableRowRefs}
-                        showMap={false}
-                      />
-                    </div>
-                  )}
-
-                  {/* Map */}
-                  {activity.gps_track && activity.gps_track.length > 1 && (
-                    <div className={`w-full ${splits && splits.length > 0 ? 'md:w-[45%]' : ''} shrink-0`}>
-                      {clientReady && (
-                        <RouteContext
-                          activityId={activityId}
-                          track={activity.gps_track}
-                          startCoords={activity.start_coords}
-                          sportType={activity.sport_type || 'run'}
-                          startTime={activity.start_time}
-                          streamPoints={analysisData?.stream}
-                          weather={{
-                            temperature_f: activity.temperature_f,
-                            weather_condition: activity.weather_condition,
-                            humidity_pct: activity.humidity_pct,
-                            heat_adjustment_pct: activity.heat_adjustment_pct,
-                          }}
-                          distanceM={activity.distance_m}
-                          durationS={activity.moving_time_s || activity.elapsed_time_s}
-                          heatAdjustmentPct={activity.heat_adjustment_pct}
-                          mapAspectRatio="4 / 3"
-                        />
-                      )}
-                    </div>
-                  )}
-                </div>
+                {splits && splits.length > 0 && (
+                  <div className="mb-5">
+                    <ActivitySplitsTabPanel
+                      activityId={activityId}
+                      gpsTrack={null}
+                      startCoords={activity.start_coords}
+                      sportType={activity.sport_type || 'run'}
+                      startTime={activity.start_time}
+                      distanceM={activity.distance_m}
+                      durationS={activity.moving_time_s || activity.elapsed_time_s}
+                      temperatureF={activity.temperature_f}
+                      weatherCondition={activity.weather_condition}
+                      humidityPct={activity.humidity_pct}
+                      heatAdjustmentPct={activity.heat_adjustment_pct}
+                      splits={splits}
+                      intervalSummary={intervalSummary}
+                      provider={activity.provider}
+                      deviceName={activity.device_name}
+                      stream={analysisData?.stream}
+                      splitTableRowRefs={splitTableRowRefs}
+                      showMap={false}
+                    />
+                  </div>
+                )}
 
                 <div className="mb-2">
                   <RuntoonCard activityId={activityId} />
@@ -582,18 +582,8 @@ export default function ActivityDetailPage() {
             ),
             splits: (
               <>
-                <div className="mb-5 -mx-4 sm:mx-0">
-                  <RunShapeCanvas
-                    activityId={activityId}
-                    splits={splits ?? null}
-                    intervalSummary={intervalSummary}
-                    provider={activity.provider}
-                    deviceName={activity.device_name}
-                    heatAdjustmentPct={activity.heat_adjustment_pct}
-                    temperatureF={activity.temperature_f}
-                    splitTableRowRefs={splitTableRowRefs}
-                  />
-                </div>
+                {/* Phase 1: in-tab RunShapeCanvas removed — Canvas v2 hero
+                    above the tabs is the single source of run-shape truth. */}
                 <ActivitySplitsTabPanel
                   activityId={activityId}
                   gpsTrack={activity.gps_track}
@@ -612,7 +602,7 @@ export default function ActivityDetailPage() {
                   deviceName={activity.device_name}
                   stream={analysisData?.stream}
                   splitTableRowRefs={splitTableRowRefs}
-                  showMap={clientReady}
+                  showMap={false}
                 />
               </>
             ),
