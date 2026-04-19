@@ -33,6 +33,8 @@ def get_recent_runs(db: Session, athlete_id: UUID, days: int = 7) -> Dict[str, A
     Last N days of run activities.
     """
     from services.timezone_utils import get_athlete_timezone_from_db, to_activity_local_date, athlete_local_today
+    from services.effort_resolver import resolve_effort, to_dict as effort_to_dict
+    from models import ActivityFeedback
     now = datetime.utcnow()
     # Allow ~2 years so injury-return + baseline can be compared.
     days = max(1, min(int(days), 730))
@@ -53,6 +55,17 @@ def get_recent_runs(db: Session, athlete_id: UUID, days: int = 7) -> Dict[str, A
         .all()
     )
 
+    # Bulk-load feedback rows for these activities to avoid N+1 lookups
+    # inside the per-run loop.
+    feedback_by_activity: Dict[Any, ActivityFeedback] = {}
+    if runs:
+        feedback_rows = (
+            db.query(ActivityFeedback)
+            .filter(ActivityFeedback.activity_id.in_([a.id for a in runs]))
+            .all()
+        )
+        feedback_by_activity = {fb.activity_id: fb for fb in feedback_rows}
+
     run_rows: List[Dict[str, Any]] = []
     evidence: List[Dict[str, Any]] = []
 
@@ -67,6 +80,60 @@ def get_recent_runs(db: Session, athlete_id: UUID, days: int = 7) -> Dict[str, A
         elevation_gain_m = float(a.total_elevation_gain) if a.total_elevation_gain is not None else None
         elevation_gain_ft = round(elevation_gain_m * 3.28084, 0) if elevation_gain_m is not None else None
 
+        # Resolve effort with attribution. Athlete RPE wins; falls back to
+        # Garmin self-eval. Never blended.
+        resolved_effort = resolve_effort(a, feedback_by_activity.get(a.id))
+
+        # FIT-derived metrics (Phase 2, fit_run_001). All nullable: only
+        # populated when a FIT file landed and the athlete's sensor records
+        # the metric (e.g., HRM-Pro for running dynamics, Stryd / Forerunner
+        # Pro for power). The coach + LLM consume these directly.
+        avg_stride_m = (
+            float(a.avg_stride_length_m)
+            if getattr(a, "avg_stride_length_m", None) is not None
+            else None
+        )
+        avg_gct_ms = (
+            float(a.avg_ground_contact_ms)
+            if getattr(a, "avg_ground_contact_ms", None) is not None
+            else None
+        )
+        gct_balance = (
+            float(a.avg_ground_contact_balance_pct)
+            if getattr(a, "avg_ground_contact_balance_pct", None) is not None
+            else None
+        )
+        avg_vo_cm = (
+            float(a.avg_vertical_oscillation_cm)
+            if getattr(a, "avg_vertical_oscillation_cm", None) is not None
+            else None
+        )
+        avg_vr_pct = (
+            float(a.avg_vertical_ratio_pct)
+            if getattr(a, "avg_vertical_ratio_pct", None) is not None
+            else None
+        )
+        avg_power = (
+            int(a.avg_power_w)
+            if getattr(a, "avg_power_w", None) is not None
+            else None
+        )
+        max_power = (
+            int(a.max_power_w)
+            if getattr(a, "max_power_w", None) is not None
+            else None
+        )
+        moving_time_s = (
+            int(a.moving_time_s)
+            if getattr(a, "moving_time_s", None) is not None
+            else None
+        )
+        total_descent_m = (
+            float(a.total_descent_m)
+            if getattr(a, "total_descent_m", None) is not None
+            else None
+        )
+
         run_rows.append(
             {
                 "activity_id": str(a.id),
@@ -76,6 +143,7 @@ def get_recent_runs(db: Session, athlete_id: UUID, days: int = 7) -> Dict[str, A
                 "distance_mi": round(distance_mi, 2) if distance_mi is not None else None,
                 "distance_km": round(distance_km, 2) if distance_km is not None else None,
                 "duration_s": int(a.duration_s) if a.duration_s is not None else None,
+                "moving_time_s": moving_time_s,
                 "avg_hr": int(a.avg_hr) if a.avg_hr is not None else None,
                 "max_hr": int(a.max_hr) if a.max_hr is not None else None,
                 "pace_per_km": _pace_str(a.duration_s, a.distance_m),
@@ -84,11 +152,26 @@ def get_recent_runs(db: Session, athlete_id: UUID, days: int = 7) -> Dict[str, A
                 "intensity_score": float(a.intensity_score) if a.intensity_score is not None else None,
                 "elevation_gain_m": round(elevation_gain_m, 1) if elevation_gain_m is not None else None,
                 "elevation_gain_ft": int(elevation_gain_ft) if elevation_gain_ft is not None else None,
+                "total_descent_m": round(total_descent_m, 1) if total_descent_m is not None else None,
                 "temperature_f": round(float(a.temperature_f), 1) if a.temperature_f is not None else None,
                 "humidity_pct": round(float(a.humidity_pct), 0) if a.humidity_pct is not None else None,
                 "weather_condition": a.weather_condition,
                 "shape_sentence": a.shape_sentence,
                 "is_race": bool(getattr(a, "user_verified_race", False) or getattr(a, "is_race_candidate", False)),
+
+                # FIT-derived running dynamics + power. Nullable; suppress when
+                # absent. The LLM is told these are direct measurements (not
+                # Garmin proprietary scores) so it can reason about them.
+                "avg_power_w": avg_power,
+                "max_power_w": max_power,
+                "avg_stride_length_m": round(avg_stride_m, 2) if avg_stride_m is not None else None,
+                "avg_ground_contact_ms": round(avg_gct_ms, 0) if avg_gct_ms is not None else None,
+                "avg_ground_contact_balance_pct": round(gct_balance, 1) if gct_balance is not None else None,
+                "avg_vertical_oscillation_cm": round(avg_vo_cm, 1) if avg_vo_cm is not None else None,
+                "avg_vertical_ratio_pct": round(avg_vr_pct, 1) if avg_vr_pct is not None else None,
+
+                # Effort with attribution (athlete > Garmin; never blended).
+                "perceived_effort": effort_to_dict(resolved_effort),
             }
         )
 
