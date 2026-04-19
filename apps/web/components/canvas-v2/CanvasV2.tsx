@@ -6,16 +6,16 @@
  * Wires together:
  *   - ScrubProvider (shared cursor state across panels)
  *   - SummaryCardsRow (run-level, never changes on scrub)
- *   - StreamsStack (Pace + HR + Elevation, drives scrub by hover)
+ *   - StreamsStack (Pace + Elevation + HR, drives scrub by hover)
  *   - MomentReadout (Pace · Grade · HR · Cadence at scrub position)
+ *   - TerrainMap3D (Mapbox GL spike — gated on NEXT_PUBLIC_MAPBOX_TOKEN)
  *
- * The 3D terrain panel was removed after first-pass review: a path-only
- * heightfield without surrounding DEM is fundamentally a worse map than the
- * existing 2D Leaflet view. Real 3D map work is scoped separately in
- * docs/specs/RUN_3D_MAP.md.
+ * The 3D map is lazy-loaded so mapbox-gl (~700kB gz) doesn't ship in the
+ * main bundle. The token-missing path also avoids loading the SDK at all.
  */
 
 import React, { useMemo } from 'react';
+import dynamic from 'next/dynamic';
 import { useStreamAnalysis, isAnalysisData, isLifecycleResponse } from '@/components/activities/rsi/hooks/useStreamAnalysis';
 import { useResampledTrack } from './hooks/useResampledTrack';
 import { useElementWidth } from './hooks/useElementWidth';
@@ -23,6 +23,18 @@ import { ScrubProvider } from './hooks/useScrubState';
 import { SummaryCardsRow } from './SummaryCardsRow';
 import { StreamsStack } from './StreamsStack';
 import { MomentReadout } from './MomentReadout';
+
+const TerrainMap3D = dynamic(
+  () => import('./TerrainMap3D').then((m) => m.TerrainMap3D),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="rounded-2xl border border-slate-800/60 bg-slate-900/30 h-[480px] flex items-center justify-center text-sm text-slate-500">
+        Loading 3D map…
+      </div>
+    ),
+  },
+);
 
 export interface CanvasV2Props {
   activityId: string;
@@ -42,7 +54,7 @@ export function CanvasV2({ activityId, summary, title, subtitle }: CanvasV2Props
   const streamQuery = useStreamAnalysis(activityId);
   const stream = isAnalysisData(streamQuery.data) ? streamQuery.data.stream : null;
 
-  const { track } = useResampledTrack(stream, { targetPoints: 500 });
+  const { track, bounds, hasGps } = useResampledTrack(stream, { targetPoints: 500 });
   const { ref: streamsContainerRef, width: streamsWidth } = useElementWidth<HTMLDivElement>();
 
   const lifecycleStatus = useMemo(() => {
@@ -72,6 +84,16 @@ export function CanvasV2({ activityId, summary, title, subtitle }: CanvasV2Props
         </div>
 
         <MomentReadout track={track} />
+
+        {hasGps && bounds ? (
+          <TerrainMap3D track={track} bounds={bounds} />
+        ) : (
+          <div className="rounded-2xl border border-slate-800/60 bg-slate-900/30 p-6 text-center text-sm text-slate-500">
+            {lifecycleStatus === 'unavailable'
+              ? 'No GPS for this activity — 3D map hidden.'
+              : '3D map unavailable — streams only.'}
+          </div>
+        )}
       </div>
     </ScrubProvider>
   );
