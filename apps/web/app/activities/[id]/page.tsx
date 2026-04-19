@@ -16,11 +16,12 @@ import { useAuth } from '@/lib/hooks/useAuth';
 import { useUnits } from '@/lib/context/UnitsContext';
 import { API_CONFIG } from '@/lib/api/config';
 import { useStreamAnalysis, isAnalysisData } from '@/components/activities/rsi/hooks/useStreamAnalysis';
-import { ReflectionPrompt } from '@/components/activities/ReflectionPrompt';
-import { WorkoutTypeSelector } from '@/components/activities/WorkoutTypeSelector';
-import { PerceptionPrompt } from '@/components/activities/PerceptionPrompt';
 import { GarminBadge } from '@/components/integrations/GarminBadge';
 import { RuntoonCard } from '@/components/activities/RuntoonCard';
+import { FeedbackModal } from '@/components/activities/feedback/FeedbackModal';
+import { ReflectPill } from '@/components/activities/feedback/ReflectPill';
+import { useFeedbackCompletion } from '@/components/activities/feedback/useFeedbackCompletion';
+import { useFeedbackTrigger } from '@/components/activities/feedback/useFeedbackTrigger';
 import { CyclingDetail, StrengthDetail, HikingDetail, FlexibilityDetail } from '@/components/activities/cross-training';
 import type { CrossTrainingActivity } from '@/components/activities/cross-training';
 import RouteContext from '@/components/activities/map/RouteContext';
@@ -212,6 +213,25 @@ export default function ActivityDetailPage() {
   const streamAnalysis = useStreamAnalysis(activityId);
   const analysisData = isAnalysisData(streamAnalysis.data) ? streamAnalysis.data : null;
   const [activeTab, setActiveTab] = useState<ActivityTabId>('splits');
+
+  // Feedback modal — required reflection (Phase 3).  Backend completion
+  // gates auto-open; localStorage prevents re-pop on refresh after a
+  // successful submit; the Reflect pill in the page chrome opens the modal
+  // for retroactive editing at any time.
+  const feedbackCompletion = useFeedbackCompletion(activityId);
+  const { shouldAutoOpen, markShown } = useFeedbackTrigger({
+    activityId,
+    startTime: activity?.start_time,
+    isComplete: feedbackCompletion.isComplete,
+    isLoading: feedbackCompletion.isLoading,
+  });
+  const [feedbackModalOpen, setFeedbackModalOpen] = useState(false);
+  useEffect(() => {
+    if (shouldAutoOpen && !feedbackModalOpen) {
+      setFeedbackModalOpen(true);
+      markShown();
+    }
+  }, [shouldAutoOpen, feedbackModalOpen, markShown]);
 
   const splitTableRowRefs = useRef<Map<number, HTMLTableRowElement>>(new Map());
 
@@ -435,6 +455,13 @@ export default function ActivityDetailPage() {
             {activity.provider === 'garmin' && (
               <GarminBadge deviceName={activity.device_name} size="md" className="flex-shrink-0" />
             )}
+            {activity.sport_type === 'run' && (
+              <ReflectPill
+                isComplete={feedbackCompletion.isComplete}
+                isLoading={feedbackCompletion.isLoading}
+                onClick={() => setFeedbackModalOpen(true)}
+              />
+            )}
           </div>
           <p className="text-slate-500 text-sm pl-8 md:hidden">
             {formatDate(activity.start_time)} at {formatTime(activity.start_time)}
@@ -597,6 +624,22 @@ export default function ActivityDetailPage() {
               </div>
             ),
             compare: <ComparablesPanel activityId={activityId} />,
+          }}
+        />
+
+        {/* Phase 3: required feedback modal — runs only.  Auto-opens on
+            first device visit when feedback is incomplete and the activity
+            is recent; the Reflect pill in the page header opens it for
+            retroactive editing at any time. */}
+        <FeedbackModal
+          activityId={activityId}
+          open={feedbackModalOpen}
+          existingReflection={feedbackCompletion.reflection}
+          existingFeedback={feedbackCompletion.feedback}
+          existingWorkoutType={feedbackCompletion.workoutType}
+          onSaved={() => {
+            setFeedbackModalOpen(false);
+            feedbackCompletion.refetch();
           }}
         />
 
