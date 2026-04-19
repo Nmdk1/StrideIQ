@@ -173,6 +173,37 @@ def _classify_domain(input_name: str, output_metric: str) -> str:
     return "training_pattern"
 
 
+# Phase I — strength domain finding gate.
+#
+# Strength v1 is new and observation-driven: we suppress over
+# hallucinate. Until a strength finding has at least 4 sample
+# observations AND p < 0.05 it stays in the database (visible to
+# tuning analysis) but never renders in the Personal Operating
+# Manual or any athlete-facing surface. This is *stricter* than
+# the engine's general bar.
+# See docs/specs/STRENGTH_V1_SCOPE.md §8.2.
+_STRENGTH_MIN_SAMPLE_SIZE = 4
+_STRENGTH_MAX_P_VALUE = 0.05
+
+
+def _passes_strength_surface_gate(finding) -> bool:
+    """Return True if a strength-domain finding may render to the athlete.
+
+    Non-strength findings always pass (gate is domain-scoped).
+    Missing sample_size / p_value attributes also pass (older
+    engine snapshots predate the columns; we don't retroactively
+    suppress them).
+    """
+    domain = _classify_domain(finding.input_name, finding.output_metric)
+    if domain != "strength":
+        return True
+    sample_size = getattr(finding, "sample_size", None)
+    p_value = getattr(finding, "p_value", None)
+    if sample_size is None or p_value is None:
+        return True
+    return sample_size >= _STRENGTH_MIN_SAMPLE_SIZE and p_value < _STRENGTH_MAX_P_VALUE
+
+
 def _classify_investigation_domain(investigation_name: str, finding_type: str) -> str:
     if investigation_name in _INVESTIGATION_DOMAIN_MAP:
         return _INVESTIGATION_DOMAIN_MAP[investigation_name]
@@ -1213,6 +1244,9 @@ def assemble_manual(athlete_id: UUID, db: Session) -> Dict[str, Any]:
 
     for f in findings:
         domain = _classify_domain(f.input_name, f.output_metric)
+
+        if not _passes_strength_surface_gate(f):
+            continue
 
         entry = {
             "id": str(f.id),

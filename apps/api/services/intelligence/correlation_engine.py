@@ -2232,6 +2232,16 @@ def aggregate_cross_training_inputs(
         if hours_since_any_ct:
             inputs["ct_hours_since_cross_training"] = hours_since_any_ct
 
+    try:
+        from services.intelligence.strength_v1_inputs import (
+            aggregate_strength_v1_inputs,
+        )
+        inputs.update(
+            aggregate_strength_v1_inputs(athlete_id, start_date, end_date, db)
+        )
+    except ImportError:
+        pass
+
     return inputs
 
 
