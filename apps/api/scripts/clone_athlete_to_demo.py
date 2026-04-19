@@ -27,10 +27,12 @@ Safety guarantees:
 
 Usage (inside api container):
   python scripts/clone_athlete_to_demo.py \
-      --source-email founder@example.com \
-      --demo-email demo@strideiq.run \
+      --source-email "$SOURCE_EMAIL" \
+      --demo-email "$DEMO_EMAIL" \
       --through-date 2026-04-15            # optional, defaults to yesterday UTC
   # Add --commit to persist (default is dry-run).
+  # Email addresses are intentionally read from env/args (never hardcoded
+  # in this file) so scripts/test_scripts_hygiene.py stays green.
 
 Post-clone:
   Invalidate Redis briefing cache for the demo athlete so the next
