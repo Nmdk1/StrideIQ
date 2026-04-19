@@ -32,7 +32,7 @@ logger = logging.getLogger(__name__)
 
 DOMAIN_ORDER = [
     "recovery", "sleep", "cardiac", "training_load", "environmental",
-    "pace", "race", "subjective", "training_pattern",
+    "pace", "race", "subjective", "strength", "training_pattern",
 ]
 
 DOMAIN_LABELS = {
@@ -44,6 +44,7 @@ DOMAIN_LABELS = {
     "pace": "Pace & Efficiency",
     "race": "Racing",
     "subjective": "Subjective Feedback",
+    "strength": "Strength",
     "training_pattern": "Training Patterns",
 }
 
@@ -56,6 +57,12 @@ DOMAIN_DESCRIPTIONS = {
     "pace": "Your pace efficiency, thresholds, and progression.",
     "race": "Race execution patterns and pre-race signatures.",
     "subjective": "How your subjective feel predicts performance.",
+    # Strength v1: an *observation* domain. The Manual reports what
+    # the data shows about how strength work tracks with running
+    # outputs for THIS athlete. It never prescribes a routine, never
+    # recommends a load, never tells the athlete what they should  # noqa: narration-purity
+    # do at the gym. See docs/specs/STRENGTH_V1_SCOPE.md §10.
+    "strength": "How your strength work tracks with running outputs.",
     "training_pattern": "Weekly structure, session sequencing, and workout variety.",
 }
 
@@ -68,6 +75,17 @@ _DOMAIN_RULES: List[Tuple[str, List[str]]] = [
     ("subjective", ["readiness", "soreness", "motivation", "stress_1_5", "confidence_1_5",
                      "sleep_quality_1_5", "feedback_", "perceived_effort", "leg_feel",
                      "enjoyment", "rpe"]),
+    # Strength domain — match canonical engine input names from
+    # services/intelligence/correlation_engine.py (ct_strength_*,
+    # ct_lower_body_*, ct_heavy_sets, ct_hours_since_strength,
+    # ct_strength_frequency_*) and per-set RPE / e1RM signals from
+    # phase I. Listed before training_pattern so strength findings
+    # don't get bucketed into the catch-all.
+    ("strength", ["ct_strength", "ct_lower_body", "ct_upper_body", "ct_heavy_sets",
+                   "ct_total_sets", "ct_hours_since_strength",
+                   "estimated_1rm", "lift_days_per_week", "lifts_currently",
+                   "lift_experience_bucket", "movement_pattern", "muscle_group",
+                   "is_unilateral"]),
     ("race", ["race", "pb_events"]),
     ("pace", ["pace", "efficiency", "speed", "cadence", "stride"]),
     ("training_pattern", ["long_run", "consecutive", "run_start_hour", "elevation",
