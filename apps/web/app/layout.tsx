@@ -51,7 +51,8 @@ export const metadata: Metadata = {
     follow: true
   },
   metadataBase: new URL('https://strideiq.run'),
-  manifest: '/manifest.json',
+  // Query busts cached manifest (orientation / display changes) after deploy.
+  manifest: '/manifest.json?v=3',
   appleWebApp: {
     capable: true,
     statusBarStyle: 'black-translucent',

@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect } from "react";
 import BottomTabs from "./BottomTabs";
 import StravaBanner from "./StravaBanner";
 import { useAutoSync } from "@/lib/hooks/useAutoSync";
@@ -19,6 +20,18 @@ export default function ClientShell({
   useAutoSync();
   usePageTracking();
   useToolPageViewTelemetry();
+
+  // Ensure no residual orientation lock (e.g. after PWA / fullscreen). Harmless if unsupported.
+  useEffect(() => {
+    try {
+      const o = screen.orientation;
+      if (o && typeof o.unlock === "function") {
+        void o.unlock();
+      }
+    } catch {
+      /* iOS may throw; ignore */
+    }
+  }, []);
 
   return (
     <>
