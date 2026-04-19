@@ -20,8 +20,13 @@
  * See docs/specs/RUN_3D_MAP.md for the full spec this is exploring.
  */
 
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import type mapboxgl from 'mapbox-gl';
+// Static CSS import: Next.js extracts this into a CSS chunk that ships
+// with the dynamic JS chunk. Importing CSS inside a useEffect via
+// dynamic import does NOT get extracted — the canvas mounts but the
+// styles never apply, so the map is invisible.
+import 'mapbox-gl/dist/mapbox-gl.css';
 import { useScrubState } from './hooks/useScrubState';
 import type { TrackPoint, TrackBounds } from './hooks/useResampledTrack';
 
@@ -72,6 +77,7 @@ export function TerrainMap3D({ track, bounds }: TerrainMap3DProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<mapboxgl.Map | null>(null);
   const markerRef = useRef<mapboxgl.Marker | null>(null);
+  const [mountError, setMountError] = useState<string | null>(null);
   const { position } = useScrubState();
 
   useEffect(() => {
@@ -82,26 +88,44 @@ export function TerrainMap3D({ track, bounds }: TerrainMap3DProps) {
     let cancelled = false;
 
     (async () => {
-      const mapboxModule = await import('mapbox-gl');
-      await import('mapbox-gl/dist/mapbox-gl.css');
+      let mapboxgl: typeof import('mapbox-gl').default;
+      try {
+        const mapboxModule = await import('mapbox-gl');
+        mapboxgl = mapboxModule.default;
+      } catch (e) {
+        if (!cancelled) setMountError(`Failed to load mapbox-gl: ${(e as Error).message}`);
+        return;
+      }
       if (cancelled || !containerRef.current) return;
 
-      const mapboxgl = mapboxModule.default;
       mapboxgl.accessToken = token;
 
-      const map = new mapboxgl.Map({
-        container: containerRef.current,
-        style: 'mapbox://styles/mapbox/outdoors-v12',
-        bounds: [
-          [bounds.minLng, bounds.minLat],
-          [bounds.maxLng, bounds.maxLat],
-        ],
-        fitBoundsOptions: { padding: 80 },
-        attributionControl: true,
-        cooperativeGestures: false,
-      });
+      let map: mapboxgl.Map;
+      try {
+        map = new mapboxgl.Map({
+          container: containerRef.current,
+          style: 'mapbox://styles/mapbox/outdoors-v12',
+          bounds: [
+            [bounds.minLng, bounds.minLat],
+            [bounds.maxLng, bounds.maxLat],
+          ],
+          fitBoundsOptions: { padding: 80 },
+          attributionControl: true,
+          cooperativeGestures: false,
+        });
+      } catch (e) {
+        setMountError(`Failed to initialize Mapbox: ${(e as Error).message}`);
+        return;
+      }
 
       mapRef.current = map;
+
+      map.on('error', (ev) => {
+        const msg = ev?.error?.message ?? String(ev?.error ?? 'unknown error');
+        // eslint-disable-next-line no-console
+        console.error('[TerrainMap3D] mapbox error:', msg);
+        setMountError((prev) => prev ?? `Mapbox: ${msg}`);
+      });
 
       map.on('style.load', () => {
         if (cancelled) return;
@@ -190,7 +214,9 @@ export function TerrainMap3D({ track, bounds }: TerrainMap3DProps) {
     <div className="rounded-2xl overflow-hidden border border-slate-800/60 bg-slate-900/30">
       <div className="flex items-center justify-between px-4 py-2 text-xs uppercase tracking-wider text-slate-500 border-b border-slate-800/60">
         <span>Terrain · 3D Map · spike</span>
-        <span className="text-amber-500/70">Mapbox · drag to orbit</span>
+        <span className={mountError ? 'text-rose-400' : 'text-amber-500/70'}>
+          {mountError ? `error: ${mountError.slice(0, 80)}` : 'Mapbox · drag to orbit'}
+        </span>
       </div>
       <div ref={containerRef} className="h-[480px] w-full" />
     </div>

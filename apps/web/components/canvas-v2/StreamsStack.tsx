@@ -1,24 +1,33 @@
 'use client';
 
 /**
- * StreamsStack — two stacked SVG line charts (Pace + HR) sharing one x-axis.
+ * StreamsStack — three stacked SVG bands (HR, Pace, Elevation) sharing one
+ * x-axis. Order is HR → Pace → Elevation so elevation sits closest to the
+ * terrain panel directly below it.
  *
- * Coordinated scrub: mousemove computes t in [0, 1] and writes to ScrubProvider.
- * Mouseleave clears. The terrain panel reads the same context and renders the
- * runner marker; the moment readout reads the same context and shows values.
+ * Visual treatment matches the splits-tab ElevationProfile (gradient fill,
+ * thicker stroke at lower opacity, compressed band height) so peaks read as
+ * climbs instead of spikes.
+ *
+ * Coordinated scrub: pointermove computes t in [0, 1] and writes to
+ * ScrubProvider. The terrain panel reads the same context and moves its
+ * marker; the moment readout reads it for instantaneous values.
  *
  * Plain SVG (no recharts) — full control over scrub interaction, no library
  * coupling, and the stream is already LTTB-downsampled to ≤500 pts so a
  * single SVG path renders fast.
  */
 
-import React, { useMemo, useRef } from 'react';
+import React, { useId, useMemo, useRef } from 'react';
 import { useScrubState } from './hooks/useScrubState';
 import type { TrackPoint } from './hooks/useResampledTrack';
 
-const CHART_HEIGHT = 96;
-const CHART_PADDING_TOP = 8;
-const CHART_PADDING_BOTTOM = 8;
+// Visual treatment matches the splits-tab ElevationProfile (gentler peaks):
+// shorter bands, gradient fill, thicker stroke at lower opacity. The
+// vertical compression is what makes climbs read as climbs instead of spikes.
+const CHART_HEIGHT = 64;
+const CHART_PADDING_TOP = 6;
+const CHART_PADDING_BOTTOM = 6;
 const PLOT_HEIGHT = CHART_HEIGHT - CHART_PADDING_TOP - CHART_PADDING_BOTTOM;
 
 interface SeriesPoint {
@@ -92,6 +101,7 @@ interface BandProps {
 }
 
 function Band({ title, unit, series, width, colorClass, invertY = false, formatValue, scrubT }: BandProps) {
+  const gradientId = useId();
   const { vMin, vMax, line, area, scrubValue } = useMemo(() => {
     if (series.length === 0) {
       return { vMin: 0, vMax: 1, line: '', area: '', scrubValue: null as number | null };
@@ -147,8 +157,14 @@ function Band({ title, unit, series, width, colorClass, invertY = false, formatV
         role="img"
         aria-label={title}
       >
-        <path d={area} fill="currentColor" opacity={0.12} />
-        <path d={line} stroke="currentColor" strokeWidth={1.4} fill="none" />
+        <defs>
+          <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="currentColor" stopOpacity={0.25} />
+            <stop offset="100%" stopColor="currentColor" stopOpacity={0.03} />
+          </linearGradient>
+        </defs>
+        <path d={area} fill={`url(#${gradientId})`} />
+        <path d={line} stroke="currentColor" strokeWidth={2} opacity={0.55} fill="none" />
         {scrubT !== null && (
           <line
             x1={scrubT * width}
@@ -203,6 +219,16 @@ export function StreamsStack({ track, width }: StreamsStackProps) {
       style={{ touchAction: 'none' }}
     >
       <Band
+        title="Heart Rate"
+        unit="bpm"
+        series={hrSeries}
+        width={width}
+        colorClass="text-rose-400"
+        formatValue={(v) => Math.round(v).toString()}
+        scrubT={position}
+      />
+      <div className="h-px bg-slate-800/50" />
+      <Band
         title="Pace"
         unit="/mi"
         series={paceSeries}
@@ -220,16 +246,6 @@ export function StreamsStack({ track, width }: StreamsStackProps) {
         width={width}
         colorClass="text-amber-400"
         formatValue={(meters) => Math.round(meters * 3.28084).toString()}
-        scrubT={position}
-      />
-      <div className="h-px bg-slate-800/50" />
-      <Band
-        title="Heart Rate"
-        unit="bpm"
-        series={hrSeries}
-        width={width}
-        colorClass="text-rose-400"
-        formatValue={(v) => Math.round(v).toString()}
         scrubT={position}
       />
     </div>
