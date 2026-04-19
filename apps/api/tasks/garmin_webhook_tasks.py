@@ -649,11 +649,30 @@ def _ingest_activity_detail_item(
     athlete_id: str,
     db,
 ) -> bool:
+    """Bool wrapper around :func:`_ingest_activity_detail_item_full`.
+
+    Existing call sites and tests (e.g. ``test_garmin_splits.py``) treat the
+    return value as a strict bool (``assert result is True``). The richer
+    helper below additionally returns the resolved Activity row so the
+    Celery task can chain follow-up work without re-querying.
+    """
+    _, was_processed = _ingest_activity_detail_item_full(raw_item, athlete_id, db)
+    return was_processed
+
+
+def _ingest_activity_detail_item_full(
+    raw_item: Dict[str, Any],
+    athlete_id: str,
+    db,
+):
     """
     Process a single Garmin ClientActivityDetail dict: extract samples,
     build ActivityStream row, link to parent Activity via garmin_activity_id.
 
-    Returns True if processed, False if skipped.
+    Returns ``(activity, was_processed)`` where ``activity`` is the matched
+    Activity row (or ``None`` if no row was matched) and ``was_processed``
+    is True if work was performed (stream upsert, lap split write, or the
+    "unavailable" fail-closed path), False if the item was skipped.
     """
     # All Garmin→internal field name translation delegated to adapter (source contract)
     envelope = adapt_activity_detail_envelope(raw_item)
@@ -661,7 +680,7 @@ def _ingest_activity_detail_item(
 
     if garmin_activity_id_int is None:
         logger.warning("Activity detail missing or invalid garmin_activity_id — skipping")
-        return False
+        return None, False
 
     # Find parent Activity by garmin_activity_id
     activity = (
@@ -679,7 +698,7 @@ def _ingest_activity_detail_item(
             garmin_activity_id_int,
             athlete_id,
         )
-        return False
+        return None, False
 
     if activity.sport != "run":
         activity.session_detail = {
@@ -691,7 +710,7 @@ def _ingest_activity_detail_item(
             garmin_activity_id_int,
             activity.sport,
         )
-        return True
+        return activity, True
 
     samples = envelope.get("samples") or []
 
@@ -726,7 +745,7 @@ def _ingest_activity_detail_item(
                 activity.id,
                 enqueue_exc,
             )
-        return True
+        return activity, True
 
     # All Garmin→internal channel translation delegated to adapter (source contract)
     if samples:
@@ -852,7 +871,7 @@ def _ingest_activity_detail_item(
                     garmin_activity_id_int, exc_info=True,
                 )
 
-    return True
+    return activity, True
 
 
 # ---------------------------------------------------------------------------
@@ -1073,24 +1092,18 @@ def process_garmin_activity_detail_task(
         processed = 0
         processed_activity_ids: List[Any] = []
         for raw_item in items:
-            ingested = _ingest_activity_detail_item(raw_item, athlete_id, db)
+            # Use the richer helper so we get the Activity row back without a
+            # second DB roundtrip. This also keeps Garmin field names out of
+            # the task module (enforced by
+            # tests/test_garmin_d5_activity_sync.py::TestSourceContract).
+            activity_row, ingested = _ingest_activity_detail_item_full(
+                raw_item, athlete_id, db
+            )
             if ingested:
                 processed += 1
                 db.commit()
-                # _ingest_activity_detail_item returns truthy; the activity
-                # row is identified by garmin_activity_id on the payload.
-                gaid = (raw_item.get("activityId") if isinstance(raw_item, dict) else None)
-                if isinstance(gaid, int):
-                    row = (
-                        db.query(Activity)
-                        .filter(
-                            Activity.athlete_id == athlete_id,
-                            Activity.garmin_activity_id == gaid,
-                        )
-                        .first()
-                    )
-                    if row is not None:
-                        processed_activity_ids.append(row.id)
+                if activity_row is not None:
+                    processed_activity_ids.append(activity_row.id)
 
         # --- ROUTE FINGERPRINT (Phase 2 of comparison family) ---
         for act_id in processed_activity_ids:
