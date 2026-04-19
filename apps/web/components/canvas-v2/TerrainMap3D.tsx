@@ -8,8 +8,11 @@
  * line and a position marker that follows the shared scrub state.
  *
  * Spike scope (binding for v0):
- *   - outdoors-v12 style + setTerrain('mapbox-dem', exaggeration 1.4)
- *   - bounds-fit camera, eased to pitch 55° on load
+ *   - outdoors-v12 style + setTerrain('mapbox-dem', exaggeration 2.0)
+ *   - hillshade layer underneath the route so topography reads as form
+ *     even on flatter sections
+ *   - camera starts pitched (55°) and bearing'd (-20°) directly in the
+ *     constructor — no race between fitBounds and a deferred easeTo
  *   - route as line + glow (no pace coloring yet)
  *   - position marker bound to useScrubState
  *
@@ -109,7 +112,10 @@ export function TerrainMap3D({ track, bounds }: TerrainMap3DProps) {
             [bounds.minLng, bounds.minLat],
             [bounds.maxLng, bounds.maxLat],
           ],
-          fitBoundsOptions: { padding: 80 },
+          // Pitch/bearing in the constructor (not deferred easeTo) so they
+          // commit alongside the initial bounds fit. Previous spike used
+          // easeTo on style.load and the camera stayed flat.
+          fitBoundsOptions: { padding: 60, pitch: 55, bearing: -20 },
           attributionControl: true,
           cooperativeGestures: false,
         });
@@ -136,7 +142,37 @@ export function TerrainMap3D({ track, bounds }: TerrainMap3DProps) {
           tileSize: 512,
           maxzoom: 14,
         });
-        map.setTerrain({ source: 'mapbox-dem', exaggeration: 1.4 });
+        // 2.0 exaggeration — Bonita has ~550ft of relief over 4.6mi with
+        // 15% pitches; 1.4 was visually flat at this zoom, 2.0 makes the
+        // climbs read as climbs without becoming cartoonish.
+        map.setTerrain({ source: 'mapbox-dem', exaggeration: 2.0 });
+
+        // Hillshade layer placed BELOW the topmost label layer so place
+        // names and roads stay readable. Gives the topography visible
+        // form even on the flatter sections of the loop.
+        const layers = map.getStyle().layers ?? [];
+        const firstSymbolId = layers.find((l) => l.type === 'symbol')?.id;
+        if (!map.getSource('mapbox-hillshade')) {
+          map.addSource('mapbox-hillshade', {
+            type: 'raster-dem',
+            url: 'mapbox://mapbox.mapbox-terrain-dem-v1',
+            tileSize: 512,
+          });
+        }
+        map.addLayer(
+          {
+            id: 'hillshade',
+            type: 'hillshade',
+            source: 'mapbox-hillshade',
+            paint: {
+              'hillshade-exaggeration': 0.6,
+              'hillshade-shadow-color': '#1f2937',
+              'hillshade-highlight-color': '#fef3c7',
+              'hillshade-accent-color': '#78350f',
+            },
+          },
+          firstSymbolId,
+        );
 
         const coordinates = track.map((p) => [p.lng, p.lat] as [number, number]);
         map.addSource('route', {
@@ -181,8 +217,6 @@ export function TerrainMap3D({ track, bounds }: TerrainMap3DProps) {
           .setLngLat([track[0].lng, track[0].lat])
           .addTo(map);
         markerRef.current = marker;
-
-        map.easeTo({ pitch: 55, duration: 1500 });
       });
     })();
 
