@@ -26,7 +26,43 @@ Next.js 14 App Router. React 18. TanStack Query for data fetching. Tailwind CSS.
 |-------|---------|
 | `/activities/[id]` | Activity detail — branches on `sport` field |
 
-Sport-specific components: `CyclingDetail`, `StrengthDetail`, `HikingDetail`, `FlexibilityDetail`. Run uses existing RunShapeCanvas.
+Sport-specific components: `CyclingDetail`, `StrengthDetail`, `HikingDetail`, `FlexibilityDetail`.
+
+**Run activity page (rebuilt April 2026):**
+
+- **Hero:** `components/canvas-v2/CanvasV2.tsx` rendered with `chromeless`
+  prop. Real Mapbox GL 3D terrain (`TerrainMap3D.tsx`), three-layer route
+  (white casing + emerald glow + deep emerald line), navigation controls,
+  fullscreen toggle, distance hover card. Stacked 2D charts (HR / pace /
+  elevation) under the map share a `StreamHoverContext` so hovering a chart
+  drives the map dot, the moment-readout cards, and the elevation
+  highlight in lockstep. Pace chart uses **Tukey's fence (IQR, k=3.0)** for
+  outlier clipping (`robustDomain` in `StreamsStack.tsx`) — replaces the
+  earlier percentile clip that flattened pace.
+- **Three tabs (down from six):**
+  - `Splits` — splits/laps table only, no map (the hero already has it).
+  - `Coach` — absorbs `RunIntelligence`, `FindingsCards`, `WhyThisRun`,
+    `GoingInCard`, `AnalysisTabPanel`, and `activity.narrative`. The
+    Compare tab remains visible as an "urgent reminder to get it done"
+    flagged for redesign behind the canvas vocabulary (see
+    `docs/specs/COMPARE_REDESIGN.md`).
+  - `Compare` — placeholder; redesign sequenced behind the canvas.
+- **Page chrome pills (right of title, run-only):**
+  - `ReflectPill` (`components/activities/feedback/`) — opens the
+    `FeedbackModal`. Pill state reflects completion of reflection / RPE /
+    workout-type confirmation, sourced from `useFeedbackCompletion`.
+  - `ShareButton` (`components/activities/share/`) — opens the
+    `ShareDrawer`, which hosts the `RuntoonCard` plus a roadmap placeholder
+    for future share styles (photo overlays, customizable stats, modern
+    backgrounds, flyovers). The runtoon is no longer rendered at page
+    bottom; sharing is now a pull action.
+- **`FeedbackModal`** is **unskippable** (no X, Cancel, Skip, or backdrop
+  dismiss) and auto-opens on first visit to a recent, incomplete run via
+  `useFeedbackTrigger` (gated on a `localStorage` flag so it only auto-opens
+  once per activity). Edits remain available via the `ReflectPill` after
+  the first save. Auto-classified workout types require explicit "Looks
+  right" confirmation before Save & Close enables — `workoutTypeAcked` is
+  only pre-true when `existingWorkoutType.is_user_override` is true.
 
 ### Other Active Routes
 
@@ -66,11 +102,12 @@ Sport-specific components: `CyclingDetail`, `StrengthDetail`, `HikingDetail`, `F
 | Directory | Contents |
 |-----------|----------|
 | `components/home/` | Hero, PMC compact, signals, banners |
-| `components/activities/` | Activity cards, maps, RSI canvas, splits, cross-training detail |
+| `components/activities/` | Activity cards, splits, sport-specific detail panels, narrative; `feedback/` (FeedbackModal, ReflectPill, useFeedbackCompletion, useFeedbackTrigger), `share/` (ShareButton, ShareDrawer) |
+| `components/canvas-v2/` | CanvasV2 (hero), TerrainMap3D (Mapbox GL), StreamsStack (HR/pace/elevation, Tukey fence outlier clip), CanvasHelpButton, distance hover card |
 | `components/calendar/` | Day cells, week rows, `DayDetailPanel.tsx` (edit + swap) |
 | `components/progress/` | Hero, sparklines, correlation web, recovery fingerprint |
 | `components/coach/` | `ProposalCard.tsx` |
-| `components/runtoon/` | Share prompt and view |
+| `components/runtoon/` | Runtoon card view (rendered inside ShareDrawer). `RuntoonSharePrompt.tsx` is preserved on disk but **no longer mounted in `app/layout.tsx`** — sharing is a pull action via the activity-page Share button. |
 | `components/ui/` | Shared primitives (button, dialog, card, badge, spinner) |
 | `components/nutrition/` | Barcode scanner, fueling shelf, NL input, nutrition goal setup |
 
@@ -87,11 +124,12 @@ Sport-specific components: `CyclingDetail`, `StrengthDetail`, `HikingDetail`, `F
 
 ### Key Patterns
 
-- **`StreamHoverContext`:** Links RunShapeCanvas, elevation profile, and map through hover. When you hover on the canvas, the dot moves on the map and the elevation profile highlights.
+- **`StreamHoverContext`:** Links CanvasV2's TerrainMap3D, StreamsStack charts (HR / pace / elevation), and the moment-readout cards through hover. When you hover any chart or scrub the map, the dot moves on the terrain, the elevation highlight updates, and the readout cards (including the distance hover card) recompute in lockstep.
 - **`useUnits()` hook:** Metric/imperial unit conversion throughout the app
 - **i18n:** `lib/i18n/` with `en.ts`, `es.ts`, `ja.ts` translations
 - **`DayDetailPanel.tsx`:** Unified save action — swap + edit consolidated into single button (fixed Apr 7, 2026)
 - **`usePageTracking()` hook:** Wired in `ClientShell.tsx`, fires on every authenticated route change. Posts page entry, patches exit on navigation or tab close via `sendBeacon`/`fetch` with `keepalive`. See [telemetry.md](./telemetry.md).
+- **Caddy CSP for Mapbox:** Mapbox tile/style/sprite domains are allowed in `connect-src` and `worker-src`/`child-src` (`blob:`) in the production `Caddyfile`. CSP changes require a Caddy container restart, not just `caddy reload`, due to a Docker bind-mount caching artefact on Linux.
 
 ## Key Decisions
 

@@ -1,0 +1,108 @@
+---
+description: Wiki currency contract — docs/wiki/ must always be current. No code change ships without a wiki update in the same scoped commit (or a follow-up commit in the same session).
+alwaysApply: true
+---
+
+# Wiki Currency Contract
+
+The internal wiki at `docs/wiki/` is the **single onboarding document** for
+this project. It is referenced by every agent, every session, and the index
+literally says: *"Read this instead of the 12-document read order."*
+
+If the wiki is stale, the next agent (and the founder) gets the wrong mental
+model of the system. That is a trust failure, not a documentation gap.
+
+**The wiki is mandatory. It must always be current. Same standard as tests.**
+
+## The Rule
+
+Every commit that changes system behavior, surfaces, contracts, models, or
+deploy posture **must** update the relevant wiki page in the same commit, or
+in an explicit follow-up commit in the same session before the work is called
+done. No exceptions.
+
+If you ship a feature, fix a bug class, retire a component, change a default,
+add/remove a route, change a model id, change a deploy step, change an
+environment variable, or change a contract — you owe a wiki edit.
+
+This is the same discipline as `index.md`'s **Maintenance Contract**:
+
+> Every future code change that affects system behavior should include:
+> `Wiki update: Update docs/wiki/[relevant-page].md with [what changed].`
+
+Treat that as binding, not aspirational.
+
+## Wiki Map (which page owns what)
+
+| Surface / change | Page that owns it |
+|---|---|
+| Coach (Kimi K2.5, routing, prompts, tools, guardrails, budgets) | `docs/wiki/coach-architecture.md` |
+| Morning briefing (Lane 2A, fingerprint, voice gates, narrative LLM) | `docs/wiki/briefing-system.md` |
+| Activity detail page, RSI/Canvas, splits, maps, Runtoons, share | `docs/wiki/activity-processing.md` and `docs/wiki/frontend.md` |
+| Routes, components, contexts, data layer, hooks | `docs/wiki/frontend.md` |
+| Garmin webhooks, FIT pipeline, OAuth, demo guards | `docs/wiki/garmin-integration.md` |
+| Correlation engine layers, AutoDiscovery, fingerprint bridge | `docs/wiki/correlation-engine.md` |
+| Plan engine V1 / V2, KB docs, fueling, segments | `docs/wiki/plan-engine.md` |
+| Personal Operating Manual, findings display, cascade chains | `docs/wiki/operating-manual.md` |
+| Server, containers, Celery/Beat, DB, CI, env vars | `docs/wiki/infrastructure.md` |
+| Stripe, tiers, pricing, promo codes | `docs/wiki/monetization.md` |
+| Nutrition (parsing, overrides, saved meals, fueling shelf) | `docs/wiki/nutrition.md` |
+| Page view tracking, admin usage reports | `docs/wiki/telemetry.md` |
+| Cross-domain reports | `docs/wiki/reports.md` |
+| Five quality/trust principles, KB registry, OutputMetricMeta | `docs/wiki/quality-trust.md` |
+| Architectural decisions (ADR-style) | `docs/wiki/decisions.md` |
+| Vision and competitive frame | `docs/wiki/product-vision.md` |
+| Cross-cutting changes that touch multiple pages | append to `docs/wiki/log.md` |
+
+If you can't decide which page owns a change, append a dated entry to
+`docs/wiki/log.md` and link it from the most-relevant page.
+
+## Always Touch `index.md` When …
+
+- A page is added, renamed, or deleted (update the All Pages table)
+- A Quick Reference value changes (server IP, container name, model id, deploy command)
+- A core architectural surface moves enough that the Start Here ordering
+  needs to change
+
+Always bump the `Last updated:` date in `index.md` when you edit any wiki
+page in the same session.
+
+## What Counts as a Wiki Update
+
+A wiki update is **not** a one-line stub. It must:
+
+1. Reflect the **shipped** state, not the proposed state. Specs live elsewhere.
+2. Be specific enough that another agent reading only the wiki could rebuild
+   the same mental model the founder has.
+3. Remove or move stale content rather than letting it pile up. The wiki is
+   not append-only.
+4. Link source files (path-only) where the behavior actually lives, so the
+   next agent can verify with `Read` instead of guessing.
+
+## Session-End Check (binding)
+
+Before declaring "tree clean, tests green, production healthy" at end of
+session:
+
+- [ ] Every commit in this session that changed behavior has a corresponding
+      wiki edit (in the same commit, in a follow-up commit, or a `wiki/log.md`
+      entry).
+- [ ] `docs/wiki/index.md` `Last updated:` date is today if any wiki page
+      was edited.
+- [ ] No wiki page contradicts what is actually deployed.
+
+If any of these are false, the session is not done.
+
+## Relationship to Other Docs
+
+The wiki does **not** replace:
+
+- `docs/FOUNDER_OPERATING_CONTRACT.md` — how to work with the founder
+- `docs/PRODUCT_MANIFESTO.md` / `docs/PRODUCT_STRATEGY_2026-03-03.md` — vision
+- `docs/SITE_AUDIT_LIVING.md` — honest assessment of current site state
+- `docs/SESSION_HANDOFF_*.md` — per-session state for the next agent
+- `docs/specs/*` — forward-looking specs
+
+The wiki is the **operational mental model** of the running system. Vision
+docs say what we want; specs say what we plan; the wiki says what is
+actually live right now. Keep that distinction crisp.

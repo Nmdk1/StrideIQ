@@ -1,8 +1,14 @@
 # StrideIQ Internal Wiki
 
-**Last updated:** April 15, 2026
+**Last updated:** April 19, 2026
 
 This is the single onboarding document. Read this instead of the 12-document read order.
+
+> **Wiki currency is mandatory** — `.cursor/rules/wiki-currency.mdc` and the
+> Founder Operating Contract treat a stale wiki as a trust failure, not a
+> documentation gap. Every behavior-changing commit owes a wiki edit in the
+> same commit (or a follow-up commit in the same session). Bump the
+> `Last updated:` date above whenever any wiki page is edited.
 
 ## Quick Reference
 
@@ -58,15 +64,26 @@ Before writing any code, understand these five things:
 | **[Unified Reports](./reports.md)** | Cross-domain reporting — health, activities, nutrition, body comp in configurable date ranges |
 | **[Decisions](./decisions.md)** | 56 ADRs summarized — key architectural choices and their current state |
 
-## Maintenance Contract
+## Maintenance Contract (binding)
 
-Every future code change that affects system behavior should include:
+Every code change that affects system behavior, surfaces, contracts, models,
+deploy posture, env vars, or routes **must** include a wiki update — in the
+same commit or a follow-up commit in the same session. This is enforced by
+`.cursor/rules/wiki-currency.mdc` and rule 13 of the Founder Operating
+Contract. Same standard as tests.
 
-```
-Wiki update: Update docs/wiki/[relevant-page].md with [what changed].
-```
+A wiki update should:
 
-This is the same discipline as "update tests after code changes." The wiki stays current because every change includes a wiki update step.
+1. Reflect the **shipped** state, not the proposed state. (Specs live in `docs/specs/`.)
+2. Be specific enough that another agent reading only the wiki could rebuild
+   the same mental model the founder has.
+3. Remove or move stale content rather than letting it pile up. The wiki is
+   not append-only.
+4. Link source files (path-only) where the behavior actually lives.
+
+Always bump the `Last updated:` date at the top of this file. For
+cross-cutting changes that don't fit one page cleanly, append a dated entry
+to [`log.md`](./log.md).
 
 ## Project Structure (April 2026 Reorganization)
 

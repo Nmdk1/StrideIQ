@@ -1,7 +1,16 @@
 # Build Spec: Home Page & Activity Detail Page
-## February 15, 2026
+## February 15, 2026 (with shipped-state delta — April 19, 2026)
 
-**Read first:** `docs/PRODUCT_MANIFESTO.md`, `docs/RUN_SHAPE_VISION.md`, `docs/SITE_AUDIT_LIVING.md`
+**Read first:** `docs/PRODUCT_MANIFESTO.md`, `docs/RUN_SHAPE_VISION.md`, `docs/SITE_AUDIT_LIVING.md`, `docs/wiki/activity-processing.md`, `docs/wiki/frontend.md`
+
+> **Status (April 19, 2026):** the Activity Detail half of this spec has been
+> **superseded by the Phase 1-4 rebuild** (CanvasV2 hero + 3-tab restructure +
+> unskippable FeedbackModal + ShareDrawer). Changes A1, A4, A6 below are
+> historical context only — the canvas they targeted is no longer rendered
+> on run activities. See the **"Shipped After Original Spec — Activity-Page
+> Rebuild Phases 1-4"** section near the bottom of this file for the
+> current shipped state. The Home Page half (H1-H4) is still partially in
+> force; see the same section for the home delta.
 
 ---
 
@@ -474,6 +483,102 @@ alongside HR, cadence, and pace.
 
 ---
 
+## Shipped After Original Spec — Activity-Page Rebuild Phases 1-4 (Apr 19, 2026)
+
+**This section supersedes Changes A1, A4, A6 above for run activities.**
+The original canvas those changes targeted (`RunShapeCanvas.tsx`) is no
+longer rendered on run activities. It has been replaced by `CanvasV2`
+running in `chromeless` mode as the page hero, with the rest of the page
+restructured around it. Authoritative source files:
+`apps/web/components/canvas-v2/`, `apps/web/components/activities/feedback/`,
+`apps/web/components/activities/share/`, `apps/web/app/activities/[id]/page.tsx`,
+`docs/wiki/activity-processing.md`, `docs/wiki/frontend.md`.
+
+### Phase 1 — CanvasV2 as the Activity Hero — ✅ SHIPPED (Apr 19)
+
+- `CanvasV2` gains a `chromeless` prop that suppresses internal title /
+  subtitle / help block and moves `CanvasHelpButton` to a minimal
+  right-aligned slot. Run activities render `CanvasV2` chromeless as
+  the hero, replacing `RunShapeCanvas` (preserved on disk for reference).
+- `TerrainMap3D.tsx` — Mapbox GL real 3D terrain with `pitch: 62`,
+  `bearing: -20`, DEM exaggeration `3.0`. Three-layer route (white
+  casing + emerald glow + deep emerald line) for contrast on light
+  terrain. Built-in `hillshade` left untouched (earlier
+  `setPaintProperty` attempts threw "cannot read properties of
+  undefined (reading 'value')"; visibility comes from terrain
+  exaggeration plus the route layers). `mapbox-gl/dist/mapbox-gl.css`
+  imported statically at top of file (was the cause of the production
+  "completely dark map" regression). `NavigationControl` mounted for
+  rotate / tilt / zoom. Desktop-only fullscreen toggle. Initial render
+  zoom tightened so the course fills the frame. Caddy CSP allows
+  Mapbox tile/style/sprite domains in `connect-src` and `blob:` in
+  `worker-src`/`child-src`; CSP changes require a Caddy container
+  restart, not just `caddy reload` (Docker bind-mount caching
+  artefact on Linux).
+- `StreamsStack.tsx` — chart order locked to **HR top, pace middle,
+  elevation bottom**. Pace `robustDomain` switched from percentile
+  clipping to **Tukey's fence (IQR, k=3.0)** to preserve real pace
+  variation while clipping spikes. Elevation uses the smoothed series
+  the splits tab uses (less pointy).
+- Distance moved from inline label to the **leftmost moment-readout
+  hover card** with two-decimal miles and a secondary time line.
+
+### Phase 2 — Activity Tabs 6 → 3 — ✅ SHIPPED (Apr 19)
+
+- `Splits` (no map; the hero already has it).
+- `Coach` (absorbs `RunIntelligence`, `FindingsCards`, `WhyThisRun`,
+  `GoingInCard`, `AnalysisTabPanel`, and `activity.narrative`).
+- `Compare` (placeholder; redesign sequenced behind the canvas — see
+  `docs/specs/COMPARE_REDESIGN.md`).
+- The `RuntoonCard` is no longer rendered at the bottom of the page
+  (lives in the ShareDrawer now).
+
+### Phase 3 — Unskippable FeedbackModal + ReflectPill — ✅ SHIPPED (Apr 19)
+
+- `FeedbackModal` has three sections: reflection text, RPE,
+  workout-type confirmation. **No escape hatch** — no X, Cancel, Skip,
+  or backdrop-click dismissal. Save & Close stays disabled until all
+  three are complete.
+- Auto-classified workout types require explicit "Looks right"
+  confirmation: `workoutTypeAcked` is only pre-true when
+  `existingWorkoutType.is_user_override === true`.
+- `useFeedbackTrigger` auto-opens the modal once per recent,
+  incomplete run, gated on a `localStorage` flag so it doesn't keep
+  popping up after save.
+- Edits remain available later via the `ReflectPill` in the page
+  chrome (which sources status from `useFeedbackCompletion`).
+
+### Phase 4 — Share is a Pull Action — ✅ SHIPPED (Apr 19)
+
+- `ShareButton` page-chrome pill (next to `ReflectPill`, run-only)
+  opens a `ShareDrawer` that hosts the `RuntoonCard` and a roadmap
+  placeholder for future share styles (photo overlays, customizable
+  stats, modern backgrounds, flyovers). Drawer dismisses via close
+  button, Escape, or backdrop click.
+- `RuntoonSharePrompt` removed from `app/layout.tsx` — was polling
+  `/v1/runtoon/pending` every 10s and sliding up on every recent run,
+  explicitly rejected as push-style sharing. Component file preserved
+  on disk for reference / rollback; intentionally not imported. Static
+  regression test `apps/web/__tests__/layout-no-runtoon-prompt.test.ts`
+  enforces this.
+
+### Implications for the Original Spec
+
+- **A1 (gradient pace line on the old canvas)** — superseded. The
+  effort-colored gradient idea lives on inside `CanvasV2`'s
+  `StreamsStack` and effort-colored route, but on a different
+  rendering substrate.
+- **A3 (moment narratives)** — still valuable for the Coach tab,
+  carried forward.
+- **A4 (remove old splits chart)** — superseded; `Splits` tab now
+  shows the table only with no map.
+- **A6 (collapse lower sections)** — superseded; the page has no
+  "lower sections" anymore — everything is hero + 3 tabs.
+- **A2 (HR sanity check)** and **A5 (cadence in segment table)** —
+  still relevant inside `CanvasV2`'s effort and segment logic.
+
+---
+
 ## What This Does NOT Cover (future sessions)
 
 - ~~Intelligence page consolidation~~ — resolved: `/insights` and `/discovery` redirect to `/manual`
@@ -484,6 +589,8 @@ alongside HR, cadence, and pace.
 - Morning voice prompt refinements beyond the merge
 - Coach page changes (it works — don't touch it)
 - Calendar changes (it works — don't touch it)
+- **Compare tab redesign** — placeholder; sequenced behind canvas
+  vocabulary. See `docs/specs/COMPARE_REDESIGN.md`.
 
 ---
 
@@ -494,3 +601,5 @@ alongside HR, cadence, and pace.
 - `docs/SITE_AUDIT_LIVING.md` — current state of everything
 - `docs/DESIGN_PHILOSOPHY_AND_SITE_ROADMAP.md` — design decisions and HRV display standard
 - `docs/FOUNDER_OPERATING_CONTRACT.md` — how to work with this founder
+- `docs/wiki/activity-processing.md` — current shipped state of CanvasV2, terrain, charts, share/feedback
+- `docs/wiki/frontend.md` — current shipped state of activity-page composition, components, contexts

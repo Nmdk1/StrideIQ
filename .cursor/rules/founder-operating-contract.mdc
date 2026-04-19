@@ -33,14 +33,15 @@ non-negotiable. Violating any of them costs trust immediately.
    5. `docs/FINGERPRINT_VISIBILITY_ROADMAP.md` (how the built backend intelligence connects to the product strategy — what's surfaceable now, what needs more engine layers, phased plan from surface to deep product)
    6. `docs/DESIGN_PHILOSOPHY_AND_SITE_ROADMAP.md` (how every screen should feel, what's agreed, what's rejected — DO NOT re-propose rejected decisions)
 
-   **CONTEXT DOCUMENTS (7-12): Read as needed for current work.**
+   **CONTEXT DOCUMENTS (7-13): Read as needed for current work.**
 
-   7. `docs/RUN_SHAPE_VISION.md` (the visual vision for run data)
-   8. `docs/SITE_AUDIT_LIVING.md` (honest assessment of current state)
-   9. `docs/BUILD_SPEC_HOME_AND_ACTIVITY.md` (active build spec if working on home/activity pages)
-   10. `docs/TRAINING_PLAN_REBUILD_PLAN.md` (what to build)
-   11. `docs/AGENT_WORKFLOW.md` (build loop mechanics)
-   12. Latest `docs/SESSION_HANDOFF_*.md` (current state)
+   7. `docs/wiki/index.md` (the operational mental model of the live system — what is actually deployed today, page-by-page. Treat it as authoritative for current state. If you change behavior, you owe a wiki edit — see rule 13 below.)
+   8. `docs/RUN_SHAPE_VISION.md` (the visual vision for run data)
+   9. `docs/SITE_AUDIT_LIVING.md` (honest assessment of current state)
+   10. `docs/BUILD_SPEC_HOME_AND_ACTIVITY.md` (active build spec if working on home/activity pages)
+   11. `docs/TRAINING_PLAN_REBUILD_PLAN.md` (what to build)
+   12. `docs/AGENT_WORKFLOW.md` (build loop mechanics)
+   13. Latest `docs/SESSION_HANDOFF_*.md` (current state)
 
 4. **Show evidence, not claims.** Paste test output. Paste deploy logs.
 
@@ -68,3 +69,13 @@ non-negotiable. Violating any of them costs trust immediately.
     implement, merge, or deploy widened OAuth scopes or new third-party
     permissions without explicit sign-off for those exact scopes. Specs may
     describe future scopes; code waits.
+
+13. **Wiki must always be current.** `docs/wiki/` is the single onboarding
+    document for the project — it is what the next agent reads first. Every
+    commit that changes system behavior, surfaces, contracts, models, deploy
+    posture, env vars, or routes must update the relevant wiki page in the
+    same commit (or a follow-up commit in the same session). Bump
+    `docs/wiki/index.md`'s `Last updated:` date and append cross-cutting
+    changes to `docs/wiki/log.md`. See `.cursor/rules/wiki-currency.mdc`
+    for the page-ownership map. A stale wiki is a trust failure, not a
+    documentation gap. Same standard as tests.

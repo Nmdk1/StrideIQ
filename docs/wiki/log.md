@@ -1,5 +1,41 @@
 # Wiki Log
 
+## [2026-04-19] activity-page-rebuild-phases-1-4 + backend-green | CanvasV2 hero, 3-tab restructure, unskippable FeedbackModal, ShareDrawer, RuntoonSharePrompt retired, 39 backend failures fixed
+
+A four-phase rebuild of the run-activity page shipped end-to-end in one session, plus a sweep that resolved 39 pre-existing backend test failures discovered when the backend-test job ran after the frontend changes pushed.
+
+**Phase 1 — CanvasV2 as the activity hero (`apps/web/components/canvas-v2/CanvasV2.tsx`, `apps/web/app/activities/[id]/page.tsx`):**
+- New `chromeless` prop on `CanvasV2` suppresses the internal title/subtitle/help block and moves `CanvasHelpButton` to a minimal right-aligned slot. Run activities now render `CanvasV2` chromeless as the hero, replacing `RunShapeCanvas`.
+- `TerrainMap3D.tsx`: `mapbox-gl/dist/mapbox-gl.css` lifted from a dynamic `useEffect` import to a static top-level import (was causing the map to render entirely dark on production); `pitch: 62`, `bearing: -20`, DEM exaggeration `3.0` set in the constructor and re-applied at `style.load` via `map.jumpTo()`. Built-in `hillshade` is left untouched after `setPaintProperty` attempts threw "cannot read properties of undefined (reading 'value')". Visibility instead comes from a three-layer route: white casing + emerald glow + deep emerald line, replacing the original yellow that vanished against pale terrain. `NavigationControl` mounted (rotate/tilt/zoom). Desktop fullscreen toggle. Initial render zoom tightened so the course fills the frame. Caddy CSP updated to allow Mapbox tile/style/sprite domains in `connect-src` and `blob:` in `worker-src`/`child-src`; CSP changes required a Caddy container restart, not just `caddy reload`, due to a Docker bind-mount caching artefact on Linux.
+- `StreamsStack.tsx`: chart order locked to HR top, pace middle, elevation bottom; pace chart `robustDomain` switched from percentile clipping to **Tukey's fence (IQR, k=3.0)** to preserve real pace variation while clipping spikes; elevation now uses the smoothed series the splits tab uses (less pointy).
+- Distance moved from inline label to the leftmost moment-readout hover card: two-decimal miles + secondary time line.
+
+**Phase 2 — Activity-page tab restructure (6 → 3):**
+- `Splits` (no map; the hero already has it), `Coach` (absorbs `RunIntelligence`, `FindingsCards`, `WhyThisRun`, `GoingInCard`, `AnalysisTabPanel`, and `activity.narrative`), and `Compare` (placeholder; redesign sequenced behind the canvas — see `docs/specs/COMPARE_REDESIGN.md`). The `RuntoonCard` is no longer rendered at the bottom of the page (lives in the ShareDrawer now).
+
+**Phase 3 — Unskippable FeedbackModal + ReflectPill (`apps/web/components/activities/feedback/`):**
+- `FeedbackModal` has three sections (reflection text, RPE, workout-type confirmation) and **no escape hatch**: no X, Cancel, Skip, or backdrop-click dismissal. Save & Close stays disabled until all three are complete. Auto-classified workout types require explicit "Looks right" confirmation: `workoutTypeAcked` is only pre-true when `existingWorkoutType.is_user_override === true`.
+- `useFeedbackTrigger` auto-opens the modal once per recent, incomplete run, gated on a `localStorage` flag so it doesn't keep popping up after save. Edits remain available later via the `ReflectPill` in the page chrome (which sources status from `useFeedbackCompletion`).
+- Test fixes: lint refactor moved `apiClient` mocks from `require()` calls to module-level `jest.fn()` instances wrapped by `jest.mock()` (the project's ESLint config doesn't register `@typescript-eslint/no-require-imports`, so the eslint-disable comments produced "rule definition not found" errors that broke the Next build). Test regexes for the "no escape hatch" assertion were tightened (anchored `^cancel$`, `^×$|^x$`) so they stop matching the legitimate "Save & Close" button.
+
+**Phase 4 — Share is now a pull action (`apps/web/components/activities/share/`, `apps/web/app/layout.tsx`):**
+- New `ShareButton` page-chrome pill (next to `ReflectPill`, run-only) opens a new `ShareDrawer` modal that hosts the `RuntoonCard` and a roadmap placeholder for future share styles (photo overlays, customizable stats, modern backgrounds, flyovers). Drawer dismisses via close button, Escape, or backdrop click.
+- `RuntoonSharePrompt` removed from `app/layout.tsx` (was polling `/v1/runtoon/pending` every 10s and sliding up on every recent run — the founder explicitly rejected push-style sharing). Component file preserved on disk for reference / rollback; intentionally not imported. Static regression test `apps/web/__tests__/layout-no-runtoon-prompt.test.ts` enforces this.
+
+**Backend-green sweep — 39 pre-existing failures resolved:**
+- The `backend-test` CI job runs only on `schedule` / `workflow_dispatch` (not on `push`), so the failures had been hiding on `main`. Running it manually surfaced 39 broken tests across five clusters; all fixed in the same merge:
+  - `test_scripts_hygiene` — `apps/api/scripts/clone_athlete_to_demo.py` docstring referenced hardcoded example emails; replaced with env-var placeholders.
+  - Garmin D5/D6 source-contract tests — `apps/api/tasks/garmin_webhook_tasks.py` accessed `activityId` from the raw payload, violating the rule that all raw Garmin field names go through `garmin_adapter.py`. Routed through `adapt_activity_detail_envelope` to extract `garmin_activity_id`.
+  - Garmin D5 stream-ingestion tests (`StopIteration`, `assert 1==2`) — `process_garmin_activity_detail_task` was re-querying for the `Activity` after `_ingest_activity_detail_item`, blowing past the mock's `side_effect` list. Refactored: `_ingest_activity_detail_item_full(...) -> (Activity | None, bool)` is the new internal API, with `_ingest_activity_detail_item` retained as a boolean wrapper for backward compat. Caller now consumes the returned `Activity` directly.
+  - Garmin feature-flag and D7 backfill tests — the `_make_*` helpers built `MagicMock` athletes with truthy `is_demo`, which tripped the demo-account guard added later in `routers/garmin.py` and produced 403s with plain-string detail instead of the expected JSON envelope. Helpers now explicitly set `is_demo = False`. The D7 callback test also patches `routers.garmin.is_feature_enabled` to `True` so the backfill task `delay()` is reached.
+  - `test_phase3b_graduation::test_quality_score_attached_to_result` — the test was hitting the real LLM route and returning `suppressed=True` in CI (no API keys). Patched `services.intelligence.workout_narrative_generator._call_narrative_llm` to a canned narrative so the quality scorer is exercised.
+  - Nutrition API tests (21 failures) — `routers/nutrition.py` enforces `MAX_BACKLOG_DAYS = 60` on POST/PUT; hardcoded `2024-XX-XX` dates were now older than 60 days, returning 400s that cascaded into `KeyError: 'id'` on downstream GET/DELETE. Introduced `TODAY = date.today()` + `_d(offset_days)` helper and replaced every hardcoded date in test data and URLs.
+
+**Wiki + cursor rules:**
+- New `.cursor/rules/wiki-currency.mdc` makes wiki currency a binding rule with the same standard as tests. The Founder Operating Contract gains rule 13 (wiki must always be current) and adds `docs/wiki/index.md` to the read order. `docs/wiki/index.md` `Last updated:` bumped to April 19, 2026, and the Maintenance Contract section reworded with teeth.
+
+**Production smoke (post-deploy):** `/ping`, `/v1/home`, `/v1/coach/brief`, `/v1/activities` all 200; CanvasV2 renders Mapbox terrain end-to-end on real activity URLs; `RuntoonSharePrompt` confirmed absent from the layout.
+
 ## [2026-04-18] demo-pipeline-and-intelligence-honesty | Demo athlete cloning + interval/cooldown gates + briefing fingerprint + Compare redesign decision
 
 Three commits + one decision doc. The day's theme: stop the briefing and Athlete Intelligence panel from inventing structure that isn't there, and stop them from missing structure that is.

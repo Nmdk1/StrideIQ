@@ -57,7 +57,59 @@ No max_hr gate — effort classification works without a known max HR.
 
 ### Maps
 
-Activity maps use Leaflet + react-leaflet with CartoDB Dark Matter tiles:
+Run-activity maps live inside **CanvasV2** (`components/canvas-v2/`) using
+**Mapbox GL JS** with the standard outdoor style and a 3D terrain DEM.
+Cross-training sport pages still use the older Leaflet + CartoDB Dark Matter
+implementation described below.
+
+**CanvasV2 / TerrainMap3D (run activity hero, April 2026):**
+
+- **Real 3D terrain:** Mapbox GL with DEM exaggeration `3.0`, `pitch: 62`,
+  `bearing: -20` set in the `Map` constructor and re-applied at
+  `style.load` via `map.jumpTo()`. Built-in `hillshade` layer is left
+  untouched (earlier `setPaintProperty` attempts threw "cannot read
+  properties of undefined (reading 'value')" because the layer uses
+  expressions). Visibility comes from terrain exaggeration plus the
+  three-layer route, not from re-painting hillshade.
+- **Three-layer route for contrast on light terrain:** white casing (wide,
+  low opacity) + emerald glow (medium width, mid opacity) + deep emerald
+  line (narrow, full opacity). Replaces the original yellow route that
+  vanished against pale terrain.
+- **Distance hover card** (leftmost moment-readout card): two-decimal miles
+  matching watch convention, with a secondary time line. Replaces the
+  earlier inline distance label per founder direction.
+- **Navigation:** Mapbox `NavigationControl` is mounted so runners can
+  rotate, tilt, and zoom freely.
+- **Fullscreen:** desktop-only fullscreen toggle (Google-Maps-style) on the
+  map. Initial render zoom is tighter than fitBounds default so the course
+  fills the frame.
+- **Help / info box:** `CanvasHelpButton` in the top-right slot opens a
+  dismissible card explaining navigation. `localStorage` flag
+  `canvasV2:hintsSeen` keeps it discoverable once and quiet thereafter.
+- **CSP:** Caddy's `connect-src` allows Mapbox tile/style/sprite domains
+  and `worker-src`/`child-src` allows `blob:`. CSP changes require a
+  Caddy container restart, not just `caddy reload` (Docker bind-mount
+  caching artefact on Linux).
+- **`mapbox-gl/dist/mapbox-gl.css`** is statically imported at the top of
+  `TerrainMap3D.tsx` (not dynamically), and a `mountError` state plus
+  `map.on('error')` handler surface failures inline instead of going dark.
+
+**StreamsStack (HR / pace / elevation under the map):**
+
+- Order is fixed: HR top, pace middle, elevation bottom (HR sits closest to
+  the map so the eye reads cardiac-cost-by-terrain at a glance).
+- **Pace chart uses Tukey's fence (IQR, k=3.0)** for outlier clipping
+  (`robustDomain` in `StreamsStack.tsx`). The previous percentile clip
+  flattened pace artificially and produced a "haywire" tail — Tukey
+  preserves real variation while excluding one-off spikes.
+- Elevation chart uses the same smoothed series the splits tab uses so
+  it's "less pointy" than the raw stream.
+- All charts share `StreamHoverContext` with `TerrainMap3D` and the
+  moment-readout cards: hover anywhere drives the dot, the elevation
+  highlight, and the readout cards in lockstep.
+
+**Cross-training maps (cycling / hiking / flexibility):** still use Leaflet
++ react-leaflet with CartoDB Dark Matter tiles:
 
 - **GPS trace:** Two-source normalization (Garmin `track` field and `streamPoints`), downsampled to 2000 points using RDP algorithm with adaptive epsilon
 - **Pace-colored route:** Red = fast (red-lining), blue = slow (easy). 5th-95th percentile normalization
@@ -76,7 +128,17 @@ Activity maps use Leaflet + react-leaflet with CartoDB Dark Matter tiles:
 - **Image generation:** AI model creates the cartoon
 - **Text overlay:** Pillow (`recompose_stories()`) renders stats line, caption, and watermark
 - **Storage:** R2/MinIO via `services/storage_service.py`
-- **Frontend:** `components/runtoon/` — share prompt and view
+- **Frontend:** `components/runtoon/` — RuntoonCard view, rendered inside
+  the activity-page **ShareDrawer** (`components/activities/share/`). The
+  global `RuntoonSharePrompt` mobile auto-popup was retired April 2026:
+  it polled `/v1/runtoon/pending` every 10s and slid up on every recent
+  run, which made sharing a push action nobody wanted. Sharing is now a
+  pull action — the Share button in the activity-page chrome opens
+  `ShareDrawer`, which currently hosts the runtoon and a roadmap
+  placeholder for future share styles (photo overlays, customizable
+  stats, modern backgrounds, flyovers). The `RuntoonSharePrompt.tsx`
+  file is preserved on disk for reference / rollback but is not
+  imported in `app/layout.tsx`.
 
 **Requirements:**
 1. Stats line: distance, pace, duration, HR, date
@@ -92,7 +154,7 @@ Sport-specific detail pages branch on `activity.sport`:
 
 | Sport | Component | Key data |
 |-------|-----------|----------|
-| `run` | Existing RunShapeCanvas | Full stream analysis, pace zones |
+| `run` | **CanvasV2** (hero, chromeless) + 3 tabs (Splits / Coach / Compare) | Full stream analysis, Mapbox 3D terrain, stacked HR/pace/elevation, FeedbackModal + ShareDrawer in page chrome |
 | `cycling` | `CyclingDetail` | Duration, distance, elevation, HR zones, TSS |
 | `strength` | `StrengthDetail` | Exercise sets (if available), duration, HR |
 | `hiking` | `HikingDetail` | Duration, distance, elevation profile, HR |
@@ -101,10 +163,13 @@ Sport-specific detail pages branch on `activity.sport`:
 ## Key Decisions
 
 - **Shape extractor > mile splits:** Stream-level classification is more reliable than split-based workout structure detection
-- **4:3 map ratio:** Gives usable surface area vs panoramic layouts
+- **4:3 map ratio:** Gives usable surface area vs panoramic layouts (cross-training Leaflet maps)
 - **RDP downsampling:** Preserves route shape while reducing to 2000 points
 - **No ghost traces on map:** GPS overlays on the same path are unreadable; route comparison uses pace-over-distance charts instead
 - **Pillow text overlay:** All text rendered by Pillow, not the image model (which produces unreliable text)
+- **Run map = real 3D Mapbox, not extruded 2D ribbon:** The earlier abstract-terrain prototype was rejected ("gold blob of nothing"). Real terrain with the route as a glowing path through it is the agreed visual vocabulary for run activities. Cycling/hiking can stay on flat 2D Leaflet for now.
+- **Tukey's fence over percentile clip for pace charts:** IQR-based outlier detection (k=3.0) preserves real pace variation while excluding noise spikes; percentile clipping flattened pace artificially.
+- **Share is a pull action, feedback is a push action:** The unskippable `FeedbackModal` auto-opens once per recent activity (RPE / reflection / workout-type confirmation are required for downstream intelligence). Sharing is hidden behind the Share button — never auto-popped.
 
 ## Known Issues
 
@@ -122,3 +187,7 @@ Sport-specific detail pages branch on `activity.sport`:
 - `docs/specs/LIVING_FINGERPRINT_SPEC.md` — shape extraction foundation
 - `apps/api/services/shape_extractor.py` — core shape analysis
 - `apps/api/services/runtoon_service.py` — Runtoon pipeline
+- `apps/web/components/canvas-v2/` — CanvasV2 hero (TerrainMap3D, StreamsStack, CanvasHelpButton, distance hover)
+- `apps/web/components/activities/feedback/` — FeedbackModal, ReflectPill, useFeedbackCompletion, useFeedbackTrigger
+- `apps/web/components/activities/share/` — ShareButton, ShareDrawer
+- `apps/web/app/activities/[id]/page.tsx` — page composition (chrome pills, hero, 3 tabs)

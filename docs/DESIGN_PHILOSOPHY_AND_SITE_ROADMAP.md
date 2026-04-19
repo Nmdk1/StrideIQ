@@ -439,6 +439,73 @@ athletes who see their Garmin watch say "36ms Avg Overnight HRV" and
 then see StrideIQ say "HRV below 78" will lose trust instantly unless
 the distinction is clear.
 
+### Run-Activity 3D Terrain Standard (Apr 19, 2026)
+
+The run-activity hero is **real Mapbox GL 3D terrain**, not an abstract
+extruded ribbon and not a flat 2D map. The earlier abstract-terrain
+prototype was rejected by the founder ("a gold blob of nothing"); the
+extruded-2D-ribbon alternative was also rejected as "tacky." The agreed
+visual vocabulary for run activities is:
+
+- A real-world terrain hero with the route rendered as a glowing path
+  through it (three-layer route: white casing + emerald glow + deep
+  emerald line — engineered for contrast on light terrain without
+  re-painting the built-in `hillshade` layer).
+- A `pitch: 62`, `bearing: -20`, DEM-exaggeration-`3.0` camera that
+  conveys gain/loss intuitively even on modest hills.
+- Stacked HR / pace / elevation 2D charts under the map (in that order),
+  sharing a single hover context with the map and the moment-readout
+  cards. Pace charts use **Tukey's fence (IQR, k=3.0)** for outlier
+  clipping — percentile clipping flattens pace artificially.
+- A user-controlled `NavigationControl` (rotate/tilt/zoom) and a
+  desktop-only fullscreen toggle. The map is something the athlete
+  *plays with*, not just something they look at.
+- Cross-training sports (cycling, hiking, walking) keep flat 2D Leaflet
+  for now — terrain drama is a run-activity contract, not a universal
+  one.
+
+Future canvas changes inherit this vocabulary. Compare-tab redesign is
+explicitly sequenced behind this so it stays in the same visual world.
+
+### Feedback Push, Share Pull (Apr 19, 2026)
+
+Two opposite contracts that govern post-run interaction:
+
+- **Feedback is a push action.** The `FeedbackModal` (reflection text,
+  RPE, and workout-type confirmation) is **unskippable** — no X, no
+  Cancel, no Skip, no backdrop dismiss — and auto-opens once on the
+  first visit to a recent, incomplete run. The founder's reasoning:
+  "it's only a few clicks, it must happen every run." This data feeds
+  every downstream intelligence surface; making it optional makes the
+  intelligence weaker for everyone. To prevent the "glitch loop"
+  (modal saves, then keeps reappearing), gate auto-open on a
+  per-activity `localStorage` flag and keep the `ReflectPill` in the
+  page chrome for later edits — the athlete who tapped through while
+  exhausted can come back and adjust after they've refueled.
+- **Sharing is a pull action.** The `RuntoonSharePrompt` global
+  bottom-sheet that polled `/v1/runtoon/pending` every 10s and slid up
+  on every recent run was retired April 2026 — the founder's reasoning:
+  "if I want to share, I'll hunt it." Sharing now lives behind a
+  `ShareButton` in the activity-page chrome that opens the
+  `ShareDrawer` (currently hosting the `RuntoonCard` plus a placeholder
+  for future share styles: photo overlays, customizable stats, modern
+  backgrounds, flyovers).
+
+The asymmetry is intentional. Surfaces the *system* needs from the
+athlete (feedback) interrupt; surfaces the athlete uses to broadcast to
+the world (share) wait to be summoned. Future intelligence-input surfaces
+should default to push; future broadcast surfaces should default to pull.
+
+### Wiki Currency (Apr 19, 2026)
+
+Every behavior-changing commit owes a wiki edit in the same commit (or a
+follow-up commit in the same session). The wiki at `docs/wiki/` is the
+operational mental model of the live system; specs are forward-looking;
+vision docs are aspirational. A stale wiki misleads the next agent — the
+founder treats it as a trust failure, same standard as tests. Enforced by
+`.cursor/rules/wiki-currency.mdc` and rule 13 of the Founder Operating
+Contract.
+
 ---
 
 ## Part 6: Read Order for New Agents
