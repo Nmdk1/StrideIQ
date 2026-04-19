@@ -17,11 +17,12 @@ import { useUnits } from '@/lib/context/UnitsContext';
 import { API_CONFIG } from '@/lib/api/config';
 import { useStreamAnalysis, isAnalysisData } from '@/components/activities/rsi/hooks/useStreamAnalysis';
 import { GarminBadge } from '@/components/integrations/GarminBadge';
-import { RuntoonCard } from '@/components/activities/RuntoonCard';
 import { FeedbackModal } from '@/components/activities/feedback/FeedbackModal';
 import { ReflectPill } from '@/components/activities/feedback/ReflectPill';
 import { useFeedbackCompletion } from '@/components/activities/feedback/useFeedbackCompletion';
 import { useFeedbackTrigger } from '@/components/activities/feedback/useFeedbackTrigger';
+import { ShareButton } from '@/components/activities/share/ShareButton';
+import { ShareDrawer } from '@/components/activities/share/ShareDrawer';
 import { CyclingDetail, StrengthDetail, HikingDetail, FlexibilityDetail } from '@/components/activities/cross-training';
 import type { CrossTrainingActivity } from '@/components/activities/cross-training';
 import RouteContext from '@/components/activities/map/RouteContext';
@@ -226,6 +227,9 @@ export default function ActivityDetailPage() {
     isLoading: feedbackCompletion.isLoading,
   });
   const [feedbackModalOpen, setFeedbackModalOpen] = useState(false);
+  // Phase 4: share drawer is *only* opened by an explicit chrome click.
+  // No auto-open, no nag, no global popup.
+  const [shareDrawerOpen, setShareDrawerOpen] = useState(false);
   useEffect(() => {
     if (shouldAutoOpen && !feedbackModalOpen) {
       setFeedbackModalOpen(true);
@@ -462,6 +466,9 @@ export default function ActivityDetailPage() {
                 onClick={() => setFeedbackModalOpen(true)}
               />
             )}
+            {activity.sport_type === 'run' && (
+              <ShareButton onClick={() => setShareDrawerOpen(true)} />
+            )}
           </div>
           <p className="text-slate-500 text-sm pl-8 md:hidden">
             {formatDate(activity.start_time)} at {formatTime(activity.start_time)}
@@ -641,6 +648,15 @@ export default function ActivityDetailPage() {
             setFeedbackModalOpen(false);
             feedbackCompletion.refetch();
           }}
+        />
+
+        {/* Phase 4: share drawer.  Hosts the runtoon (formerly always
+            on the page bottom) plus a placeholder for upcoming share
+            styles.  Opens only when the athlete taps Share. */}
+        <ShareDrawer
+          activityId={activityId}
+          open={shareDrawerOpen}
+          onClose={() => setShareDrawerOpen(false)}
         />
 
         </StreamHoverProvider>
