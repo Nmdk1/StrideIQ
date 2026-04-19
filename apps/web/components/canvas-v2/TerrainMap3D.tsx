@@ -8,12 +8,13 @@
  * line and a position marker that follows the shared scrub state.
  *
  * Spike scope (binding for v0):
- *   - outdoors-v12 style + setTerrain('mapbox-dem', exaggeration 2.0)
- *   - hillshade layer underneath the route so topography reads as form
- *     even on flatter sections
- *   - camera starts pitched (55°) and bearing'd (-20°) directly in the
+ *   - outdoors-v12 style + setTerrain('mapbox-dem', exaggeration 2.5)
+ *   - boost the BUILT-IN hillshade layer's paint properties (don't add
+ *     a second one — outdoors-v12 ships with id 'hillshade' already)
+ *   - camera starts pitched (62°) and bearing'd (-20°) directly in the
  *     constructor — no race between fitBounds and a deferred easeTo
- *   - route as line + glow (no pace coloring yet)
+ *   - emerald route line + glow (high contrast on warm topo, doesn't
+ *     blend with lakes the way blue would)
  *   - position marker bound to useScrubState
  *
  * Token: reads NEXT_PUBLIC_MAPBOX_TOKEN. If absent, renders a clear
@@ -115,7 +116,7 @@ export function TerrainMap3D({ track, bounds }: TerrainMap3DProps) {
           // Pitch/bearing in the constructor (not deferred easeTo) so they
           // commit alongside the initial bounds fit. Previous spike used
           // easeTo on style.load and the camera stayed flat.
-          fitBoundsOptions: { padding: 60, pitch: 55, bearing: -20 },
+          fitBoundsOptions: { padding: 60, pitch: 62, bearing: -20 },
           attributionControl: true,
           cooperativeGestures: false,
         });
@@ -142,37 +143,23 @@ export function TerrainMap3D({ track, bounds }: TerrainMap3DProps) {
           tileSize: 512,
           maxzoom: 14,
         });
-        // 2.0 exaggeration — Bonita has ~550ft of relief over 4.6mi with
-        // 15% pitches; 1.4 was visually flat at this zoom, 2.0 makes the
-        // climbs read as climbs without becoming cartoonish.
-        map.setTerrain({ source: 'mapbox-dem', exaggeration: 2.0 });
+        // 2.5 exaggeration — Bonita has ~550ft of relief over 4.6mi with
+        // 15% pitches and is rolling-hills terrain (not Colorado, but
+        // genuinely hilly for southeast running). 1.4 was flat, 2.0 was
+        // shy, 2.5 makes the climbs actually read at this zoom.
+        map.setTerrain({ source: 'mapbox-dem', exaggeration: 2.5 });
 
-        // Hillshade layer placed BELOW the topmost label layer so place
-        // names and roads stay readable. Gives the topography visible
-        // form even on the flatter sections of the loop.
-        const layers = map.getStyle().layers ?? [];
-        const firstSymbolId = layers.find((l) => l.type === 'symbol')?.id;
-        if (!map.getSource('mapbox-hillshade')) {
-          map.addSource('mapbox-hillshade', {
-            type: 'raster-dem',
-            url: 'mapbox://mapbox.mapbox-terrain-dem-v1',
-            tileSize: 512,
-          });
+        // Outdoors-v12 already ships with a hillshade layer (id 'hillshade'
+        // and source 'mapbox-dem'). Adding our own caused a duplicate-id
+        // collision and silently fell back to the default mild styling —
+        // a chunk of the missing topographic drama. Boost the existing
+        // layer's paint instead of adding a competing one.
+        if (map.getLayer('hillshade')) {
+          map.setPaintProperty('hillshade', 'hillshade-exaggeration', 0.85);
+          map.setPaintProperty('hillshade', 'hillshade-shadow-color', '#0f172a');
+          map.setPaintProperty('hillshade', 'hillshade-highlight-color', '#fef3c7');
+          map.setPaintProperty('hillshade', 'hillshade-accent-color', '#78350f');
         }
-        map.addLayer(
-          {
-            id: 'hillshade',
-            type: 'hillshade',
-            source: 'mapbox-hillshade',
-            paint: {
-              'hillshade-exaggeration': 0.6,
-              'hillshade-shadow-color': '#1f2937',
-              'hillshade-highlight-color': '#fef3c7',
-              'hillshade-accent-color': '#78350f',
-            },
-          },
-          firstSymbolId,
-        );
 
         const coordinates = track.map((p) => [p.lng, p.lat] as [number, number]);
         map.addSource('route', {
@@ -189,10 +176,10 @@ export function TerrainMap3D({ track, bounds }: TerrainMap3DProps) {
           source: 'route',
           layout: { 'line-cap': 'round', 'line-join': 'round' },
           paint: {
-            'line-color': '#fcd34d',
-            'line-width': 9,
-            'line-opacity': 0.25,
-            'line-blur': 4,
+            'line-color': '#10b981',
+            'line-width': 11,
+            'line-opacity': 0.35,
+            'line-blur': 5,
           },
         });
         map.addLayer({
@@ -201,8 +188,8 @@ export function TerrainMap3D({ track, bounds }: TerrainMap3DProps) {
           source: 'route',
           layout: { 'line-cap': 'round', 'line-join': 'round' },
           paint: {
-            'line-color': '#fde68a',
-            'line-width': 3,
+            'line-color': '#34d399',
+            'line-width': 3.5,
           },
         });
 
