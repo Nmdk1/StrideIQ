@@ -6,21 +6,20 @@
  * Before the April 2026 UX cleanup, the activity detail page mounted the
  * "Athlete Intelligence" card in BOTH the Overview panel (above the fold) and
  * the Context panel.  Because ActivityTabs keeps inactive panels mounted in
- * the DOM (apps/web/components/activities/ActivityTabs.tsx lines 20-21,
- * 52-63), both instances existed simultaneously on every page load.  Users
- * saw the same intelligence card twice depending on which tab they opened,
- * which trained them to ignore it.
+ * the DOM (apps/web/components/activities/ActivityTabs.tsx), both instances
+ * existed simultaneously on every page load.  Users saw the same intelligence
+ * card twice depending on which tab they opened, which trained them to
+ * ignore it.
  *
- * UX fix #1 removed the Context-tab mount.  The Overview placement is
- * canonical because it is above the fold and the default tab.
+ * Phase 2 of the canvas-v2 rollout (April 2026) collapsed the page to
+ * 3 tabs: Splits / Coach / Compare.  RunIntelligence now lives at the top of
+ * the Coach panel as the canonical placement (one mount, never duplicated).
  *
  * This test is a structural assertion (static source scan of page.tsx).  A
  * behavioral render test would be stronger but requires mocking auth, units,
  * the React-Query client, and ~15 child components that this page pulls in.
- * When UX fixes #2 and #3 land we will invest in a full render harness for
- * the activity page and this test can be upgraded to a DOM-count assertion.
- * For now the static check catches the specific class of regression --
- * someone pasting a second <RunIntelligence /> back onto the page.
+ * The static check catches the specific class of regression -- someone
+ * pasting a second <RunIntelligence /> back onto the page.
  */
 
 import * as fs from 'fs';
@@ -50,15 +49,15 @@ describe('Activity detail page — single RunIntelligence mount', () => {
     expect(jsxMountMatches).toHaveLength(1);
   });
 
-  test('The single RunIntelligence mount sits in the Overview tab, above the fold', () => {
-    // Rather than brittle-match surrounding JSX, assert ordering: the mount
-    // appears before the `context:` tab-panel key (which starts the Context
-    // tab content).  This guards against someone re-adding it to Context
-    // while removing it from Overview.
+  test('The single RunIntelligence mount sits inside the Coach tab panel', () => {
+    // Phase 2: Coach tab is the canonical home.  Assert the mount appears
+    // after the `coach:` panel key and before the `compare:` panel key.
+    const coachKeyIndex = source.search(/\bcoach:\s*\(/);
+    const compareKeyIndex = source.search(/\bcompare:\s*</);
     const mountIndex = source.search(/<RunIntelligence[\s/>]/);
-    const contextKeyIndex = source.search(/\bcontext:\s*\(/);
-    expect(mountIndex).toBeGreaterThan(-1);
-    expect(contextKeyIndex).toBeGreaterThan(-1);
-    expect(mountIndex).toBeLessThan(contextKeyIndex);
+    expect(coachKeyIndex).toBeGreaterThan(-1);
+    expect(compareKeyIndex).toBeGreaterThan(coachKeyIndex);
+    expect(mountIndex).toBeGreaterThan(coachKeyIndex);
+    expect(mountIndex).toBeLessThan(compareKeyIndex);
   });
 });

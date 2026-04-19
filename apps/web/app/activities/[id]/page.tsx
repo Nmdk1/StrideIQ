@@ -211,7 +211,7 @@ export default function ActivityDetailPage() {
   // Must be called before any conditional returns (React hooks rules)
   const streamAnalysis = useStreamAnalysis(activityId);
   const analysisData = isAnalysisData(streamAnalysis.data) ? streamAnalysis.data : null;
-  const [activeTab, setActiveTab] = useState<ActivityTabId>('overview');
+  const [activeTab, setActiveTab] = useState<ActivityTabId>('splits');
 
   const splitTableRowRefs = useRef<Map<number, HTMLTableRowElement>>(new Map());
 
@@ -542,82 +542,37 @@ export default function ActivityDetailPage() {
           activeTab={activeTab}
           onTabChange={setActiveTab}
           panels={{
-            overview: (
-              <>
-                {/* Phase 1: RunShapeCanvas + 2D RouteContext map removed —
-                    Canvas v2 hero (rendered above tabs) replaces both. */}
-                <div className="mb-5">
-                  <RunIntelligence activityId={activityId} />
-                </div>
-
-                {splits && splits.length > 0 && (
-                  <div className="mb-5">
-                    <ActivitySplitsTabPanel
-                      activityId={activityId}
-                      gpsTrack={null}
-                      startCoords={activity.start_coords}
-                      sportType={activity.sport_type || 'run'}
-                      startTime={activity.start_time}
-                      distanceM={activity.distance_m}
-                      durationS={activity.moving_time_s || activity.elapsed_time_s}
-                      temperatureF={activity.temperature_f}
-                      weatherCondition={activity.weather_condition}
-                      humidityPct={activity.humidity_pct}
-                      heatAdjustmentPct={activity.heat_adjustment_pct}
-                      splits={splits}
-                      intervalSummary={intervalSummary}
-                      provider={activity.provider}
-                      deviceName={activity.device_name}
-                      stream={analysisData?.stream}
-                      splitTableRowRefs={splitTableRowRefs}
-                      showMap={false}
-                    />
-                  </div>
-                )}
-
-                <div className="mb-2">
-                  <RuntoonCard activityId={activityId} />
-                </div>
-              </>
-            ),
             splits: (
-              <>
-                {/* Phase 1: in-tab RunShapeCanvas removed — Canvas v2 hero
-                    above the tabs is the single source of run-shape truth. */}
-                <ActivitySplitsTabPanel
-                  activityId={activityId}
-                  gpsTrack={activity.gps_track}
-                  startCoords={activity.start_coords}
-                  sportType={activity.sport_type || 'run'}
-                  startTime={activity.start_time}
-                  distanceM={activity.distance_m}
-                  durationS={activity.moving_time_s || activity.elapsed_time_s}
-                  temperatureF={activity.temperature_f}
-                  weatherCondition={activity.weather_condition}
-                  humidityPct={activity.humidity_pct}
-                  heatAdjustmentPct={activity.heat_adjustment_pct}
-                  splits={splits}
-                  intervalSummary={intervalSummary}
-                  provider={activity.provider}
-                  deviceName={activity.device_name}
-                  stream={analysisData?.stream}
-                  splitTableRowRefs={splitTableRowRefs}
-                  showMap={false}
-                />
-              </>
-            ),
-            analysis: (
-              <AnalysisTabPanel
-                drift={analysisData?.drift ?? null}
-                planComparison={analysisData?.plan_comparison ?? null}
-                stream={analysisData?.stream ?? null}
-                effortIntensity={analysisData?.effort_intensity ?? null}
-                movingTimeS={activity.moving_time_s}
+              <ActivitySplitsTabPanel
+                activityId={activityId}
+                gpsTrack={activity.gps_track}
+                startCoords={activity.start_coords}
+                sportType={activity.sport_type || 'run'}
+                startTime={activity.start_time}
+                distanceM={activity.distance_m}
+                durationS={activity.moving_time_s || activity.elapsed_time_s}
+                temperatureF={activity.temperature_f}
+                weatherCondition={activity.weather_condition}
+                humidityPct={activity.humidity_pct}
+                heatAdjustmentPct={activity.heat_adjustment_pct}
+                splits={splits}
+                intervalSummary={intervalSummary}
+                provider={activity.provider}
+                deviceName={activity.device_name}
+                stream={analysisData?.stream}
+                splitTableRowRefs={splitTableRowRefs}
+                showMap={false}
               />
             ),
-            compare: <ComparablesPanel activityId={activityId} />,
-            context: (
-              <div className="space-y-5">
+            // Coach absorbs the old Overview intelligence card, the Analysis
+            // tab, and the Context tab.  Order: brief first (what the coach
+            // says), then findings (what the engine found), then context
+            // (what was happening before the run), then deep analysis charts.
+            coach: (
+              <div className="space-y-6">
+                <RunIntelligence activityId={activityId} />
+                <FindingsCards findings={findings} />
+                <WhyThisRun activityId={activityId} />
                 <GoingInCard
                   preRecoveryHrv={activity.pre_recovery_hrv}
                   preOvernightHrv={activity.pre_overnight_hrv}
@@ -625,8 +580,13 @@ export default function ActivityDetailPage() {
                   preSleepH={activity.pre_sleep_h}
                   preSleepScore={activity.pre_sleep_score}
                 />
-                <WhyThisRun activityId={activityId} />
-                <FindingsCards findings={findings} />
+                <AnalysisTabPanel
+                  drift={analysisData?.drift ?? null}
+                  planComparison={analysisData?.plan_comparison ?? null}
+                  stream={analysisData?.stream ?? null}
+                  effortIntensity={analysisData?.effort_intensity ?? null}
+                  movingTimeS={activity.moving_time_s}
+                />
                 {activity.narrative && (
                   <div className="px-5 py-4 bg-slate-800/30 border border-slate-700/30 rounded-lg">
                     <p className="text-sm text-slate-400 italic leading-relaxed">
@@ -636,17 +596,7 @@ export default function ActivityDetailPage() {
                 )}
               </div>
             ),
-            feedback: (
-              <div className="space-y-5">
-                <ReflectionPrompt activityId={activityId} />
-                <PerceptionPrompt
-                  activityId={activityId}
-                  workoutType={activity.workout_type ?? undefined}
-                  expectedRpeRange={activity.expected_rpe_range ?? undefined}
-                />
-                <WorkoutTypeSelector activityId={activityId} compact />
-              </div>
-            ),
+            compare: <ComparablesPanel activityId={activityId} />,
           }}
         />
 

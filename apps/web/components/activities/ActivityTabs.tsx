@@ -2,31 +2,22 @@
 
 import React from 'react';
 
-export type ActivityTabId =
-  | 'overview'
-  | 'splits'
-  | 'analysis'
-  | 'compare'
-  | 'context'
-  | 'feedback';
+// Phase 2: collapsed from 6 tabs (overview/splits/analysis/compare/context/feedback)
+// to 3.  Splits is the default — daily users land on the data they care about
+// most.  Coach absorbs the old Overview intelligence card, the Analysis tab
+// (drift / plan-comparison / effort intensity), and the Context tab (Going-In,
+// Why This Run, Findings, narrative).  Compare keeps the existing comparables
+// panel.  Feedback is no longer a tab — it's a required modal (Phase 3) that
+// auto-opens until the athlete has completed reflection + RPE + workout type.
+export type ActivityTabId = 'splits' | 'coach' | 'compare';
 
 const TAB_LABELS: Record<ActivityTabId, string> = {
-  overview: 'Overview',
   splits: 'Splits',
-  analysis: 'Analysis',
+  coach: 'Coach',
   compare: 'Compare',
-  context: 'Context',
-  feedback: 'Feedback',
 };
 
-const ORDER: ActivityTabId[] = [
-  'overview',
-  'splits',
-  'analysis',
-  'compare',
-  'context',
-  'feedback',
-];
+const ORDER: ActivityTabId[] = ['splits', 'coach', 'compare'];
 
 export interface ActivityTabsProps {
   activeTab: ActivityTabId;
