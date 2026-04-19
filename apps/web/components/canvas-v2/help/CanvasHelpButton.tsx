@@ -75,7 +75,7 @@ export function CanvasHelpButton({ onReplayHint }: CanvasHelpButtonProps) {
 
           <Section title="Charts">
             <li>Hover anywhere to scrub through the run.</li>
-            <li>The cards above the map fill with that moment's values.</li>
+            <li>The cards above the map fill with that moment&apos;s values.</li>
           </Section>
 
           <Section title="Map">
