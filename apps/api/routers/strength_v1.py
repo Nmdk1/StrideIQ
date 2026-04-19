@@ -583,3 +583,84 @@ def search_strength_exercises(
         )
 
     return ExercisePickerResponse(query=q, results=matched, recent=recent)
+
+
+# ---------------------------------------------------------------------
+# Garmin-reconciliation nudges (read-only)
+# ---------------------------------------------------------------------
+
+
+@router.get("/nudges")
+def get_strength_nudges(
+    current_user: Athlete = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Return Garmin strength activities in the last 7 days that look
+    incomplete, so the home card can offer to fill in details.
+
+    A session is "incomplete" when ALL of:
+      - sport == 'strength'
+      - source != 'manual'   (came from Garmin)
+      - manually_augmented == False on every active set
+      - active set count < 3 (sparse — see SPARSE_SET_THRESHOLD)
+
+    The card is dismissible client-side (localStorage). We do not
+    persist dismissals server-side in v1; the next sweep will resurface
+    a session only if it is still sparse.
+    """
+    _require_strength_v1(current_user.id, db)
+
+    from datetime import datetime, timedelta, timezone as tz
+    from sqlalchemy import func
+
+    cutoff = datetime.now(tz.utc) - timedelta(days=7)
+
+    set_count_sq = (
+        db.query(
+            StrengthExerciseSet.activity_id.label("aid"),
+            func.count(StrengthExerciseSet.id).label("n"),
+            func.bool_or(StrengthExerciseSet.manually_augmented).label("touched"),
+        )
+        .filter(
+            StrengthExerciseSet.athlete_id == current_user.id,
+            StrengthExerciseSet.superseded_at.is_(None),
+            StrengthExerciseSet.set_type == "active",
+        )
+        .group_by(StrengthExerciseSet.activity_id)
+        .subquery()
+    )
+
+    rows = (
+        db.query(Activity, set_count_sq.c.n, set_count_sq.c.touched)
+        .outerjoin(set_count_sq, set_count_sq.c.aid == Activity.id)
+        .filter(
+            Activity.athlete_id == current_user.id,
+            Activity.sport == "strength",
+            Activity.source != "manual",
+            Activity.start_time >= cutoff,
+        )
+        .order_by(Activity.start_time.desc())
+        .all()
+    )
+
+    nudges: List[dict] = []
+    for activity, n, touched in rows:
+        if touched:
+            continue
+        n_int = int(n or 0)
+        if n_int >= 3:
+            continue
+        nudges.append(
+            {
+                "activity_id": str(activity.id),
+                "start_time": activity.start_time.isoformat()
+                if activity.start_time
+                else None,
+                "name": activity.name,
+                "duration_s": activity.duration_s,
+                "current_set_count": n_int,
+                "source": activity.source,
+            }
+        )
+
+    return {"count": len(nudges), "nudges": nudges}

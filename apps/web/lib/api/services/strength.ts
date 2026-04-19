@@ -132,6 +132,20 @@ export interface ExercisePickerResponse {
   recent: ExercisePickerEntry[];
 }
 
+export interface StrengthNudge {
+  activity_id: string;
+  start_time: string | null;
+  name: string | null;
+  duration_s: number | null;
+  current_set_count: number;
+  source: string;
+}
+
+export interface StrengthNudgesResponse {
+  count: number;
+  nudges: StrengthNudge[];
+}
+
 export const strengthService = {
   async listSessions(params?: {
     limit?: number;
@@ -197,5 +211,9 @@ export const strengthService = {
     return apiClient.get<ExercisePickerResponse>(
       `/v1/strength/exercises?${qs}`,
     );
+  },
+
+  async getNudges(): Promise<StrengthNudgesResponse> {
+    return apiClient.get<StrengthNudgesResponse>('/v1/strength/nudges');
   },
 };

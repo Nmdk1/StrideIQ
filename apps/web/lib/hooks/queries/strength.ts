@@ -11,6 +11,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   strengthService,
   type ExercisePickerResponse,
+  type StrengthNudgesResponse,
   type StrengthSessionCreate,
   type StrengthSessionListItem,
   type StrengthSessionResponse,
@@ -22,6 +23,7 @@ export const strengthKeys = {
   sessions: () => [...strengthKeys.all, 'sessions'] as const,
   session: (id: string) => [...strengthKeys.all, 'session', id] as const,
   exercises: (q?: string) => [...strengthKeys.all, 'exercises', q ?? ''] as const,
+  nudges: () => [...strengthKeys.all, 'nudges'] as const,
 } as const;
 
 function isNotFound(err: unknown): boolean {
@@ -93,5 +95,14 @@ export function useArchiveStrengthSession() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: strengthKeys.sessions() });
     },
+  });
+}
+
+export function useStrengthNudges() {
+  return useQuery<StrengthNudgesResponse>({
+    queryKey: strengthKeys.nudges(),
+    queryFn: () => strengthService.getNudges(),
+    retry: (failureCount, error) => !isNotFound(error) && failureCount < 1,
+    staleTime: 5 * 60 * 1000,
   });
 }
