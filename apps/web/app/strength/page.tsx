@@ -78,12 +78,26 @@ function StrengthIndexInner() {
         >
           + Log a strength session
         </button>
-        <Link
-          href="/strength/symptoms"
-          className="block w-full py-3 rounded-md border border-slate-700 text-slate-200 text-center text-sm hover:border-slate-500"
-        >
-          Niggles, aches & injuries
-        </Link>
+        <div className="grid grid-cols-3 gap-2">
+          <Link
+            href="/strength/routines"
+            className="block py-2 rounded-md border border-slate-700 text-slate-200 text-center text-xs hover:border-slate-500"
+          >
+            Routines
+          </Link>
+          <Link
+            href="/strength/goals"
+            className="block py-2 rounded-md border border-slate-700 text-slate-200 text-center text-xs hover:border-slate-500"
+          >
+            Goals
+          </Link>
+          <Link
+            href="/strength/symptoms"
+            className="block py-2 rounded-md border border-slate-700 text-slate-200 text-center text-xs hover:border-slate-500"
+          >
+            Niggles & aches
+          </Link>
+        </div>
       </section>
 
       <section className="px-4 pt-8">

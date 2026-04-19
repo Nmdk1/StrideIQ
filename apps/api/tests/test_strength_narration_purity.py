@@ -12,8 +12,10 @@ any of these modules, this test fails before it ships.
 Scope (intentional):
   - apps/api/routers/strength_v1.py
   - apps/api/routers/symptoms_v1.py
+  - apps/api/routers/routines_goals_v1.py
   - apps/api/schemas_strength_v1.py
   - apps/api/schemas_symptom_v1.py
+  - apps/api/schemas_routine_goal_v1.py
   - apps/api/models/strength_v1.py
   - apps/api/services/strength_taxonomy.py
   - apps/api/services/strength_parser.py
@@ -46,8 +48,10 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 SURFACE_FILES: List[Path] = [
     REPO_ROOT / "routers" / "strength_v1.py",
     REPO_ROOT / "routers" / "symptoms_v1.py",
+    REPO_ROOT / "routers" / "routines_goals_v1.py",
     REPO_ROOT / "schemas_strength_v1.py",
     REPO_ROOT / "schemas_symptom_v1.py",
+    REPO_ROOT / "schemas_routine_goal_v1.py",
     REPO_ROOT / "models" / "strength_v1.py",
     REPO_ROOT / "services" / "strength_taxonomy.py",
     REPO_ROOT / "services" / "strength_parser.py",
