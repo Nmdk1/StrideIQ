@@ -170,12 +170,20 @@ Sport-specific detail pages branch on `activity.sport`:
 - **Run map = real 3D Mapbox, not extruded 2D ribbon:** The earlier abstract-terrain prototype was rejected ("gold blob of nothing"). Real terrain with the route as a glowing path through it is the agreed visual vocabulary for run activities. Cycling/hiking can stay on flat 2D Leaflet for now.
 - **Tukey's fence over percentile clip for pace charts:** IQR-based outlier detection (k=3.0) preserves real pace variation while excluding noise spikes; percentile clipping flattened pace artificially.
 - **Share is a pull action, feedback is a push action:** The unskippable `FeedbackModal` auto-opens once per recent activity (RPE / reflection / workout-type confirmation are required for downstream intelligence). Sharing is hidden behind the Share button — never auto-popped.
+- **Real measured metrics only:** Garmin proprietary scores (training effect, body battery impact, performance condition) are not ingested. The FIT run pipeline shipped Apr 19, 2026 (`fit_run_001`) brings in measured fields the watch + sensor combo records: power, stride length, ground contact (time + L/R balance), vertical oscillation, vertical ratio, total descent, true moving time. Garmin self-eval (`garmin_feel`, `garmin_perceived_effort`) is captured as a low-confidence fallback only — `services/effort_resolver.py` enforces the rule that the athlete's own RPE always wins.
+
+### FIT-derived metrics on the activity page
+
+Surfaced via `RunDetailsGrid` (self-suppressing card grid below the hero) and the `SplitsTable` "Columns" toggle. Each cell suppresses individually when its metric is null; the whole `RunDetailsGrid` suppresses when no card has data, keeping the page clean for older Strava-only activities and watch-only setups (no HRM-Pro / no Stryd / no Forerunner Pro).
+
+`GarminEffortFallback` renders the watch's self-eval just above the Coach tab content **only** when the athlete hasn't reflected via the FeedbackModal. Once the athlete logs their own RPE, the fallback disappears entirely.
 
 ## Known Issues
 
-- **Exercise set data sparse:** FIT file pipeline is new (Apr 6, 2026); historical activities have no exercise sets
-- **Runtoon scene relevance:** Scene generation prompt sometimes produces unrelated scenes; needs stronger run-context anchoring
-- **Map performance with many points:** Large activities (30+ miles) may need more aggressive downsampling
+- **Exercise set data sparse:** FIT file pipeline for strength is from Apr 6, 2026; historical strength activities have no exercise sets.
+- **Run FIT data sparse:** Run/walk/hike FIT pipeline is from Apr 19, 2026 (`fit_run_001`); historical run activities have null power / running dynamics / true moving time. Going forward, every new run with a FIT file gets the full set.
+- **Runtoon scene relevance:** Scene generation prompt sometimes produces unrelated scenes; needs stronger run-context anchoring.
+- **Map performance with many points:** Large activities (30+ miles) may need more aggressive downsampling.
 
 ## Sources
 

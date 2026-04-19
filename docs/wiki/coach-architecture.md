@@ -60,7 +60,16 @@ The system prompt assembled in `services/coaching/core.py` includes:
 
 The coach has access to ~26 tools defined in the `services/coach_tools/` package (split from the former 4.9K-line `coach_tools.py` god file into `brief.py`, `insights.py`, `activity.py`, `wellness.py`, `performance.py`, `plan.py`, `profile.py`, `load.py`, `_utils.py`):
 
-- `get_recent_runs()` — last N days of run activities
+- `get_recent_runs()` — last N days of run activities. As of `fit_run_001`
+  every row also carries the FIT-derived metrics (`avg_power_w`,
+  `max_power_w`, `avg_stride_length_m`, `avg_ground_contact_ms`,
+  `avg_ground_contact_balance_pct`, `avg_vertical_oscillation_cm`,
+  `avg_vertical_ratio_pct`, `total_descent_m`, `moving_time_s`) when
+  present, plus a resolved `perceived_effort` envelope from
+  `services/effort_resolver.py` with `{rpe, source, feel_label, confidence}`.
+  The resolver enforces the founder rule: `ActivityFeedback.perceived_effort`
+  wins outright (`confidence: high`), Garmin self-eval is a fallback
+  (`confidence: low`), never blended.
 - `get_wellness_trends()` — 28-day check-in trends
 - `get_pb_patterns()` — personal best analysis
 - `build_athlete_brief()` — comprehensive context (includes Nutrition Snapshot: today's totals, goal, day tier, targets)
@@ -86,6 +95,7 @@ The coach has access to ~26 tools defined in the `services/coach_tools/` package
 - **Date rendering fix** (Apr 7, 2026): All 7 date-emitting code paths now include pre-computed relative labels. `_relative_date()` precision extended to day-level through 30 days.
 - **Athlete calibration** (Apr 6, 2026): Coach prompt no longer defaults to conservatism regardless of athlete experience.
 - **Nutrition context** (Apr 9, 2026): `build_athlete_brief` now includes a Nutrition Snapshot section. Two new tools (`get_nutrition_correlations`, `get_nutrition_log`) let the coach query nutrition data on demand.
+- **FIT metrics + effort resolver in coach context** (Apr 19, 2026 — `fit_run_001` Phase 3): Every recent run row now carries power, running dynamics, true moving time, and a resolved perceived-effort envelope with provenance. The new `services/effort_resolver.py` is the single source of truth — athlete-provided RPE always wins over Garmin self-eval, never blended.
 
 ## Known Issues
 

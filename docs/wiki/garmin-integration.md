@@ -33,16 +33,41 @@ All webhook endpoints are in `routers/garmin_webhooks.py`. Authentication via `s
    - Shape extraction
    - Wellness stamping
 
-### FIT File Pipeline (Shipped Apr 6, 2026)
+### FIT File Pipeline
 
-For strength activities, Garmin provides exercise set data in FIT files:
+The activity-files webhook delivers a FIT file for every activity. We parse
+it twice: once for strength sets, once for run sessions + laps.
 
 1. `POST /v1/garmin/webhook/activity-files` receives PING notification
-2. `process_garmin_activity_file_task` in `tasks/garmin_webhook_tasks.py` dispatches
+2. `process_garmin_activity_file_task` in `tasks/garmin_webhook_tasks.py` dispatches by sport
 3. Downloads FIT file from Garmin API
-4. `services/fit_parser.py` — `extract_exercise_sets_from_fit()` parses FIT bytes using `fitparse` library
-5. Normalizes data for `services/strength_parser.py` — `parse_exercise_sets()`
-6. Saves as `StrengthExerciseSet` rows linked to the `Activity`
+
+**Strength sport (shipped Apr 6, 2026):**
+- `services/fit_parser.py` — `extract_exercise_sets_from_fit()` parses FIT bytes using `fitparse`
+- Normalizes via `services/strength_parser.py` — `parse_exercise_sets()`
+- Saves as `StrengthExerciseSet` rows linked to the `Activity`
+
+**Run / walk / hike / cycle (shipped Apr 19, 2026 — `fit_run_001`):**
+- `services/sync/fit_run_parser.py` extracts session + lap messages
+- `services/sync/fit_run_apply.py` writes activity-level FIT metrics
+  (`avg_power_w`, `max_power_w`, `total_descent_m`, `moving_time_s`,
+  `avg_stride_length_m`, `avg_ground_contact_ms`,
+  `avg_ground_contact_balance_pct`, `avg_vertical_oscillation_cm`,
+  `avg_vertical_ratio_pct`, `garmin_feel`, `garmin_perceived_effort`)
+  and the matching per-lap fields on `ActivitySplit` (plus an `extras`
+  JSONB bag for long-tail metrics like normalized power, kcal, lap trigger).
+- All fields nullable — only populated when the athlete's sensor records
+  the metric (HRM-Pro family for running dynamics, Stryd / FR9xx native
+  for power).
+- Garmin proprietary scores (training effect, body battery impact,
+  performance condition) are **not** ingested per the founder's "real
+  measured metrics only" rule.
+
+**Effort resolver:** `services/effort_resolver.py` is the single source of
+truth for "what did this run feel like?". `ActivityFeedback.perceived_effort`
+(athlete-provided) wins outright with `confidence: high`. `garmin_feel` /
+`garmin_perceived_effort` (watch self-eval) is a `confidence: low` fallback
+only used when the athlete has not reflected. Never blended.
 
 **Dead code removed:** `fetch_garmin_exercise_sets_task` was deleted — do NOT recreate it.
 
@@ -90,11 +115,15 @@ Cross-training activities flow through the same pipeline but skip run-specific p
 ## Known Issues
 
 - **Exercise set data empty for existing activities:** The FIT file webhook was built Apr 6, 2026. Activities synced before that date have no exercise set data. Brian Levesque's strength activities show "Exercise sets: (none)" because the webhook wasn't live during those syncs.
+- **Run FIT data empty for activities synced before Apr 19, 2026:** Same shape as the strength gap. Going forward, every new run that ships a FIT file picks up power / running dynamics / true moving time. Historical activities only get FIT enrichment if Garmin re-pushes the file.
+- **`activityFiles` backfill endpoint returns 404:** `request_activity_files_backfill` posts to `/wellness-api/rest/backfill/activityFiles` but Garmin returns 404 — the path appears wrong (or the endpoint is not exposed for this scope). Live webhook pushes still work; only the on-demand historical backfill is broken. Tracked for future fix in `services/sync/garmin_backfill.py`.
 - **Garmin rate limits:** Not currently an issue but could become one at scale
 
 ## What's Next
 
+- Fix `activityFiles` backfill path so we can pull historical FIT files
 - Exercise set backfill for historical strength activities (requires re-downloading FIT files)
+- Run-FIT backfill for historical run/walk/hike activities (depends on the path fix above)
 - Swimming-specific data parsing (lap/stroke data)
 
 ## Sources

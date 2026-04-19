@@ -1,6 +1,6 @@
 # StrideIQ Internal Wiki
 
-**Last updated:** April 19, 2026
+**Last updated:** April 19, 2026 (Garmin FIT run pipeline + effort resolver shipped)
 
 This is the single onboarding document. Read this instead of the 12-document read order.
 

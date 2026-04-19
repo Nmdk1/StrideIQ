@@ -1,5 +1,35 @@
 # Wiki Log
 
+## [2026-04-19] garmin-fit-run-pipeline | `fit_run_001` — full FIT ingest for run/walk/hike/cycle, activity-page surfacing, coach context with effort attribution
+
+A three-phase ingest-to-coach pipeline that closes the gap between "what Garmin records" and "what StrideIQ uses." Triggered by the founder showing a side-by-side of our activity page vs. the Garmin app: missing power, stride length, ground contact, vertical oscillation, true moving time, and total descent.
+
+**Founder rules applied (binding):**
+- "Bring in everything real" — measured fields only. Garmin proprietary scores (training effect, body battery, performance condition) explicitly **not** ingested. Body battery called out by name as "a fantasy."
+- "Stride length and inter-run variation is crucial" — surfaced as a first-class card and per-lap column.
+- Athlete subjective scores take **full weight**; Garmin self-eval (`garmin_feel`, `garmin_perceived_effort`) is a low-confidence fallback only. Never blended.
+
+**Phase 1 — Ingest (`apps/api/services/sync/fit_run_parser.py`, `fit_run_apply.py`, `tasks/garmin_webhook_tasks.py`, migration `fit_run_001`):**
+- `fit_run_parser.py` reads FIT `session` + `lap` messages with `fitparse`, extracts every measured run field a Garmin watch + sensor combo records, and decodes the FIT SDK 5-point feel enum (`very_strong` … `very_weak`) without losing nuance.
+- `fit_run_apply.py` writes activity-level fields (`avg_power_w`, `max_power_w`, `total_descent_m`, `moving_time_s`, `avg_stride_length_m`, `avg_ground_contact_ms`, `avg_ground_contact_balance_pct`, `avg_vertical_oscillation_cm`, `avg_vertical_ratio_pct`, `garmin_feel`, `garmin_perceived_effort`) and matching per-lap fields on `ActivitySplit`, plus an `extras` JSONB bag for long-tail metrics (normalized power, kcal, lap trigger, max cadence).
+- `process_garmin_activity_file_task` dispatches by sport: strength → existing exercise-set parser, run/walk/hike/cycle → new run parser. Migration `fit_run_001` adds the columns + extras JSONB and is now the head.
+- Cleanup: `garmin_body_battery_end` removed from `LREC_INPUT_NAMES` / `INPUT_TO_LIMITER_TYPE` / `COACHING_LANGUAGE` per the "real measured metrics only" rule. CI source-contract tests updated; `garmin_webhook_tasks.py` docstring rephrased to drop raw Garmin field names (those translations live in `garmin_adapter.py`).
+
+**Phase 2 — Surface in API + activity page (`apps/api/routers/activities.py`, `apps/web/components/activities/`):**
+- `GET /v1/activities/{id}` extended with all FIT-derived activity-level fields and the Garmin self-eval pair. `moving_time_s` now prefers the FIT-derived value over `duration_s` (true moving time excludes auto-pause).
+- `RunDetailsGrid` (new) — self-suppressing card grid below `CanvasV2`. Each card hides individually when null; the whole grid hides when no card has data, keeping the page clean for older Strava-only activities.
+- `SplitsTable` — new "Columns" toggle exposes the new per-lap fields (Max HR, Ascent, Descent, Power, Stride, GCT, Vert Osc, Vert Ratio). Toggle state persists in `localStorage`. Columns only appear in the picker if at least one split has data; cells render `—` for missing values.
+- `GarminEffortFallback` (new) — renders the watch's perceived-effort + feel above the Coach tab content **only** when no `ActivityFeedback.perceived_effort` exists for the activity. Once the athlete reflects, this card disappears entirely.
+
+**Phase 3 — Coach + LLM context (`apps/api/services/effort_resolver.py`, `apps/api/services/coach_tools/activity.py`):**
+- `services/effort_resolver.py` (new) is the single source of truth for "what did this run feel like?". Resolves to `{rpe, source, feel_label, confidence}` with order: `ActivityFeedback.perceived_effort` (`high`) → `garmin_perceived_effort` (`low`) → `garmin_feel` enum bucketed to RPE (`low`) → empty (`none`). Pure function; no DB I/O. 12-case test suite covers precedence, fallback, unknown labels, invalid ranges.
+- `get_recent_runs()` bulk-loads `ActivityFeedback` rows once (no N+1) and emits the FIT-derived metrics + the resolved effort envelope on every run row. The LLM now receives every measured field plus knows whether the RPE it sees came from the athlete or from the watch.
+- 3-case snapshot test (`test_coach_tools_fit_metrics.py`) proves the envelope shape end-to-end: athlete RPE wins over Garmin, Garmin fills in when feedback absent, all-nulls render cleanly when nothing is recorded.
+
+**Production deploy:** All three phases shipped in three commits (`21b7210`, `2e292b4`, `b0ff510`), each green in CI. Docker bind-mount cleanup needed `docker rm -f strideiq_beat` after the recreate to clear a stale container name. Alembic at `fit_run_001 (head)` on prod. Smoke check confirms `/v1/activities/{id}` returns the new fields (`total_descent_m: 482.0`, `moving_time_s: 7529` on the founder's latest run; FIT-only fields still null pending the next webhook push).
+
+**Known gap (pre-existing):** `request_activity_files_backfill` posts to `/wellness-api/rest/backfill/activityFiles` and Garmin returns 404 — this endpoint either has the wrong path or isn't exposed for our scope. Live webhook ingest of new activities works; only on-demand historical FIT backfill is broken. Tracked in `garmin-integration.md` Known Issues.
+
 ## [2026-04-19] activity-page-rebuild-phases-1-4 + backend-green | CanvasV2 hero, 3-tab restructure, unskippable FeedbackModal, ShareDrawer, RuntoonSharePrompt retired, 39 backend failures fixed
 
 A four-phase rebuild of the run-activity page shipped end-to-end in one session, plus a sweep that resolved 39 pre-existing backend test failures discovered when the backend-test job ran after the frontend changes pushed.
