@@ -30,7 +30,7 @@ const CHART_PADDING_TOP = 6;
 const CHART_PADDING_BOTTOM = 6;
 const PLOT_HEIGHT = CHART_HEIGHT - CHART_PADDING_TOP - CHART_PADDING_BOTTOM;
 
-interface SeriesPoint {
+export interface SeriesPoint {
   t: number;
   v: number;
 }
@@ -46,11 +46,51 @@ function buildSeries(track: TrackPoint[], pick: (p: TrackPoint) => number | null
   return out;
 }
 
+/**
+ * Percentile-based domain. Returns the value at the given quantile (0..1) of
+ * a numerically-sorted copy of the series.
+ *
+ * Why: raw stream pace = 1000/velocity. A momentary GPS skip producing
+ * 0.1 m/s yields 10,000 s/km, collapsing every real pace value into a
+ * flat band at one edge of the chart. Same risk for HR sensor dropouts
+ * and barometric altitude glitches. Clipping the y-axis domain to the
+ * 2nd/98th percentile makes 96% of the data fill the band properly;
+ * outliers still pass through but get drawn clamped to the edge.
+ */
+export function quantile(sortedAsc: number[], q: number): number {
+  if (sortedAsc.length === 0) return 0;
+  if (sortedAsc.length === 1) return sortedAsc[0];
+  const pos = (sortedAsc.length - 1) * q;
+  const lo = Math.floor(pos);
+  const hi = Math.ceil(pos);
+  if (lo === hi) return sortedAsc[lo];
+  return sortedAsc[lo] + (sortedAsc[hi] - sortedAsc[lo]) * (pos - lo);
+}
+
+export function robustDomain(series: SeriesPoint[]): { vMin: number; vMax: number } {
+  if (series.length === 0) return { vMin: 0, vMax: 1 };
+  const sorted = series.map((p) => p.v).sort((a, b) => a - b);
+  let vMin = quantile(sorted, 0.02);
+  let vMax = quantile(sorted, 0.98);
+  if (!Number.isFinite(vMin) || !Number.isFinite(vMax) || vMin === vMax) {
+    vMin = sorted[0];
+    vMax = sorted[sorted.length - 1];
+    if (vMin === vMax) {
+      vMin -= 1;
+      vMax += 1;
+    }
+  }
+  return { vMin, vMax };
+}
+
 function buildSmoothPath(series: SeriesPoint[], width: number, vMin: number, vMax: number, invertY: boolean): string {
   if (series.length < 2) return '';
   const range = vMax - vMin || 1;
   const yFor = (v: number) => {
-    const norm = (v - vMin) / range;
+    // Clamp to [vMin, vMax] so percentile-clipped outliers draw at the
+    // edge of the band instead of blowing out of the SVG box.
+    const clamped = v < vMin ? vMin : v > vMax ? vMax : v;
+    const norm = (clamped - vMin) / range;
     // SVG y is top-down: y=0 is the top of the chart.
     // Default (invertY=false): higher data value → drawn higher on screen
     //   (HR, Elevation: peaks read as peaks).
@@ -102,22 +142,13 @@ interface BandProps {
 
 function Band({ title, unit, series, width, colorClass, invertY = false, formatValue, scrubT }: BandProps) {
   const gradientId = useId();
-  const { vMin, vMax, line, area, scrubValue } = useMemo(() => {
+  const { line, area, scrubValue } = useMemo(() => {
     if (series.length === 0) {
-      return { vMin: 0, vMax: 1, line: '', area: '', scrubValue: null as number | null };
+      return { line: '', area: '', scrubValue: null as number | null };
     }
-    let lo = Infinity;
-    let hi = -Infinity;
-    for (const p of series) {
-      if (p.v < lo) lo = p.v;
-      if (p.v > hi) hi = p.v;
-    }
-    if (lo === hi) {
-      lo -= 1;
-      hi += 1;
-    }
+    const { vMin: lo, vMax: hi } = robustDomain(series);
     let scrubV: number | null = null;
-    if (scrubT !== null && series.length > 0) {
+    if (scrubT !== null) {
       // Binary search for nearest t.
       let lo2 = 0;
       let hi2 = series.length - 1;
@@ -129,8 +160,6 @@ function Band({ title, unit, series, width, colorClass, invertY = false, formatV
       scrubV = series[lo2].v;
     }
     return {
-      vMin: lo,
-      vMax: hi,
       line: buildSmoothPath(series, width, lo, hi, invertY),
       area: buildAreaPath(series, width, lo, hi, invertY),
       scrubValue: scrubV,

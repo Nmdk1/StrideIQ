@@ -132,6 +132,19 @@ export function TerrainMap3D({ track, bounds }: TerrainMap3DProps) {
 
       mapRef.current = map;
 
+      // Compass + pitch indicator. Click compass to reset bearing/pitch
+      // to north-flat. Drag the compass (or right-click+drag the map,
+      // or two-finger drag on touch) to rotate. Mapbox's built-in
+      // dragRotate is on by default.
+      map.addControl(
+        new mapboxgl.NavigationControl({
+          showCompass: true,
+          showZoom: true,
+          visualizePitch: true,
+        }),
+        'top-right',
+      );
+
       map.on('error', (ev) => {
         const msg = ev?.error?.message ?? String(ev?.error ?? 'unknown error');
         // eslint-disable-next-line no-console
@@ -252,7 +265,9 @@ export function TerrainMap3D({ track, bounds }: TerrainMap3DProps) {
       <div className="flex items-center justify-between px-4 py-2 text-xs uppercase tracking-wider text-slate-500 border-b border-slate-800/60">
         <span>Terrain · 3D Map · spike</span>
         <span className={mountError ? 'text-rose-400' : 'text-amber-500/70'}>
-          {mountError ? `error: ${mountError.slice(0, 80)}` : 'Mapbox · drag to orbit'}
+          {mountError
+            ? `error: ${mountError.slice(0, 80)}`
+            : 'Mapbox · right-click drag to rotate · click compass to reset'}
         </span>
       </div>
       <div ref={containerRef} className="h-[480px] w-full" />
