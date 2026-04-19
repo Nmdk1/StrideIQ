@@ -41,24 +41,58 @@ describe('robustDomain', () => {
 
   it('clips a single severe outlier so the bulk of data fills the band', () => {
     // 99 typical pace values around 270 s/km plus one GPS-skip 10000.
-    // Naive min/max would yield [266, 10000] and the real data would
-    // collapse to a flat line at the bottom.
     const series = pts([
       ...Array.from({ length: 99 }, (_, i) => 266 + (i % 10)),
       10000,
     ]);
     const { vMin, vMax } = robustDomain(series);
-    // 98th percentile of the ~typical values should be ≤ ~280, well
-    // below the outlier at 10000.
     expect(vMax).toBeLessThan(500);
     expect(vMin).toBeLessThanOrEqual(270);
     expect(vMax - vMin).toBeGreaterThan(0);
   });
 
-  it('handles symmetric outliers on both sides', () => {
-    const series = pts([0, ...Array.from({ length: 100 }, (_, i) => 100 + i), 99999]);
+  // Regression for the Coke 10K case. Bare percentile (2/98) failed
+  // because the haywire end-of-run cluster was big enough to live
+  // inside the percentile window. IQR/Tukey is frequency-independent.
+  it('clips a frequent outlier cluster (cool-down walking + GPS jitter)', () => {
+    const raceBody = Array.from({ length: 1000 }, (_, i) => 250 + (i % 25)); // 250-274
+    const haywire = Array.from({ length: 60 }, (_, i) =>
+      i % 3 === 0 ? 100 : i % 3 === 1 ? 1500 : 700,
+    );
+    const series = pts([...raceBody, ...haywire]);
     const { vMin, vMax } = robustDomain(series);
-    expect(vMin).toBeGreaterThan(0);
-    expect(vMax).toBeLessThan(99999);
+    // Real race body lives in 250-274 (24 s/km of true variation).
+    // Domain must be tight enough to actually show that variation, NOT
+    // get pulled out to ~700-1500 by the haywire cluster.
+    expect(vMax).toBeLessThan(330);
+    expect(vMin).toBeGreaterThan(220);
+    expect(vMax - vMin).toBeLessThan(110);
+  });
+
+  it('clips truly extreme outliers on both sides', () => {
+    // Body is [200, 240]. Outliers at -50000 and +50000 are both
+    // dramatically beyond Tukey's fence and must be excluded.
+    // (Note: a value sitting just outside the body — say 0 here —
+    // would NOT be clipped, because Q1 − 3·IQR is well below 0.
+    // That's the correct IQR semantics: only EXTREME outliers go.)
+    const series = pts([
+      -50000,
+      ...Array.from({ length: 100 }, (_, i) => 200 + (i % 41)),
+      50000,
+    ]);
+    const { vMin, vMax } = robustDomain(series);
+    expect(vMin).toBeGreaterThan(-1000);
+    expect(vMax).toBeLessThan(1000);
+  });
+
+  it('preserves intentional wide variation like interval workouts', () => {
+    // Cruise 240, recovery 360 — both legitimate, alternating.
+    const series = pts(
+      Array.from({ length: 200 }, (_, i) => (Math.floor(i / 10) % 2 === 0 ? 240 : 360)),
+    );
+    const { vMin, vMax } = robustDomain(series);
+    // Both ends of the legitimate range must remain in the domain.
+    expect(vMin).toBeLessThanOrEqual(245);
+    expect(vMax).toBeGreaterThanOrEqual(355);
   });
 });

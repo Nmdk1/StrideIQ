@@ -47,15 +47,7 @@ function buildSeries(track: TrackPoint[], pick: (p: TrackPoint) => number | null
 }
 
 /**
- * Percentile-based domain. Returns the value at the given quantile (0..1) of
- * a numerically-sorted copy of the series.
- *
- * Why: raw stream pace = 1000/velocity. A momentary GPS skip producing
- * 0.1 m/s yields 10,000 s/km, collapsing every real pace value into a
- * flat band at one edge of the chart. Same risk for HR sensor dropouts
- * and barometric altitude glitches. Clipping the y-axis domain to the
- * 2nd/98th percentile makes 96% of the data fill the band properly;
- * outliers still pass through but get drawn clamped to the edge.
+ * Quantile via linear interpolation between adjacent sorted values.
  */
 export function quantile(sortedAsc: number[], q: number): number {
   if (sortedAsc.length === 0) return 0;
@@ -67,18 +59,59 @@ export function quantile(sortedAsc: number[], q: number): number {
   return sortedAsc[lo] + (sortedAsc[hi] - sortedAsc[lo]) * (pos - lo);
 }
 
+/**
+ * Robust y-axis domain using Tukey's fence (IQR method).
+ *
+ * Why we don't just use raw min/max:
+ *   Backend pace = 1000/velocity. A GPS skip → 10,000 s/km. That
+ *   collapses real pace values (~250 s/km) into a flat band at the edge.
+ *
+ * Why we moved off blind percentile (2nd/98th):
+ *   Cool-down walking + GPS jitter at the end of a race produces a
+ *   cluster of bad values frequent enough (~2–5% of points) to live
+ *   INSIDE the 2/98 window. They didn't get clipped; they pulled vMax
+ *   from ~270 to ~700, mapping the actual race body into 6% of the
+ *   chart and reading as flat.
+ *
+ * Tukey's fence is frequency-independent. It computes IQR from the
+ * middle 50% of the data (the most stable summary of "typical"
+ * spread) and rejects anything outside Q1 − k·IQR or Q3 + k·IQR. With
+ * k=3.0 we keep legitimate variation (walk breaks, interval recoveries,
+ * surges) but reject GPS-skip class outliers regardless of how many
+ * points they account for. Falls back to 5/95 percentile if the fence
+ * collapses the domain (extremely uniform data).
+ *
+ * Outlier values themselves are not dropped from the series; the chart
+ * just clamps them to the band edge so the line stays continuous.
+ */
 export function robustDomain(series: SeriesPoint[]): { vMin: number; vMax: number } {
   if (series.length === 0) return { vMin: 0, vMax: 1 };
+  if (series.length === 1) return { vMin: series[0].v - 1, vMax: series[0].v + 1 };
+
   const sorted = series.map((p) => p.v).sort((a, b) => a - b);
-  let vMin = quantile(sorted, 0.02);
-  let vMax = quantile(sorted, 0.98);
-  if (!Number.isFinite(vMin) || !Number.isFinite(vMax) || vMin === vMax) {
-    vMin = sorted[0];
-    vMax = sorted[sorted.length - 1];
-    if (vMin === vMax) {
-      vMin -= 1;
-      vMax += 1;
+  const q1 = quantile(sorted, 0.25);
+  const q3 = quantile(sorted, 0.75);
+  const iqr = q3 - q1;
+  const k = 3.0;
+  const fenceLo = q1 - k * iqr;
+  const fenceHi = q3 + k * iqr;
+
+  let vMin = Infinity;
+  let vMax = -Infinity;
+  for (const v of sorted) {
+    if (v >= fenceLo && v <= fenceHi) {
+      if (v < vMin) vMin = v;
+      if (v > vMax) vMax = v;
     }
+  }
+
+  if (!Number.isFinite(vMin) || !Number.isFinite(vMax) || vMin === vMax) {
+    vMin = quantile(sorted, 0.05);
+    vMax = quantile(sorted, 0.95);
+  }
+  if (vMin === vMax) {
+    vMin -= 1;
+    vMax += 1;
   }
   return { vMin, vMax };
 }
