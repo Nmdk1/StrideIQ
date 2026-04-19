@@ -33,6 +33,7 @@ import type mapboxgl from 'mapbox-gl';
 // dynamic import does NOT get extracted — the canvas mounts but the
 // styles never apply, so the map is invisible.
 import 'mapbox-gl/dist/mapbox-gl.css';
+import './mapbox-controls.css';
 import { useScrubState } from './hooks/useScrubState';
 import type { TrackPoint, TrackBounds } from './hooks/useResampledTrack';
 
@@ -261,16 +262,16 @@ export function TerrainMap3D({ track, bounds }: TerrainMap3DProps) {
   }
 
   return (
-    <div className="rounded-2xl overflow-hidden border border-slate-800/60 bg-slate-900/30">
-      <div className="flex items-center justify-between px-4 py-2 text-xs uppercase tracking-wider text-slate-500 border-b border-slate-800/60">
-        <span>Terrain · 3D Map · spike</span>
-        <span className={mountError ? 'text-rose-400' : 'text-amber-500/70'}>
-          {mountError
-            ? `error: ${mountError.slice(0, 80)}`
-            : 'Mapbox · right-click drag to rotate · click compass to reset'}
-        </span>
-      </div>
+    <div className="canvas-v2-mapbox-pane relative rounded-2xl overflow-hidden border border-slate-800/60 bg-slate-900/30">
       <div ref={containerRef} className="h-[480px] w-full" />
+      {mountError ? (
+        <div
+          role="alert"
+          className="absolute top-3 left-3 max-w-[60%] px-3 py-2 rounded-md bg-rose-950/85 border border-rose-700/60 text-rose-200 text-xs font-medium backdrop-blur-sm shadow-lg"
+        >
+          Mapbox error: {mountError.slice(0, 140)}
+        </div>
+      ) : null}
     </div>
   );
 }

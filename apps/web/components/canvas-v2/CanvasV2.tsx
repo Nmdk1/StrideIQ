@@ -14,7 +14,7 @@
  * main bundle. The token-missing path also avoids loading the SDK at all.
  */
 
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { useStreamAnalysis, isAnalysisData, isLifecycleResponse } from '@/components/activities/rsi/hooks/useStreamAnalysis';
 import { useResampledTrack } from './hooks/useResampledTrack';
@@ -23,6 +23,8 @@ import { ScrubProvider } from './hooks/useScrubState';
 import { SummaryCardsRow } from './SummaryCardsRow';
 import { StreamsStack } from './StreamsStack';
 import { MomentReadout } from './MomentReadout';
+import { CanvasHelpHint } from './help/CanvasHelpHint';
+import { CanvasHelpButton } from './help/CanvasHelpButton';
 
 const TerrainMap3D = dynamic(
   () => import('./TerrainMap3D').then((m) => m.TerrainMap3D),
@@ -56,6 +58,7 @@ export function CanvasV2({ activityId, summary, title, subtitle }: CanvasV2Props
 
   const { track, bounds, hasGps } = useResampledTrack(stream, { targetPoints: 500 });
   const { ref: streamsContainerRef, width: streamsWidth } = useElementWidth<HTMLDivElement>();
+  const [forceHint, setForceHint] = useState(0);
 
   const lifecycleStatus = useMemo(() => {
     if (isLifecycleResponse(streamQuery.data)) return streamQuery.data.status;
@@ -64,11 +67,15 @@ export function CanvasV2({ activityId, summary, title, subtitle }: CanvasV2Props
 
   return (
     <ScrubProvider>
+      <CanvasHelpHint key={forceHint} force={forceHint > 0} />
       <div className="space-y-4">
-        <div>
-          <p className="text-xs uppercase tracking-wider text-amber-500/70">Sandbox · Canvas v2</p>
-          <h1 className="text-xl font-semibold mt-1">{title}</h1>
-          <p className="text-sm text-slate-500 mt-1">{subtitle}</p>
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="text-xs uppercase tracking-wider text-amber-500/70">Sandbox · Canvas v2</p>
+            <h1 className="text-xl font-semibold mt-1">{title}</h1>
+            <p className="text-sm text-slate-500 mt-1">{subtitle}</p>
+          </div>
+          <CanvasHelpButton onReplayHint={() => setForceHint((n) => n + 1)} />
         </div>
 
         <SummaryCardsRow {...summary} />
