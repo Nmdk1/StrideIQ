@@ -421,6 +421,15 @@ app.include_router(fingerprint.router)
 app.include_router(provider_imports.router)
 app.include_router(auto_discovery_admin.router)
 
+# Strength v1 — manual logging (sandbox; gated per-athlete by the
+# strength.v1 feature flag, returns 404 when off so the surface is
+# invisible). See docs/specs/STRENGTH_V1_SCOPE.md.
+try:
+    from routers import strength_v1 as strength_v1_router
+    app.include_router(strength_v1_router.router)
+except ImportError as e:
+    logger.warning(f"Could not include Strength v1 router: {e}")
+
 # Runtoon — AI-generated personalized run images (feature-flagged)
 try:
     from routers import runtoon as runtoon_router
