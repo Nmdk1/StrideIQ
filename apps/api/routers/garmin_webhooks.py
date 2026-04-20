@@ -314,6 +314,18 @@ async def webhook_activity_files(
         if not athlete:
             continue
         process_garmin_activity_file_task.delay(str(athlete.id), record)
+        # Per-record log so we never have a silent miss between webhook receipt
+        # and worker pickup. Mirrors the activity webhook's "queued" log; the
+        # absence of this line for a given summary_id means the dispatcher
+        # itself short-circuited (no athlete, malformed record, etc.).
+        logger.info(
+            "Activity file webhook: queued",
+            extra={
+                "athlete_id": str(athlete.id),
+                "summary_id": record.get("summaryId"),
+                "file_type": record.get("fileType"),
+            },
+        )
     return {"status": "ok"}
 
 

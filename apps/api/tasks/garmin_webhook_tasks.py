@@ -50,6 +50,7 @@ from services.garmin_backfill import (
     request_deep_garmin_backfill,
     request_garmin_backfill,
 )
+from services.sync.garmin_oauth import ensure_fresh_garmin_token
 
 logger = logging.getLogger(__name__)
 _BACKFILL_PROGRESS_TTL_S = 24 * 60 * 60
@@ -1504,37 +1505,73 @@ def process_garmin_activity_file_task(
     summary_id = adapted["summary_id"]
     file_type = adapted["file_type"]
 
-    logger.info(
-        "process_activity_file: downloading %s file for athlete=%s summary=%s",
-        file_type, athlete_id, summary_id,
-    )
-
-    try:
-        resp = http_requests.get(callback_url, timeout=_FIT_DOWNLOAD_TIMEOUT_S)
-    except Exception as exc:
-        logger.error(
-            "process_activity_file: download failed for athlete=%s summary=%s: %s",
-            athlete_id, summary_id, exc,
-        )
-        raise self.retry(exc=exc)
-
-    if resp.status_code != 200:
-        logger.warning(
-            "process_activity_file: download returned %d for athlete=%s summary=%s",
-            resp.status_code, athlete_id, summary_id,
-        )
-        if resp.status_code >= 500:
-            raise self.retry(countdown=60)
-        return {"status": "error", "http_code": resp.status_code}
-
-    fit_bytes = resp.content
-    logger.info(
-        "process_activity_file: downloaded %d bytes for athlete=%s summary=%s",
-        len(fit_bytes), athlete_id, summary_id,
-    )
-
+    # Garmin's activity-file callback URLs require the athlete's OAuth bearer
+    # token, same as every other Garmin REST endpoint. Earlier versions of this
+    # task issued an unauthenticated GET, which Garmin rejected with HTTP 400
+    # (not 401), causing every strength-workout FIT to be silently dropped.
     db = get_db_sync()
     try:
+        athlete = db.query(Athlete).filter(Athlete.id == athlete_id).first()
+        if athlete is None:
+            logger.warning(
+                "process_activity_file: athlete not found id=%s summary=%s",
+                athlete_id, summary_id,
+            )
+            return {"status": "skipped", "reason": "athlete_not_found"}
+
+        access_token = ensure_fresh_garmin_token(athlete, db)
+        if not access_token:
+            logger.warning(
+                "process_activity_file: no garmin token for athlete=%s summary=%s — skipping",
+                athlete_id, summary_id,
+            )
+            return {"status": "skipped", "reason": "no_garmin_token"}
+
+        headers = {"Authorization": f"Bearer {access_token}"}
+
+        logger.info(
+            "process_activity_file: downloading %s file for athlete=%s summary=%s",
+            file_type, athlete_id, summary_id,
+        )
+
+        try:
+            resp = http_requests.get(
+                callback_url,
+                headers=headers,
+                timeout=_FIT_DOWNLOAD_TIMEOUT_S,
+            )
+        except Exception as exc:
+            logger.error(
+                "process_activity_file: download failed for athlete=%s summary=%s: %s",
+                athlete_id, summary_id, exc,
+            )
+            raise self.retry(exc=exc)
+
+        if resp.status_code != 200:
+            # Always surface Garmin's response body on non-2xx so we can tell
+            # apart auth failures, expired URLs, and rate limiting. Trim to
+            # 300 chars to avoid blowing up logs on HTML error pages.
+            body_preview = (resp.text or "").strip()
+            if len(body_preview) > 300:
+                body_preview = f"{body_preview[:300]}..."
+            logger.warning(
+                "process_activity_file: download returned %d for athlete=%s summary=%s body=%r",
+                resp.status_code, athlete_id, summary_id, body_preview,
+            )
+            if resp.status_code >= 500:
+                raise self.retry(countdown=60)
+            return {
+                "status": "error",
+                "http_code": resp.status_code,
+                "body_preview": body_preview,
+            }
+
+        fit_bytes = resp.content
+        logger.info(
+            "process_activity_file: downloaded %d bytes for athlete=%s summary=%s",
+            len(fit_bytes), athlete_id, summary_id,
+        )
+
         activity = _find_activity_for_summary_id(db, athlete_id, summary_id)
 
         if activity is None:
