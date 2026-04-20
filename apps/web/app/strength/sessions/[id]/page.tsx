@@ -9,7 +9,7 @@
  * audit trail is preserved. See routers/strength_v1.py for semantics.
  */
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 
@@ -97,15 +97,21 @@ function Inner({ id }: { id: string }) {
     }
   };
 
-  const confirmPendingPick = async (count: number) => {
+  const confirmPendingPick = async (
+    count: number,
+    template: { reps: number | null; weight_kg: number | null; rpe: number | null },
+  ) => {
     const entry = pendingPick;
     if (!entry) return;
     setPendingPick(null);
-    const blanks: StrengthSetCreate[] = Array.from({ length: count }, () => ({
+    const sets: StrengthSetCreate[] = Array.from({ length: count }, () => ({
       exercise_name: entry.name,
+      reps: template.reps,
+      weight_kg: template.weight_kg,
+      rpe: template.rpe,
       set_type: 'active',
     }));
-    await handleAppendSets(blanks);
+    await handleAppendSets(sets);
   };
 
   const repeatExistingSet = async (s: StrengthSetResponse) => {
@@ -257,29 +263,72 @@ function Inner({ id }: { id: string }) {
 interface SetCountSheetProps {
   entry: ExercisePickerEntry | null;
   onCancel: () => void;
-  onConfirm: (count: number) => void;
+  onConfirm: (
+    count: number,
+    template: { reps: number | null; weight_kg: number | null; rpe: number | null },
+  ) => void;
   pending: boolean;
 }
 
 function SetCountSheet({ entry, onCancel, onConfirm, pending }: SetCountSheetProps) {
-  const [custom, setCustom] = useState('');
+  const [count, setCount] = useState<number>(1);
+  const [customCount, setCustomCount] = useState('');
+  const [reps, setReps] = useState('');
+  const [lbs, setLbs] = useState('');
+  const [rpe, setRpe] = useState('');
+
+  const entryName = entry?.name ?? null;
+  useEffect(() => {
+    setCount(1);
+    setCustomCount('');
+    setReps('');
+    setLbs('');
+    setRpe('');
+  }, [entryName]);
+
   if (!entry) return null;
 
-  const commit = (n: number) => {
-    if (pending) return;
-    onConfirm(n);
-    setCustom('');
-  };
+  const repsNum = reps.trim() ? Number(reps) : null;
+  const lbsNum = lbs.trim() ? Number(lbs) : null;
+  const rpeNum = rpe.trim() ? Number(rpe) : null;
 
-  const customNum = Number(custom);
-  const customValid =
-    custom.trim() !== '' && Number.isFinite(customNum) && customNum >= 1 && customNum <= 20;
+  const repsValid = repsNum == null || (Number.isFinite(repsNum) && repsNum >= 0 && repsNum <= 500);
+  const lbsValid = lbsNum == null || (Number.isFinite(lbsNum) && lbsNum >= 0 && lbsNum <= 2000);
+  const rpeValid =
+    rpeNum == null || (Number.isFinite(rpeNum) && rpeNum >= 1 && rpeNum <= 10);
+
+  const customNum = Number(customCount);
+  const customCountValid =
+    customCount.trim() === '' ||
+    (Number.isFinite(customNum) && customNum >= 1 && customNum <= 20);
+
+  const effectiveCount = customCount.trim() ? customNum : count;
+  const canCommit =
+    !pending &&
+    effectiveCount >= 1 &&
+    effectiveCount <= 20 &&
+    repsValid &&
+    lbsValid &&
+    rpeValid &&
+    customCountValid;
+
+  const commit = () => {
+    if (!canCommit) return;
+    onConfirm(effectiveCount, {
+      reps: Number.isFinite(repsNum as number) ? (repsNum as number) : null,
+      weight_kg:
+        lbsNum != null && Number.isFinite(lbsNum)
+          ? Math.round(lbsNum * LBS_TO_KG * 100) / 100
+          : null,
+      rpe: rpeNum != null && Number.isFinite(rpeNum) ? rpeNum : null,
+    });
+  };
 
   return (
     <div
       className="fixed inset-0 z-30 bg-slate-950/80 flex items-end sm:items-center justify-center p-0 sm:p-6"
       role="dialog"
-      aria-label="How many sets"
+      aria-label="Add sets"
       onClick={onCancel}
     >
       <div
@@ -291,51 +340,134 @@ function SetCountSheet({ entry, onCancel, onConfirm, pending }: SetCountSheetPro
         </p>
         <h3 className="text-lg font-semibold mt-1">{prettify(entry.name)}</h3>
         <p className="text-[12px] text-slate-500 mt-1">
-          How many sets? You can edit reps, weight, and RPE on each row after.
+          Pick a count and (optionally) the values that apply to every set.
+          You can edit individual sets on the row after.
         </p>
 
-        <div className="mt-4 grid grid-cols-5 gap-2">
-          {[1, 2, 3, 4, 5].map((n) => (
-            <button
-              key={n}
-              type="button"
-              disabled={pending}
-              onClick={() => commit(n)}
-              className="py-3 rounded-md bg-slate-800 hover:bg-emerald-600 hover:text-white text-base font-semibold text-slate-100 disabled:opacity-50"
-            >
-              {n}
-            </button>
-          ))}
-        </div>
-
-        <div className="mt-3 flex items-center gap-2">
+        <div className="mt-4">
+          <span className="block text-[11px] uppercase tracking-wide text-slate-500 mb-1">
+            Sets
+          </span>
+          <div className="grid grid-cols-5 gap-2">
+            {[1, 2, 3, 4, 5].map((n) => {
+              const active = customCount.trim() === '' && count === n;
+              return (
+                <button
+                  key={n}
+                  type="button"
+                  disabled={pending}
+                  onClick={() => {
+                    setCount(n);
+                    setCustomCount('');
+                  }}
+                  className={
+                    'py-3 rounded-md text-base font-semibold disabled:opacity-50 ' +
+                    (active
+                      ? 'bg-emerald-600 text-white'
+                      : 'bg-slate-800 text-slate-100 hover:bg-slate-700')
+                  }
+                >
+                  {n}
+                </button>
+              );
+            })}
+          </div>
           <input
             type="text"
             inputMode="numeric"
-            value={custom}
-            onChange={(e) => setCustom(e.target.value.replace(/[^\d]/g, ''))}
-            placeholder="Custom (1–20)"
-            className="flex-1 bg-slate-950 border border-slate-800 rounded-md px-3 py-2 text-base text-slate-100 placeholder-slate-600 focus:outline-none focus:border-slate-600"
+            value={customCount}
+            onChange={(e) => setCustomCount(e.target.value.replace(/[^\d]/g, ''))}
+            placeholder="Custom set count (1–20)"
+            className="mt-2 w-full bg-slate-950 border border-slate-800 rounded-md px-3 py-2 text-base text-slate-100 placeholder-slate-600 focus:outline-none focus:border-slate-600"
           />
-          <button
-            type="button"
-            disabled={!customValid || pending}
-            onClick={() => commit(customNum)}
-            className="px-4 py-2 rounded-md bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-800 disabled:text-slate-500 text-white font-semibold"
-          >
-            {pending ? 'Adding…' : 'Add'}
-          </button>
         </div>
 
-        <button
-          type="button"
-          onClick={onCancel}
-          className="mt-4 w-full py-2 text-sm text-slate-400 hover:text-slate-200"
-        >
-          Cancel
-        </button>
+        <div className="mt-4 grid grid-cols-3 gap-2">
+          <SheetField
+            label="Reps"
+            value={reps}
+            onChange={setReps}
+            placeholder="—"
+            inputMode="numeric"
+            invalid={!repsValid}
+          />
+          <SheetField
+            label="Weight (lb)"
+            value={lbs}
+            onChange={setLbs}
+            placeholder="—"
+            inputMode="decimal"
+            invalid={!lbsValid}
+          />
+          <SheetField
+            label="RPE 1–10"
+            value={rpe}
+            onChange={setRpe}
+            placeholder="—"
+            inputMode="decimal"
+            invalid={!rpeValid}
+          />
+        </div>
+
+        <div className="mt-5 flex items-center gap-3">
+          <button
+            type="button"
+            onClick={onCancel}
+            disabled={pending}
+            className="flex-1 py-3 rounded-md text-sm text-slate-400 hover:text-slate-200 disabled:opacity-50"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            disabled={!canCommit}
+            onClick={commit}
+            className="flex-[2] py-3 rounded-md bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-800 disabled:text-slate-500 text-white text-base font-semibold"
+          >
+            {pending
+              ? 'Adding…'
+              : `Add ${effectiveCount} ${effectiveCount === 1 ? 'set' : 'sets'}`}
+          </button>
+        </div>
       </div>
     </div>
+  );
+}
+
+function SheetField({
+  label,
+  value,
+  onChange,
+  placeholder,
+  inputMode,
+  invalid,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  placeholder?: string;
+  inputMode?: 'numeric' | 'decimal';
+  invalid?: boolean;
+}) {
+  return (
+    <label className="block">
+      <span className="block text-[11px] uppercase tracking-wide text-slate-500 mb-1">
+        {label}
+      </span>
+      <input
+        type="text"
+        inputMode={inputMode ?? 'decimal'}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        className={
+          'w-full bg-slate-950 border rounded-md px-3 py-2 text-base text-slate-100 placeholder-slate-600 focus:outline-none ' +
+          (invalid
+            ? 'border-rose-500 focus:border-rose-400'
+            : 'border-slate-800 focus:border-slate-600')
+        }
+      />
+    </label>
   );
 }
 
