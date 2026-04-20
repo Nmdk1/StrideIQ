@@ -101,6 +101,14 @@ export default function TrainingPaceCalculatorPage() {
           </p>
         </div>
 
+        {/* RPI / VDOT reconciliation — for readers arriving via "VDOT" search queries */}
+        <div className="bg-slate-800/60 border border-slate-700/50 rounded-xl p-5 mb-10 text-sm">
+          <p className="text-slate-300 leading-relaxed">
+            <strong className="text-slate-200">RPI and VDOT are the same math.</strong>{" "}
+            Daniels and Gilbert&apos;s 1979 oxygen cost equations produce a number that is publicly known as <strong>VDOT</strong>. StrideIQ surfaces it as <strong>RPI (Running Performance Index)</strong> — same math, same training zones, a name StrideIQ stands behind. The calculator above uses these equations directly. If you arrived here looking for a VDOT calculator, you are in the right place.
+          </p>
+        </div>
+
         {/* Calculator island */}
         <div className="bg-slate-800 border border-slate-700/50 rounded-2xl p-6 mb-10 shadow-xl">
           <TrainingPaceCalculator />

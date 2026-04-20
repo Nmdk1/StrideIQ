@@ -32,9 +32,9 @@ const FAQ_ITEMS = [
       'StrideIQ syncs with Garmin Connect and Strava to analyze run splits, pace, heart rate, and elevation. Combined with self-reported sleep and nutrition check-ins, it identifies which factors actually correlate with your best and worst performances — specific to you, not population averages.',
   },
   {
-    question: 'What is the best AI running coach for marathon training?',
+    question: 'Does StrideIQ tell me what my sleep or nutrition did to my training?',
     answer:
-      'The best AI running coach generates training paces from your actual race data, adapts daily based on readiness, and shows evidence for every recommendation. StrideIQ connects Garmin Connect or Strava data with sleep and nutrition to build a complete marathon training picture.',
+      'Yes — that is the core of what StrideIQ does. A Bayesian engine runs every night across your sleep, nutrition check-ins, training load, and outcomes, looking for correlations specific to you. When the evidence is strong enough, the coach surfaces it with the runs, dates, and numbers attached. When the evidence is not strong enough, the system stays quiet rather than guess.',
   },
   {
     question: 'What training paces should I use for a half marathon?',

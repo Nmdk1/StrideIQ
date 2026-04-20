@@ -4,7 +4,7 @@ import Footer from '../components/Footer';
 
 export const metadata: Metadata = {
   title: 'Our Mission - Evidence-Based Running Coaching for Every Age',
-  description: 'StrideIQ believes every runner deserves elite-level coaching. No age-based assumptions. Masters running performance analyzed on its own terms.',
+  description: 'StrideIQ is a record of what your training is telling you. No age-based assumptions. No template plans. Auditable evidence, decided by the athlete.',
   alternates: {
     canonical: 'https://strideiq.run/mission',
   },
@@ -17,25 +17,15 @@ export const metadata: Metadata = {
 export default function MissionStatement() {
   return (
     <div className="min-h-screen bg-slate-900 text-slate-100">
-      {/* Hero Section with Background */}
-      <section className="relative py-20 overflow-hidden">
-        <div 
-          className="absolute inset-0 bg-cover bg-center opacity-20"
-          style={{
-            backgroundImage: "url('https://images.unsplash.com/photo-1545558014-8692077e9b5c?q=80&w=2070')",
-            backgroundPosition: "center",
-            backgroundSize: "cover"
-          }}
-        >
-          <div className="absolute inset-0 bg-slate-900/80"></div>
-        </div>
-        
+      <section className="relative py-20 overflow-hidden bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900">
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-orange-500/10 rounded-full blur-3xl" />
+
         <div className="relative z-10 max-w-4xl mx-auto px-6 text-center">
           <h1 className="text-5xl md:text-6xl font-bold mb-6">
             Our Mission
           </h1>
-          
-          <blockquote className="text-xl md:text-2xl italic mb-8 text-slate-300 max-w-3xl mx-auto border-l-4 border-orange-500 pl-6">
+
+          <blockquote className="text-xl md:text-2xl italic mb-8 text-slate-300 max-w-3xl mx-auto border-l-4 border-orange-500 pl-6 text-left">
             &ldquo;We are commonly bound by our uncommon ability to embrace and overcome discomfort.&rdquo;
             <footer className="mt-4 text-lg not-italic text-orange-400">&mdash; Michael Shaffer, Founder</footer>
           </blockquote>
@@ -44,125 +34,68 @@ export default function MissionStatement() {
 
       <main className="max-w-4xl mx-auto px-6 py-12">
         <div className="prose prose-invert prose-lg max-w-none space-y-12">
-          
-          {/* Core Philosophy */}
+
           <section>
             <h2 className="text-3xl font-bold mb-6 text-orange-400">The Core Philosophy</h2>
-            
+
             <div className="space-y-6">
               <div>
                 <h3 className="text-xl font-semibold mb-3 text-slate-300">The Mission</h3>
                 <p className="text-slate-300 leading-relaxed">
-                  We are not creating cookie-cutter training plans. We are building <strong className="text-orange-400">StrideIQ</strong> — AI-powered running intelligence designed to empower athletes of all ages. Our system applies elite-level analysis to athletes in every age group, rejecting the &quot;decline narrative&quot;. Instead, we embrace and enhance the exceptional abilities of athletes at every stage of their journey.
+                  StrideIQ is not a training plan. It is a record of what your training is telling you — built from your data, available the moment you need it, with evidence attached to every claim. Athletes of every age, every background, every starting point are held to the same standard: what does your data actually show?
                 </p>
               </div>
 
               <div>
                 <h3 className="text-xl font-semibold mb-3 text-slate-300">The Stance</h3>
                 <p className="text-slate-300 leading-relaxed">
-                  We treat athletes as individuals, rejecting the idea of &quot;slowing down&quot; and instead celebrating extraordinary performances from athletes of all ages. Our system applies elite-level analysis, ensuring athletes of all ages are held to the same high standards. Every athlete receives the same level of insights and feedback.
+                  We do not assume athletes slow down. We do not assume they speed up. We measure. The same diagnostic engine runs against a 25-year-old&apos;s training as a 75-year-old&apos;s, and reports the same kind of finding from the same kind of evidence. Age-grading is the only place age enters the math.
                 </p>
               </div>
 
               <div>
                 <h3 className="text-xl font-semibold mb-3 text-slate-300">Guided Self-Coaching</h3>
                 <p className="text-slate-300 leading-relaxed">
-                  Guided self-coaching empowers you to take control — with the depth and adaptation that rivals elite human coaching. The athlete is the coach, the system is the silent, brilliant assistant. You own your plan, understand your progress, and evolve with the system — no middleman, no hype, just measurable efficiency.
+                  The athlete decides. The system records the patterns and shows the evidence. You own the plan, you read the findings, you choose what to do with them. No middleman, no theater, no template narrative — just real adaptation, observed and reported back to you.
                 </p>
               </div>
             </div>
           </section>
 
-          {/* Our Approach */}
           <section>
             <h2 className="text-3xl font-bold mb-6 text-orange-400">Our Approach</h2>
-            
+
             <div className="space-y-6">
               <p className="text-slate-300 leading-relaxed">
-                We use advanced diagnostic analysis to understand what drives improvement for each individual athlete. Our system analyzes multiple data sources to identify patterns, trends, and opportunities that are unique to you.
+                A Bayesian discovery engine runs across your data every night, looking for correlations between your inputs (sleep, nutrition, training load, weather) and your outputs (pace, heart rate response, recovery, race results). When the evidence is strong enough, the coach surfaces it. When it is not, the system stays quiet.
               </p>
-              
+
               <p className="text-slate-300 leading-relaxed">
-                Rather than relying on generic templates or one-size-fits-all approaches, we build personalized insights from your own training history. Every recommendation is tailored to your individual response patterns, goals, and current fitness level.
+                Insights are built from your training history alone. Population averages are useful as context but never as prescription. Whatever the literature says about athletes like you is irrelevant compared to what your own data says about you.
               </p>
-              
+
               <p className="text-slate-300 leading-relaxed p-4 bg-slate-800 rounded-lg">
                 <strong>No Age-Based Assumptions:</strong> We make zero preconceptions about adaptation speed, recovery, or performance potential based on age. All insights are discovered from your own data. What averages say about any age group is irrelevant — only what your individual data shows matters.
               </p>
             </div>
           </section>
 
-          {/* What This Means for You */}
           <section>
             <h2 className="text-3xl font-bold mb-6 text-orange-400">What This Means for You</h2>
             <p className="text-slate-300 leading-relaxed mb-4">
-              You&apos;ll receive insights that are:
+              You&apos;ll receive findings that are:
             </p>
             <ul className="list-disc list-inside space-y-2 text-slate-300 ml-4">
               <li>Rooted in your own data, not generic averages</li>
-              <li>Personalized to your unique response patterns</li>
-              <li>Focused on sustainable, long-term improvement</li>
-              <li>Designed to help you understand what actually works for you</li>
+              <li>Cited — every claim points back to the runs, dates, and numbers behind it</li>
+              <li>Suppressed when the evidence is not strong enough to defend</li>
+              <li>Yours to decide what to do with</li>
             </ul>
             <p className="text-slate-300 leading-relaxed mt-6">
               Real, actionable truth — not motivation, averages, or wishful thinking.
             </p>
           </section>
 
-          {/* Intelligent Coaching */}
-          <section>
-            <h2 className="text-3xl font-bold mb-6 text-orange-400">Intelligent Coaching</h2>
-            <p className="text-slate-300 leading-relaxed">
-              The system draws from an extensive knowledge base of proven coaching principles — from classic training philosophies to cutting-edge physiological research. This knowledge is synthesized with your personal data and diagnostic signals to generate truly individualized recommendations. The system learns what works best for you, continuously refining your training. No generic plans — only coaching that evolves with your progress.
-            </p>
-          </section>
-
-          {/* Taxonomy */}
-          <section>
-            <h2 className="text-3xl font-bold mb-6 text-orange-400">Taxonomy: The New Masters</h2>
-            <p className="text-slate-300 leading-relaxed mb-4">
-              Age-based classification for fair comparison and recognition:
-            </p>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              <div className="p-4 bg-slate-800 rounded-lg">
-                <div className="font-semibold text-orange-400">Open</div>
-                <div className="text-slate-400 text-sm">&lt;35</div>
-              </div>
-              <div className="p-4 bg-slate-800 rounded-lg">
-                <div className="font-semibold text-orange-400">Masters</div>
-                <div className="text-slate-400 text-sm">40–49</div>
-              </div>
-              <div className="p-4 bg-slate-800 rounded-lg">
-                <div className="font-semibold text-orange-400">Grandmasters</div>
-                <div className="text-slate-400 text-sm">50–59</div>
-              </div>
-              <div className="p-4 bg-slate-800 rounded-lg">
-                <div className="font-semibold text-orange-400">Senior Grandmasters</div>
-                <div className="text-slate-400 text-sm">60–69</div>
-              </div>
-              <div className="p-4 bg-slate-800 rounded-lg">
-                <div className="font-semibold text-orange-400">Legend Masters</div>
-                <div className="text-slate-400 text-sm">70–79</div>
-              </div>
-              <div className="p-4 bg-slate-800 rounded-lg">
-                <div className="font-semibold text-orange-400">Icon Masters</div>
-                <div className="text-slate-400 text-sm">80–89</div>
-              </div>
-              <div className="p-4 bg-slate-800 rounded-lg">
-                <div className="font-semibold text-orange-400">Centurion Masters</div>
-                <div className="text-slate-400 text-sm">90+</div>
-              </div>
-              <div className="p-4 bg-slate-800 rounded-lg">
-                <div className="font-semibold text-orange-400">Centurion Prime</div>
-                <div className="text-slate-400 text-sm">100+</div>
-              </div>
-            </div>
-            <p className="text-slate-300 leading-relaxed mt-6">
-              Defined by age + age-graded performance metrics. Age-grading creates a universal standard — no age diminishes recognition.
-            </p>
-          </section>
-
-          {/* Key Metrics */}
           <section>
             <h2 className="text-3xl font-bold mb-6 text-orange-400">Fair Comparison</h2>
             <p className="text-slate-300 leading-relaxed">
@@ -170,20 +103,19 @@ export default function MissionStatement() {
             </p>
           </section>
 
-          {/* The Coaching Process */}
           <section>
             <h2 className="text-3xl font-bold mb-6 text-orange-400">The Coaching Process</h2>
             <p className="text-slate-300 leading-relaxed mb-4">
-              Our coaching adapts in real-time based on your goals, current fitness, and evolving context. We follow a continuous feedback loop:
+              The coaching process is a continuous feedback loop:
             </p>
             <ul className="list-disc list-inside space-y-2 text-slate-300 ml-4">
-              <li><strong>Observe:</strong> Analyze your training data</li>
-              <li><strong>Hypothesize:</strong> Identify what&apos;s working and what&apos;s not</li>
-              <li><strong>Intervene:</strong> Recommend specific, actionable changes</li>
-              <li><strong>Validate:</strong> Measure results and refine</li>
+              <li><strong>Observe:</strong> Ingest every run, every check-in, every weather day</li>
+              <li><strong>Detect:</strong> Run the discovery engine nightly to find patterns specific to you</li>
+              <li><strong>Surface:</strong> Show findings only when the evidence is strong enough to defend</li>
+              <li><strong>Decide:</strong> The athlete reads the finding and decides what to do</li>
             </ul>
             <p className="text-slate-300 leading-relaxed mt-6">
-              You and the system evolve together, continuously improving.
+              You and the system evolve together. The system is never the decision maker.
             </p>
           </section>
 
@@ -194,4 +126,3 @@ export default function MissionStatement() {
     </div>
   );
 }
-

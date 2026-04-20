@@ -1,6 +1,6 @@
 # StrideIQ Internal Wiki
 
-**Last updated:** April 19, 2026 (Garmin activityFiles backfill quarantined; activity page now tells the truth on missing FIT data)
+**Last updated:** April 16, 2026 (Marketing voice rewrite — Hero / WhyGuidedCoaching / Mission rewritten, false "no credit card required" claim retired, two de-identified case studies shipped at `/case-studies/*`)
 
 This is the single onboarding document. Read this instead of the 12-document read order.
 

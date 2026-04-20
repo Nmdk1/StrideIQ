@@ -1,5 +1,29 @@
 # Wiki Log
 
+## [2026-04-16] Marketing voice rewrite — Hero, WhyGuidedCoaching, Mission, case studies; CC claim contract restored
+
+Outside-Opus advisor reading the live landing page surfaced two issues the April 16 marketing review (`docs/reviews/MARKETING_REVIEW_2026-04-16.md`) had missed: zero customer social proof, and the calculator distribution flywheel as an underused asset. Founder also re-prioritized Priority 2 of the original review (Hero + WhyGuidedCoaching voice rewrite), which had shipped neither in the original review pass nor in the subsequent claim-contract fix (`0bd5f24`).
+
+During CC-claim verification (per the April 16 review's call-out on unverifiable claims), discovered a shipped-to-production trust rupture: `apps/web/app/components/Hero.tsx` advertised **"No credit card required"** while the actual onboarding flow (`onboarding/page.tsx:110`) POSTs to `/v1/billing/checkout/trial` (`apps/api/routers/billing.py:128`), which creates a Stripe Checkout Session that **does** collect a credit card. Every user who completed onboarding hit a Stripe card form. The marketing claim was directly false.
+
+**Decisions and shipped changes:**
+
+1. **Hero (`apps/web/app/components/Hero.tsx`)** — full content rewrite. New manifesto H1: *"Your body has a voice. StrideIQ gives it one."* Tagline *"Deep Intelligence. Zero Fluff."* preserved as supporting line. Outcome-named value-prop stack (*"What's making you faster. What's holding you back. What no template can see — because it's specific to you."*). Subhead *"Personal patterns. Real evidence. Coaching that can't be faked."* replaces the orange uppercase "AI Running Coach" pill. The false "No credit card required" trust pill is replaced with **"Cancel anytime via Stripe"** (truthful — `billing.py:137` confirms Customer Portal cancel-anytime). Adam S. testimonial added directly under the value-prop stack (founder pre-cleared, distillation: *"Ask Coach is getting more detailed and more dialed in every week. You've got something pretty awesome here."*).
+2. **QuickValue (`apps/web/app/components/QuickValue.tsx`)** — drop the "3 / 360° / 24/7" fake-precision stat trio. Replaced with a single capability stripe naming the actual data sources.
+3. **WhyGuidedCoaching (`apps/web/app/components/WhyGuidedCoaching.tsx`)** — full rewrite. Title now *"Why StrideIQ exists"*. Drops the "AI Running Coach vs Human Running Coach" comparison and the $50–$300 price comparison. Four cooperative cards: Memory, Pattern detection, Availability, Evidence. Adds a callout linking to the new DEXA case study.
+4. **FAQ #7 (`apps/web/app/components/FAQ.tsx`)** — replaced keyword-bend question (*"What is the best AI running coach for marathon training?"*) with a real prospective-user question: *"Does StrideIQ tell me what my sleep or nutrition did to my training?"*
+5. **Mission page (`apps/web/app/mission/page.tsx`)** — drops the "New Masters" 8-tier taxonomy (Open / Masters / Grandmasters / Senior Grandmasters / Legend Masters / Icon Masters / Centurion Masters / Centurion Prime), drops the external Unsplash background image (referrer leak + asset drift), rewrites the *"silent, brilliant assistant"* and *"measurable efficiency"* paragraphs (the latter violated the `OUTPUT_METRIC_REGISTRY` polarity contract).
+6. **Training Pace page (`apps/web/app/tools/training-pace-calculator/page.tsx`)** — adds an RPI/VDOT reconciliation paragraph for SEO (readers arriving from "VDOT" searches now immediately understand what they are looking at).
+7. **NEW — case studies.** `/case-studies` (index), `/case-studies/dexa-and-the-7-pound-gap`, `/case-studies/strength-and-durability`. Both de-identified per Brian's pre-cleared permission. Real numbers, real coach output, no names / race names / triangulating dates. Architecture intent: case studies are durable artifacts for community-seeding (forum links to specific findings rather than a generic landing page).
+
+**Test contract.** `apps/web/__tests__/marketing-claim-contracts.test.ts` extended from 5 to 16 tests. New tests lock in the manifesto H1, the Adam S. attribution, the absence of the "No credit card required" claim, the absence of the "3 / 360° / 24/7" stat trio, the cooperative WhyGuidedCoaching title, the absence of the human-coach fight framing, the absence of the New Masters taxonomy and the Unsplash URL, the absence of the "measurable efficiency" claim, the absence of the "silent, brilliant assistant" line, and the RPI/VDOT reconciliation. Full web suite still 459/459 green.
+
+**What we did not do.** We did not migrate onboarding from `/checkout/trial` to `/trial/start`. Founder rejected option B (no-CC trial flow) in favor of option A (drop the false claim). Stripe-collected trials convert ~2-3x better than no-card trials; the conversion math wins. The product flow is unchanged. Only the marketing claim is now true.
+
+**Out of scope (separate tickets).** Calculator share-link / community-seeding affordance (UTM-tagged share button on `/tools/*`); footer brand-copy strengthening; OG image refresh; Person/Author JSON-LD schema; Brian DEXA-flow product surfacing once strength v1 ships.
+
+Spec lives at `docs/specs/MARKETING_VOICE_REWRITE_2026-04-16.md`.
+
 ## [2026-04-19] garmin-fit-backfill quarantined + activity page tells the truth on missing FIT data
 
 After Phase 3 of `fit_run_001` shipped, the founder asked why no FIT cards were visible on the activity page in production. Audit revealed the truth:
