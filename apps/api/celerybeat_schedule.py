@@ -117,4 +117,13 @@ beat_schedule = {
         "task": "tasks.sweep_unclassified_runs",
         "schedule": crontab(minute="*/30"),
     },
+    # Strength v1 — daily reconciliation sweep of Garmin-ingested strength
+    # sessions that look incomplete (sparse / zero StrengthExerciseSet rows).
+    # Read-only; observability for the home-card nudge surface. The card
+    # itself is computed on-demand via /v1/strength/nudges so it always
+    # reflects live state. See docs/specs/STRENGTH_V1_SCOPE.md §6.2.
+    "strength-garmin-reconcile": {
+        "task": "tasks.reconcile_garmin_strength_sessions",
+        "schedule": crontab(hour=6, minute=30),
+    },
 }

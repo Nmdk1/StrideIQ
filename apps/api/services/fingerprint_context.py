@@ -223,6 +223,28 @@ COACHING_LANGUAGE: Dict[str, str] = {
     "sleep_quality_x_session_intensity": "sleep × session intensity",
     "hrv_rhr_convergence": "HRV-RHR convergence",
     "hrv_rhr_divergence_flag": "HRV-RHR divergence",
+    # Strength v1 — descriptive labels only. The Manual surfaces these
+    # in observation form ("your easy pace runs 6 sec/mi faster the day
+    # after a heavy lower-body session"). The labels never imply a
+    # prescription. See docs/specs/STRENGTH_V1_SCOPE.md §10 for the
+    # narration purity contract.
+    "ct_strength_sessions_7d": "strength sessions (last 7 days)",
+    "ct_strength_sessions": "strength sessions",
+    "ct_strength_duration_min": "strength session duration",
+    "ct_strength_tss_7d": "strength load (last 7 days)",
+    "ct_total_volume_kg": "total lifting volume",
+    "ct_total_sets": "total sets",
+    "ct_lower_body_sets": "lower-body sets",
+    "ct_upper_body_sets": "upper-body sets",
+    "ct_core_sets": "core sets",
+    "ct_plyometric_sets": "plyometric sets",
+    "ct_heavy_sets": "heavy sets",
+    "ct_unilateral_sets": "unilateral sets",
+    "ct_hours_since_strength": "hours since last strength session",
+    "lifts_currently": "currently lifting",
+    "lift_days_per_week": "lifting frequency",
+    "lift_experience_bucket": "lifting experience",
+    "estimated_1rm": "estimated 1RM",
 }
 
 

@@ -17,6 +17,7 @@ import { useUnits } from '@/lib/context/UnitsContext';
 import { LastRunHero } from '@/components/home/LastRunHero';
 import { CompactPMC } from '@/components/home/CompactPMC';
 import { RecentCrossTrainingCard } from '@/components/home/RecentCrossTrainingCard';
+import { StrengthNudgesCard } from '@/components/strength/StrengthNudgesCard';
 import FindingCard from '@/components/findings/FindingCard';
 import { TrialBanner } from '@/components/home/TrialBanner';
 import { FirstInsightsBanner } from '@/components/home/FirstInsightsBanner';
@@ -802,6 +803,11 @@ export default function HomePage() {
 
           {/* Cross-training acknowledgment — secondary to the run hero */}
           {recent_cross_training && <RecentCrossTrainingCard data={recent_cross_training} />}
+
+          {/* Strength v1 sandbox: nudge for Garmin sessions missing detail.
+              Self-suppresses if flag is off or there are no candidates.
+              See docs/specs/STRENGTH_V1_SCOPE.md §6.2. */}
+          <StrengthNudgesCard />
 
           {/* Training Load — compact PMC (paired visually with LastRunHero) */}
           <CompactPMC />

@@ -88,6 +88,15 @@ from . import workout_classification_tasks  # noqa: E402  # backfill / safety-ne
 from . import plan_lifecycle_tasks  # noqa: E402
 from . import beat_startup_dispatch  # noqa: E402  # deploy-proof daily task dispatch
 
+# Strength v1 reconciliation sweep — non-fatal if absent (sandbox).
+try:
+    from . import strength_reconciliation_tasks  # noqa: E402, F401
+except ImportError as e:
+    import logging
+    logging.getLogger(__name__).warning(
+        "strength_reconciliation_tasks not loaded (non-fatal): %s", e
+    )
+
 try:
     from . import runtoon_tasks  # noqa: E402
 except ImportError as e:

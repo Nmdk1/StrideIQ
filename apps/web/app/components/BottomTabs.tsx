@@ -13,6 +13,7 @@ import {
   MoreHorizontal,
 } from "lucide-react";
 import { useAuth } from "@/lib/hooks/useAuth";
+import { isFeatureEnabled } from "@/lib/featureFlags";
 
 const TABS = [
   { href: "/home", label: "Home", icon: Home, accent: false },
@@ -64,6 +65,13 @@ export default function BottomTabs() {
       items.push(
         { href: "/fingerprint", label: "Fingerprint" },
       );
+    }
+    // Strength v1 sandbox: server gates the data with the `strength.v1`
+    // flag (404 when off). The nav entry is opt-in via localStorage so
+    // the surface stays invisible to athletes who aren't in the rollout.
+    //   localStorage.setItem('ff_strength_v1', 'true')
+    if (isFeatureEnabled('strength_v1')) {
+      items.push({ href: "/strength", label: "Strength" });
     }
     return items;
   }, [user?.has_correlations]);

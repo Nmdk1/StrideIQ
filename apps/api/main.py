@@ -421,6 +421,33 @@ app.include_router(fingerprint.router)
 app.include_router(provider_imports.router)
 app.include_router(auto_discovery_admin.router)
 
+# Strength v1 — manual logging (sandbox; gated per-athlete by the
+# strength.v1 feature flag, returns 404 when off so the surface is
+# invisible). See docs/specs/STRENGTH_V1_SCOPE.md.
+try:
+    from routers import strength_v1 as strength_v1_router
+    app.include_router(strength_v1_router.router)
+except ImportError as e:
+    logger.warning(f"Could not include Strength v1 router: {e}")
+
+# Body-area symptom log — niggles/aches/pains/injury, gated behind the
+# same strength.v1 flag (see docs/specs/STRENGTH_V1_SCOPE.md §6.5).
+try:
+    from routers import symptoms_v1 as symptoms_v1_router
+    app.include_router(symptoms_v1_router.router)
+except ImportError as e:
+    logger.warning(f"Could not include symptoms v1 router: {e}")
+
+# Strength v1 — routines + goals CRUD, gated behind the same
+# strength.v1 flag (see docs/specs/STRENGTH_V1_SCOPE.md §6.2 / §6.3).
+# Athlete-saved patterns only; the system never seeds, suggests, or
+# recommends a routine or goal — strength_narration_purity test enforces.
+try:
+    from routers import routines_goals_v1 as routines_goals_v1_router
+    app.include_router(routines_goals_v1_router.router)
+except ImportError as e:
+    logger.warning(f"Could not include routines/goals v1 router: {e}")
+
 # Runtoon — AI-generated personalized run images (feature-flagged)
 try:
     from routers import runtoon as runtoon_router

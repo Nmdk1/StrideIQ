@@ -32,7 +32,7 @@ logger = logging.getLogger(__name__)
 
 DOMAIN_ORDER = [
     "recovery", "sleep", "cardiac", "training_load", "environmental",
-    "pace", "race", "subjective", "training_pattern",
+    "pace", "race", "subjective", "strength", "training_pattern",
 ]
 
 DOMAIN_LABELS = {
@@ -44,6 +44,7 @@ DOMAIN_LABELS = {
     "pace": "Pace & Efficiency",
     "race": "Racing",
     "subjective": "Subjective Feedback",
+    "strength": "Strength",
     "training_pattern": "Training Patterns",
 }
 
@@ -56,6 +57,12 @@ DOMAIN_DESCRIPTIONS = {
     "pace": "Your pace efficiency, thresholds, and progression.",
     "race": "Race execution patterns and pre-race signatures.",
     "subjective": "How your subjective feel predicts performance.",
+    # Strength v1: an *observation* domain. The Manual reports what
+    # the data shows about how strength work tracks with running
+    # outputs for THIS athlete. It never prescribes a routine, never
+    # recommends a load, never tells the athlete what they should  # narration-purity: allow
+    # do at the gym. See docs/specs/STRENGTH_V1_SCOPE.md §10.
+    "strength": "How your strength work tracks with running outputs.",
     "training_pattern": "Weekly structure, session sequencing, and workout variety.",
 }
 
@@ -68,6 +75,17 @@ _DOMAIN_RULES: List[Tuple[str, List[str]]] = [
     ("subjective", ["readiness", "soreness", "motivation", "stress_1_5", "confidence_1_5",
                      "sleep_quality_1_5", "feedback_", "perceived_effort", "leg_feel",
                      "enjoyment", "rpe"]),
+    # Strength domain — match canonical engine input names from
+    # services/intelligence/correlation_engine.py (ct_strength_*,
+    # ct_lower_body_*, ct_heavy_sets, ct_hours_since_strength,
+    # ct_strength_frequency_*) and per-set RPE / e1RM signals from
+    # phase I. Listed before training_pattern so strength findings
+    # don't get bucketed into the catch-all.
+    ("strength", ["ct_strength", "ct_lower_body", "ct_upper_body", "ct_heavy_sets",
+                   "ct_total_sets", "ct_hours_since_strength",
+                   "estimated_1rm", "lift_days_per_week", "lifts_currently",
+                   "lift_experience_bucket", "movement_pattern", "muscle_group",
+                   "is_unilateral"]),
     ("race", ["race", "pb_events"]),
     ("pace", ["pace", "efficiency", "speed", "cadence", "stride"]),
     ("training_pattern", ["long_run", "consecutive", "run_start_hour", "elevation",
@@ -153,6 +171,37 @@ def _classify_domain(input_name: str, output_metric: str) -> str:
             if kw in combined:
                 return domain
     return "training_pattern"
+
+
+# Phase I — strength domain finding gate.
+#
+# Strength v1 is new and observation-driven: we suppress over
+# hallucinate. Until a strength finding has at least 4 sample
+# observations AND p < 0.05 it stays in the database (visible to
+# tuning analysis) but never renders in the Personal Operating
+# Manual or any athlete-facing surface. This is *stricter* than
+# the engine's general bar.
+# See docs/specs/STRENGTH_V1_SCOPE.md §8.2.
+_STRENGTH_MIN_SAMPLE_SIZE = 4
+_STRENGTH_MAX_P_VALUE = 0.05
+
+
+def _passes_strength_surface_gate(finding) -> bool:
+    """Return True if a strength-domain finding may render to the athlete.
+
+    Non-strength findings always pass (gate is domain-scoped).
+    Missing sample_size / p_value attributes also pass (older
+    engine snapshots predate the columns; we don't retroactively
+    suppress them).
+    """
+    domain = _classify_domain(finding.input_name, finding.output_metric)
+    if domain != "strength":
+        return True
+    sample_size = getattr(finding, "sample_size", None)
+    p_value = getattr(finding, "p_value", None)
+    if sample_size is None or p_value is None:
+        return True
+    return sample_size >= _STRENGTH_MIN_SAMPLE_SIZE and p_value < _STRENGTH_MAX_P_VALUE
 
 
 def _classify_investigation_domain(investigation_name: str, finding_type: str) -> str:
@@ -1195,6 +1244,9 @@ def assemble_manual(athlete_id: UUID, db: Session) -> Dict[str, Any]:
 
     for f in findings:
         domain = _classify_domain(f.input_name, f.output_metric)
+
+        if not _passes_strength_surface_gate(f):
+            continue
 
         entry = {
             "id": str(f.id),

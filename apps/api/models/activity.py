@@ -213,6 +213,26 @@ class StrengthExerciseSet(Base):
     estimated_1rm_kg = Column(Float, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
+    # --- Strength v1 (strength_v1_002) ---
+    # Per-set capture metadata. All nullable so Garmin-ingested rows from
+    # before the migration keep working unchanged.
+    rpe = Column(Float, nullable=True)
+    implement_type = Column(Text, nullable=True)
+    set_modifier = Column(Text, nullable=True)
+    tempo = Column(Text, nullable=True)
+    notes = Column(Text, nullable=True)
+    source = Column(Text, nullable=False, default="garmin")
+    manually_augmented = Column(Boolean, nullable=False, default=False)
+    # Non-destructive edit history. An edit inserts a new row; the old row
+    # gets superseded_at stamped and superseded_by_id pointed at the new row.
+    # Read paths default to ``superseded_at IS NULL``.
+    superseded_by_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("strength_exercise_set.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    superseded_at = Column(DateTime(timezone=True), nullable=True)
+
     __table_args__ = (
         Index("ix_strength_set_athlete_pattern", "athlete_id", "movement_pattern"),
     )
