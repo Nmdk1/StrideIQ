@@ -95,7 +95,9 @@ class StrengthSetResponse(BaseModel):
 
     id: UUID
     set_order: int
-    exercise_name: str = Field(alias="exercise_name_raw")
+    # validation_alias pulls from the SQLAlchemy column ``exercise_name_raw``
+    # while the JSON output stays as ``exercise_name`` for the frontend.
+    exercise_name: str = Field(validation_alias="exercise_name_raw")
     exercise_category: str
     movement_pattern: str
     muscle_group: Optional[str] = None

@@ -7,8 +7,9 @@
  * exists so a saved session has a stable URL for sharing/inspecting.
  */
 
-import { use, useMemo } from 'react';
+import { useMemo } from 'react';
 import Link from 'next/link';
+import { useParams } from 'next/navigation';
 
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
 import { useStrengthSession } from '@/lib/hooks/queries/strength';
@@ -21,12 +22,17 @@ function lb(kg?: number | null): string {
   return `${Math.round(kg * KG_TO_LBS).toLocaleString()} lb`;
 }
 
-export default function StrengthSessionDetailPage({
-  params,
-}: {
-  params: Promise<{ id: string }>;
-}) {
-  const { id } = use(params);
+function prettify(slug?: string | null): string {
+  if (!slug) return '';
+  return slug
+    .toLowerCase()
+    .replace(/_/g, ' ')
+    .replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+export default function StrengthSessionDetailPage() {
+  const params = useParams();
+  const id = (params?.id as string) ?? '';
   return (
     <ProtectedRoute>
       <Inner id={id} />
@@ -102,12 +108,12 @@ function Inner({ id }: { id: string }) {
 
       <section className="px-4 pt-4 space-y-5">
         {Array.from(grouped.entries()).map(([name, sets]) => (
-          <div key={name} className="rounded-lg border border-slate-800 bg-slate-900/40 p-3">
-            <div className="flex items-baseline justify-between">
-              <h2 className="text-base font-semibold capitalize">{name}</h2>
-              <span className="text-[11px] text-slate-500 capitalize">
-                {sets[0].movement_pattern.replace(/_/g, ' ')}
-                {sets[0].is_unilateral ? ' · unilateral' : ''}
+          <div key={name || 'unknown'} className="rounded-lg border border-slate-800 bg-slate-900/40 p-3">
+            <div className="flex items-baseline justify-between gap-3">
+              <h2 className="text-base font-semibold">{prettify(name) || 'Exercise'}</h2>
+              <span className="text-[11px] text-slate-500">
+                {prettify(sets[0]?.movement_pattern)}
+                {sets[0]?.is_unilateral ? ' · unilateral' : ''}
               </span>
             </div>
             <ul className="mt-2 divide-y divide-slate-800/70">
