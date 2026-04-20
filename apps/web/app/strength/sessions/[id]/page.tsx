@@ -63,6 +63,7 @@ function Inner({ id }: { id: string }) {
   const { data, isLoading, error } = useStrengthSession(id);
   const append = useAppendStrengthSets(id);
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [pendingPick, setPendingPick] = useState<ExercisePickerEntry | null>(null);
   const [busyError, setBusyError] = useState<string | null>(null);
 
   const grouped = useMemo(() => {
@@ -77,16 +78,16 @@ function Inner({ id }: { id: string }) {
     return out;
   }, [data]);
 
-  const handlePick = async (entry: ExercisePickerEntry) => {
+  const handlePick = (entry: ExercisePickerEntry) => {
     setPickerOpen(false);
     setBusyError(null);
+    setPendingPick(entry);
+  };
+
+  const handleAppendSets = async (sets: StrengthSetCreate[]) => {
+    setBusyError(null);
     try {
-      await append.mutateAsync([
-        {
-          exercise_name: entry.name,
-          set_type: 'active',
-        } as StrengthSetCreate,
-      ]);
+      await append.mutateAsync(sets);
     } catch (err: unknown) {
       const msg =
         err && typeof err === 'object' && 'message' in err
@@ -94,6 +95,35 @@ function Inner({ id }: { id: string }) {
           : '';
       setBusyError(msg || 'Could not add set. Try again.');
     }
+  };
+
+  const confirmPendingPick = async (count: number) => {
+    const entry = pendingPick;
+    if (!entry) return;
+    setPendingPick(null);
+    const blanks: StrengthSetCreate[] = Array.from({ length: count }, () => ({
+      exercise_name: entry.name,
+      set_type: 'active',
+    }));
+    await handleAppendSets(blanks);
+  };
+
+  const repeatExistingSet = async (s: StrengthSetResponse) => {
+    await handleAppendSets([
+      {
+        exercise_name: s.exercise_name,
+        reps: s.reps ?? null,
+        weight_kg: s.weight_kg ?? null,
+        duration_s: s.duration_s ?? null,
+        rpe: s.rpe ?? null,
+        implement_type:
+          (s.implement_type as StrengthSetCreate['implement_type']) ?? null,
+        set_modifier: (s.set_modifier as StrengthSetCreate['set_modifier']) ?? null,
+        tempo: s.tempo ?? null,
+        notes: null,
+        set_type: 'active',
+      },
+    ]);
   };
 
   if (isLoading) {
@@ -179,6 +209,8 @@ function Inner({ id }: { id: string }) {
                   activityId={id}
                   set={s}
                   editable={isManual}
+                  onRepeat={() => repeatExistingSet(s)}
+                  repeatPending={append.isPending}
                 />
               ))}
             </ul>
@@ -211,6 +243,98 @@ function Inner({ id }: { id: string }) {
         onClose={() => setPickerOpen(false)}
         onSelect={handlePick}
       />
+
+      <SetCountSheet
+        entry={pendingPick}
+        onCancel={() => setPendingPick(null)}
+        onConfirm={confirmPendingPick}
+        pending={append.isPending}
+      />
+    </div>
+  );
+}
+
+interface SetCountSheetProps {
+  entry: ExercisePickerEntry | null;
+  onCancel: () => void;
+  onConfirm: (count: number) => void;
+  pending: boolean;
+}
+
+function SetCountSheet({ entry, onCancel, onConfirm, pending }: SetCountSheetProps) {
+  const [custom, setCustom] = useState('');
+  if (!entry) return null;
+
+  const commit = (n: number) => {
+    if (pending) return;
+    onConfirm(n);
+    setCustom('');
+  };
+
+  const customNum = Number(custom);
+  const customValid =
+    custom.trim() !== '' && Number.isFinite(customNum) && customNum >= 1 && customNum <= 20;
+
+  return (
+    <div
+      className="fixed inset-0 z-30 bg-slate-950/80 flex items-end sm:items-center justify-center p-0 sm:p-6"
+      role="dialog"
+      aria-label="How many sets"
+      onClick={onCancel}
+    >
+      <div
+        className="w-full sm:max-w-md bg-slate-900 rounded-t-2xl sm:rounded-2xl border border-slate-800 p-5"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <p className="text-[11px] uppercase tracking-wide text-slate-500">
+          Adding
+        </p>
+        <h3 className="text-lg font-semibold mt-1">{prettify(entry.name)}</h3>
+        <p className="text-[12px] text-slate-500 mt-1">
+          How many sets? You can edit reps, weight, and RPE on each row after.
+        </p>
+
+        <div className="mt-4 grid grid-cols-5 gap-2">
+          {[1, 2, 3, 4, 5].map((n) => (
+            <button
+              key={n}
+              type="button"
+              disabled={pending}
+              onClick={() => commit(n)}
+              className="py-3 rounded-md bg-slate-800 hover:bg-emerald-600 hover:text-white text-base font-semibold text-slate-100 disabled:opacity-50"
+            >
+              {n}
+            </button>
+          ))}
+        </div>
+
+        <div className="mt-3 flex items-center gap-2">
+          <input
+            type="text"
+            inputMode="numeric"
+            value={custom}
+            onChange={(e) => setCustom(e.target.value.replace(/[^\d]/g, ''))}
+            placeholder="Custom (1–20)"
+            className="flex-1 bg-slate-950 border border-slate-800 rounded-md px-3 py-2 text-base text-slate-100 placeholder-slate-600 focus:outline-none focus:border-slate-600"
+          />
+          <button
+            type="button"
+            disabled={!customValid || pending}
+            onClick={() => commit(customNum)}
+            className="px-4 py-2 rounded-md bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-800 disabled:text-slate-500 text-white font-semibold"
+          >
+            {pending ? 'Adding…' : 'Add'}
+          </button>
+        </div>
+
+        <button
+          type="button"
+          onClick={onCancel}
+          className="mt-4 w-full py-2 text-sm text-slate-400 hover:text-slate-200"
+        >
+          Cancel
+        </button>
+      </div>
     </div>
   );
 }
@@ -219,9 +343,11 @@ interface SetRowProps {
   activityId: string;
   set: StrengthSetResponse;
   editable: boolean;
+  onRepeat: () => void;
+  repeatPending: boolean;
 }
 
-function SetRow({ activityId, set, editable }: SetRowProps) {
+function SetRow({ activityId, set, editable, onRepeat, repeatPending }: SetRowProps) {
   const [editing, setEditing] = useState(false);
   const [reps, setReps] = useState<string>(set.reps != null ? String(set.reps) : '');
   const [lbs, setLbs] = useState<string>(lbInputValue(set.weight_kg));
@@ -299,6 +425,15 @@ function SetRow({ activityId, set, editable }: SetRowProps) {
         </div>
         {editable && (
           <div className="flex justify-end gap-3 mt-1">
+            <button
+              type="button"
+              onClick={onRepeat}
+              disabled={repeatPending}
+              className="text-[11px] text-emerald-400 hover:text-emerald-300 px-2 py-1 disabled:opacity-50"
+              title="Add another set with these same values"
+            >
+              {repeatPending ? 'Adding…' : 'Repeat'}
+            </button>
             <button
               type="button"
               onClick={() => setEditing(true)}
