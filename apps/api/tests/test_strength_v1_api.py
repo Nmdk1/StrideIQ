@@ -393,6 +393,156 @@ class TestEndToEnd:
         bad = e2e_client.delete(f"/v1/strength/sessions/{garmin.id}")
         assert bad.status_code == 400
 
+    def test_append_sets_extends_session_at_tail(self, e2e_client, db_session):
+        """Appending sets bumps set_order past the existing tail and
+        leaves the original sets untouched."""
+        from models import StrengthExerciseSet
+
+        create = e2e_client.post(
+            "/v1/strength/sessions",
+            json={
+                "sets": [
+                    {"exercise_name": "TRAP_BAR_DEADLIFT", "reps": 6, "weight_kg": 102.0},
+                    {"exercise_name": "TRAP_BAR_DEADLIFT", "reps": 6, "weight_kg": 102.0},
+                ]
+            },
+        )
+        assert create.status_code == 201, create.text
+        activity_id = create.json()["id"]
+        original_ids = {s["id"] for s in create.json()["sets"]}
+
+        append = e2e_client.post(
+            f"/v1/strength/sessions/{activity_id}/sets",
+            json=[
+                {"exercise_name": "WEIGHTED_LEG_CURL", "reps": 10, "weight_kg": 16.0},
+                {"exercise_name": "WALKING_LUNGE", "reps": 10, "weight_kg": 22.7},
+            ],
+        )
+        assert append.status_code == 201, append.text
+        body = append.json()
+        assert body["set_count"] == 4
+        orders = [s["set_order"] for s in body["sets"]]
+        assert orders == [1, 2, 3, 4], "appended sets must occupy the next slots"
+        new_names = [s["exercise_name"] for s in body["sets"]]
+        assert new_names == [
+            "TRAP_BAR_DEADLIFT",
+            "TRAP_BAR_DEADLIFT",
+            "WEIGHTED_LEG_CURL",
+            "WALKING_LUNGE",
+        ]
+
+        # Originals must not be superseded just because we appended.
+        for orig_id in original_ids:
+            row = (
+                db_session.query(StrengthExerciseSet)
+                .filter(StrengthExerciseSet.id == UUID(orig_id))
+                .first()
+            )
+            assert row.superseded_at is None
+
+    def test_append_rejects_garmin_session(self, e2e_client, db_session, test_athlete):
+        """Appending to a Garmin-ingested session would silently desync
+        future FIT reconciles, so it must be refused."""
+        from models import Activity
+
+        garmin = Activity(
+            id=uuid4(),
+            athlete_id=test_athlete.id,
+            sport="strength",
+            source="garmin",
+            start_time=datetime.now(timezone.utc),
+        )
+        db_session.add(garmin)
+        db_session.commit()
+
+        resp = e2e_client.post(
+            f"/v1/strength/sessions/{garmin.id}/sets",
+            json=[{"exercise_name": "PUSH_UP", "reps": 10}],
+        )
+        assert resp.status_code == 400
+
+    def test_append_rejects_empty_payload(self, e2e_client):
+        create = e2e_client.post(
+            "/v1/strength/sessions",
+            json={"sets": [{"exercise_name": "PUSH_UP", "reps": 10}]},
+        )
+        activity_id = create.json()["id"]
+
+        resp = e2e_client.post(
+            f"/v1/strength/sessions/{activity_id}/sets",
+            json=[],
+        )
+        assert resp.status_code == 422
+
+    def test_delete_set_soft_deletes_with_audit_trail(
+        self, e2e_client, db_session
+    ):
+        """Deleting a set drops it from the active read but the row stays
+        in the DB with ``superseded_at`` stamped and no successor."""
+        from models import StrengthExerciseSet
+
+        create = e2e_client.post(
+            "/v1/strength/sessions",
+            json={
+                "sets": [
+                    {"exercise_name": "BENCH_PRESS", "reps": 5, "weight_kg": 80},
+                    {"exercise_name": "BENCH_PRESS", "reps": 5, "weight_kg": 80},
+                    {"exercise_name": "BENCH_PRESS", "reps": 5, "weight_kg": 80},
+                ]
+            },
+        )
+        activity_id = create.json()["id"]
+        target_id = create.json()["sets"][1]["id"]  # delete the middle one
+
+        resp = e2e_client.delete(
+            f"/v1/strength/sessions/{activity_id}/sets/{target_id}"
+        )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["set_count"] == 2
+        assert all(s["id"] != target_id for s in body["sets"])
+
+        row = (
+            db_session.query(StrengthExerciseSet)
+            .filter(StrengthExerciseSet.id == UUID(target_id))
+            .first()
+        )
+        assert row is not None, "soft-delete must NOT remove the row"
+        assert row.superseded_at is not None
+        assert row.superseded_by_id is None, (
+            "deleted sets have no successor — that's the audit signal that "
+            "distinguishes 'deleted' from 'edited'"
+        )
+
+        # Edit-history surfaces the deleted row.
+        hist = e2e_client.get(
+            f"/v1/strength/sessions/{activity_id}/edit-history"
+        ).json()
+        deleted_rows = [
+            r for r in hist["rows"]
+            if r["superseded_at"] is not None and r["superseded_by_id"] is None
+        ]
+        assert len(deleted_rows) == 1
+        assert deleted_rows[0]["id"] == target_id
+
+    def test_delete_set_404_if_already_removed(self, e2e_client):
+        create = e2e_client.post(
+            "/v1/strength/sessions",
+            json={"sets": [{"exercise_name": "PUSH_UP", "reps": 10}]},
+        )
+        activity_id = create.json()["id"]
+        set_id = create.json()["sets"][0]["id"]
+
+        first = e2e_client.delete(
+            f"/v1/strength/sessions/{activity_id}/sets/{set_id}"
+        )
+        assert first.status_code == 200
+        # Deleting twice returns 404 — the row is no longer "active".
+        second = e2e_client.delete(
+            f"/v1/strength/sessions/{activity_id}/sets/{set_id}"
+        )
+        assert second.status_code == 404
+
     def test_exercises_search_and_recent(self, e2e_client):
         e2e_client.post(
             "/v1/strength/sessions",

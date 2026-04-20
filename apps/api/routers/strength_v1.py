@@ -5,7 +5,9 @@ Routes:
 - ``GET    /v1/strength/sessions``                   list recent sessions
 - ``POST   /v1/strength/sessions``                   create a new manual session
 - ``GET    /v1/strength/sessions/{activity_id}``     read one session w/ active sets
+- ``POST   /v1/strength/sessions/{activity_id}/sets``  append sets to existing session
 - ``PATCH  /v1/strength/sessions/{activity_id}/sets/{set_id}``  edit a set (supersede)
+- ``DELETE /v1/strength/sessions/{activity_id}/sets/{set_id}``  soft-delete a set
 - ``DELETE /v1/strength/sessions/{activity_id}``     archive (sport=strength_archived)
 - ``GET    /v1/strength/sessions/{activity_id}/edit-history``    full edit graph
 - ``GET    /v1/strength/exercises``                  search the taxonomy + recent
@@ -454,6 +456,125 @@ def edit_strength_set(
     old_set.superseded_by_id = new_set.id
     old_set.superseded_at = datetime.now(timezone.utc)
 
+    db.commit()
+    db.refresh(activity)
+
+    sets = _active_sets(db, activity_id)
+    return _to_session_response(activity, sets)
+
+
+@router.post(
+    "/sessions/{activity_id}/sets",
+    response_model=StrengthSessionResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def append_strength_sets(
+    activity_id: UUID,
+    payload: List[StrengthSetCreate],
+    current_user: Athlete = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> StrengthSessionResponse:
+    """Append one or more sets to an existing strength session.
+
+    Athletes routinely realise mid-workout (or after) that they forgot to
+    log accessory sets or a finisher. The detail page exposes "+ Add set"
+    which posts here. We append at the tail: ``set_order = max(active) + N``.
+
+    The originating Activity must belong to the athlete and be a manual
+    strength session. We never let this surface mutate Garmin-ingested
+    sessions because that would silently desync the next FIT reconcile.
+    """
+    _require_strength_v1(current_user.id, db)
+
+    if not payload:
+        raise HTTPException(status_code=422, detail="No sets to append.")
+    if len(payload) > 100:
+        raise HTTPException(status_code=422, detail="Too many sets in one append.")
+
+    activity = (
+        db.query(Activity)
+        .filter(
+            Activity.id == activity_id,
+            Activity.athlete_id == current_user.id,
+        )
+        .first()
+    )
+    if not activity or activity.sport != "strength":
+        raise HTTPException(status_code=404, detail="Strength session not found")
+    if activity.source != "manual":
+        # Same rationale as archive_strength_session: appending to a
+        # Garmin-ingested session would silently desync future syncs.
+        raise HTTPException(
+            status_code=400,
+            detail="Garmin-ingested sessions cannot be edited from this surface.",
+        )
+
+    existing = _active_sets(db, activity_id)
+    next_order = (max((s.set_order for s in existing), default=0) or 0) + 1
+
+    rows: List[StrengthExerciseSet] = []
+    for offset, set_payload in enumerate(payload):
+        kwargs = _set_payload_to_kwargs(
+            set_payload,
+            set_order=next_order + offset,
+            activity_id=activity_id,
+            athlete_id=current_user.id,
+            source="manual",
+        )
+        rows.append(StrengthExerciseSet(**kwargs))
+    db.add_all(rows)
+    db.commit()
+    db.refresh(activity)
+
+    sets = _active_sets(db, activity_id)
+    return _to_session_response(activity, sets)
+
+
+@router.delete(
+    "/sessions/{activity_id}/sets/{set_id}",
+    response_model=StrengthSessionResponse,
+)
+def delete_strength_set(
+    activity_id: UUID,
+    set_id: UUID,
+    current_user: Athlete = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> StrengthSessionResponse:
+    """Soft-delete a single set non-destructively.
+
+    Stamps ``superseded_at = now()`` and leaves ``superseded_by_id``
+    NULL — the read path filters this row out, but the audit timeline
+    still shows "deleted at <timestamp>" with no successor. We never
+    hard-delete athlete-logged data.
+    """
+    _require_strength_v1(current_user.id, db)
+
+    activity = (
+        db.query(Activity)
+        .filter(
+            Activity.id == activity_id,
+            Activity.athlete_id == current_user.id,
+        )
+        .first()
+    )
+    if not activity or activity.sport != "strength":
+        raise HTTPException(status_code=404, detail="Strength session not found")
+
+    target = (
+        db.query(StrengthExerciseSet)
+        .filter(
+            StrengthExerciseSet.id == set_id,
+            StrengthExerciseSet.activity_id == activity_id,
+            StrengthExerciseSet.athlete_id == current_user.id,
+            StrengthExerciseSet.superseded_at.is_(None),
+        )
+        .first()
+    )
+    if not target:
+        raise HTTPException(status_code=404, detail="Set not found or already removed")
+
+    target.superseded_at = datetime.now(timezone.utc)
+    # superseded_by_id stays NULL → audit semantics: "deleted, not edited".
     db.commit()
     db.refresh(activity)
 

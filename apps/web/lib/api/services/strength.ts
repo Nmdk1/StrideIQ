@@ -186,6 +186,25 @@ export const strengthService = {
     );
   },
 
+  async appendSets(
+    activityId: string,
+    sets: StrengthSetCreate[],
+  ): Promise<StrengthSessionResponse> {
+    return apiClient.post<StrengthSessionResponse>(
+      `/v1/strength/sessions/${activityId}/sets`,
+      sets,
+    );
+  },
+
+  async deleteSet(
+    activityId: string,
+    setId: string,
+  ): Promise<StrengthSessionResponse> {
+    return apiClient.delete<StrengthSessionResponse>(
+      `/v1/strength/sessions/${activityId}/sets/${setId}`,
+    );
+  },
+
   async archiveSession(activityId: string): Promise<{ status: string }> {
     return apiClient.delete<{ status: string }>(
       `/v1/strength/sessions/${activityId}`,

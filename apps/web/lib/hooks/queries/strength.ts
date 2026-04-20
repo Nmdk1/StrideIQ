@@ -15,6 +15,7 @@ import {
   type StrengthSessionCreate,
   type StrengthSessionListItem,
   type StrengthSessionResponse,
+  type StrengthSetCreate,
   type StrengthSetUpdate,
 } from '../../api/services/strength';
 
@@ -80,6 +81,31 @@ export function useUpdateStrengthSet(activityId: string) {
       setId: string;
       updates: StrengthSetUpdate;
     }) => strengthService.updateSet(activityId, setId, updates),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: strengthKeys.session(activityId) });
+      qc.invalidateQueries({ queryKey: strengthKeys.sessions() });
+    },
+  });
+}
+
+export function useAppendStrengthSets(activityId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (sets: StrengthSetCreate[]) =>
+      strengthService.appendSets(activityId, sets),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: strengthKeys.session(activityId) });
+      qc.invalidateQueries({ queryKey: strengthKeys.sessions() });
+      qc.invalidateQueries({ queryKey: strengthKeys.exercises() });
+    },
+  });
+}
+
+export function useDeleteStrengthSet(activityId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (setId: string) =>
+      strengthService.deleteSet(activityId, setId),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: strengthKeys.session(activityId) });
       qc.invalidateQueries({ queryKey: strengthKeys.sessions() });
