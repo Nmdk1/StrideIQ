@@ -239,7 +239,7 @@ def get_recent_runs(db: Session, athlete_id: UUID, days: int = 7) -> Dict[str, A
         l_unit = "mi" if units == "imperial" else "km"
         l_pace = latest.get("pace_per_mile") if units == "imperial" else latest.get("pace_per_km")
         try:
-            _relative = " " + _relative_date(date.fromisoformat(l_date))
+            _relative = " " + _relative_date(date.fromisoformat(l_date), _ref_date)
         except (ValueError, TypeError):
             _relative = ""
         rr_parts.append(
@@ -448,7 +448,9 @@ def get_calendar_day_context(db: Session, athlete_id: UUID, day: str) -> Dict[st
         )
 
     # --- Narrative ---
-    _cd_rel = _relative_date(day_date)
+    from services.timezone_utils import get_athlete_timezone_from_db, athlete_local_today
+    _cd_tz = get_athlete_timezone_from_db(db, athlete_id)
+    _cd_rel = _relative_date(day_date, athlete_local_today(_cd_tz))
     cd_parts: List[str] = [f"Calendar day {day_date.isoformat()} ({weekday_name}) {_cd_rel}:"]
     if planned_data:
         status = "completed" if planned_data.get("completed") else ("skipped" if planned_data.get("skipped") else "not yet completed")
@@ -512,7 +514,7 @@ def get_best_runs(
     Optional effort_zone filters by athlete max_hr:
       - easy / threshold / race (same mapping used elsewhere)
     """
-    from services.timezone_utils import get_athlete_timezone_from_db, to_activity_local_date
+    from services.timezone_utils import get_athlete_timezone_from_db, to_activity_local_date, athlete_local_today
     _tz = get_athlete_timezone_from_db(db, athlete_id)
     now = datetime.utcnow()
     try:
@@ -561,7 +563,7 @@ def get_best_runs(
             eff = (speed_mps / float(a.avg_hr)) if (speed_mps and a.avg_hr) else None
 
             _a_local_date = to_activity_local_date(a, _tz)
-            _br_rel = _relative_date(_a_local_date)
+            _br_rel = _relative_date(_a_local_date, athlete_local_today(_tz))
             rows.append(
                 {
                     "activity_id": str(a.id),

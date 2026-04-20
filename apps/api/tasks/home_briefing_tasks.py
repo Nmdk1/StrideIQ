@@ -64,8 +64,10 @@ def _build_data_fingerprint(
 ) -> str:
     """Build a fingerprint of the athlete's current data state."""
     from models import Activity, ActivitySplit, Athlete, DailyCheckin, TrainingPlan
+    from services.timezone_utils import get_athlete_timezone_from_db, athlete_local_today
 
-    today = date.today()
+    _fp_tz = get_athlete_timezone_from_db(db, UUID(athlete_id))
+    today = athlete_local_today(_fp_tz)
     parts = [athlete_id, f"schema:{BRIEFING_FINGERPRINT_VERSION}", f"date:{today.isoformat()}"]
 
     # Include preferred_units so a units toggle forces a fresh briefing
@@ -198,14 +200,16 @@ def _build_briefing_prompt(athlete_id: str, db: Session) -> Optional[tuple]:
             .first()
         )
 
+        from services.timezone_utils import local_day_bounds_utc
+        _day_start_utc, _day_end_utc = local_day_bounds_utc(today, tz)
         today_completed = None
         today_actual = (
             db.query(Activity)
             .filter(
                 Activity.athlete_id == athlete_id,
                 Activity.sport == "run",
-                Activity.start_time >= today,
-                Activity.start_time < today + timedelta(days=1),
+                Activity.start_time >= _day_start_utc,
+                Activity.start_time < _day_end_utc,
             )
             .order_by(desc(Activity.start_time))
             .first()
