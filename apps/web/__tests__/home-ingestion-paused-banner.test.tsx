@@ -31,6 +31,10 @@ jest.mock('@/lib/hooks/queries/insights', () => ({
   useInsightFeed: () => ({ data: { cards: [] }, isLoading: false, error: null }),
 }));
 
+jest.mock('@/lib/hooks/queries/strength', () => ({
+  useStrengthNudges: () => ({ data: { nudges: [] }, isLoading: false, error: null }),
+}));
+
 let homeData: any = {
   today: { has_workout: false },
   yesterday: { has_activity: false },

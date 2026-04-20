@@ -55,6 +55,10 @@ jest.mock('@/lib/hooks/queries/insights', () => ({
   useInsightFeed: () => ({ data: { cards: [] }, isLoading: false, error: null }),
 }));
 
+jest.mock('@/lib/hooks/queries/strength', () => ({
+  useStrengthNudges: () => ({ data: { nudges: [] }, isLoading: false, error: null }),
+}));
+
 import HomePage from '@/app/home/page';
 
 describe('Home page (queued state)', () => {

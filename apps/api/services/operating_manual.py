@@ -60,7 +60,7 @@ DOMAIN_DESCRIPTIONS = {
     # Strength v1: an *observation* domain. The Manual reports what
     # the data shows about how strength work tracks with running
     # outputs for THIS athlete. It never prescribes a routine, never
-    # recommends a load, never tells the athlete what they should  # noqa: narration-purity
+    # recommends a load, never tells the athlete what they should  # narration-purity: allow
     # do at the gym. See docs/specs/STRENGTH_V1_SCOPE.md §10.
     "strength": "How your strength work tracks with running outputs.",
     "training_pattern": "Weekly structure, session sequencing, and workout variety.",

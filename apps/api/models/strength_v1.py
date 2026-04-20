@@ -135,8 +135,8 @@ class BodyAreaSymptomLog(Base):
     - ``pain``    — "it changes how I run"
     - ``injury``  — "I can't train through it"
 
-    The system never auto-classifies severity, never diagnoses, and never  # noqa: narration-purity
-    recommends treatment. It only stores what the athlete reports and  # noqa: narration-purity
+    The system never auto-classifies severity, never diagnoses, and never  # narration-purity: allow
+    recommends treatment. It only stores what the athlete reports and  # narration-purity: allow
     feeds counts into the correlation engine (see phase I).
 
     ``body_area`` is a coarse text enum (~25 values mirroring a PT body

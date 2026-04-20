@@ -26,8 +26,11 @@ forbids), and the scope spec ``docs/specs/STRENGTH_V1_SCOPE.md``
 (which exists to *describe* what the system never says).
 
 If you need to use a forbidden phrase legitimately (e.g. a comment
-explaining "we never prescribe X"), bracket it with ``# noqa:
-narration-purity`` on the same line. The test honours that pragma.
+explaining "we never prescribe X"), bracket it with
+``# narration-purity: allow`` on the same line. The test honours
+that pragma. (We intentionally do not piggyback on ``# noqa:`` —
+ruff rejects unknown noqa codes, which would fail an unrelated
+lint job.)
 """
 
 from __future__ import annotations
@@ -94,7 +97,7 @@ FORBIDDEN_PATTERNS: List[str] = [
 ]
 
 
-PRAGMA_RE = re.compile(r"#\s*noqa:\s*narration-purity", re.IGNORECASE)
+PRAGMA_RE = re.compile(r"#\s*narration-purity:\s*allow", re.IGNORECASE)
 
 
 def _scan_file(path: Path) -> List[str]:
@@ -127,7 +130,7 @@ class TestStrengthNarrationPurity:
         assert not all_violations, (
             "Strength v1 narration purity violation. The system must "
             "never prescribe. Either reword the line, or add "
-            "'# noqa: narration-purity' on the offending line if it "
+            "'# narration-purity: allow' on the offending line if it "
             "is a comment explaining what the system intentionally "
             "does NOT say.\n  - "
             + "\n  - ".join(all_violations)
