@@ -165,6 +165,15 @@ COPY_TABLES: Dict[str, Dict[str, Any]] = {
     "coach_chat":               {"extra_remap": {"context_plan_id": "training_plan"}},
     "coach_intent_snapshot":    {},
     "coach_usage":              {},
+
+    # --- Strength v1 (athlete-curated training data) ---
+    # All three are athlete-entered, no tokens, no PII beyond what the
+    # demo already exposes (training history, body composition, etc.).
+    # Copying them keeps the demo experience honest — a real athlete's
+    # routines, goals, and reported niggles are part of the N=1 picture.
+    "strength_routine":      {},
+    "strength_goal":         {},
+    "body_area_symptom_log": {"date_filter_col": "started_at"},
     # Note: coach_briefing AND coach_briefing_input intentionally NOT
     # copied — see SKIP_TABLES. We want fresh K2.5 generation against the
     # cloned data on first /home view, and the input audit row without

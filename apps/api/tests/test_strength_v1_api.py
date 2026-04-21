@@ -172,7 +172,13 @@ def e2e_client(db_session, test_athlete, monkeypatch):
     monkeypatch.setattr(mod, "is_feature_enabled", lambda *a, **kw: True)
 
     app.dependency_overrides[get_current_user] = lambda: test_athlete
-    app.dependency_overrides[get_db] = lambda: iter([db_session])
+    # FastAPI only unwraps generator-style dependencies when the override
+    # itself is a generator function. A plain lambda returning iter([...])
+    # is treated as the value, and routes get a list_iterator instead of
+    # a Session — every db.add() then raises AttributeError. Convention
+    # across the rest of the suite (and what works here): return the
+    # session directly.
+    app.dependency_overrides[get_db] = lambda: db_session
     try:
         yield TestClient(app, raise_server_exceptions=False)
     finally:
