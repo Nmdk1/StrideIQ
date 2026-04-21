@@ -67,6 +67,8 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
+from services.intelligence.narration_tiers import evidence_phrase as _n1_evidence_phrase
+
 
 # ---------------------------------------------------------------------------
 # Banned acronym / internal-label check
@@ -627,10 +629,8 @@ def _build_insight_text(
         timing = f" over the next {lag_days} days"
 
     confirmation = ""
-    if times_confirmed and times_confirmed >= 5:
-        confirmation = f" This has held up {times_confirmed} times in your data."
-    elif times_confirmed and times_confirmed >= 3:
-        confirmation = f" Confirmed {times_confirmed} times so far."
+    if times_confirmed and times_confirmed >= 3:
+        confirmation = f" Pattern {_n1_evidence_phrase(times_confirmed)}."
 
     beneficial = _is_beneficial(direction, output_metric)
 

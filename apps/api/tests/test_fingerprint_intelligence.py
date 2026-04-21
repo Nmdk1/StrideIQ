@@ -104,16 +104,20 @@ class TestFormatFindingLine:
             asymmetry_ratio=None,
             decay_half_life_days=None,
             time_lag_days=0,
+            lifecycle_state=None,
         )
         line = format_finding_line(f, verbose=False)
-        assert "STRONG 12x" in line
+        # Narration tier comes from times_confirmed (founder rule:
+        # 3-5 EMERGING, 6-9 REPEATED, 10+ CONFIRMED). The legacy
+        # strength label was the trust-rupture vector.
+        assert "CONFIRMED 12x" in line
         assert "cliff" not in line
         assert "Asymmetry" not in line
 
     def test_includes_confirmation_count(self):
-        f = _make_finding(times_confirmed=47)
+        f = _make_finding(times_confirmed=47, lifecycle_state=None)
         line = format_finding_line(f, verbose=False)
-        assert "STRONG 47x" in line
+        assert "CONFIRMED 47x" in line
 
 
 # ---------------------------------------------------------------------------
@@ -121,33 +125,54 @@ class TestFormatFindingLine:
 # ---------------------------------------------------------------------------
 
 class TestBuildFingerprintPromptSection:
+    """Section assembly is what matters here; the eligibility chokepoint
+    has its own dedicated tests in ``test_finding_eligibility``. We stub
+    ``get_confirmed_findings`` so these tests stay focused on formatting
+    and grouping behavior rather than re-asserting the chokepoint's
+    query mechanics."""
 
     def test_returns_none_when_no_findings(self):
         db = MagicMock()
-        db.query.return_value.filter.return_value.order_by.return_value.limit.return_value.all.return_value = []
-        result = build_fingerprint_prompt_section(ATHLETE_ID, db)
+        db.query.return_value.filter.return_value.order_by.return_value.nulls_last.return_value = MagicMock()
+        with patch(
+            "services.fingerprint_context.get_confirmed_findings",
+            return_value=[],
+        ):
+            result = build_fingerprint_prompt_section(ATHLETE_ID, db)
         assert result is None
 
     def test_verbose_section_has_header(self):
         f = _make_finding()
         db = MagicMock()
-        db.query.return_value.filter.return_value.order_by.return_value.limit.return_value.all.return_value = [f]
-        result = build_fingerprint_prompt_section(ATHLETE_ID, db, verbose=True)
+        db.query.return_value.filter.return_value.order_by.return_value.limit.return_value.all.return_value = []
+        with patch(
+            "services.fingerprint_context.get_confirmed_findings",
+            return_value=[f],
+        ):
+            result = build_fingerprint_prompt_section(ATHLETE_ID, db, verbose=True)
         assert "Personal Fingerprint" in result
         assert "ACTIVE" in result
 
     def test_compact_section_has_instruction(self):
         f = _make_finding()
         db = MagicMock()
-        db.query.return_value.filter.return_value.order_by.return_value.limit.return_value.all.return_value = [f]
-        result = build_fingerprint_prompt_section(ATHLETE_ID, db, verbose=False)
+        db.query.return_value.filter.return_value.order_by.return_value.limit.return_value.all.return_value = []
+        with patch(
+            "services.fingerprint_context.get_confirmed_findings",
+            return_value=[f],
+        ):
+            result = build_fingerprint_prompt_section(ATHLETE_ID, db, verbose=False)
         assert "Treat ACTIVE as fact" in result
 
     def test_limits_findings(self):
         findings = [_make_finding(times_confirmed=50 - i) for i in range(12)]
         db = MagicMock()
-        db.query.return_value.filter.return_value.order_by.return_value.limit.return_value.all.return_value = findings[:8]
-        result = build_fingerprint_prompt_section(ATHLETE_ID, db, max_findings=8)
+        db.query.return_value.filter.return_value.order_by.return_value.limit.return_value.all.return_value = []
+        with patch(
+            "services.fingerprint_context.get_confirmed_findings",
+            return_value=findings[:8],
+        ):
+            result = build_fingerprint_prompt_section(ATHLETE_ID, db, max_findings=8)
         assert result is not None
         assert result.count("→") == 8  # 8 finding lines, each with "→"
 

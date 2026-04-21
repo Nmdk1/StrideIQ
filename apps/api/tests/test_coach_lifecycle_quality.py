@@ -553,25 +553,30 @@ class TestT1_6_StructuralLabeling:
 class TestT1_7_NullLifecycleCompat:
     """Findings without lifecycle_state use times_confirmed tiers."""
 
-    def test_null_lifecycle_strong_tier(self):
+    def test_null_lifecycle_repeated_tier(self):
+        # 6-9 confirmations → REPEATED under the post-Jim narration tiers
+        # (founder rule: 3-5 EMERGING, 6-9 REPEATED, 10+ CONFIRMED).
+        # The legacy "STRONG" label was the trust-rupture vector.
         finding = _make_finding(
             lifecycle_state=None,
             times_confirmed=8,
         )
         line = format_finding_line(finding)
-        assert "[STRONG 8x]" in line
+        assert "[REPEATED 8x]" in line
         assert "CLOSED" not in line
         assert "EMERGING —" not in line
         assert "RESOLVING" not in line
         assert "STRUCTURAL" not in line
 
-    def test_null_lifecycle_confirmed_tier(self):
+    def test_null_lifecycle_emerging_low_tier(self):
+        # 4 confirmations is not enough to call a pattern "CONFIRMED";
+        # post-Jim, 3-5 confirmations narrate as EMERGING.
         finding = _make_finding(
             lifecycle_state=None,
             times_confirmed=4,
         )
         line = format_finding_line(finding)
-        assert "[CONFIRMED 4x]" in line
+        assert "[EMERGING 4x]" in line
 
     def test_null_lifecycle_emerging_tier(self):
         finding = _make_finding(

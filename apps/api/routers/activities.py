@@ -14,6 +14,10 @@ from core.database import get_db
 from core.auth import get_current_user
 from core.feature_flags import is_feature_enabled
 from models import Activity, Athlete, ActivitySplit, ActivityStream, StrengthExerciseSet
+from services.intelligence.narration_tiers import (
+    evidence_phrase as _af_evidence_phrase,
+    tier_for as _af_tier_for,
+)
 from services.n1_insight_generator import friendly_signal_name
 from schemas import ActivityResponse
 
@@ -1290,8 +1294,10 @@ def get_activity_findings(
             continue
 
         seen_inputs.add(f.input_name)
-        tier = "strong" if f.times_confirmed >= 8 else "confirmed"
-        evidence = f"Confirmed {f.times_confirmed} times" if f.times_confirmed else None
+        tier = _af_tier_for(f.times_confirmed or 0).lower()
+        evidence = (
+            _af_evidence_phrase(f.times_confirmed) if f.times_confirmed else None
+        )
         result.append(FindingAnnotation(
             text=text,
             domain=f.output_metric,

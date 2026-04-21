@@ -1209,18 +1209,14 @@ def assemble_manual(athlete_id: UUID, db: Session) -> Dict[str, Any]:
 
     Cached for 1800s (30 minutes) at the router level.
     """
-    from models import CorrelationFinding as CF, CorrelationMediator as CM
+    from models import CorrelationMediator as CM
+    from services.intelligence.finding_eligibility import select_eligible_findings
 
-    findings = (
-        db.query(CF)
-        .filter(
-            CF.athlete_id == athlete_id,
-            CF.is_active.is_(True),
-            CF.times_confirmed >= 1,
-        )
-        .order_by(CF.times_confirmed.desc())
-        .limit(150)
-        .all()
+    findings = select_eligible_findings(
+        athlete_id,
+        db,
+        min_confirmations=1,
+        limit=150,
     )
 
     # Load all mediators for cascade data

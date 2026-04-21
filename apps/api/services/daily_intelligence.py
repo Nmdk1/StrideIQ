@@ -33,6 +33,8 @@ from uuid import UUID
 
 import logging
 
+from services.intelligence.narration_tiers import evidence_phrase as _di_evidence_phrase
+
 logger = logging.getLogger(__name__)
 
 
@@ -739,7 +741,7 @@ class DailyIntelligenceEngine:
 
             message += (
                 f" Timing signal: effect usually appears {lag_phrase}."
-                f" Confirmed {finding.times_confirmed} times."
+                f" Pattern {_di_evidence_phrase(finding.times_confirmed)}."
                 f" Evidence: r={finding.correlation_coefficient:.2f}."
             )
 

@@ -266,27 +266,20 @@ def get_confirmed_findings(
 ):
     """Return active CorrelationFinding rows ordered by evidence weight.
 
-    Includes both confirmed (3+) and emerging (1-2) findings so the LLM
-    has the full picture the Progress page shows.
-
-    Suppressed signals (passive noise, universally-true environment) are
-    filtered out so they never reach athlete-facing surfaces.
+    Routes through ``services.intelligence.finding_eligibility`` so that
+    counterintuitive findings, confounded findings, sleep-derived
+    findings during invalid-sleep windows, and contradictory pairs are
+    suppressed. The ``min_confirmed`` floor is honored, but rows below
+    the standard surfacing threshold are still returned when the caller
+    asks for them (the LLM brief surfaces emerging patterns by design).
     """
-    from models import CorrelationFinding as CF
+    from services.intelligence.finding_eligibility import select_eligible_findings
 
-    all_suppressed = _SUPPRESSED_SIGNALS | _ENVIRONMENT_SIGNALS
-
-    return (
-        db.query(CF)
-        .filter(
-            CF.athlete_id == athlete_id,
-            CF.is_active == True,  # noqa: E712
-            CF.times_confirmed >= min_confirmed,
-            ~CF.input_name.in_(all_suppressed),
-        )
-        .order_by(CF.times_confirmed.desc())
-        .limit(limit)
-        .all()
+    return select_eligible_findings(
+        athlete_id,
+        db,
+        min_confirmations=min_confirmed,
+        limit=limit,
     )
 
 
@@ -310,10 +303,12 @@ def format_finding_line(f, verbose: bool = False) -> str:
         tier = "ACTIVE"
     elif lifecycle == "closed":
         tier = "CLOSED"
-    elif f.times_confirmed >= 6:
-        tier = "STRONG"
-    elif f.times_confirmed >= 3:
+    elif f.times_confirmed >= 10:
         tier = "CONFIRMED"
+    elif f.times_confirmed >= 6:
+        tier = "REPEATED"
+    elif f.times_confirmed >= 3:
+        tier = "EMERGING"
     else:
         tier = "EMERGING"
 

@@ -479,20 +479,24 @@ class TestBackwardCompatibility:
     """Contract: findings without lifecycle_state still render correctly."""
 
     def test_format_finding_no_lifecycle_state(self):
+        # Founder narration tiers: 6-9 confirmations narrate as REPEATED.
+        # The legacy STRONG label was the trust-rupture vector.
         finding = _make_finding(
             lifecycle_state=None,
             times_confirmed=8,
         )
         line = format_finding_line(finding)
-        assert "[STRONG 8x]" in line
+        assert "[REPEATED 8x]" in line
 
     def test_format_finding_no_lifecycle_confirmed(self):
+        # 4 confirmations cannot be narrated as "CONFIRMED" anymore;
+        # post-Jim, 3-5 confirmations narrate as EMERGING.
         finding = _make_finding(
             lifecycle_state=None,
             times_confirmed=4,
         )
         line = format_finding_line(finding)
-        assert "[CONFIRMED 4x]" in line
+        assert "[EMERGING 4x]" in line
 
     def test_format_finding_no_lifecycle_emerging(self):
         finding = _make_finding(
@@ -503,6 +507,9 @@ class TestBackwardCompatibility:
         assert "[EMERGING 2x]" in line
 
     def test_fingerprint_section_with_no_lifecycle_data(self):
+        # Founder narration tiers: 6-9 confirmations narrate as REPEATED;
+        # 10+ as CONFIRMED. The legacy "STRONG/CONFIRMED at any N" label
+        # was the trust-rupture vector and is no longer valid.
         finding = _make_finding(
             lifecycle_state=None,
             times_confirmed=6,
@@ -516,7 +523,7 @@ class TestBackwardCompatibility:
             result = build_fingerprint_prompt_section(ATHLETE_ID, mock_db)
 
         assert result is not None
-        assert "STRONG" in result or "CONFIRMED" in result
+        assert "REPEATED" in result or "CONFIRMED" in result
 
 
 # ===================================================================
@@ -540,10 +547,16 @@ class TestCoachPromptDirective:
             except Exception:
                 pytest.skip("Coach prompt build requires full DB context")
 
+        # Post-Jim contract: emerging-pattern questioning is conditional on
+        # the athlete's message being open-ended. The directive must still
+        # exist (so the coach knows what to do with EMERGING blocks) but
+        # must NOT be unconditional ("MUST ask"). Direct questions take
+        # precedence over pattern preambles. See _context.py.
         assert "EMERGING PATTERNS" in prompt
         assert "=== EMERGING PATTERN" in prompt
         assert "ASK ABOUT THIS FIRST" in prompt
-        assert "MUST ask that question" in prompt
+        assert "you may ask that question first" in prompt
+        assert "MUST ask that question" not in prompt
 
 
 # ===================================================================

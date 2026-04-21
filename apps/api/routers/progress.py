@@ -22,6 +22,10 @@ from sqlalchemy.orm import Session
 
 from core.database import get_db
 from models import Athlete, Activity, DailyCheckin, CorrelationFinding, TrainingPlan, PerformanceEvent
+from services.intelligence.narration_tiers import (
+    evidence_phrase as _pf_evidence_phrase,
+    tier_for as _pf_tier_for,
+)
 from services.n1_insight_generator import friendly_signal_name
 from services.timezone_utils import get_athlete_timezone, get_athlete_timezone_from_db, athlete_local_today
 from routers.auth import get_current_user
@@ -1450,15 +1454,13 @@ def _assemble_patterns_data(
 
         for f in findings:
             tc = f.times_confirmed
-            if tc >= 6:
-                conf = "strong"
-            elif tc >= 3:
-                conf = "confirmed"
-            else:
-                conf = "emerging"
+            conf = _pf_tier_for(tc).lower()
 
             # Build deterministic fallback narrative
-            fallback_narrative = f"Pattern: {f.input_name} → {f.output_metric}. Confirmed {tc} times."
+            fallback_narrative = (
+                f"Pattern: {f.input_name} → {f.output_metric}. "
+                f"{_pf_evidence_phrase(tc).capitalize()}."
+            )
 
             patterns.append(PersonalPatternResponse(
                 narrative=fallback_narrative,
@@ -2070,7 +2072,10 @@ def _assemble_knowledge(athlete_id, db: Session) -> KnowledgeResponse:
             input_metric=f.input_name,
             output_metric=f.output_metric,
             headline=_build_headline(f),
-            evidence=f.insight_text or f"Observed {f.times_confirmed} times with r={f.correlation_coefficient:.2f}.",
+            evidence=(
+                f.insight_text
+                or f"Pattern {_pf_evidence_phrase(f.times_confirmed)} (r={f.correlation_coefficient:.2f})."
+            ),
             implication="",
             times_confirmed=f.times_confirmed,
             confidence_tier=_confidence_tier(f.times_confirmed),

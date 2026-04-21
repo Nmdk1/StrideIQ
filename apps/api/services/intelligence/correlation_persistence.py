@@ -221,43 +221,25 @@ def get_surfaceable_findings(
     min_confirmations: int = SURFACING_THRESHOLD,
     cooldown_days: int = SURFACING_COOLDOWN_DAYS,
 ) -> List[CorrelationFinding]:
+    """Get reproducible, active findings eligible for athlete-facing surfacing.
+
+    Delegates to ``services.intelligence.finding_eligibility`` so every
+    surface (daily intelligence, briefing, chat coach, Operating Manual,
+    Activity findings, Progress page) inherits the same gates:
+    counterintuitive suppression, confounded suppression, suppressed
+    signals, sleep validity gate, contradictory-signs deduplication.
+
+    Surfaces that previously bypassed these gates were the source of the
+    Jim Rusch trust rupture; the chokepoint is the structural fix.
     """
-    Get reproducible, active findings eligible for surfacing.
+    from services.intelligence.finding_eligibility import select_eligible_findings
 
-    A finding is surfaceable when:
-    1. is_active is True
-    2. times_confirmed >= min_confirmations
-    3. It hasn't been surfaced in the last cooldown_days
-
-    Returns findings sorted by (times_confirmed * confidence) descending,
-    so the strongest, most-reproduced patterns come first.
-    """
-    now = datetime.now(timezone.utc)
-    cooldown_cutoff = now - timedelta(days=cooldown_days)
-
-    findings = (
-        db.query(CorrelationFinding)
-        .filter(
-            CorrelationFinding.athlete_id == athlete_id,
-            CorrelationFinding.is_active == True,  # noqa: E712
-            CorrelationFinding.times_confirmed >= min_confirmations,
-        )
-        .all()
+    return select_eligible_findings(
+        athlete_id,
+        db,
+        min_confirmations=min_confirmations,
+        cooldown_days=cooldown_days,
     )
-
-    # Filter by cooldown: exclude findings surfaced too recently
-    eligible = []
-    for f in findings:
-        if f.last_surfaced_at is None or f.last_surfaced_at < cooldown_cutoff:
-            eligible.append(f)
-
-    # Sort by reproducibility weight: times_confirmed * confidence
-    eligible.sort(
-        key=lambda f: f.times_confirmed * f.confidence,
-        reverse=True,
-    )
-
-    return eligible
 
 
 def mark_surfaced(finding_ids: List[UUID], db: Session) -> None:

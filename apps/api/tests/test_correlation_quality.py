@@ -366,15 +366,30 @@ def test_surfaceable_excludes_confounded():
     from services.correlation_persistence import get_surfaceable_findings
 
     active_finding = MagicMock(spec=CorrelationFinding)
+    active_finding.id = uuid.uuid4()
     active_finding.is_active = True
     active_finding.is_confounded = False
+    active_finding.direction_counterintuitive = False
+    # Real string so the suppression-set membership check stays string-typed.
+    # A MagicMock here would make .startswith() return a truthy MagicMock and
+    # spuriously trip the passive-noise suppression gate.
+    active_finding.input_name = "feedback_perceived_effort"
+    active_finding.output_metric = "efficiency"
+    active_finding.direction = "positive"
+    active_finding.time_lag_days = 0
     active_finding.times_confirmed = 5
     active_finding.confidence = 0.8
     active_finding.last_surfaced_at = None
 
     confounded_finding = MagicMock(spec=CorrelationFinding)
+    confounded_finding.id = uuid.uuid4()
     confounded_finding.is_active = False  # confounded → deactivated
     confounded_finding.is_confounded = True
+    confounded_finding.direction_counterintuitive = False
+    confounded_finding.input_name = "atl"
+    confounded_finding.output_metric = "efficiency"
+    confounded_finding.direction = "positive"
+    confounded_finding.time_lag_days = 0
     confounded_finding.times_confirmed = 9
     confounded_finding.confidence = 0.9
     confounded_finding.last_surfaced_at = None
@@ -384,7 +399,12 @@ def test_surfaceable_excludes_confounded():
     # query itself will only return active_finding.
     db.query.return_value.filter.return_value.all.return_value = [active_finding]
 
-    results = get_surfaceable_findings(ATHLETE_ID, db, min_confirmations=1)
+    # The chokepoint also consults sleep validity; bypass for this unit test.
+    with patch(
+        "services.intelligence.finding_eligibility.is_recent_sleep_invalid",
+        return_value=False,
+    ):
+        results = get_surfaceable_findings(ATHLETE_ID, db, min_confirmations=1)
     assert len(results) == 1
     assert results[0] is active_finding
 
