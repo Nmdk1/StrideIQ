@@ -315,7 +315,7 @@ class TestPromptAndOutputHardening:
         coach.get_or_create_thread_with_state = MagicMock(return_value=("thread-1", False))
         coach.get_thread_history = MagicMock(return_value={"messages": []})
         coach._build_athlete_state_for_opus = MagicMock(return_value="state")
-        coach._query_kimi_with_fallback = AsyncMock(return_value={"response": "Great work 🔥", "error": False, "model": "kimi-k2.5"})
+        coach._query_kimi_with_fallback = AsyncMock(return_value={"response": "Great work 🔥", "error": False, "model": "kimi-k2.6"})
         coach._normalize_response_for_ui = MagicMock(side_effect=lambda user_message, assistant_message: assistant_message)
         coach._save_chat_messages = MagicMock()
         coach._maybe_update_units_preference = MagicMock()
@@ -368,8 +368,8 @@ class TestPromptAndOutputHardening:
         coach._build_athlete_state_for_opus = MagicMock(return_value="state")
         coach._query_kimi_with_fallback = AsyncMock(
             side_effect=[
-                {"response": "Your splits looked controlled across miles.", "error": False, "model": "kimi-k2.5"},
-                {"response": "Negative split pattern remains strong.", "error": False, "model": "kimi-k2.5"},
+                {"response": "Your splits looked controlled across miles.", "error": False, "model": "kimi-k2.6"},
+                {"response": "Negative split pattern remains strong.", "error": False, "model": "kimi-k2.6"},
             ]
         )
         coach._save_chat_messages = MagicMock()
@@ -410,8 +410,8 @@ class TestPromptAndOutputHardening:
         coach._build_athlete_state_for_opus = MagicMock(return_value="state")
         coach._query_kimi_with_fallback = AsyncMock(
             side_effect=[
-                {"response": "Your splits looked controlled across miles.", "error": False, "model": "kimi-k2.5"},
-                {"response": "Negative split pattern remains strong.", "error": False, "model": "kimi-k2.5"},
+                {"response": "Your splits looked controlled across miles.", "error": False, "model": "kimi-k2.6"},
+                {"response": "Negative split pattern remains strong.", "error": False, "model": "kimi-k2.6"},
             ]
         )
         coach._save_chat_messages = MagicMock()

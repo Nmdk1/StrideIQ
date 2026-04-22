@@ -12,7 +12,7 @@ native SDKs until offline tool-parity validation passes — they do NOT
 route through this module.
 
 Fallback chain for Kimi-selected calls:
-  kimi-k2.5 → claude-sonnet-4-6 → gemini-2.5-flash
+  kimi-k2.6 → claude-sonnet-4-6 → gemini-2.5-flash
 
 Usage:
     from core.llm_client import call_llm, resolve_briefing_model
@@ -57,7 +57,7 @@ class LLMResponse(TypedDict):
 def _is_kimi_reasoning_model(model: str) -> bool:
     """Kimi reasoning models require temperature omission."""
     m = (model or "").strip().lower()
-    return m == "kimi-k2.5" or m.startswith("kimi-k2.5-")
+    return m in ("kimi-k2.5", "kimi-k2.6") or m.startswith(("kimi-k2.5-", "kimi-k2.6-"))
 
 
 # ---------------------------------------------------------------------------
@@ -126,9 +126,9 @@ def _call_kimi(
     """
     Kimi (Moonshot) via OpenAI-compatible SDK.
 
-    Supports both kimi-k2-turbo-preview and kimi-k2.5. For k2.5 in JSON
-    mode, thinking is disabled so output goes to `content` normally.
-    K2.5 uses fixed temperature (1.0 thinking, 0.6 non-thinking).
+    Supports kimi-k2-turbo-preview, kimi-k2.5, and kimi-k2.6. For reasoning
+    models in JSON mode, thinking is disabled so output goes to `content`
+    normally. K2.5/K2.6 use fixed temperature (1.0 thinking, 0.6 non-thinking).
 
     Set disable_thinking=True for short-form text generation so K2.5
     doesn't burn the entire token budget on reasoning.
@@ -302,7 +302,7 @@ def call_llm(
     Route an LLM completion to the correct provider with automatic fallback.
 
     For Kimi-selected calls the fallback chain is:
-        kimi-k2-turbo-preview → claude-sonnet-4-6 → gemini-2.5-flash
+        kimi-k2.6 → claude-sonnet-4-6 → gemini-2.5-flash
 
     For Anthropic-selected calls:
         claude-sonnet-4-6 → gemini-2.5-flash
@@ -441,7 +441,7 @@ def resolve_briefing_model(athlete_id: Optional[str] = None) -> str:
     Return the model to use for briefing generation.
 
     If KIMI_CANARY_ENABLED and the athlete is in KIMI_CANARY_ATHLETE_IDS,
-    returns KIMI_CANARY_MODEL (default: kimi-k2.5).
+    returns KIMI_CANARY_MODEL (default: kimi-k2.6).
     Otherwise returns BRIEFING_PRIMARY_MODEL.
 
     K2.5 is used with thinking disabled (via _call_kimi adapter) so it

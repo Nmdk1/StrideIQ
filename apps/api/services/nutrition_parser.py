@@ -152,7 +152,7 @@ def _call_kimi(text: str) -> Optional[dict]:
 
         client = OpenAI(api_key=api_key, base_url=settings.KIMI_BASE_URL, timeout=15)
         response = client.chat.completions.create(
-            model="kimi-k2.5",
+            model="kimi-k2.6",
             messages=[
                 {"role": "system", "content": _NL_SYSTEM},
                 {"role": "user", "content": _NL_USER_TEMPLATE.format(text=text)},
@@ -324,7 +324,7 @@ def _call_kimi_meal(text: str) -> Optional[dict]:
 
         client = OpenAI(api_key=api_key, base_url=settings.KIMI_BASE_URL, timeout=20)
         response = client.chat.completions.create(
-            model="kimi-k2.5",
+            model="kimi-k2.6",
             messages=[
                 {"role": "system", "content": _NL_SYSTEM},
                 {"role": "user", "content": _MEAL_USER_TEMPLATE.format(text=text)},

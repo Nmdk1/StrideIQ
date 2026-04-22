@@ -134,7 +134,7 @@ def test_chat_kimi_success_normalizes_response():
     coach._query_kimi_with_fallback = AsyncMock(return_value={
         "response": dirty_response,
         "error": False,
-        "model": "kimi-k2.5",
+        "model": "kimi-k2.6",
     })
 
     result = asyncio.run(
@@ -182,7 +182,7 @@ def test_chat_kimi_success_saves_model_name():
     coach._query_kimi_with_fallback = AsyncMock(return_value={
         "response": "Manageable fatigue — keep tomorrow easy.",
         "error": False,
-        "model": "kimi-k2.5",
+        "model": "kimi-k2.6",
     })
 
     result = asyncio.run(
@@ -192,6 +192,6 @@ def test_chat_kimi_success_saves_model_name():
     assert result.get("error") is False
     coach._save_chat_messages.assert_called_once()
     call_kwargs = coach._save_chat_messages.call_args
-    assert call_kwargs.kwargs.get("model") == "kimi-k2.5" or (
-        len(call_kwargs.args) > 3 and call_kwargs.args[3] == "kimi-k2.5"
+    assert call_kwargs.kwargs.get("model") == "kimi-k2.6" or (
+        len(call_kwargs.args) > 3 and call_kwargs.args[3] == "kimi-k2.6"
     )

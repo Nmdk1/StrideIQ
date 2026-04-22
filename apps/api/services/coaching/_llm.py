@@ -276,7 +276,7 @@ class LLMMixin:
         total_output_tokens = 0
         response = None
         kimi_tools = self._kimi_tools()
-        is_reasoning_model = model_name.lower() in ("kimi-k2.5",)
+        is_reasoning_model = model_name.lower() in ("kimi-k2.5", "kimi-k2.6")
         for iteration in range(5):
             use_thinking_disabled = is_reasoning_model and iteration == 0
             extra_body: dict = {}

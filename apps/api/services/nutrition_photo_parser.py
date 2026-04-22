@@ -185,7 +185,7 @@ def _call_kimi_vision(b64_image: str) -> Optional[list]:
             timeout=30,
         )
         response = client.chat.completions.create(
-            model="kimi-k2.5",
+            model="kimi-k2.6",
             messages=_build_messages(b64_image),
             max_tokens=1000,
             response_format={"type": "json_object"},

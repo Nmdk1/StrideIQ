@@ -1612,14 +1612,14 @@ def _call_opus_briefing_sync(
 
     llm_timeout: SDK-level timeout in seconds. Defaults to HOME_BRIEFING_TIMEOUT_S
     for Sonnet. For Kimi (reasoning model), minimum 120s is enforced because
-    kimi-k2.5 thinks before responding (60-180s typical for briefing prompts).
+    kimi-k2.6 thinks before responding (60-180s typical for briefing prompts).
     athlete_id: when provided, enables Kimi canary routing for this athlete.
     """
     from core.llm_client import call_llm_with_json_parse, resolve_briefing_model
 
     model = resolve_briefing_model(athlete_id=athlete_id)
 
-    # kimi-k2.5 is a reasoning model — enforce minimum timeout
+    # kimi-k2.6 is a reasoning model — enforce minimum timeout
     KIMI_MIN_TIMEOUT_S = 15  # kimi-k2-turbo-preview responds in ~800ms; 15s gives ample headroom
     if model.startswith("kimi"):
         timeout_s = max(llm_timeout or 0, KIMI_MIN_TIMEOUT_S)

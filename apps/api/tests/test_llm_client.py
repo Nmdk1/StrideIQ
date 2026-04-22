@@ -58,7 +58,7 @@ class TestProviderRouting:
 
     def test_kimi_model_routes_to_kimi(self):
         from core.llm_client import _provider_for_model
-        assert _provider_for_model("kimi-k2.5") == "kimi"
+        assert _provider_for_model("kimi-k2.6") == "kimi"
 
     def test_gemini_model_routes_to_gemini(self):
         from core.llm_client import _provider_for_model
@@ -75,6 +75,8 @@ class TestProviderRouting:
 
         assert _is_kimi_reasoning_model("kimi-k2.5") is True
         assert _is_kimi_reasoning_model("kimi-k2.5-preview") is True
+        assert _is_kimi_reasoning_model("kimi-k2.6") is True
+        assert _is_kimi_reasoning_model("kimi-k2.6-preview") is True
         assert _is_kimi_reasoning_model("kimi-k2-turbo-preview") is False
 
 
@@ -101,11 +103,11 @@ class TestCallLlmHappyPath:
 
     def test_calls_kimi_adapter_for_kimi(self):
         from core import llm_client
-        response = _make_llm_response(model="kimi-k2.5", provider="kimi")
+        response = _make_llm_response(model="kimi-k2.6", provider="kimi")
         mock_fn = MagicMock(return_value=response)
         with patch.dict(llm_client._ADAPTER_MAP, {"kimi": mock_fn}):
             result = llm_client.call_llm(
-                model="kimi-k2.5",
+                model="kimi-k2.6",
                 system="sys",
                 messages=[{"role": "user", "content": "hi"}],
                 max_tokens=100,
@@ -144,7 +146,7 @@ class TestFallbackChain:
 
         with patch.dict(llm_client._ADAPTER_MAP, {"kimi": mock_kimi, "anthropic": mock_ant}):
             result = llm_client.call_llm(
-                model="kimi-k2.5",
+                model="kimi-k2.6",
                 system="sys",
                 messages=[{"role": "user", "content": "hi"}],
                 max_tokens=100,
@@ -164,7 +166,7 @@ class TestFallbackChain:
 
         with patch.dict(llm_client._ADAPTER_MAP, {"kimi": mock_kimi, "anthropic": mock_ant, "gemini": mock_gem}):
             result = llm_client.call_llm(
-                model="kimi-k2.5",
+                model="kimi-k2.6",
                 system="sys",
                 messages=[{"role": "user", "content": "hi"}],
                 max_tokens=100,
@@ -200,7 +202,7 @@ class TestFallbackChain:
         with patch.dict(llm_client._ADAPTER_MAP, {"kimi": mock_kimi, "anthropic": mock_ant, "gemini": mock_gem}):
             with pytest.raises(RuntimeError, match="All LLM providers failed"):
                 llm_client.call_llm(
-                    model="kimi-k2.5",
+                    model="kimi-k2.6",
                     system="sys",
                     messages=[{"role": "user", "content": "hi"}],
                     max_tokens=100,
@@ -257,7 +259,7 @@ class TestJsonMode:
         from core.llm_client import call_llm_with_json_parse
         with patch("core.llm_client.call_llm", side_effect=RuntimeError("all failed")):
             result = call_llm_with_json_parse(
-                model="kimi-k2.5",
+                model="kimi-k2.6",
                 system="sys",
                 messages=[{"role": "user", "content": "hi"}],
                 max_tokens=100,
@@ -397,7 +399,7 @@ class TestMissingKeyValidation:
             with patch.dict(os.environ, {k: v for k, v in os.environ.items() if k != "KIMI_API_KEY"}, clear=True):
                 with pytest.raises(RuntimeError) as exc_info:
                     _call_kimi(
-                        model="kimi-k2.5",
+                        model="kimi-k2.6",
                         system="sys",
                         messages=[{"role": "user", "content": "hi"}],
                         max_tokens=100,

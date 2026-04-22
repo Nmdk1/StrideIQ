@@ -23,7 +23,7 @@ from services.timezone_utils import get_athlete_timezone_from_db, to_activity_lo
 
 logger = logging.getLogger(__name__)
 
-INTELLIGENCE_MODEL = "kimi-k2.5"
+INTELLIGENCE_MODEL = "kimi-k2.6"
 INTELLIGENCE_MAX_TOKENS = 400
 INTELLIGENCE_TIMEOUT_S = 30
 

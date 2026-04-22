@@ -81,7 +81,7 @@ async def test_kimi_coach_tool_call_loop(monkeypatch):
     from services import ai_coach as ai_coach_module
     monkeypatch.setattr(ai_coach_module.settings, "KIMI_API_KEY", "kimi-key", raising=False)
     monkeypatch.setattr(ai_coach_module.settings, "KIMI_BASE_URL", "https://api.moonshot.ai/v1", raising=False)
-    monkeypatch.setattr(ai_coach_module.settings, "COACH_CANARY_MODEL", "kimi-k2.5", raising=False)
+    monkeypatch.setattr(ai_coach_module.settings, "COACH_CANARY_MODEL", "kimi-k2.6", raising=False)
 
     result = await coach.query_kimi_coach(
         athlete_id=uuid4(),
@@ -116,7 +116,7 @@ async def test_kimi_empty_content_falls_back_to_sonnet(monkeypatch):
     from services import ai_coach as ai_coach_module
     monkeypatch.setattr(ai_coach_module.settings, "KIMI_API_KEY", "kimi-key", raising=False)
     monkeypatch.setattr(ai_coach_module.settings, "KIMI_BASE_URL", "https://api.moonshot.ai/v1", raising=False)
-    monkeypatch.setattr(ai_coach_module.settings, "COACH_CANARY_MODEL", "kimi-k2.5", raising=False)
+    monkeypatch.setattr(ai_coach_module.settings, "COACH_CANARY_MODEL", "kimi-k2.6", raising=False)
 
     result = await coach.query_kimi_coach(
         athlete_id=uuid4(),
@@ -176,7 +176,7 @@ async def test_universal_kimi_routing(monkeypatch):
     coach.get_or_create_thread_with_state = MagicMock(return_value=("thread-1", False))
     coach.get_thread_history = MagicMock(return_value={"messages": []})
     coach._build_athlete_state_for_opus = MagicMock(return_value="state")
-    coach._query_kimi_with_fallback = AsyncMock(return_value={"response": "kimi", "error": False, "model": "kimi-k2.5"})
+    coach._query_kimi_with_fallback = AsyncMock(return_value={"response": "kimi", "error": False, "model": "kimi-k2.6"})
     coach.query_opus = AsyncMock(return_value={"response": "sonnet", "error": False, "model": "claude-sonnet-4-6"})
     coach._finalize_response_with_turn_guard = AsyncMock(side_effect=lambda **kwargs: kwargs["response_text"])
     coach._save_chat_messages = MagicMock()

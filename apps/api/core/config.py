@@ -229,9 +229,9 @@ class Settings(BaseSettings):
     WORKOUT_NARRATIVE_MODEL: str = Field(default="gemini-2.5-flash")
 
     # Kimi briefing canary model
-    KIMI_CANARY_MODEL: str = Field(default="kimi-k2.5")
+    KIMI_CANARY_MODEL: str = Field(default="kimi-k2.6")
     # Kimi coach canary model (reasoning lane with tool calls)
-    COACH_CANARY_MODEL: str = Field(default="kimi-k2.5")
+    COACH_CANARY_MODEL: str = Field(default="kimi-k2.6")
 
     @model_validator(mode="after")
     def _validate_production_config(self) -> "Settings":

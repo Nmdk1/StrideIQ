@@ -111,6 +111,17 @@ class TestProductionConfigValidation:
             kimi_canary_model="kimi-k2.5",
         )
 
+    def test_production_briefing_kimi_k26_passes(self):
+        """k2.6 is the current default model."""
+        validate_production_config(
+            environment="production",
+            debug=False,
+            cors_origins="https://strideiq.run",
+            postgres_password="secure-password-12chars",
+            briefing_primary_model="kimi-k2.6",
+            kimi_canary_model="kimi-k2.6",
+        )
+
 
 class TestNonProductionNotValidated:
     """Non-production configs are not validated."""
