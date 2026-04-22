@@ -44,10 +44,17 @@ async def update_preferences(
     athlete: Athlete = Depends(get_current_athlete),
     db: Session = Depends(get_db),
 ):
-    """Update user preferences."""
+    """Update user preferences.
+
+    A toggle here is treated as a deliberate choice and pins
+    `preferred_units_set_explicitly = True`, which prevents the country-aware
+    default from ever overwriting it again (e.g. when Strava OAuth fires later
+    and writes a timezone for the first time).
+    """
     if request.preferred_units is not None:
         athlete.preferred_units = request.preferred_units
-    
+        athlete.preferred_units_set_explicitly = True
+
     db.commit()
     db.refresh(athlete)
     

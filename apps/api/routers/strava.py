@@ -420,7 +420,24 @@ def strava_callback(
             # Only persist if valid IANA — never overwrite with garbage/null values
             if is_valid_iana_timezone(strava_timezone):
                 athlete.timezone = strava_timezone
-        
+
+                # Country-aware unit default: if the athlete has not yet made
+                # an explicit choice, derive their default unit system from
+                # the timezone we just learned. US athletes get imperial,
+                # everyone else gets metric. A subsequent Settings toggle
+                # will pin `preferred_units_set_explicitly = True` and this
+                # block becomes a no-op forever after.
+                if not getattr(athlete, "preferred_units_set_explicitly", False):
+                    from services.units_default import derive_default_units
+                    derived = derive_default_units(strava_timezone)
+                    if derived != athlete.preferred_units:
+                        logger.info(
+                            "Strava OAuth: deriving preferred_units=%s for athlete %s "
+                            "from timezone=%s (was %s, no explicit override)",
+                            derived, athlete.id, strava_timezone, athlete.preferred_units,
+                        )
+                        athlete.preferred_units = derived
+
         db.commit()
         db.refresh(athlete)
 

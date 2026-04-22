@@ -70,8 +70,16 @@ class Athlete(Base):
         return False
     
     # User preferences
-    # Product default: imperial (US-first). Athlete can switch in Settings.
+    # Default rule (set 2026-04-22): country-aware via timezone signal.
+    # US athletes default to imperial (miles), non-US default to metric (km).
+    # Derived in `services.units_default.derive_default_units(timezone)` and
+    # applied at signup AND when timezone is first written from Strava OAuth,
+    # but ONLY if `preferred_units_set_explicitly` is False. Once the athlete
+    # picks a side in Settings, that choice is sticky forever.
     preferred_units = Column(Text, default="imperial", nullable=False)  # 'metric' (km) or 'imperial' (miles)
+    preferred_units_set_explicitly = Column(
+        Boolean, default=False, nullable=False, server_default="false"
+    )
 
     # --- ACCOUNT SAFETY (Phase 4) ---
     # Hard block a user from accessing the product (admin-only action).
