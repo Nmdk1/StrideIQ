@@ -1167,6 +1167,9 @@ export default function CreatePlanPage() {
                   const autoTuned = warnings.find((w) =>
                     w.startsWith('auto_tuned_peak_to_safe_range:'),
                   );
+                  const droppedRange = warnings.find((w) =>
+                    w.startsWith('dropped_requested_range_to_safe_peak:'),
+                  );
                   const safeRangeBreach = warnings.find((w) =>
                     w.startsWith('safe_range_regen_still_outside_band'),
                   );
@@ -1184,6 +1187,16 @@ export default function CreatePlanPage() {
                         higher volume, change the peak in the form and re-generate.
                       </>
                     );
+                  } else if (droppedRange) {
+                    body = (
+                      <>
+                        You asked for a peak weekly volume range. Your training history
+                        does not support the top of that range, so we built this plan at
+                        a single safer peak of <strong>{fmtPeak(peakMiles)}</strong>.
+                        Use this plan as-is, or set a specific peak in the form and
+                        re-generate.
+                      </>
+                    );
                   } else if (autoTuned) {
                     body = (
                       <>
@@ -1196,7 +1209,7 @@ export default function CreatePlanPage() {
                     body = (
                       <>
                         {constraintAwareResult.soft_gate_display_message ||
-                          "We built this plan, but the math suggests it's pushing the edge of what your training history supports. Use it as-is, or adjust your peak from the form."}
+                          "We built this plan, but the math suggests it is pushing the edge of what your training history supports. Use it as-is, or adjust your peak from the form."}
                       </>
                     );
                   } else {

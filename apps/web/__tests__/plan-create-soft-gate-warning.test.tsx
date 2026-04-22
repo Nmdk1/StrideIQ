@@ -107,6 +107,15 @@ function makeCappedResponse(): Record<string, unknown> {
   };
 }
 
+function makeDroppedRangeResponse(): Record<string, unknown> {
+  return {
+    ...basePlan(),
+    warnings: ['dropped_requested_range_to_safe_peak:21.0'],
+    soft_gate_applied_peak_weekly_miles: 21.0,
+    soft_gate_requested_peak_weekly_miles: null,
+  };
+}
+
 function makeSafeRangeBreachResponse(): Record<string, unknown> {
   return {
     ...basePlan(),
@@ -222,6 +231,22 @@ describe('Plan create soft-gate warning banner', () => {
     expect(banner).toHaveTextContent(/capped|noticed/i);
     // Plan is still rendered.
     expect(screen.getByText(/Your Personalized Plan/i)).toBeInTheDocument();
+  });
+
+  it('dropped-range: explains we collapsed their range to a single safer peak', async () => {
+    setUnits('imperial');
+    previewConstraintAware.mockResolvedValue({});
+    createConstraintAware.mockResolvedValue(makeDroppedRangeResponse());
+
+    render(<CreatePlanPage />);
+    await navigateToConstraintAwareForm();
+
+    await waitFor(() => {
+      expect(screen.getByTestId('soft-gate-warning')).toBeInTheDocument();
+    });
+    const banner = screen.getByTestId('soft-gate-warning');
+    expect(banner).toHaveTextContent(/peak weekly volume range/i);
+    expect(banner).toHaveTextContent(/21\.0 mi\/wk/);
   });
 
   it('does not render the banner when warnings are empty', async () => {
