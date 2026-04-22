@@ -186,39 +186,6 @@ def _has_paid_subscription_access(athlete: Optional[Athlete]) -> bool:
     return tier_raw == "subscriber"
 
 
-def _pace_to_seconds_per_mile(pace: Optional[str]) -> Optional[int]:
-    if not pace or not isinstance(pace, str):
-        return None
-    parts = pace.strip().split(":")
-    if len(parts) != 2:
-        return None
-    try:
-        minutes = int(parts[0])
-        seconds = int(parts[1])
-    except ValueError:
-        return None
-    if minutes < 0 or seconds < 0 or seconds >= 60:
-        return None
-    return minutes * 60 + seconds
-
-
-def _constraint_aware_plan_has_pace_order_violation(plan) -> bool:
-    for week in getattr(plan, "weeks", []):
-        for day in getattr(week, "days", []):
-            paces = getattr(day, "paces", {}) or {}
-            interval = _pace_to_seconds_per_mile(paces.get("interval"))
-            threshold = _pace_to_seconds_per_mile(paces.get("threshold"))
-            marathon = _pace_to_seconds_per_mile(paces.get("marathon"))
-            race = _pace_to_seconds_per_mile(paces.get("race"))
-            if interval is not None and threshold is not None and interval >= threshold:
-                return True
-            if threshold is not None and marathon is not None and threshold >= marathon:
-                return True
-            if race is not None and marathon is not None and race >= marathon:
-                return True
-    return False
-
-
 def _extract_first_pace_seconds(text: Optional[str]) -> Optional[int]:
     if not text:
         return None
@@ -226,28 +193,6 @@ def _extract_first_pace_seconds(text: Optional[str]) -> Optional[int]:
     if not match:
         return None
     return int(match.group(1)) * 60 + int(match.group(2))
-
-
-def _generated_plan_has_pace_order_violation(plan) -> bool:
-    marathon = None
-    threshold = None
-    interval = None
-    for w in getattr(plan, "workouts", []):
-        wt = str(getattr(w, "workout_type", "") or "").lower()
-        pace_sec = _extract_first_pace_seconds(getattr(w, "pace_description", None))
-        if pace_sec is None:
-            continue
-        if wt in ("long_mp", "mp_touch", "marathon_pace", "race"):
-            marathon = pace_sec if marathon is None else min(marathon, pace_sec)
-        elif wt in ("threshold", "threshold_intervals"):
-            threshold = pace_sec if threshold is None else min(threshold, pace_sec)
-        elif wt in ("intervals", "repetitions"):
-            interval = pace_sec if interval is None else min(interval, pace_sec)
-    if marathon is not None and threshold is not None and threshold >= marathon:
-        return True
-    if threshold is not None and interval is not None and interval >= threshold:
-        return True
-    return False
 
 
 def _model_driven_plan_has_pace_order_violation(plan) -> bool:
@@ -2394,14 +2339,13 @@ async def create_constraint_aware_plan(
             target_peak_weekly_range=request.target_peak_weekly_range,
             taper_weeks=request.taper_weeks,
         )
-        if _constraint_aware_plan_has_pace_order_violation(plan):
-            raise HTTPException(
-                status_code=422,
-                detail={
-                    "error_code": "pace_order_invariant_failed",
-                    "reason": "Generated plan violates pace-order contract (interval<threshold<marathon and race<marathon).",
-                },
-            )
+        # Pace coherence is enforced at the source: every pace in this plan
+        # comes from calculate_paces_from_rpi(athlete.best_rpi) (Daniels VDOT
+        # zones), which is internally ordered by physics. There is no
+        # per-route repair pass because there is no inversion to repair.
+        # See ADR-040 (unified pace source) and apps/api/services/
+        # workout_prescription.py::_enforce_pace_order_contract for the
+        # source-of-truth contract.
 
         gate = evaluate_constraint_aware_plan(plan)
         # The quality gate is advisory, not a hard wall. The Athlete Trust
@@ -2431,6 +2375,12 @@ async def create_constraint_aware_plan(
             soft_gate_reasons = list(gate.reasons or [])
             soft_gate_safe_bounds_km = gate.safe_bounds_km
 
+            # Track whether the athlete supplied a range so we can surface that
+            # we dropped it when capping. Range intent is structurally
+            # incompatible with a single-peak cap, so the cap wins, but the
+            # athlete needs to know.
+            had_range = request.target_peak_weekly_range is not None
+
             # Always cap at the safe-range midpoint on the second pass — even
             # if the athlete supplied an explicit peak. We surface what we did
             # in the warnings so the athlete can re-request the original peak
@@ -2439,6 +2389,9 @@ async def create_constraint_aware_plan(
                 fallback_requested_peak = round(fallback_peak, 1)
                 soft_gate_applied_peak_miles = round(fallback_peak, 1)
             else:
+                # Gate gave us no usable safe bounds. Fall back to the athlete's
+                # original input so they at least get the plan they asked for,
+                # gate-flagged. Better than no plan.
                 fallback_requested_peak = request.target_peak_weekly_miles
             plan = generate_constraint_aware_plan(
                 athlete_id=athlete.id,
@@ -2453,18 +2406,17 @@ async def create_constraint_aware_plan(
                 quality_gate_reasons=gate.reasons,
                 taper_weeks=request.taper_weeks,
             )
-            if _constraint_aware_plan_has_pace_order_violation(plan):
-                # Pace-order is a generator self-consistency invariant, not an
-                # athlete-input issue. If we can't resolve it the athlete still
-                # needs to know — but they get the un-saved plan + warning,
-                # not a 422.
-                soft_gate_warnings.append("pace_order_invariant_violation_persisted")
             second_gate = evaluate_constraint_aware_plan(plan)
             if soft_gate_applied_peak_miles is not None:
                 if soft_gate_requested_peak_miles is not None:
                     soft_gate_warnings.append(
                         "capped_requested_peak_to_safe_range:"
                         f"{soft_gate_requested_peak_miles}->"
+                        f"{soft_gate_applied_peak_miles}"
+                    )
+                elif had_range:
+                    soft_gate_warnings.append(
+                        "dropped_requested_range_to_safe_peak:"
                         f"{soft_gate_applied_peak_miles}"
                     )
                 else:

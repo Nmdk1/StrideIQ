@@ -224,6 +224,64 @@ def test_soft_gate_caps_athlete_override_to_safe_range_with_warning(
     assert payload.get("soft_gate_requested_peak_weekly_miles") == 30
 
 
+def test_soft_gate_drops_athlete_range_with_dedicated_warning(
+    monkeypatch, db_session, subscriber_athlete
+):
+    """When the athlete supplied a peak RANGE (min/max) instead of a single
+    peak and the gate fails, the cap collapses the range to a single peak.
+    We surface that with `dropped_requested_range_to_safe_peak:N` so the
+    athlete sees that their range intent was replaced — not silently dropped."""
+    _override_deps(db_session, subscriber_athlete)
+    _patch_intake_gate(monkeypatch)
+    client = TestClient(app)
+
+    gate_calls = {"count": 0}
+
+    def gate_side_effect(_plan):
+        gate_calls["count"] += 1
+        if gate_calls["count"] == 1:
+            return _enrich_with_display(QualityGateResult(
+                False,
+                ["Week 1 exceeds trusted band ceiling."],
+                ["weekly_volume_exceeds_trusted_band"],
+                {"weekly_miles": {"min": 18.0, "max": 24.0}, "long_run_miles": {"min": 8.0, "max": 14.0}},
+            ))
+        return _enrich_with_display(QualityGateResult(
+            True, [], [], {"weekly_miles": {"min": 18.0, "max": 24.0}, "long_run_miles": {"min": 8.0, "max": 14.0}},
+        ))
+
+    monkeypatch.setattr(
+        "services.plan_quality_gate.evaluate_constraint_aware_plan",
+        gate_side_effect,
+    )
+    monkeypatch.setattr(
+        "services.constraint_aware_planner.generate_constraint_aware_plan",
+        lambda **_kwargs: _fake_plan(),
+    )
+    monkeypatch.setattr("services.plan_framework.feature_flags.FeatureFlagService.is_enabled", lambda *_: True)
+    monkeypatch.setattr(plan_router, "_check_rate_limit", lambda *_: True)
+    monkeypatch.setattr(plan_router, "_record_rate_limit", lambda *_: None)
+    monkeypatch.setattr(plan_router, "_save_constraint_aware_plan", lambda *_args, **_kwargs: SimpleNamespace(id=uuid4()))
+
+    resp = client.post(
+        "/v2/plans/constraint-aware",
+        json={
+            "race_date": (date.today() + timedelta(days=70)).isoformat(),
+            "race_distance": "10k",
+            "target_peak_weekly_range": {"min": 35, "max": 45},
+        },
+    )
+    _clear_deps()
+    assert resp.status_code == 200, resp.text
+    payload = resp.json()
+    warnings = payload.get("warnings") or []
+    assert any(
+        w.startswith("dropped_requested_range_to_safe_peak:") for w in warnings
+    ), f"expected dropped_requested_range_to_safe_peak warning, got {warnings}"
+    assert payload.get("soft_gate_applied_peak_weekly_miles") == pytest.approx(21.0, abs=0.05)
+    assert payload.get("soft_gate_requested_peak_weekly_miles") is None
+
+
 def test_soft_gate_returns_200_with_warning_when_safe_range_regen_also_fails(
     monkeypatch, db_session, subscriber_athlete
 ):
