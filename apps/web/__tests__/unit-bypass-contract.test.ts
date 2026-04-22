@@ -64,6 +64,37 @@ describe('Unit-bypass contracts — surfaces that consume mi-baked API fields', 
     expect(src).not.toMatch(/peak_week_mi[^)]*\.toFixed\([^)]*\)\s*\+\s*['"]mi['"]/);
   });
 
+  test('Settings "Training paces" card respects the unit preference (no hardcoded .mi)', () => {
+    // Dejan Kadunc support email follow-up (2026-04-21): the in-app
+    // Settings card showed "Easy 9:06 or slower / Marathon 8:05 / ..."
+    // verbatim min/mi to a metric athlete because every span was hardcoded
+    // to `paceProfile?.paces?.X?.mi`. The API already returns both `.mi`
+    // and `.km` for every zone (services/rpi_calculator.py
+    // _secs_to_pace_dict), so the fix is to pick the unit-matching key.
+    const src = r('app/settings/page.tsx');
+    expect(src).toMatch(/from\s+['"]@\/lib\/context\/UnitsContext['"]/);
+    expect(src).toMatch(/useUnits\(\)/);
+    // Forbid the hardcoded `.marathon?.mi` / `.threshold?.mi` /
+    // `.interval?.mi` / `.repetition?.mi` patterns. The easy zone has its
+    // own `display_mi` / `display_km` pair so it's exempt from this exact
+    // grep, but the unit-key-conditional access guards it anyway.
+    expect(src).not.toMatch(/paces\?\.marathon\?\.mi\b/);
+    expect(src).not.toMatch(/paces\?\.threshold\?\.mi\b/);
+    expect(src).not.toMatch(/paces\?\.interval\?\.mi\b/);
+    expect(src).not.toMatch(/paces\?\.repetition\?\.mi\b/);
+  });
+
+  test('Onboarding "Training pace profile saved" panel respects the unit preference', () => {
+    // Same bug class as Settings — the onboarding success panel that
+    // appears after the goals step also hardcoded `.mi` on every zone.
+    const src = r('app/onboarding/page.tsx');
+    expect(src).toMatch(/from\s+['"]@\/lib\/context\/UnitsContext['"]/);
+    expect(src).toMatch(/useUnits\(\)/);
+    expect(src).not.toMatch(/paces\?\.marathon\?\.mi\b/);
+    expect(src).not.toMatch(/paces\?\.threshold\?\.mi\b/);
+    expect(src).not.toMatch(/paces\?\.interval\?\.mi\b/);
+  });
+
   test('Home page does not claim "Recovery day." as a fallback for athletes without a planned workout', () => {
     // The string was rendered every day for any athlete without a plan,
     // independent of TSB / readiness / recovery score — the same class of

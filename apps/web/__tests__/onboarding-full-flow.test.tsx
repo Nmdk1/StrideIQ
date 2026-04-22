@@ -6,6 +6,19 @@ jest.mock('@/components/auth/ProtectedRoute', () => ({
   ProtectedRoute: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));
 
+// ConnectStravaStage now reads useUnits() to render the saved pace
+// profile in the athlete's preferred units; stub it to keep this flow
+// test focused on stage transitions rather than provider plumbing.
+jest.mock('@/lib/context/UnitsContext', () => ({
+  useUnits: () => ({
+    units: 'imperial',
+    setUnits: () => {},
+    distanceUnitShort: 'mi',
+    formatDistance: (m: number) => `${(m / 1609.344).toFixed(1)} mi`,
+    formatPace: (s: number) => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, '0')}/mi`,
+  }),
+}));
+
 const push = jest.fn();
 jest.mock('next/navigation', () => ({
   useRouter: () => ({ push }),

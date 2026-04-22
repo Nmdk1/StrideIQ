@@ -567,6 +567,18 @@ function SettingsPageContent() {
                     <LoadingSpinner size="sm" />
                   </div>
                 ) : paceProfileStatus === 'computed' && paceProfile ? (
+                  (() => {
+                    // The API returns each pace zone with both `.mi` and `.km`
+                    // strings (and `display_mi` / `display_km` for easy). Pick
+                    // the one that matches the athlete's unit preference so
+                    // metric users don't see "9:06" min/mi labelled as their
+                    // easy pace.
+                    const isMetric = units === 'metric';
+                    const unitKey = isMetric ? 'km' : 'mi';
+                    const easyDisplayKey = isMetric ? 'display_km' : 'display_mi';
+                    const paceFor = (zone: 'easy' | 'marathon' | 'threshold' | 'interval' | 'repetition') =>
+                      paceProfile?.paces?.[zone]?.[unitKey] || '—';
+                    return (
                   <div className="space-y-3">
                     <div className="text-xs text-slate-500">
                       Anchor: {paceProfile?.anchor?.distance_key || '—'} in {paceProfile?.anchor?.time_display || '—'}
@@ -575,29 +587,31 @@ function SettingsPageContent() {
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm">
                       <div className="flex items-center justify-between bg-slate-900/40 border border-slate-700/50 rounded px-3 py-2">
                         <span className="text-slate-300">Easy</span>
-                        <span className="text-slate-100">{paceProfile?.paces?.easy?.display_mi || paceProfile?.paces?.easy?.mi || '—'}</span>
+                        <span className="text-slate-100">{paceProfile?.paces?.easy?.[easyDisplayKey] || paceProfile?.paces?.easy?.[unitKey] || '—'}</span>
                       </div>
                       <div className="flex items-center justify-between bg-slate-900/40 border border-slate-700/50 rounded px-3 py-2">
                         <span className="text-slate-300">Marathon</span>
-                        <span className="text-slate-100">{paceProfile?.paces?.marathon?.mi || '—'}</span>
+                        <span className="text-slate-100">{paceFor('marathon')}</span>
                       </div>
                       <div className="flex items-center justify-between bg-slate-900/40 border border-slate-700/50 rounded px-3 py-2">
                         <span className="text-slate-300">Threshold</span>
-                        <span className="text-slate-100">{paceProfile?.paces?.threshold?.mi || '—'}</span>
+                        <span className="text-slate-100">{paceFor('threshold')}</span>
                       </div>
                       <div className="flex items-center justify-between bg-slate-900/40 border border-slate-700/50 rounded px-3 py-2">
                         <span className="text-slate-300">Interval</span>
-                        <span className="text-slate-100">{paceProfile?.paces?.interval?.mi || '—'}</span>
+                        <span className="text-slate-100">{paceFor('interval')}</span>
                       </div>
                       <div className="flex items-center justify-between bg-slate-900/40 border border-slate-700/50 rounded px-3 py-2">
                         <span className="text-slate-300">Repetition</span>
-                        <span className="text-slate-100">{paceProfile?.paces?.repetition?.mi || '—'}</span>
+                        <span className="text-slate-100">{paceFor('repetition')}</span>
                       </div>
                     </div>
                     <div className="text-xs text-slate-500">
                       If you haven&apos;t raced recently, do a short time trial to unlock accurate prescriptive paces.
                     </div>
                   </div>
+                    );
+                  })()
                 ) : paceProfileStatus === 'missing' ? (
                   <div className="text-sm text-slate-400">
                     No prescriptive paces yet. Add a recent race/time trial result during onboarding (Goals stage) to compute them.

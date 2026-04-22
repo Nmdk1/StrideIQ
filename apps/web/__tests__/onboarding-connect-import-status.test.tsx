@@ -5,6 +5,20 @@ jest.mock('@/components/auth/ProtectedRoute', () => ({
   ProtectedRoute: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));
 
+// ConnectStravaStage now reads useUnits() to render the saved-pace-profile
+// summary in the athlete's preferred units. Stub the context so this test
+// (which renders the onboarding page outside any provider tree) doesn't
+// blow up before exercising the actual stage logic it cares about.
+jest.mock('@/lib/context/UnitsContext', () => ({
+  useUnits: () => ({
+    units: 'imperial',
+    setUnits: () => {},
+    distanceUnitShort: 'mi',
+    formatDistance: (m: number) => `${(m / 1609.344).toFixed(1)} mi`,
+    formatPace: (s: number) => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, '0')}/mi`,
+  }),
+}));
+
 // Keep router pushes inert.
 const push = jest.fn();
 jest.mock('next/navigation', () => ({

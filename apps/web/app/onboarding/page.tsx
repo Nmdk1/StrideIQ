@@ -24,6 +24,7 @@ import { useGarminStatus } from '@/lib/hooks/queries/garmin';
 import { onboardingService } from '@/lib/api/services/onboarding';
 import { useBootstrapOnboarding, useOnboardingStatus } from '@/lib/hooks/queries/onboarding';
 import { useConsent } from '@/lib/context/ConsentContext';
+import { useUnits } from '@/lib/context/UnitsContext';
 
 type OnboardingStage = 'initial' | 'basic_profile' | 'goals' | 'consent_ai' | 'connect_strava' | 'nutrition_setup' | 'work_setup' | 'complete';
 
@@ -887,6 +888,10 @@ function ConnectStravaStage({
   const { data: status } = useOnboardingStatus(true);
   const { data: garminStatus, refetch: refetchGarminStatus } = useGarminStatus();
   const bootstrap = useBootstrapOnboarding();
+  const { units } = useUnits();
+  const isMetricUnits = units === 'metric';
+  const paceUnitKey = isMetricUnits ? 'km' : 'mi';
+  const easyDisplayKey = isMetricUnits ? 'display_km' : 'display_mi';
   const isStravaConnected = !!status?.strava_connected;
   const isGarminConnected = !!garminStatus?.connected;
   const garminAvailable = !!garminStatus?.garmin_connect_available;
@@ -953,19 +958,19 @@ function ConnectStravaStage({
           <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-2 text-sm">
             <div className="flex items-center justify-between bg-slate-900/40 border border-slate-700/50 rounded px-3 py-2">
               <span className="text-slate-300">Easy</span>
-              <span className="text-slate-100">{paceProfile?.paces?.easy?.display_mi || paceProfile?.paces?.easy?.mi || '—'}</span>
+              <span className="text-slate-100">{paceProfile?.paces?.easy?.[easyDisplayKey] || paceProfile?.paces?.easy?.[paceUnitKey] || '—'}</span>
             </div>
             <div className="flex items-center justify-between bg-slate-900/40 border border-slate-700/50 rounded px-3 py-2">
               <span className="text-slate-300">Threshold</span>
-              <span className="text-slate-100">{paceProfile?.paces?.threshold?.mi || '—'}</span>
+              <span className="text-slate-100">{paceProfile?.paces?.threshold?.[paceUnitKey] || '—'}</span>
             </div>
             <div className="flex items-center justify-between bg-slate-900/40 border border-slate-700/50 rounded px-3 py-2">
               <span className="text-slate-300">Marathon</span>
-              <span className="text-slate-100">{paceProfile?.paces?.marathon?.mi || '—'}</span>
+              <span className="text-slate-100">{paceProfile?.paces?.marathon?.[paceUnitKey] || '—'}</span>
             </div>
             <div className="flex items-center justify-between bg-slate-900/40 border border-slate-700/50 rounded px-3 py-2">
               <span className="text-slate-300">Interval</span>
-              <span className="text-slate-100">{paceProfile?.paces?.interval?.mi || '—'}</span>
+              <span className="text-slate-100">{paceProfile?.paces?.interval?.[paceUnitKey] || '—'}</span>
             </div>
           </div>
         </div>
