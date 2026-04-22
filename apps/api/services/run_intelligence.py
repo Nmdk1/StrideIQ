@@ -18,7 +18,8 @@ import re
 
 from sqlalchemy.orm import Session
 
-from models import Activity, ActivitySplit, CachedStreamAnalysis, CalendarNote
+from models import Activity, ActivitySplit, Athlete, CachedStreamAnalysis, CalendarNote
+from services.coach_units import CoachUnits, coach_units
 from services.timezone_utils import get_athlete_timezone_from_db, to_activity_local_date
 
 logger = logging.getLogger(__name__)
@@ -68,6 +69,15 @@ model: <120 negligible, 120-140 light, 140-150 moderate, 150-160 significant, \
 160-170 hard, 170+ severe. heat_adjustment_pct is the model's estimate of \
 how much slower an athlete's normal pace becomes in those conditions -- when \
 present, use it to contextualize HR escalation or pace fade.
+- The `display_units` field tells you the athlete's preferred unit system, \
+either "metric" or "imperial". Every distance, pace, and elevation in your \
+output MUST be in that system. The pre-formatted display fields (`distance`, \
+`avg_pace`, `elevation_display`, `temperature_display`, `dew_point_display`, \
+and any rep `pace`) are already in the athlete's units -- quote them \
+verbatim, do not convert. The raw `_f` and `_s_km` and `_m` numeric fields \
+are for internal heat/pace math only; do not put those numbers in your \
+output. NEVER mention "/mi" or "mi" to a metric athlete, and NEVER mention \
+"/km" or "km" to an imperial athlete.
 - Never use generic motivational language. No "great job" or "keep it up".
 - Never say "based on the data" or "analysis shows" — just say the thing.
 - Never speculate about causes you can't observe (missed lap buttons, \
@@ -93,10 +103,27 @@ class RunIntelligenceResult:
 
 
 def _fmt_pace_per_mile(seconds_per_km: float) -> str:
+    """Imperial-only legacy formatter. Kept for backward compat with internal
+    callers and existing tests; new code should use _fmt_pace(seconds_per_km,
+    units) below so the athlete's preferred system is honored.
+    """
     spm = seconds_per_km * 1.60934
     mins = int(spm // 60)
     secs = int(spm % 60)
     return f"{mins}:{secs:02d}/mi"
+
+
+def _fmt_pace(seconds_per_km: float, units: CoachUnits) -> str:
+    """Unit-aware pace formatter. Returns e.g. '8:46/mi' for imperial,
+    '5:27/km' for metric.
+    """
+    spm = seconds_per_km if units.is_metric else seconds_per_km * 1.60934
+    mins = int(spm // 60)
+    secs = int(round(spm - mins * 60))
+    if secs == 60:
+        secs = 0
+        mins += 1
+    return f"{mins}:{secs:02d}{units.pace_unit_short}"
 
 
 def _fmt_duration(seconds: float) -> str:
@@ -110,8 +137,43 @@ def _fmt_duration(seconds: float) -> str:
 
 
 def _fmt_distance_mi(meters: float) -> str:
+    """Imperial-only legacy formatter. Kept for backward compat; new code
+    should use _fmt_distance(meters, units) so the athlete's preferred
+    system is honored.
+    """
     mi = meters / 1609.34
     return f"{mi:.1f}"
+
+
+def _fmt_distance(meters: float, units: CoachUnits) -> str:
+    """Unit-aware distance formatter. Returns the bare number (e.g. '10.0'
+    or '16.1') without a unit suffix; the caller adds `units.distance_unit_short`
+    where appropriate. This separation matches how the existing headline
+    template reads ("10.0 mi at ...") and avoids double-suffixing.
+    """
+    if units.is_metric:
+        v = meters / 1000.0
+    else:
+        v = meters / 1609.344
+    return f"{v:.1f}"
+
+
+def _fmt_elevation(gain_m: float, units: CoachUnits) -> str:
+    """Unit-aware elevation formatter. Returns e.g. '188ft' or '57m' (no
+    leading sign — used for the highlights chip). For prose with a sign,
+    use CoachUnits.format_elevation directly.
+    """
+    if units.is_metric:
+        return f"{int(round(float(gain_m)))}m"
+    return f"{int(round(float(gain_m) * 3.28084)):,}ft"
+
+
+def _fmt_temperature_from_f(temp_f: float, units: CoachUnits) -> str:
+    """Format a temperature stored in Fahrenheit into the athlete's units."""
+    if units.is_metric:
+        celsius = (float(temp_f) - 32.0) * 5.0 / 9.0
+        return f"{celsius:.1f}°C"
+    return f"{float(temp_f):.1f}°F"
 
 
 def _workout_label(wt: Optional[str]) -> str:
@@ -849,17 +911,96 @@ def _get_pre_state(activity: Activity) -> Optional[Dict[str, Any]]:
 # ── Assembly & LLM call ────────────────────────────────────────────────
 
 
-def _build_data_context(activity: Activity, db: Session) -> Dict[str, Any]:
-    """Assemble all structured data into a single dict for the LLM prompt."""
+def _project_reps_for_units(reps: List[Dict[str, Any]], units: CoachUnits) -> List[Dict[str, Any]]:
+    """Return a shallow copy of each rep with `pace` in the athlete's units
+    and the legacy `pace_per_mile` key removed. We keep `pace_s_km` so the
+    LLM can do internal math, but the user-visible string is `pace`.
+    """
+    out: List[Dict[str, Any]] = []
+    for r in reps:
+        rr = {k: v for k, v in r.items() if k != "pace_per_mile"}
+        if "pace_s_km" in r and r["pace_s_km"] is not None:
+            rr["pace"] = _fmt_pace(float(r["pace_s_km"]), units)
+        out.append(rr)
+    return out
+
+
+def _project_intervals_for_units(intervals: Dict[str, Any], units: CoachUnits) -> Dict[str, Any]:
+    """Project interval data into the athlete's units. Removes the legacy
+    `*_per_mile` keys from the LLM-visible payload so Kimi cannot accidentally
+    quote them at a metric athlete.
+    """
+    out = {k: v for k, v in intervals.items() if k not in ("clean_avg_pace_per_mile",)}
+    if intervals.get("clean_avg_pace_s_km") is not None:
+        out["clean_avg_pace"] = _fmt_pace(float(intervals["clean_avg_pace_s_km"]), units)
+    if "reps" in intervals:
+        out["reps"] = _project_reps_for_units(intervals["reps"], units)
+    if intervals.get("cooldown"):
+        cd = intervals["cooldown"]
+        out["cooldown"] = {k: v for k, v in cd.items() if k != "pace_per_mile"}
+        if cd.get("pace_s_km") is not None:
+            out["cooldown"]["pace"] = _fmt_pace(float(cd["pace_s_km"]), units)
+    if intervals.get("history"):
+        h = intervals["history"]
+        hh = {k: v for k, v in h.items() if k != "prev_avg_pace_per_mile"}
+        if h.get("prev_avg_pace_s_km") is not None:
+            hh["prev_avg_pace"] = _fmt_pace(float(h["prev_avg_pace_s_km"]), units)
+        out["history"] = hh
+    return out
+
+
+def _project_pacing_for_units(pacing: Dict[str, Any], units: CoachUnits) -> Dict[str, Any]:
+    """Same surgery for the continuous-run pacing block."""
+    out = {k: v for k, v in pacing.items() if k not in ("first_half_avg_pace", "second_half_avg_pace")}
+    # The original keys here ARE pace strings in /mi; we recompute from internal s_km
+    # equivalents stored on the per-split rows. Easiest: rebuild from `splits`.
+    if "splits" in pacing:
+        new_splits = []
+        for s in pacing["splits"]:
+            ss = {k: v for k, v in s.items() if k != "pace_per_mile"}
+            if s.get("pace_s_km") is not None:
+                ss["pace"] = _fmt_pace(float(s["pace_s_km"]), units)
+            new_splits.append(ss)
+        out["splits"] = new_splits
+        # Recompute the half-averages in the athlete's units from the split data.
+        paces = [s["pace_s_km"] for s in pacing["splits"] if s.get("pace_s_km") is not None]
+        if paces:
+            mid = len(paces) // 2 or 1
+            first_avg = sum(paces[:mid]) / mid
+            second_avg = sum(paces[mid:]) / max(1, len(paces) - mid)
+            out["first_half_avg_pace"] = _fmt_pace(first_avg, units)
+            out["second_half_avg_pace"] = _fmt_pace(second_avg, units)
+    return out
+
+
+def _build_data_context(
+    activity: Activity, db: Session, units: Optional[CoachUnits] = None
+) -> Dict[str, Any]:
+    """Assemble all structured data into a single dict for the LLM prompt.
+
+    `units` is the athlete's preferred unit system. When omitted (legacy
+    callers / older tests), defaults to imperial — matches the historical
+    behavior so we don't break call sites that haven't migrated.
+    """
+    if units is None:
+        units = coach_units("imperial")
+
     pace_s_km = activity.duration_s / (activity.distance_m / 1000)
     is_interval = _is_interval_workout(activity)
 
+    distance_str = (
+        f"{units.format_distance(activity.distance_m, decimals=2)}"
+        if units.format_distance(activity.distance_m) is not None
+        else None
+    )
+
     ctx: Dict[str, Any] = {
+        "display_units": "metric" if units.is_metric else "imperial",
         "date": activity.start_time.strftime("%Y-%m-%d"),
         "workout_type": _workout_label(activity.workout_type),
-        "distance_miles": round(activity.distance_m / 1609.34, 2),
+        "distance": distance_str,
         "duration": _fmt_duration(activity.duration_s),
-        "avg_pace_per_mile": _fmt_pace_per_mile(pace_s_km),
+        "avg_pace": _fmt_pace(pace_s_km, units),
         "avg_hr": int(activity.avg_hr) if activity.avg_hr else None,
         "max_hr": int(activity.max_hr) if activity.max_hr else None,
     }
@@ -877,7 +1018,7 @@ def _build_data_context(activity: Activity, db: Session) -> Dict[str, Any]:
 
     elev = getattr(activity, "total_elevation_gain", None)
     if elev and float(elev) > 30:
-        ctx["elevation_gain_ft"] = int(float(elev) * 3.28084)
+        ctx["elevation_display"] = _fmt_elevation(float(elev), units)
 
     is_race = getattr(activity, "is_race_candidate", False) or (
         activity.workout_type and activity.workout_type.lower() == "race"
@@ -890,15 +1031,21 @@ def _build_data_context(activity: Activity, db: Session) -> Dict[str, Any]:
     # totally different from 83 F with 65 F dew point).  We also surface the
     # combined value (temp + dew point) used by services/heat_adjustment.py,
     # because that is the validated model behind heat_adjustment_pct.
+    #
+    # We keep the raw `_f` values for the LLM's heat-model thresholds (which
+    # are F-anchored in the SYSTEM_PROMPT) AND surface a `_display` string
+    # in the athlete's units so the narrative quotes the right one.
     temp = getattr(activity, "temperature_f", None)
     if temp:
         ctx["temperature_f"] = round(float(temp))
+        ctx["temperature_display"] = _fmt_temperature_from_f(float(temp), units)
     humidity = getattr(activity, "humidity_pct", None)
     if humidity:
         ctx["humidity_pct"] = round(float(humidity))
     dew_point = getattr(activity, "dew_point_f", None)
     if dew_point is not None:
         ctx["dew_point_f"] = round(float(dew_point), 1)
+        ctx["dew_point_display"] = _fmt_temperature_from_f(float(dew_point), units)
         if temp:
             ctx["temp_plus_dew_combined"] = round(float(temp) + float(dew_point), 1)
     # heat_adjustment_pct is stored as a fraction (0.0304 == 3.04% slowdown).
@@ -911,11 +1058,11 @@ def _build_data_context(activity: Activity, db: Session) -> Dict[str, Any]:
     if is_interval:
         interval_data = _get_interval_analysis(activity, db)
         if interval_data:
-            ctx["intervals"] = interval_data
+            ctx["intervals"] = _project_intervals_for_units(interval_data, units)
     else:
         pacing = _get_split_pacing(activity, db)
         if pacing:
-            ctx["pacing"] = pacing
+            ctx["pacing"] = _project_pacing_for_units(pacing, units)
 
     drift = _get_stream_drift(activity.id, db)
     if drift:
@@ -944,13 +1091,25 @@ def _build_data_context(activity: Activity, db: Session) -> Dict[str, Any]:
     return ctx
 
 
-def _build_headline(activity: Activity, interval_data: Optional[Dict]) -> str:
+def _build_headline(
+    activity: Activity,
+    interval_data: Optional[Dict],
+    units: Optional[CoachUnits] = None,
+) -> str:
+    """Render the one-line headline. When `units` is omitted, defaults to
+    imperial so legacy callers/tests keep their behavior; new code passes
+    the athlete's CoachUnits.
+    """
+    if units is None:
+        units = coach_units("imperial")
+
     pace_s_km = activity.duration_s / (activity.distance_m / 1000)
-    pace_str = _fmt_pace_per_mile(pace_s_km)
-    dist_str = _fmt_distance_mi(activity.distance_m)
+    pace_str = _fmt_pace(pace_s_km, units)
+    dist_str = _fmt_distance(activity.distance_m, units)
     dist_mi = activity.distance_m / 1609.34
     duration_str = _fmt_duration(activity.duration_s)
     wt_label = _workout_label(activity.workout_type)
+    dist_unit = units.distance_unit_short
 
     is_race = getattr(activity, "is_race_candidate", False) or (
         activity.workout_type and activity.workout_type.lower() == "race"
@@ -960,14 +1119,22 @@ def _build_headline(activity: Activity, interval_data: Optional[Dict]) -> str:
         clean = interval_data["clean_reps"]
         total = interval_data["total_reps"]
         avg_dist = interval_data["reps"][0]["distance_m"] if interval_data["reps"] else 0
-        avg_pace = interval_data["clean_avg_pace_per_mile"]
+        # interval_data may be raw (clean_avg_pace_s_km present) or already
+        # projected (clean_avg_pace string present). Recompute from s_km when
+        # available so the headline always honors `units`.
+        if interval_data.get("clean_avg_pace_s_km") is not None:
+            avg_pace = _fmt_pace(float(interval_data["clean_avg_pace_s_km"]), units)
+        else:
+            avg_pace = interval_data.get("clean_avg_pace") or interval_data.get(
+                "clean_avg_pace_per_mile", ""
+            )
         if interval_data["busted_reps"]:
             return f"{clean} of {total} reps at {avg_dist}m, {avg_pace} avg — {wt_label}."
         return f"{total}x{avg_dist}m at {avg_pace} avg — {wt_label}."
 
     if is_race and dist_mi >= 13.0:
-        return f"{dist_str} mi in {duration_str} — {wt_label}."
-    return f"{dist_str} mi at {pace_str} — {wt_label}."
+        return f"{dist_str} {dist_unit} in {duration_str} — {wt_label}."
+    return f"{dist_str} {dist_unit} at {pace_str} — {wt_label}."
 
 
 def _build_highlights(
@@ -976,7 +1143,10 @@ def _build_highlights(
     pacing: Optional[Dict],
     efficiency: Optional[Dict],
     interval_data: Optional[Dict] = None,
+    units: Optional[CoachUnits] = None,
 ) -> List[IntelligenceHighlight]:
+    if units is None:
+        units = coach_units("imperial")
     hl: List[IntelligenceHighlight] = []
 
     if interval_data:
@@ -1027,9 +1197,8 @@ def _build_highlights(
 
     elev = getattr(activity, "total_elevation_gain", None)
     if elev and float(elev) > 30:
-        ft = int(float(elev) * 3.28084)
         hl.append(IntelligenceHighlight(
-            label="Elevation", value=f"{ft:,}ft"
+            label="Elevation", value=_fmt_elevation(float(elev), units)
         ))
 
     return hl
@@ -1095,16 +1264,24 @@ def generate_run_intelligence(
     if not activity.distance_m or not activity.duration_s:
         return None
 
+    # Resolve the athlete's preferred unit system once and pass it through.
+    # Defaults to imperial when the row is missing or the column is null
+    # (matches the legacy default from coach_units()).
+    athlete = db.query(Athlete).filter(Athlete.id == athlete_id).first()
+    units = coach_units(getattr(athlete, "preferred_units", None) if athlete else None)
+
     try:
-        data_ctx = _build_data_context(activity, db)
+        data_ctx = _build_data_context(activity, db, units=units)
 
         interval_data = data_ctx.get("intervals")
         pacing = data_ctx.get("pacing")
         drift = data_ctx.get("cardiac_drift")
         efficiency = data_ctx.get("efficiency_vs_recent")
 
-        headline = _build_headline(activity, interval_data)
-        highlights = _build_highlights(activity, drift, pacing, efficiency, interval_data)
+        headline = _build_headline(activity, interval_data, units=units)
+        highlights = _build_highlights(
+            activity, drift, pacing, efficiency, interval_data, units=units
+        )
 
         body = _call_intelligence_llm(data_ctx)
 

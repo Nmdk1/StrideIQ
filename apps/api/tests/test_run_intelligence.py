@@ -212,9 +212,19 @@ class TestBuildDataContext:
         ctx = _build_data_context(a, db)
         assert ctx["workout_type"] == "easy run"
         assert ctx["avg_hr"] == 140
-        assert "distance_miles" in ctx
+        # Display fields are now unit-aware. Default (no athlete) is imperial,
+        # so distance/avg_pace come back with /mi and mi suffixes -- but the
+        # SHAPE we lock here is the new vocabulary so the test catches any
+        # regression that re-introduces the imperial-coded `_miles`/`_per_mile`
+        # field names that caused the metric-athlete display bug.
+        assert ctx["display_units"] == "imperial"
+        assert "distance" in ctx and ctx["distance"].endswith(" mi")
         assert "duration" in ctx
-        assert "avg_pace_per_mile" in ctx
+        assert "avg_pace" in ctx and ctx["avg_pace"].endswith("/mi")
+        # The old imperial-coded keys MUST be gone -- they were the source of
+        # the LLM echoing "10.0 mi at 8:46/mi" to metric athletes.
+        assert "distance_miles" not in ctx
+        assert "avg_pace_per_mile" not in ctx
 
     @patch("services.run_intelligence._get_athlete_notes", return_value=None)
     @patch("services.run_intelligence._get_drift_history_avg", return_value=None)
