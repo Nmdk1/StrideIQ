@@ -925,7 +925,7 @@ export default function HomePage() {
               <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Today</span>
               <p className="text-sm text-slate-400 mt-1">
                 {hasAnyData
-                  ? 'Recovery day.'
+                  ? 'No workout planned today.'
                   : isConnected
                     ? 'Create a plan to see workouts.'
                     : 'Connect your watch to get started.'}

@@ -14,6 +14,7 @@ import { aiCoachService, type Suggestion } from '@/lib/api/services/ai-coach';
 import { apiClient, ApiClientError } from '@/lib/api/client';
 import { onboardingService } from '@/lib/api/services/onboarding';
 import { useProgressSummary } from '@/lib/hooks/queries/progress';
+import { useUnits } from '@/lib/context/UnitsContext';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -121,6 +122,18 @@ function CoachPageInner() {
   
   // Progress summary for empty state brief + context panel
   const { data: progressData } = useProgressSummary(28);
+
+  // Athlete unit preference. The progress API returns weekly volume as
+  // miles (the field is literally `current_week_mi`), so we round-trip
+  // through meters to render in the athlete's preferred units.
+  const { formatDistance, distanceUnitShort } = useUnits();
+  const MI_TO_M = 1609.344;
+  const formatWeeklyVolume = (mi: number, decimals = 1) =>
+    formatDistance(mi * MI_TO_M, decimals);
+  const formatWeeklyVolumeNoUnit = (mi: number, decimals = 0) => {
+    const v = formatDistance(mi * MI_TO_M, decimals);
+    return v.replace(/\s*(mi|km)\s*$/, '');
+  };
   const [baselineDraft, setBaselineDraft] = useState({
     runs_per_week_4w: 3,
     weekly_volume_value: 15,
@@ -227,8 +240,10 @@ function CoachPageInner() {
     if (progressData.volume_trajectory) {
       const vol = progressData.volume_trajectory;
       if (vol.current_week_mi != null) {
-        const target = vol.peak_week_mi ? ' (peak ' + vol.peak_week_mi.toFixed(0) + 'mi)' : '';
-        lines.push('**This week:** ' + vol.current_week_mi.toFixed(1) + 'mi' + target);
+        const target = vol.peak_week_mi
+          ? ' (peak ' + formatWeeklyVolumeNoUnit(vol.peak_week_mi) + distanceUnitShort + ')'
+          : '';
+        lines.push('**This week:** ' + formatWeeklyVolume(vol.current_week_mi) + target);
       }
     }
     if (progressData.recovery) {
@@ -246,7 +261,8 @@ function CoachPageInner() {
       if (pred.predicted_time) lines.push('**Projection:** ' + pred.distance + ' - ' + pred.predicted_time);
     }
     return lines.length > 0 ? lines.join('\n\n') : null;
-  }, [progressData]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [progressData, distanceUnitShort]);
 
   // Add initial greeting (only after we attempted to load history)
   useEffect(() => {
@@ -997,7 +1013,7 @@ function CoachPageInner() {
                       {progressData.volume_trajectory?.current_week_mi != null && (
                         <div className="flex justify-between">
                           <span className="text-slate-400">This week</span>
-                          <span className="text-slate-100 font-medium">{progressData.volume_trajectory.current_week_mi.toFixed(1)}mi</span>
+                          <span className="text-slate-100 font-medium">{formatWeeklyVolume(progressData.volume_trajectory.current_week_mi)}</span>
                         </div>
                       )}
                     </div>

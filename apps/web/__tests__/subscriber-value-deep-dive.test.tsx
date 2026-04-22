@@ -29,6 +29,18 @@ jest.mock('next/navigation', () => ({
 }));
 
 const useAuthMock = jest.fn();
+// CoachPage now consumes useUnits() for the "This week" volume render.
+// This test exercises subscriber-tier behavior, not unit formatting, so a
+// static stub is sufficient.
+jest.mock('@/lib/context/UnitsContext', () => ({
+  useUnits: () => ({
+    units: 'imperial' as const,
+    formatDistance: (m: number, decimals = 1) => `${(m / 1609.344).toFixed(decimals)} mi`,
+    formatPace: (sPerKm: number) => `${Math.floor((sPerKm * 1.60934) / 60)}:00/mi`,
+    distanceUnitShort: 'mi',
+  }),
+}));
+
 jest.mock('@/lib/context/AuthContext', () => ({
   useAuth: () => useAuthMock(),
 }));

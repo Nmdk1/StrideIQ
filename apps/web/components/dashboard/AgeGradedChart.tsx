@@ -19,6 +19,13 @@ import {
   ReferenceLine,
 } from 'recharts';
 import type { EfficiencyTrendPoint } from '@/lib/api/services/analytics';
+import { useUnits } from '@/lib/context/UnitsContext';
+
+// API returns pace as decimal minutes-per-mile; convert to seconds-per-km
+// for the global formatter so the athlete's unit preference is respected.
+const MILES_PER_KM = 0.621371;
+const minPerMileToSecPerKm = (minPerMile: number): number =>
+  (minPerMile * 60) * MILES_PER_KM;
 
 interface AgeGradedChartProps {
   data: EfficiencyTrendPoint[];
@@ -26,7 +33,8 @@ interface AgeGradedChartProps {
 }
 
 export function AgeGradedChart({ data, className = '' }: AgeGradedChartProps) {
-  // Filter to only points with age-graded data
+  const { formatPace } = useUnits();
+
   const chartData = data
     .filter((point) => point.performance_percentage !== null && point.performance_percentage !== undefined)
     .map((point) => ({
@@ -78,10 +86,7 @@ export function AgeGradedChart({ data, className = '' }: AgeGradedChartProps) {
             <p>
               <span className="text-slate-400">Pace:</span>{' '}
               <span className="text-white">
-                {Math.floor(data.pace)}:{Math.round((data.pace % 1) * 60)
-                  .toString()
-                  .padStart(2, '0')}
-                /mi
+                {formatPace(minPerMileToSecPerKm(data.pace))}
               </span>
             </p>
           </div>

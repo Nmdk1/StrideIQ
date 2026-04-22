@@ -18,6 +18,14 @@ import {
   ResponsiveContainer,
 } from 'recharts';
 import type { EfficiencyTrendPoint } from '@/lib/api/services/analytics';
+import { useUnits } from '@/lib/context/UnitsContext';
+
+// API returns pace as decimal minutes-per-mile (the field is literally
+// `pace_per_mile`). Convert to seconds-per-km so the global formatter
+// can render it in the athlete's preferred units.
+const MILES_PER_KM = 0.621371;
+const minPerMileToSecPerKm = (minPerMile: number): number =>
+  (minPerMile * 60) * MILES_PER_KM;
 
 interface EfficiencyChartProps {
   data: EfficiencyTrendPoint[];
@@ -32,7 +40,8 @@ export function EfficiencyChart({
   rollingWindow = '60d',
   className = '',
 }: EfficiencyChartProps) {
-  // Format data for Recharts
+  const { formatPace } = useUnits();
+
   const chartData = data.map((point) => ({
     date: new Date(point.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' }),
     fullDate: point.date,
@@ -74,10 +83,7 @@ export function EfficiencyChart({
             <p>
               <span className="text-slate-400">Pace:</span>{' '}
               <span className="text-white">
-                {Math.floor(data.pace)}:{Math.round((data.pace % 1) * 60)
-                  .toString()
-                  .padStart(2, '0')}
-                /mi
+                {formatPace(minPerMileToSecPerKm(data.pace))}
               </span>
             </p>
             <p>
