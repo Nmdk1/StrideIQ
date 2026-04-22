@@ -1171,16 +1171,16 @@ export default function CreatePlanPage() {
                     w.startsWith('safe_range_regen_still_outside_band'),
                   );
                   const heading = safeRangeBreach
-                    ? "Your plan is built — here's what we noticed"
+                    ? 'Your plan is built — here is what we noticed'
                     : 'We adjusted your peak weekly volume';
                   let body: React.ReactNode = null;
                   if (cappedFromTo) {
                     body = (
                       <>
                         You asked for a peak of <strong>{fmtPeak(requestedMiles)}</strong>.
-                        That's higher than your training history supports right now, so we
-                        capped this plan at <strong>{fmtPeak(peakMiles)}</strong>. The
-                        plan you're seeing uses that safer peak. If you still want the
+                        That is higher than your training history supports right now, so
+                        we capped this plan at <strong>{fmtPeak(peakMiles)}</strong>. The
+                        plan you are seeing uses that safer peak. If you still want the
                         higher volume, change the peak in the form and re-generate.
                       </>
                     );
