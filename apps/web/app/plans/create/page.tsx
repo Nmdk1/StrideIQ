@@ -1150,32 +1150,66 @@ export default function CreatePlanPage() {
 
               <div className="space-y-4">
                 {(() => {
-                  const autoTuned = (constraintAwareResult.warnings || []).find((w) =>
-                    w.startsWith('auto_tuned_peak_to_safe_range:'),
-                  );
-                  if (!autoTuned) return null;
+                  const warnings = constraintAwareResult.warnings || [];
+                  if (warnings.length === 0) return null;
                   const peakMiles = constraintAwareResult.soft_gate_applied_peak_weekly_miles;
-                  const peakDisplay =
-                    peakMiles == null
+                  const requestedMiles =
+                    constraintAwareResult.soft_gate_requested_peak_weekly_miles;
+                  const fmtPeak = (mi: number | null | undefined) =>
+                    mi == null
                       ? null
                       : isMetric
-                        ? `${(peakMiles * KM_PER_MI).toFixed(1)} ${distanceUnitShort}/wk`
-                        : `${peakMiles.toFixed(1)} ${distanceUnitShort}/wk`;
+                        ? `${(mi * KM_PER_MI).toFixed(1)} ${distanceUnitShort}/wk`
+                        : `${mi.toFixed(1)} ${distanceUnitShort}/wk`;
+                  const cappedFromTo = warnings.find((w) =>
+                    w.startsWith('capped_requested_peak_to_safe_range:'),
+                  );
+                  const autoTuned = warnings.find((w) =>
+                    w.startsWith('auto_tuned_peak_to_safe_range:'),
+                  );
+                  const safeRangeBreach = warnings.find((w) =>
+                    w.startsWith('safe_range_regen_still_outside_band'),
+                  );
+                  const heading = safeRangeBreach
+                    ? "Your plan is built — here's what we noticed"
+                    : 'We adjusted your peak weekly volume';
+                  let body: React.ReactNode = null;
+                  if (cappedFromTo) {
+                    body = (
+                      <>
+                        You asked for a peak of <strong>{fmtPeak(requestedMiles)}</strong>.
+                        That's higher than your training history supports right now, so we
+                        capped this plan at <strong>{fmtPeak(peakMiles)}</strong>. The
+                        plan you're seeing uses that safer peak. If you still want the
+                        higher volume, change the peak in the form and re-generate.
+                      </>
+                    );
+                  } else if (autoTuned) {
+                    body = (
+                      <>
+                        We picked a peak of <strong>{fmtPeak(peakMiles)}</strong> based
+                        on what your training history supports. You can override this
+                        manually from the form if you want a different peak.
+                      </>
+                    );
+                  } else if (safeRangeBreach) {
+                    body = (
+                      <>
+                        {constraintAwareResult.soft_gate_display_message ||
+                          "We built this plan, but the math suggests it's pushing the edge of what your training history supports. Use it as-is, or adjust your peak from the form."}
+                      </>
+                    );
+                  } else {
+                    return null;
+                  }
                   return (
                     <div
                       role="status"
                       data-testid="soft-gate-warning"
                       className="rounded-xl border border-amber-500/40 bg-amber-900/20 p-4"
                     >
-                      <div className="text-sm font-semibold text-amber-200">
-                        We adjusted your peak weekly volume
-                      </div>
-                      <p className="mt-1 text-sm text-amber-100/90">
-                        Your requested volume was outside what your training history supports.
-                        We auto-tuned the peak{peakDisplay ? ` to ${peakDisplay}` : ''} so this
-                        plan stays inside your safe range. You can still override this manually
-                        from the form.
-                      </p>
+                      <div className="text-sm font-semibold text-amber-200">{heading}</div>
+                      <p className="mt-1 text-sm text-amber-100/90">{body}</p>
                     </div>
                   );
                 })()}

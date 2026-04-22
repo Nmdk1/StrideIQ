@@ -205,7 +205,11 @@ def test_constraint_aware_preserves_override_on_fallback(monkeypatch, db_session
     assert payload["volume_contract"]["requested_peak"] == 68.0
 
 
-def test_quality_gate_failed_payload_contract_shape(monkeypatch, db_session, subscriber_athlete):
+def test_quality_gate_failure_returns_200_with_soft_gate_warnings(monkeypatch, db_session, subscriber_athlete):
+    """The quality gate is advisory, not a wall. Even when both passes fail
+    we return a plan + structured warnings so the athlete always sees what
+    we built. This test pins that contract: never 422 the athlete out of
+    getting a plan."""
     _override_deps(db_session, subscriber_athlete)
     _patch_intake_gate(monkeypatch)
     client = TestClient(app)
@@ -223,6 +227,7 @@ def test_quality_gate_failed_payload_contract_shape(monkeypatch, db_session, sub
     monkeypatch.setattr("services.plan_framework.feature_flags.FeatureFlagService.is_enabled", lambda *_: True)
     monkeypatch.setattr(plan_router, "_check_rate_limit", lambda *_: True)
     monkeypatch.setattr(plan_router, "_record_rate_limit", lambda *_: None)
+    monkeypatch.setattr(plan_router, "_save_constraint_aware_plan", lambda *_args, **_kwargs: SimpleNamespace(id=uuid4()))
 
     resp = client.post(
         "/v2/plans/constraint-aware",
@@ -233,15 +238,14 @@ def test_quality_gate_failed_payload_contract_shape(monkeypatch, db_session, sub
         },
     )
     _clear_deps()
-    assert resp.status_code == 422, resp.text
-    detail = resp.json().get("detail", {})
-    assert detail.get("error_code") == "quality_gate_failed"
-    assert detail.get("quality_gate_failed") is True
-    assert "reasons" in detail and isinstance(detail["reasons"], list)
-    assert "invariant_conflicts" in detail and isinstance(detail["invariant_conflicts"], list)
-    assert "suggested_safe_bounds" in detail and "weekly_miles" in detail["suggested_safe_bounds"]
-    assert "volume_contract_snapshot" in detail
-    assert detail.get("next_action") == "adjust_inputs_or_accept_safe_bounds"
+    assert resp.status_code == 200, resp.text
+    payload = resp.json()
+    assert payload["success"] is True
+    warnings = payload.get("warnings") or []
+    assert any("safe_range_regen_still_outside_band" in w for w in warnings) or any(
+        "capped_requested_peak_to_safe_range" in w for w in warnings
+    )
+    assert payload.get("soft_gate_reasons")
 
 
 def test_personal_floor_formula_matches_p75_p50_definition():

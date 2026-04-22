@@ -1,9 +1,16 @@
-"""Slice 4 / soft gate: when the first gate fails AND the athlete supplied no
-explicit peak override, the system retries with the gate-suggested midpoint
-and surfaces the auto-tuned peak via a structured `warnings` array on the
-200 response. Validates the full Dejan-recovery path that lets a metric
-beginner submit minimal info, get a safe plan, and see what the system did
-on their behalf."""
+"""Soft gate contract: the quality gate is advisory, not a wall. When the
+first gate fails the system ALWAYS regenerates at the safe-range midpoint and
+ALWAYS returns a plan, with structured warnings describing what was adjusted.
+
+Three branches:
+  - athlete supplied no override -> warning "auto_tuned_peak_to_safe_range:N"
+  - athlete supplied an override that exceeded the safe range -> warning
+    "capped_requested_peak_to_safe_range:OLD->NEW"
+  - even the regen fails the second gate -> still 200 with warning
+    "safe_range_regen_still_outside_band" so the athlete still sees a plan
+
+The athlete decides; the system informs.
+"""
 from __future__ import annotations
 
 from datetime import date, timedelta
@@ -21,9 +28,6 @@ from routers import plan_generation as plan_router
 from services.plan_quality_gate import QualityGateResult, _enrich_with_display
 
 
-pytestmark = pytest.mark.xfail(
-    reason="N=1 plan engine not yet wired — soft gate contract validated via mocks",
-)
 
 
 def _override_deps(db_session, athlete):
@@ -164,11 +168,12 @@ def test_soft_gate_returns_200_with_warning_when_no_override_and_second_pass_pas
     assert payload["soft_gate_applied_peak_weekly_miles"] == pytest.approx(21.0, abs=0.05)
 
 
-def test_soft_gate_does_not_warn_when_athlete_provided_override(
+def test_soft_gate_caps_athlete_override_to_safe_range_with_warning(
     monkeypatch, db_session, subscriber_athlete
 ):
-    """Athlete-supplied override is sacred. Even if first gate fails, the
-    fallback regen reuses the athlete's value; no auto-tune warning is fired."""
+    """When the athlete supplies a peak that fails the gate, we still cap to
+    the safe-range midpoint and surface a `capped_requested_peak_to_safe_range`
+    warning so they see exactly what was changed and what they asked for."""
     _override_deps(db_session, subscriber_athlete)
     _patch_intake_gate(monkeypatch)
     client = TestClient(app)
@@ -212,15 +217,20 @@ def test_soft_gate_does_not_warn_when_athlete_provided_override(
     _clear_deps()
     assert resp.status_code == 200, resp.text
     payload = resp.json()
-    assert payload.get("warnings") == []
-    assert payload.get("soft_gate_applied_peak_weekly_miles") is None
+    assert any(
+        w.startswith("capped_requested_peak_to_safe_range:") for w in payload.get("warnings", [])
+    )
+    assert payload.get("soft_gate_applied_peak_weekly_miles") == pytest.approx(21.0, abs=0.05)
+    assert payload.get("soft_gate_requested_peak_weekly_miles") == 30
 
 
-def test_soft_gate_returns_422_when_safe_range_regen_also_fails(
+def test_soft_gate_returns_200_with_warning_when_safe_range_regen_also_fails(
     monkeypatch, db_session, subscriber_athlete
 ):
-    """If even the safe-bounds regen fails, athlete sees the 422 with the
-    display message + Use safe range CTA from Slice 3."""
+    """The gate is advisory, not a wall. Even when both passes fail we return
+    a plan + a `safe_range_regen_still_outside_band` warning + the gate's
+    display message so the athlete can see what we built and why we flagged it.
+    Never 422 — the athlete decides."""
     _override_deps(db_session, subscriber_athlete)
     _patch_intake_gate(monkeypatch)
     client = TestClient(app)
@@ -250,10 +260,11 @@ def test_soft_gate_returns_422_when_safe_range_regen_also_fails(
         },
     )
     _clear_deps()
-    assert resp.status_code == 422, resp.text
-    detail = resp.json().get("detail", {})
-    assert detail.get("error_code") == "quality_gate_failed"
-    # Slice 3 fields are present.
-    assert detail.get("display_message")
-    assert "weekly_miles" in detail.get("safe_bounds_km", {})
-    assert detail.get("recommended_peak_weekly_miles") == pytest.approx(21.0, abs=0.05)
+    assert resp.status_code == 200, resp.text
+    payload = resp.json()
+    assert payload["success"] is True
+    warnings = payload.get("warnings") or []
+    assert any("safe_range_regen_still_outside_band" in w for w in warnings)
+    assert payload.get("soft_gate_display_message")
+    assert "weekly_miles" in (payload.get("soft_gate_safe_bounds_km") or {})
+    assert payload.get("soft_gate_reasons")

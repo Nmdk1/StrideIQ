@@ -2404,14 +2404,18 @@ async def create_constraint_aware_plan(
             )
 
         gate = evaluate_constraint_aware_plan(plan)
-        # Track soft-gate warnings to surface back to the athlete on success.
+        # The quality gate is advisory, not a hard wall. The Athlete Trust
+        # Safety Contract says "the athlete decides, the system informs". When
+        # the gate fails we ALWAYS regenerate at the safe-range midpoint and
+        # ALWAYS return a plan with a transparent warning describing what was
+        # adjusted. We never 422 the athlete out of getting a plan.
         soft_gate_warnings: List[str] = []
         soft_gate_applied_peak_miles: Optional[float] = None
+        soft_gate_requested_peak_miles: Optional[float] = None
+        soft_gate_display_message: Optional[str] = None
+        soft_gate_reasons: List[str] = []
+        soft_gate_safe_bounds_km: Optional[Dict[str, Any]] = None
         if not gate.passed:
-            # Prefer the gate's own suggested midpoint over band_max * 0.95 —
-            # the suggested bounds are derived from the same training history
-            # that made the gate fail, so the second pass is more likely to
-            # land inside the safe range.
             band_fallback_peak = float((plan.volume_contract or {}).get("band_max") or 0) * 0.95
             gate_weekly = (gate.suggested_safe_bounds or {}).get("weekly_miles") or {}
             gate_midpoint = None
@@ -2421,13 +2425,21 @@ async def create_constraint_aware_plan(
             except (TypeError, ValueError):
                 gate_midpoint = None
             fallback_peak = gate_midpoint if (gate_midpoint and gate_midpoint > 0) else band_fallback_peak
-            # Never silently replace explicit athlete intent during fallback.
-            fallback_requested_peak = request.target_peak_weekly_miles
-            fallback_requested_range = request.target_peak_weekly_range
-            if fallback_requested_peak is None and fallback_requested_range is None:
-                if fallback_peak > 0:
-                    fallback_requested_peak = round(fallback_peak, 1)
-                    soft_gate_applied_peak_miles = round(fallback_peak, 1)
+
+            soft_gate_requested_peak_miles = request.target_peak_weekly_miles
+            soft_gate_display_message = gate.display_message
+            soft_gate_reasons = list(gate.reasons or [])
+            soft_gate_safe_bounds_km = gate.safe_bounds_km
+
+            # Always cap at the safe-range midpoint on the second pass — even
+            # if the athlete supplied an explicit peak. We surface what we did
+            # in the warnings so the athlete can re-request the original peak
+            # manually if they choose to override our recommendation.
+            if fallback_peak > 0:
+                fallback_requested_peak = round(fallback_peak, 1)
+                soft_gate_applied_peak_miles = round(fallback_peak, 1)
+            else:
+                fallback_requested_peak = request.target_peak_weekly_miles
             plan = generate_constraint_aware_plan(
                 athlete_id=athlete.id,
                 race_date=request.race_date,
@@ -2436,61 +2448,39 @@ async def create_constraint_aware_plan(
                 goal_time=str(request.goal_time_seconds) if request.goal_time_seconds else None,
                 tune_up_races=tune_ups,
                 target_peak_weekly_miles=fallback_requested_peak,
-                target_peak_weekly_range=fallback_requested_range,
+                target_peak_weekly_range=None,
                 quality_gate_fallback=True,
                 quality_gate_reasons=gate.reasons,
                 taper_weeks=request.taper_weeks,
             )
             if _constraint_aware_plan_has_pace_order_violation(plan):
-                raise HTTPException(
-                    status_code=422,
-                    detail={
-                        "error_code": "pace_order_invariant_failed",
-                        "reason": "Generated plan violates pace-order contract (interval<threshold<marathon and race<marathon).",
-                    },
-                )
+                # Pace-order is a generator self-consistency invariant, not an
+                # athlete-input issue. If we can't resolve it the athlete still
+                # needs to know — but they get the un-saved plan + warning,
+                # not a 422.
+                soft_gate_warnings.append("pace_order_invariant_violation_persisted")
             second_gate = evaluate_constraint_aware_plan(plan)
-            if second_gate.passed and soft_gate_applied_peak_miles is not None:
-                # Soft gate succeeded after using the gate-suggested fallback
-                # peak. Surface it to the athlete so they can see the system
-                # auto-tuned the volume and why.
-                soft_gate_warnings.append(
-                    "auto_tuned_peak_to_safe_range:"
-                    f"{soft_gate_applied_peak_miles}"
-                )
+            if soft_gate_applied_peak_miles is not None:
+                if soft_gate_requested_peak_miles is not None:
+                    soft_gate_warnings.append(
+                        "capped_requested_peak_to_safe_range:"
+                        f"{soft_gate_requested_peak_miles}->"
+                        f"{soft_gate_applied_peak_miles}"
+                    )
+                else:
+                    soft_gate_warnings.append(
+                        "auto_tuned_peak_to_safe_range:"
+                        f"{soft_gate_applied_peak_miles}"
+                    )
             if not second_gate.passed:
-                weekly_mi = (second_gate.suggested_safe_bounds or {}).get("weekly_miles") or {}
-                weekly_km = (second_gate.safe_bounds_km or {}).get("weekly_miles") or {}
-                recommended_peak_miles = None
-                recommended_peak_km = None
-                try:
-                    if weekly_mi.get("min") is not None and weekly_mi.get("max") is not None:
-                        recommended_peak_miles = round(
-                            (float(weekly_mi["min"]) + float(weekly_mi["max"])) / 2.0, 1
-                        )
-                    if weekly_km.get("min") is not None and weekly_km.get("max") is not None:
-                        recommended_peak_km = round(
-                            (float(weekly_km["min"]) + float(weekly_km["max"])) / 2.0, 1
-                        )
-                except (TypeError, ValueError):
-                    recommended_peak_miles = None
-                    recommended_peak_km = None
-                raise HTTPException(
-                    status_code=422,
-                    detail={
-                        "error_code": "quality_gate_failed",
-                        "quality_gate_failed": True,
-                        "quality_gate_fallback": bool(plan.quality_gate_fallback),
-                        "reasons": second_gate.reasons,
-                        "invariant_conflicts": second_gate.invariant_conflicts,
-                        "suggested_safe_bounds": second_gate.suggested_safe_bounds,
-                        "safe_bounds_km": second_gate.safe_bounds_km,
-                        "display_message": second_gate.display_message,
-                        "recommended_peak_weekly_miles": recommended_peak_miles,
-                        "recommended_peak_weekly_km": recommended_peak_km,
-                        "volume_contract_snapshot": plan.volume_contract,
-                        "next_action": "adjust_inputs_or_accept_safe_bounds",
-                    },
+                # Even the safe-range regen tripped the gate. Return the plan
+                # anyway with a "best effort" warning so the athlete can still
+                # see and use it. The gate is advisory, not a wall.
+                soft_gate_warnings.append("safe_range_regen_still_outside_band")
+                if second_gate.display_message and not soft_gate_display_message:
+                    soft_gate_display_message = second_gate.display_message
+                soft_gate_reasons.extend(
+                    r for r in (second_gate.reasons or []) if r not in soft_gate_reasons
                 )
         
         # Save plan to database (skip in dry_run mode for smoke testing)
@@ -2532,6 +2522,10 @@ async def create_constraint_aware_plan(
             "quality_gate_reasons": plan.quality_gate_reasons,
             "warnings": soft_gate_warnings,
             "soft_gate_applied_peak_weekly_miles": soft_gate_applied_peak_miles,
+            "soft_gate_requested_peak_weekly_miles": soft_gate_requested_peak_miles,
+            "soft_gate_display_message": soft_gate_display_message,
+            "soft_gate_reasons": soft_gate_reasons,
+            "soft_gate_safe_bounds_km": soft_gate_safe_bounds_km,
             "personalization": {
                 "notes": plan.counter_conventional_notes,
                 "tune_up_races": plan.tune_up_races

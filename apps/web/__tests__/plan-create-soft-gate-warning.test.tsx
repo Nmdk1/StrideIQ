@@ -44,7 +44,7 @@ function setUnits(units: 'metric' | 'imperial') {
   });
 }
 
-function makeSuccessfulResponseWithSoftGate(): Record<string, unknown> {
+function basePlan(): Record<string, unknown> {
   return {
     success: true,
     plan_id: 'plan_abc',
@@ -73,8 +73,6 @@ function makeSuccessfulResponseWithSoftGate(): Record<string, unknown> {
     },
     quality_gate_fallback: true,
     quality_gate_reasons: ['Week 1 exceeds trusted band ceiling: 30.0 > 24.0.'],
-    warnings: ['auto_tuned_peak_to_safe_range:21.0'],
-    soft_gate_applied_peak_weekly_miles: 21.0,
     personalization: { notes: [], tune_up_races: [] },
     summary: { total_weeks: 12, total_miles: 200, peak_miles: 21 },
     weeks: [
@@ -88,6 +86,40 @@ function makeSuccessfulResponseWithSoftGate(): Record<string, unknown> {
       },
     ],
     generated_at: '2026-04-16T00:00:00Z',
+  };
+}
+
+function makeAutoTunedResponse(): Record<string, unknown> {
+  return {
+    ...basePlan(),
+    warnings: ['auto_tuned_peak_to_safe_range:21.0'],
+    soft_gate_applied_peak_weekly_miles: 21.0,
+    soft_gate_requested_peak_weekly_miles: null,
+  };
+}
+
+function makeCappedResponse(): Record<string, unknown> {
+  return {
+    ...basePlan(),
+    warnings: ['capped_requested_peak_to_safe_range:30.0->21.0'],
+    soft_gate_applied_peak_weekly_miles: 21.0,
+    soft_gate_requested_peak_weekly_miles: 30.0,
+  };
+}
+
+function makeSafeRangeBreachResponse(): Record<string, unknown> {
+  return {
+    ...basePlan(),
+    warnings: [
+      'capped_requested_peak_to_safe_range:30.0->21.0',
+      'safe_range_regen_still_outside_band',
+    ],
+    soft_gate_applied_peak_weekly_miles: 21.0,
+    soft_gate_requested_peak_weekly_miles: 30.0,
+    soft_gate_display_message:
+      "Your peak weekly volume is higher than your training history supports. We built this plan anyway, but use it with care.",
+    soft_gate_reasons: ['Week 1 exceeds trusted band ceiling.'],
+    soft_gate_safe_bounds_km: { weekly_miles: { min: 29.0, max: 38.6 } },
   };
 }
 
@@ -126,10 +158,10 @@ describe('Plan create soft-gate warning banner', () => {
     });
   });
 
-  it('renders the auto-tuned banner with km peak for metric athletes', async () => {
+  it('auto-tuned: renders peak in km for metric athletes', async () => {
     setUnits('metric');
     previewConstraintAware.mockResolvedValue({});
-    createConstraintAware.mockResolvedValue(makeSuccessfulResponseWithSoftGate());
+    createConstraintAware.mockResolvedValue(makeAutoTunedResponse());
 
     render(<CreatePlanPage />);
     await navigateToConstraintAwareForm();
@@ -139,14 +171,13 @@ describe('Plan create soft-gate warning banner', () => {
     });
     const banner = screen.getByTestId('soft-gate-warning');
     expect(banner).toHaveTextContent(/We adjusted your peak weekly volume/i);
-    // 21 mi → ~33.8 km
     expect(banner).toHaveTextContent(/33\.8 km\/wk/);
   });
 
-  it('renders the auto-tuned banner with mi peak for imperial athletes', async () => {
+  it('auto-tuned: renders peak in mi for imperial athletes', async () => {
     setUnits('imperial');
     previewConstraintAware.mockResolvedValue({});
-    createConstraintAware.mockResolvedValue(makeSuccessfulResponseWithSoftGate());
+    createConstraintAware.mockResolvedValue(makeAutoTunedResponse());
 
     render(<CreatePlanPage />);
     await navigateToConstraintAwareForm();
@@ -157,9 +188,45 @@ describe('Plan create soft-gate warning banner', () => {
     expect(screen.getByTestId('soft-gate-warning')).toHaveTextContent(/21\.0 mi\/wk/);
   });
 
+  it('capped: tells the athlete what they asked for and what we built (metric)', async () => {
+    setUnits('metric');
+    previewConstraintAware.mockResolvedValue({});
+    createConstraintAware.mockResolvedValue(makeCappedResponse());
+
+    render(<CreatePlanPage />);
+    await navigateToConstraintAwareForm();
+
+    await waitFor(() => {
+      expect(screen.getByTestId('soft-gate-warning')).toBeInTheDocument();
+    });
+    const banner = screen.getByTestId('soft-gate-warning');
+    // 30 mi -> 48.3 km, 21 mi -> 33.8 km
+    expect(banner).toHaveTextContent(/48\.3 km\/wk/);
+    expect(banner).toHaveTextContent(/33\.8 km\/wk/);
+    expect(banner).toHaveTextContent(/capped this plan/i);
+  });
+
+  it('safe-range breach: still renders a banner but uses softer "noticed" copy', async () => {
+    setUnits('metric');
+    previewConstraintAware.mockResolvedValue({});
+    createConstraintAware.mockResolvedValue(makeSafeRangeBreachResponse());
+
+    render(<CreatePlanPage />);
+    await navigateToConstraintAwareForm();
+
+    await waitFor(() => {
+      expect(screen.getByTestId('soft-gate-warning')).toBeInTheDocument();
+    });
+    const banner = screen.getByTestId('soft-gate-warning');
+    // The capped warning takes precedence in copy because it's more specific.
+    expect(banner).toHaveTextContent(/capped|noticed/i);
+    // Plan is still rendered.
+    expect(screen.getByText(/Your Personalized Plan/i)).toBeInTheDocument();
+  });
+
   it('does not render the banner when warnings are empty', async () => {
     setUnits('metric');
-    const noWarn = makeSuccessfulResponseWithSoftGate();
+    const noWarn = basePlan();
     noWarn.warnings = [];
     noWarn.soft_gate_applied_peak_weekly_miles = null;
     previewConstraintAware.mockResolvedValue({});

@@ -205,6 +205,13 @@ export interface ConstraintAwarePlanResponse {
   quality_gate_reasons?: string[];
   warnings?: string[];
   soft_gate_applied_peak_weekly_miles?: number | null;
+  soft_gate_requested_peak_weekly_miles?: number | null;
+  soft_gate_display_message?: string | null;
+  soft_gate_reasons?: string[];
+  soft_gate_safe_bounds_km?: {
+    weekly_miles?: { min?: number | null; max?: number | null };
+    long_run_miles?: { min?: number | null; max?: number | null };
+  } | null;
   personalization: {
     notes: string[];
     tune_up_races: TuneUpRace[];
