@@ -203,6 +203,8 @@ export interface ConstraintAwarePlanResponse {
   };
   quality_gate_fallback?: boolean;
   quality_gate_reasons?: string[];
+  warnings?: string[];
+  soft_gate_applied_peak_weekly_miles?: number | null;
   personalization: {
     notes: string[];
     tune_up_races: TuneUpRace[];

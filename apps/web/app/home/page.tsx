@@ -14,6 +14,7 @@ import Link from 'next/link';
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
 import { useHomeData, useQuickCheckin, useInvalidateHome } from '@/lib/hooks/queries/home';
 import { useUnits } from '@/lib/context/UnitsContext';
+import { formatTextForUnit } from '@/lib/utils/paceText';
 import { LastRunHero } from '@/components/home/LastRunHero';
 import { CompactPMC } from '@/components/home/CompactPMC';
 import { RecentCrossTrainingCard } from '@/components/home/RecentCrossTrainingCard';
@@ -675,20 +676,11 @@ export default function HomePage() {
     mi === null || mi === undefined
       ? '-'
       : (units === 'metric' ? mi * 1.60934 : mi).toFixed(decimals);
-  const rewriteImperialToMetric = (text: string | null | undefined): string | null | undefined => {
-    if (!text || units !== 'metric') return text;
-    let out = text.replace(/(\d+):(\d{2})\s*\/\s*mi\b/gi, (_match, mm, ss) => {
-      const totalSecPerMi = parseInt(mm, 10) * 60 + parseInt(ss, 10);
-      const secPerKm = Math.round(totalSecPerMi / 1.60934);
-      const m = Math.floor(secPerKm / 60);
-      const s = secPerKm % 60;
-      return `${m}:${s.toString().padStart(2, '0')}/km`;
-    });
-    out = out.replace(/(\d+(?:\.\d+)?)\s*mi\b/gi, (_match, mi) => {
-      const km = parseFloat(mi) * 1.60934;
-      return `${km.toFixed(km < 10 ? 1 : 0)} km`;
-    });
-    return out;
+  const rewriteImperialToMetric = (
+    text: string | null | undefined,
+  ): string | null | undefined => {
+    if (text == null) return text;
+    return formatTextForUnit(text, units);
   };
 
   // Briefing pending state + 30s timeout fallback

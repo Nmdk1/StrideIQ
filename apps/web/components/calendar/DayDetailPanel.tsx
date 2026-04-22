@@ -17,6 +17,7 @@
 import React, { useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useUnits } from '@/lib/context/UnitsContext';
+import { formatPaceTextForUnit } from '@/lib/utils/paceText';
 import { useCalendarDay, useAddNote, useSendCoachMessage, useWorkoutVariants, useSelectVariant } from '@/lib/hooks/queries/calendar';
 import type { CalendarDay, CalendarNote, InlineInsight, VariantOption } from '@/lib/api/services/calendar';
 import { apiClient } from '@/lib/api/client';
@@ -399,12 +400,12 @@ export function DayDetailPanel({ date, isOpen, onClose }: DayDetailPanelProps) {
                   )}
                   {dayData.planned_workout.coach_notes && (
                     <div className="text-green-400 text-sm mt-2 font-semibold">
-                      {dayData.planned_workout.coach_notes}
+                      {formatPaceTextForUnit(dayData.planned_workout.coach_notes, units)}
                     </div>
                   )}
                   {dayData.planned_workout.description && (
                     <div className="text-slate-300 text-sm mt-2 bg-slate-900/50 rounded p-2 font-mono">
-                      {dayData.planned_workout.description}
+                      {formatPaceTextForUnit(dayData.planned_workout.description, units)}
                     </div>
                   )}
                 </div>

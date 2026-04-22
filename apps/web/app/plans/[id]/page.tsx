@@ -19,6 +19,8 @@ import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '@/lib/hooks/useAuth';
 import { API_CONFIG } from '@/lib/api/config';
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
+import { useUnits } from '@/lib/context/UnitsContext';
+import { formatPaceTextForUnit } from '@/lib/utils/paceText';
 
 interface PlannedWorkout {
   id: string;
@@ -71,6 +73,7 @@ export default function PlanOverviewPage() {
   const params = useParams();
   const router = useRouter();
   const { token, isAuthenticated, isLoading: authLoading } = useAuth();
+  const { units, formatDistance } = useUnits();
   const planId = params.id as string;
   
   const [expandedWeek, setExpandedWeek] = useState<number | null>(null);
@@ -357,12 +360,15 @@ export default function PlanOverviewPage() {
                                         </div>
                                         {dayWorkout.target_distance_km && (
                                           <div className="text-xs text-slate-400 mt-1">
-                                            {(dayWorkout.target_distance_km * 0.621371).toFixed(1)} mi
+                                            {formatDistance(dayWorkout.target_distance_km * 1000, 1)}
                                           </div>
                                         )}
                                         {dayWorkout.coach_notes && (
-                                          <div className="text-xs text-slate-500 mt-1 truncate" title={dayWorkout.coach_notes}>
-                                            {dayWorkout.coach_notes}
+                                          <div
+                                            className="text-xs text-slate-500 mt-1 truncate"
+                                            title={formatPaceTextForUnit(dayWorkout.coach_notes, units)}
+                                          >
+                                            {formatPaceTextForUnit(dayWorkout.coach_notes, units)}
                                           </div>
                                         )}
                                         {dayWorkout.completed && (

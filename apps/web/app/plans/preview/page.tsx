@@ -11,6 +11,8 @@ import React, { useState } from 'react';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { planService, type GeneratedPlan } from '@/lib/api/services/plans';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { useUnits } from '@/lib/context/UnitsContext';
+import { formatPaceTextForUnit } from '@/lib/utils/paceText';
 
 const DISTANCES = [
   { value: '5k', label: '5K' },
@@ -27,6 +29,7 @@ const TIERS = [
 ];
 
 export default function PlanPreviewPage() {
+  const { units } = useUnits();
   const [distance, setDistance] = useState('marathon');
   const [tier, setTier] = useState('mid');
   const [duration, setDuration] = useState(18);
@@ -269,7 +272,7 @@ export default function PlanPreviewPage() {
                               </TooltipTrigger>
                               {workout?.description ? (
                                 <TooltipContent side="top">
-                                  {workout.description}
+                                  {formatPaceTextForUnit(workout.description, units)}
                                 </TooltipContent>
                               ) : null}
                             </Tooltip>

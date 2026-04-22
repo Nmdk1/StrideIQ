@@ -23,6 +23,16 @@ jest.mock('@/lib/context/AuthContext', () => ({
   useAuth: () => useAuthMock(),
 }));
 
+jest.mock('@/lib/context/UnitsContext', () => ({
+  useUnits: () => ({
+    units: 'imperial' as const,
+    setUnits: jest.fn(),
+    formatPace: jest.fn(),
+    formatDistance: jest.fn(),
+    formatSpeed: jest.fn(),
+  }),
+}));
+
 describe('Plan create gating (CTA + copy)', () => {
   beforeEach(() => {
     useAuthMock.mockReset();

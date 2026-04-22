@@ -14,6 +14,7 @@
 
 import React from 'react';
 import { useUnits } from '@/lib/context/UnitsContext';
+import { formatPaceTextForUnit } from '@/lib/utils/paceText';
 import type { CalendarDay } from '@/lib/api/services/calendar';
 import { DayBadge, type DayBadgeData } from './DayBadge';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -75,7 +76,7 @@ interface DayCellProps {
 }
 
 export function DayCell({ day, isToday, isSelected, onClick, compact = false, signals = [] }: DayCellProps) {
-  const { formatDistance, formatPace } = useUnits();
+  const { formatDistance, formatPace, units } = useUnits();
   
   const dayNum = parseInt(day.date.split('-')[2], 10);
   const hasActivities = day.activities.length > 0;
@@ -248,26 +249,11 @@ export function DayCell({ day, isToday, isSelected, onClick, compact = false, si
               <Tooltip>
                 <TooltipTrigger asChild>
                   <div className="text-[10px] text-slate-500 truncate mt-0.5">
-                    {(() => {
-                      // Extract first pace from coach_notes (currently backend-formatted as
-                      // "easy: 8:04/mi"). Convert to the athlete's preferred unit so a metric
-                      // user doesn't see /mi in a calendar tooltip pulled from notes.
-                      // Long-term fix: have coach return raw seconds-per-km; until then,
-                      // parse the imperial value, convert, and re-format via formatPace.
-                      const notes = day.planned_workout.coach_notes || '';
-                      const paceMatch = notes.match(/Paces:\s*(\w+):\s*(\d+):(\d{2})\/mi/);
-                      if (paceMatch) {
-                        const label = paceMatch[1];
-                        const secsPerMile = parseInt(paceMatch[2], 10) * 60 + parseInt(paceMatch[3], 10);
-                        const secsPerKm = secsPerMile / 1.60934;
-                        return `${label}: ${formatPace(secsPerKm)}`;
-                      }
-                      return notes.substring(0, 30);
-                    })()}
+                    {formatPaceTextForUnit(day.planned_workout.coach_notes, units).substring(0, 60)}
                   </div>
                 </TooltipTrigger>
                 <TooltipContent side="top">
-                  {day.planned_workout.coach_notes}
+                  {formatPaceTextForUnit(day.planned_workout.coach_notes, units)}
                 </TooltipContent>
               </Tooltip>
             )}
