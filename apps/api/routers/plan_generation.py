@@ -2494,6 +2494,42 @@ async def create_constraint_aware_plan(
     except HTTPException:
         raise
     except Exception as e:
+        # Readiness gate is a real safety constraint (athlete physically not
+        # ready for this distance), not a system bug. Return a structured 422
+        # the UI can render as a clear, actionable banner — never a 500 with a
+        # raw error string. Frontend formatPlanCreateError handles the
+        # `readiness_gate_blocked` error_code shape.
+        from services.plan_framework.n1_engine import ReadinessGateError
+        if isinstance(e, ReadinessGateError):
+            distance_label = (request.race_distance or "").replace("_", " ").title() or "this distance"
+            required_lr_mi = 12 if request.race_distance.lower() == "marathon" else 8
+            display_message = (
+                f"Your training history doesn't yet support a {distance_label} program. "
+                f"To start safely you need a long run of at least {required_lr_mi} miles "
+                f"in the past 4 weeks (or proven lifetime evidence of running that distance). "
+                f"Build to a {required_lr_mi}-mile long run, then come back — or pick a shorter "
+                f"goal distance and we'll build you a plan today."
+            )
+            suggested_alternatives: List[str] = []
+            if request.race_distance.lower() == "marathon":
+                suggested_alternatives = ["half_marathon", "10k"]
+            elif request.race_distance.lower() == "half_marathon":
+                suggested_alternatives = ["10k", "5k"]
+            logger.info(
+                "readiness gate refused for athlete=%s race_distance=%s: %s",
+                athlete.id, request.race_distance, str(e),
+            )
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "error_code": "readiness_gate_blocked",
+                    "display_message": display_message,
+                    "reason": str(e),
+                    "race_distance": request.race_distance,
+                    "required_long_run_miles": required_lr_mi,
+                    "suggested_alternatives": suggested_alternatives,
+                },
+            )
         logger.error(f"Constraint-aware plan generation failed for {athlete.id}: {e}")
         import traceback
         traceback.print_exc()

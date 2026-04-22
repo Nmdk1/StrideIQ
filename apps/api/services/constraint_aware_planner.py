@@ -395,6 +395,13 @@ class ConstraintAwarePlanner:
             personal_lr_floor=personal_lr_floor,
             taper_weeks=taper_weeks,
             fingerprint=fp_params,
+            # Lifetime long-run signal lets the readiness gate see ultra
+            # runners whose recent 4-week training-LR window filtered
+            # out their >24mi sessions as suspected races.
+            peak_long_run_miles=float(getattr(bank, "peak_long_run_miles", 0.0) or 0.0),
+            long_run_capability_proven=bool(
+                getattr(bank, "long_run_capability_proven", False)
+            ),
         )
 
         # 5. Inject race day with pre-race and post-race handling.

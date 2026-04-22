@@ -146,6 +146,8 @@ def resolve_athlete_state(
     goal_time: Optional[str] = None,
     taper_weeks: Optional[int] = None,
     fingerprint: Optional[FingerprintParams] = None,
+    peak_long_run_miles: float = 0.0,
+    long_run_capability_proven: bool = False,
 ) -> AthleteState:
     paces = None
     if best_rpi and best_rpi > 0:
@@ -162,25 +164,57 @@ def resolve_athlete_state(
     is_abbreviated = horizon_weeks <= 5
     is_day_one = starting_vol <= 0 and current_lr <= 0
 
-    if race_distance == "marathon" and not is_day_one and current_lr < 12:
-        raise ReadinessGateError(
-            f"Marathon readiness gate: current long run is {current_lr:.0f}mi. "
-            "Must complete 12mi before starting a marathon program."
-        )
-
+    # ── Readiness gates ──────────────────────────────────────────────
+    # The recent-4-week long-run window can mis-fire for ultra runners
+    # whose >24mi sessions are filtered out as suspected races, leaving
+    # a low `current_lr` that doesn't reflect their real capability.
+    # We bypass the gate when the athlete has *proven* lifetime evidence
+    # of the required distance (long_run_capability_proven == True AND
+    # peak_long_run_miles >= the engine's start-of-plan long-run floor).
+    # See ADR for full reasoning.
     is_comeback = weeks_since_peak > 0 and experience in (
         ExperienceLevel.EXPERIENCED, ExperienceLevel.ELITE,
     )
+
+    if race_distance == "marathon" and not is_day_one and current_lr < 12:
+        marathon_bypass = (
+            long_run_capability_proven and peak_long_run_miles >= 14.0
+        )
+        if marathon_bypass:
+            logger.info(
+                "marathon readiness gate bypass: current_lr=%.1fmi but "
+                "lifetime peak_long_run=%.1fmi (capability_proven). "
+                "Allowing marathon plan generation.",
+                current_lr, peak_long_run_miles,
+            )
+        else:
+            raise ReadinessGateError(
+                f"Marathon readiness gate: current long run is {current_lr:.0f}mi "
+                f"(lifetime peak {peak_long_run_miles:.0f}mi). "
+                "Must complete 12mi before starting a marathon program."
+            )
+
     if (
         race_distance == "half_marathon"
         and not is_day_one
         and not is_comeback
         and current_lr < 8
     ):
-        raise ReadinessGateError(
-            f"Half-marathon readiness gate: current long run is {current_lr:.0f}mi. "
-            "Must complete 8mi before starting a half-marathon program."
+        half_bypass = (
+            long_run_capability_proven and peak_long_run_miles >= 8.0
         )
+        if half_bypass:
+            logger.info(
+                "half-marathon readiness gate bypass: current_lr=%.1fmi but "
+                "lifetime peak_long_run=%.1fmi (capability_proven).",
+                current_lr, peak_long_run_miles,
+            )
+        else:
+            raise ReadinessGateError(
+                f"Half-marathon readiness gate: current long run is {current_lr:.0f}mi "
+                f"(lifetime peak {peak_long_run_miles:.0f}mi). "
+                "Must complete 8mi before starting a half-marathon program."
+            )
 
     needs = _diagnose_adaptation_needs(
         race_distance, experience, horizon_weeks, is_abbreviated,
@@ -1423,6 +1457,8 @@ def generate_n1_plan(
     tune_up_races: Optional[List[Dict]] = None,
     taper_weeks: Optional[int] = None,
     fingerprint: Optional[FingerprintParams] = None,
+    peak_long_run_miles: float = 0.0,
+    long_run_capability_proven: bool = False,
 ) -> List[WeekPlan]:
     if taper_weeks is not None:
         taper_weeks = max(1, min(taper_weeks, 3))
@@ -1436,6 +1472,8 @@ def generate_n1_plan(
         weeks_since_peak=weeks_since_peak, goal_time=goal_time,
         taper_weeks=taper_weeks,
         fingerprint=fingerprint,
+        peak_long_run_miles=peak_long_run_miles,
+        long_run_capability_proven=long_run_capability_proven,
     )
 
     if state.is_day_one:

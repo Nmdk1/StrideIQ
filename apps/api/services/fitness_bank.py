@@ -133,7 +133,16 @@ class FitnessBank:
     recent_16w_run_count: int = 0
     last_complete_week_miles: float = 0.0
     peak_confidence: str = "medium"
-    
+
+    # Long-run capability evidence.
+    # True ONLY when the athlete has at least one real activity >= 12mi in
+    # their full history. Distinguishes "we have evidence of distance capacity"
+    # from "peak_long_run_miles is a synthetic default for plan-sizing".
+    # Used by the readiness gate (n1_engine) to safely bypass the marathon
+    # 12mi minimum for ultra runners whose recent training long-run window
+    # filtered out their >24mi sessions as suspected races.
+    long_run_capability_proven: bool = False
+
     def to_dict(self) -> Dict:
         return {
             "athlete_id": self.athlete_id,
@@ -175,7 +184,8 @@ class FitnessBank:
                 "recent_16w_run_count": int(self.recent_16w_run_count),
                 "last_complete_week_miles": round(self.last_complete_week_miles, 1),
                 "peak_confidence": self.peak_confidence,
-            }
+            },
+            "long_run_capability_proven": bool(self.long_run_capability_proven),
         }
 
 
@@ -295,6 +305,7 @@ def _fitness_bank_to_dict(bank: "FitnessBank") -> dict:
         "recent_16w_run_count": bank.recent_16w_run_count,
         "last_complete_week_miles": bank.last_complete_week_miles,
         "peak_confidence": bank.peak_confidence,
+        "long_run_capability_proven": bool(bank.long_run_capability_proven),
     }
 
 
@@ -352,6 +363,7 @@ def _fitness_bank_from_dict(d: dict) -> "FitnessBank":
         recent_16w_run_count=int(d.get("recent_16w_run_count", 0)),
         last_complete_week_miles=float(d.get("last_complete_week_miles", 0.0)),
         peak_confidence=str(d.get("peak_confidence", "medium")),
+        long_run_capability_proven=bool(d.get("long_run_capability_proven", False)),
     )
 
 
@@ -509,6 +521,7 @@ class FitnessBankCalculator:
             peak_mp_long_run_miles=peaks["peak_mp_long_run"],
             peak_threshold_miles=peaks["peak_threshold"],
             peak_ctl=peaks["peak_ctl"],
+            long_run_capability_proven=peaks.get("long_run_capability_proven", False),
             race_performances=races,
             best_rpi=best_rpi,
             best_race=best_race,
@@ -625,6 +638,14 @@ class FitnessBankCalculator:
         peak_long = max(long_runs) if long_runs else 15.0
         peak_mp_long = max(mp_long_runs) if mp_long_runs else 0.0
         peak_threshold = max(threshold_sessions) if threshold_sessions else 6.0
+
+        # Long-run capability: proven only by an actual run >= 12mi in history.
+        # `long_runs` already filters to miles >= 13 (line above), so any
+        # entry counts. This signal exists because peak_long_run_miles defaults
+        # to 15.0 when there is zero long-run history, and that synthetic
+        # value must NOT satisfy the readiness gate. See readiness_gate
+        # bypass in services/plan_framework/n1_engine.py.
+        long_run_capability_proven = bool(long_runs)
         
         # Peak CTL (approximate from TSS)
         if weekly_tss:
@@ -641,7 +662,8 @@ class FitnessBankCalculator:
             "peak_long_run": peak_long,
             "peak_mp_long_run": peak_mp_long,
             "peak_threshold": peak_threshold,
-            "peak_ctl": peak_ctl
+            "peak_ctl": peak_ctl,
+            "long_run_capability_proven": long_run_capability_proven,
         }
     
     def _extract_race_performances(self, activities: List) -> List[RacePerformance]:

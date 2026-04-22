@@ -646,6 +646,10 @@ def _generate_micro_plan(
         experience=bank.experience_level,
         best_rpi=best_rpi,
         fingerprint=fp_params,
+        peak_long_run_miles=float(getattr(bank, "peak_long_run_miles", 0.0) or 0.0),
+        long_run_capability_proven=bool(
+            getattr(bank, "long_run_capability_proven", False)
+        ),
     )
 
     micro_plan = []

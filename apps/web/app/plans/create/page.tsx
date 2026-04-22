@@ -103,6 +103,13 @@ function formatPlanCreateError(err: unknown): PlanCreateError {
         safe_bounds_km?: { weekly_miles?: { min?: number; max?: number } };
         recommended_peak_weekly_miles?: number;
       };
+      if (payload.error_code === 'readiness_gate_blocked') {
+        const display = (payload.display_message || '').trim();
+        const message = display
+          ? display
+          : "Your training history doesn't yet support this race distance. Build a longer long-run, then come back, or pick a shorter goal distance.";
+        return { message };
+      }
       if (payload.error_code === 'quality_gate_failed') {
         const display = (payload.display_message || '').trim();
         const reasons = Array.isArray(payload.reasons) ? payload.reasons : [];
