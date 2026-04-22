@@ -1859,7 +1859,7 @@ export default function CreatePlanPage() {
             </button>
           ) : step === 'constraint-aware-tune-up' ? (
             <button
-              onClick={handleConstraintAwareSubmit}
+              onClick={() => handleConstraintAwareSubmit()}
               disabled={isLoading || !formData.distance || !formData.race_date}
               className="px-8 py-3 bg-gradient-to-r from-emerald-600 to-teal-600 rounded-lg font-semibold text-white disabled:opacity-50 flex items-center gap-2"
             >
