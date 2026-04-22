@@ -2404,13 +2404,30 @@ async def create_constraint_aware_plan(
             )
 
         gate = evaluate_constraint_aware_plan(plan)
+        # Track soft-gate warnings to surface back to the athlete on success.
+        soft_gate_warnings: List[str] = []
+        soft_gate_applied_peak_miles: Optional[float] = None
         if not gate.passed:
-            fallback_peak = float((plan.volume_contract or {}).get("band_max") or 0) * 0.95
+            # Prefer the gate's own suggested midpoint over band_max * 0.95 —
+            # the suggested bounds are derived from the same training history
+            # that made the gate fail, so the second pass is more likely to
+            # land inside the safe range.
+            band_fallback_peak = float((plan.volume_contract or {}).get("band_max") or 0) * 0.95
+            gate_weekly = (gate.suggested_safe_bounds or {}).get("weekly_miles") or {}
+            gate_midpoint = None
+            try:
+                if gate_weekly.get("min") is not None and gate_weekly.get("max") is not None:
+                    gate_midpoint = (float(gate_weekly["min"]) + float(gate_weekly["max"])) / 2.0
+            except (TypeError, ValueError):
+                gate_midpoint = None
+            fallback_peak = gate_midpoint if (gate_midpoint and gate_midpoint > 0) else band_fallback_peak
             # Never silently replace explicit athlete intent during fallback.
             fallback_requested_peak = request.target_peak_weekly_miles
             fallback_requested_range = request.target_peak_weekly_range
             if fallback_requested_peak is None and fallback_requested_range is None:
-                fallback_requested_peak = fallback_peak if fallback_peak > 0 else None
+                if fallback_peak > 0:
+                    fallback_requested_peak = round(fallback_peak, 1)
+                    soft_gate_applied_peak_miles = round(fallback_peak, 1)
             plan = generate_constraint_aware_plan(
                 athlete_id=athlete.id,
                 race_date=request.race_date,
@@ -2433,7 +2450,31 @@ async def create_constraint_aware_plan(
                     },
                 )
             second_gate = evaluate_constraint_aware_plan(plan)
+            if second_gate.passed and soft_gate_applied_peak_miles is not None:
+                # Soft gate succeeded after using the gate-suggested fallback
+                # peak. Surface it to the athlete so they can see the system
+                # auto-tuned the volume and why.
+                soft_gate_warnings.append(
+                    "auto_tuned_peak_to_safe_range:"
+                    f"{soft_gate_applied_peak_miles}"
+                )
             if not second_gate.passed:
+                weekly_mi = (second_gate.suggested_safe_bounds or {}).get("weekly_miles") or {}
+                weekly_km = (second_gate.safe_bounds_km or {}).get("weekly_miles") or {}
+                recommended_peak_miles = None
+                recommended_peak_km = None
+                try:
+                    if weekly_mi.get("min") is not None and weekly_mi.get("max") is not None:
+                        recommended_peak_miles = round(
+                            (float(weekly_mi["min"]) + float(weekly_mi["max"])) / 2.0, 1
+                        )
+                    if weekly_km.get("min") is not None and weekly_km.get("max") is not None:
+                        recommended_peak_km = round(
+                            (float(weekly_km["min"]) + float(weekly_km["max"])) / 2.0, 1
+                        )
+                except (TypeError, ValueError):
+                    recommended_peak_miles = None
+                    recommended_peak_km = None
                 raise HTTPException(
                     status_code=422,
                     detail={
@@ -2443,6 +2484,10 @@ async def create_constraint_aware_plan(
                         "reasons": second_gate.reasons,
                         "invariant_conflicts": second_gate.invariant_conflicts,
                         "suggested_safe_bounds": second_gate.suggested_safe_bounds,
+                        "safe_bounds_km": second_gate.safe_bounds_km,
+                        "display_message": second_gate.display_message,
+                        "recommended_peak_weekly_miles": recommended_peak_miles,
+                        "recommended_peak_weekly_km": recommended_peak_km,
                         "volume_contract_snapshot": plan.volume_contract,
                         "next_action": "adjust_inputs_or_accept_safe_bounds",
                     },
@@ -2485,6 +2530,8 @@ async def create_constraint_aware_plan(
             "volume_contract": plan.volume_contract,
             "quality_gate_fallback": plan.quality_gate_fallback,
             "quality_gate_reasons": plan.quality_gate_reasons,
+            "warnings": soft_gate_warnings,
+            "soft_gate_applied_peak_weekly_miles": soft_gate_applied_peak_miles,
             "personalization": {
                 "notes": plan.counter_conventional_notes,
                 "tune_up_races": plan.tune_up_races

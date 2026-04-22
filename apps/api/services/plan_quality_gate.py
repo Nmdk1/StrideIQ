@@ -1,10 +1,11 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
 
 MILES_EPS = 0.25
 RATIO_EPS = 0.01
 TENK_LONG_DOMINANCE_RATIO_CEILING = 0.40
+MI_TO_KM = 1.60934
 
 
 @dataclass
@@ -13,6 +14,128 @@ class QualityGateResult:
     reasons: List[str]
     invariant_conflicts: List[str]
     suggested_safe_bounds: Dict[str, Dict[str, float]]
+    display_message: str = ""
+    safe_bounds_km: Dict[str, Dict[str, float]] = field(default_factory=dict)
+
+
+# Athlete-language summaries keyed by invariant code. The string is a short
+# explanation in plain English; the gate composes one or more of these into the
+# top-level display_message returned to the client. Codes that are not listed
+# fall back to a generic "we caught a plan quality issue" message so the
+# athlete never sees raw debug strings.
+_DISPLAY_BY_INVARIANT: Dict[str, str] = {
+    "no_weeks_generated": "We could not build a plan from your inputs.",
+    "no_workouts_generated": "We could not build any workouts from your inputs.",
+    "weekly_volume_exceeds_trusted_band": (
+        "Your peak weekly volume is higher than your training history "
+        "supports. Try a peak inside the safe range below."
+    ),
+    "personal_long_run_floor_breach": (
+        "One or more early weeks dip below the long run you have already been "
+        "running. Try a peak inside the safe range below."
+    ),
+    "tenk_long_run_dominance": (
+        "The long run is taking up too much of your week for a 10K plan. Try "
+        "a smaller peak weekly volume."
+    ),
+    "tenk_threshold_oversize": (
+        "The threshold session is too large for a 10K plan. Try a smaller "
+        "peak weekly volume."
+    ),
+    "tenk_marathon_pace_artifact": (
+        "10K plans should not include marathon-pace work. Try a different "
+        "race distance or smaller volume."
+    ),
+    "marathon_mp_progression_missing": (
+        "There is not enough marathon-pace progression. A higher peak "
+        "weekly volume would let us build the plan correctly."
+    ),
+    "marathon_mp_total_too_low": (
+        "The plan has too little marathon-pace volume. A higher peak "
+        "weekly volume would let us build the plan correctly."
+    ),
+    "marathon_long_run_progression_stall": (
+        "Your long run progression stalls before the race-specific block. "
+        "Try a peak inside the safe range below."
+    ),
+    "marathon_cutback_missing": (
+        "We could not place a recovery cutback week. Try a peak inside the "
+        "safe range below."
+    ),
+    "half_hmp_missing": (
+        "The half-marathon plan is missing race-pace work. Try a peak "
+        "inside the safe range below."
+    ),
+    "half_threshold_missing": (
+        "The half-marathon plan is missing threshold work. Try a peak "
+        "inside the safe range below."
+    ),
+    "half_marathon_artifact": (
+        "The half-marathon plan accidentally included marathon work. Try "
+        "regenerating with a smaller peak."
+    ),
+    "fivek_speed_sharpen_missing": (
+        "The 5K plan is missing intervals or repetitions. Try a peak "
+        "inside the safe range below."
+    ),
+    "fivek_distance_artifact": (
+        "The 5K plan accidentally included long-distance work. Try "
+        "regenerating with a smaller peak."
+    ),
+    "fivek_no_intervals": (
+        "A 5K plan with no interval sessions is a coaching error. Try a "
+        "peak inside the safe range below."
+    ),
+}
+
+_DISPLAY_FALLBACK = (
+    "We caught a plan quality issue. Try a peak weekly volume inside the "
+    "safe range below and regenerate."
+)
+
+
+def _build_display_message(invariant_conflicts: List[str]) -> str:
+    """Compose an athlete-readable summary from invariant codes."""
+    if not invariant_conflicts:
+        return ""
+    seen: List[str] = []
+    parts: List[str] = []
+    for code in invariant_conflicts:
+        if code in seen:
+            continue
+        seen.append(code)
+        msg = _DISPLAY_BY_INVARIANT.get(code)
+        if msg:
+            parts.append(msg)
+    if not parts:
+        return _DISPLAY_FALLBACK
+    return " ".join(parts)
+
+
+def _miles_dict_to_km(bounds_mi: Dict[str, Dict[str, float]]) -> Dict[str, Dict[str, float]]:
+    """Mirror suggested_safe_bounds (miles) into km. Field names use the
+    same shape so the frontend can render either based on athlete units."""
+    out: Dict[str, Dict[str, float]] = {}
+    for key, bounds in bounds_mi.items():
+        if not isinstance(bounds, dict):
+            continue
+        try:
+            mn = float(bounds.get("min") or 0.0) * MI_TO_KM
+            mx = float(bounds.get("max") or 0.0) * MI_TO_KM
+        except (TypeError, ValueError):
+            continue
+        out[key] = {"min": round(mn, 1), "max": round(mx, 1)}
+    return out
+
+
+def _enrich_with_display(result: QualityGateResult) -> QualityGateResult:
+    """Populate display_message and safe_bounds_km on a result. Idempotent.
+    Pure decoration, never changes pass/fail or touches reasons."""
+    if not result.display_message:
+        result.display_message = _build_display_message(result.invariant_conflicts)
+    if not result.safe_bounds_km:
+        result.safe_bounds_km = _miles_dict_to_km(result.suggested_safe_bounds)
+    return result
 
 
 def evaluate_constraint_aware_plan(plan: Any) -> QualityGateResult:
@@ -33,7 +156,7 @@ def evaluate_constraint_aware_plan(plan: Any) -> QualityGateResult:
     if not weeks:
         reasons.append("No generated weeks.")
         invariant_conflicts.append("no_weeks_generated")
-        return QualityGateResult(False, reasons, invariant_conflicts, suggested_safe_bounds)
+        return _enrich_with_display(QualityGateResult(False, reasons, invariant_conflicts, suggested_safe_bounds))
 
     if band_max > 0:
         for week in weeks:
@@ -72,7 +195,9 @@ def evaluate_constraint_aware_plan(plan: Any) -> QualityGateResult:
     elif race_distance == "5k":
         _evaluate_5k_rules(weeks, reasons, invariant_conflicts)
 
-    return QualityGateResult(len(reasons) == 0, reasons, invariant_conflicts, suggested_safe_bounds)
+    return _enrich_with_display(
+        QualityGateResult(len(reasons) == 0, reasons, invariant_conflicts, suggested_safe_bounds)
+    )
 
 
 def evaluate_starter_plan_quality(plan: Any) -> QualityGateResult:
@@ -83,10 +208,10 @@ def evaluate_starter_plan_quality(plan: Any) -> QualityGateResult:
     workouts = getattr(plan, "workouts", []) or []
     if not workouts:
         reasons.append("No workouts generated.")
-        return QualityGateResult(False, reasons, ["no_workouts_generated"], {
+        return _enrich_with_display(QualityGateResult(False, reasons, ["no_workouts_generated"], {
             "weekly_miles": {"min": 15.0, "max": 25.0},
             "long_run_miles": {"min": 6.0, "max": 8.0},
-        })
+        }))
 
     week_totals: Dict[int, float] = {}
     week_longs: Dict[int, float] = {}
@@ -113,10 +238,10 @@ def evaluate_starter_plan_quality(plan: Any) -> QualityGateResult:
             )
             break
 
-    return QualityGateResult(len(reasons) == 0, reasons, [], {
+    return _enrich_with_display(QualityGateResult(len(reasons) == 0, reasons, [], {
         "weekly_miles": {"min": 15.0, "max": 25.0},
         "long_run_miles": {"min": 6.0, "max": 8.0},
-    })
+    }))
 
 
 def _compute_personal_long_run_floor(fitness_bank: Dict[str, Any], race_distance: str) -> float:
