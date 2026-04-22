@@ -67,7 +67,8 @@ const READINESS_DISPLAY = (
 );
 
 function makeReadinessGateError(): ApiClientError {
-  return new ApiClientError('Unprocessable Entity', 422, {
+  type ApiErrorPayload = ConstructorParameters<typeof ApiClientError>[2];
+  const data = {
     detail: {
       error_code: 'readiness_gate_blocked',
       display_message: READINESS_DISPLAY,
@@ -78,7 +79,8 @@ function makeReadinessGateError(): ApiClientError {
       required_long_run_miles: 12,
       suggested_alternatives: ['half_marathon', '10k'],
     },
-  } as unknown as Parameters<typeof ApiClientError>[2]);
+  } as unknown as ApiErrorPayload;
+  return new ApiClientError('Unprocessable Entity', 422, data);
 }
 
 async function navigateToMarathonGenerate() {
