@@ -33,6 +33,7 @@ import type { MealTemplate, MealTemplateItem } from '@/lib/api/services/nutritio
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { nutritionService } from '@/lib/api/services/nutrition';
 import type { NutritionEntryCreate, DaySummary } from '@/lib/api/services/nutrition';
+import { localToday } from '@/lib/utils/date';
 
 type ActiveTab = 'log' | 'meals' | 'history' | 'insights';
 
@@ -142,7 +143,7 @@ function TrendChart({ days }: { days: DaySummary[] }) {
 
 export default function NutritionPage() {
   const { user } = useAuth();
-  const today = new Date().toISOString().split('T')[0];
+  const today = localToday();
 
   const [activeTab, setActiveTab] = useState<ActiveTab>('log');
   const [selectedDate, setSelectedDate] = useState(today);
@@ -1736,7 +1737,7 @@ export default function NutritionPage() {
                                 try {
                                   await logMeal.mutateAsync({
                                     id: m.id,
-                                    body: { date: selectedDate, entry_type: 'daily' },
+                                    body: { date: entryDate, entry_type: 'daily' },
                                   });
                                   showToast(`Logged: ${m.name}`);
                                 } catch {

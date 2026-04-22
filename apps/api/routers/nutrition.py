@@ -124,13 +124,17 @@ def _maybe_learn_override_from_entry(
             pass
 
 
-def _validate_entry_date(entry_date: date) -> None:
+def _validate_entry_date(entry_date: date, athlete_tz=None) -> None:
     """Reject future dates and dates older than the backlog window.
 
     Raises:
         HTTPException(400) — with a human-readable detail message.
     """
-    today = date.today()
+    if athlete_tz is not None:
+        from services.timezone_utils import athlete_local_today
+        today = athlete_local_today(athlete_tz)
+    else:
+        today = date.today()
     if entry_date > today:
         raise HTTPException(
             status_code=400,
@@ -725,8 +729,9 @@ def log_fueling(
             raise HTTPException(status_code=404, detail="Activity not found")
 
     qty = payload.quantity or 1.0
-    entry_date = payload.entry_date or athlete_local_today(get_athlete_timezone(current_user))
-    _validate_entry_date(entry_date)
+    _ath_tz = get_athlete_timezone(current_user)
+    entry_date = payload.entry_date or athlete_local_today(_ath_tz)
+    _validate_entry_date(entry_date, athlete_tz=_ath_tz)
     entry = NutritionEntry(
         athlete_id=current_user.id,
         date=entry_date,
@@ -1114,7 +1119,7 @@ def log_meal(
     """Log a saved meal as a NutritionEntry on the requested date."""
     from services.meal_template_service import log_template_for_athlete
 
-    _validate_entry_date(body.date)
+    _validate_entry_date(body.date, athlete_tz=get_athlete_timezone(current_user))
 
     if body.entry_type in ("pre_activity", "during_activity", "post_activity"):
         if not body.activity_id:
@@ -1182,7 +1187,7 @@ def create_nutrition_entry(
     current_user: Athlete = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    _validate_entry_date(nutrition.date)
+    _validate_entry_date(nutrition.date, athlete_tz=get_athlete_timezone(current_user))
 
     if nutrition.entry_type in ("pre_activity", "during_activity", "post_activity"):
         if not nutrition.activity_id:
@@ -1298,7 +1303,7 @@ def update_nutrition_entry(
     if db_entry.athlete_id != current_user.id:
         raise HTTPException(status_code=403, detail="Access denied")
 
-    _validate_entry_date(nutrition.date)
+    _validate_entry_date(nutrition.date, athlete_tz=get_athlete_timezone(current_user))
 
     if nutrition.entry_type in ("pre_activity", "during_activity", "post_activity"):
         if not nutrition.activity_id:
@@ -1362,7 +1367,7 @@ def patch_nutrition_entry(
 
     patch_data = updates.model_dump(exclude_unset=True)
     if "date" in patch_data and patch_data["date"] is not None:
-        _validate_entry_date(patch_data["date"])
+        _validate_entry_date(patch_data["date"], athlete_tz=get_athlete_timezone(current_user))
     macro_touched = any(
         k in patch_data
         for k in ("calories", "protein_g", "carbs_g", "fat_g", "fiber_g", "caffeine_mg")

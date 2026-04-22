@@ -20,6 +20,7 @@ import { useRouter } from 'next/navigation';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/lib/hooks/useAuth';
 import { API_CONFIG } from '@/lib/api/config';
+import { localToday } from '@/lib/utils/date';
 
 interface ActivePlan {
   id: string;
@@ -608,7 +609,7 @@ export function PlanManagementModal({ plan, currentWeek, isOpen, onClose }: Plan
                     value={newRaceDate}
                     onChange={(e) => setNewRaceDate(e.target.value)}
                     className="w-full bg-slate-800 border border-slate-700/50 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-blue-500"
-                    min={new Date().toISOString().split('T')[0]}
+                    min={localToday()}
                   />
                 </div>
                 

@@ -51,6 +51,7 @@ import {
   StretchHorizontal,
   UtensilsCrossed,
 } from 'lucide-react';
+import { localToday } from '@/lib/utils/date';
 
 // --- Workout styling ---
 
@@ -337,9 +338,8 @@ function QuickCheckin() {
 
   const handleSubmit = () => {
     if (feel === null || sleepQuality === null || soreness === null) return;
-    const today = new Date().toISOString().split('T')[0];
     checkin.mutate({
-      date: today,
+      date: localToday(),
       readiness_1_5: feel,
       sleep_quality_1_5: sleepQuality,
       sleep_h: sleepHours ?? undefined,

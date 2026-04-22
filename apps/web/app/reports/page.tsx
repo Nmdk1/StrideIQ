@@ -15,6 +15,7 @@ import type {
   BodyCompDay,
   PeriodAverages,
 } from '@/lib/api/services/reports';
+import { localToday } from '@/lib/utils/date';
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
@@ -333,7 +334,7 @@ function AveragesCard({ avgs, cats }: { avgs: PeriodAverages; cats: Set<ReportCa
 export default function ReportsPage() {
   const { user } = useAuth();
   const { formatDistance, units } = useUnits();
-  const today = new Date().toISOString().split('T')[0];
+  const today = localToday();
 
   const [preset, setPreset] = useState<DatePreset>('14d');
   const [customStart, setCustomStart] = useState(shiftDate(today, -14));
