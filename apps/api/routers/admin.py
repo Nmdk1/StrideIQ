@@ -1866,7 +1866,7 @@ def get_system_health(
         Athlete.created_at >= datetime.now() - timedelta(days=30)
     ).count()
     
-    # Activity counts
+    # Activity counts (all-sport platform totals for admin dashboard).
     total_activities = db.query(Activity).count()
     recent_activities = db.query(Activity).filter(
         Activity.start_time >= datetime.now() - timedelta(days=7)
@@ -2420,6 +2420,7 @@ async def admin_classify_all(
 
     classifier = WorkoutClassifierService(db)
 
+    # All-sport batch classify (≥1 km, unclassified); not "running mileage" aggregation.
     activities = db.query(Activity).filter(
         Activity.workout_type.is_(None),
         Activity.distance_m >= 1000,

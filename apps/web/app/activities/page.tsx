@@ -51,7 +51,8 @@ export default function ActivitiesPage() {
   );
 }
 
-function ActivitiesPageInner() {
+/** Exported for behavioral tests (sport view toggle + stat cards). */
+export function ActivitiesPageInner() {
   const { units, formatDistance, formatPace, distanceUnitShort, paceUnit } = useUnits();
   const { 
     isSelected, 

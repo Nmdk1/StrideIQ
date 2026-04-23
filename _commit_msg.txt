@@ -1,5 +1,0 @@
-Update SITE_AUDIT_LIVING.md with full Apr 4 session delta
-
-Added: Universal Kimi K2.5 routing, model audit trail, Celery beat
-startup dispatch fix, AutoDiscovery savepoint fix, pre-existing test
-fixes. Updated coach prompt quality fix entry to reflect Kimi routing.

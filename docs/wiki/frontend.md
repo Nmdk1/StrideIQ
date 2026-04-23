@@ -10,12 +10,12 @@ Next.js 14 App Router. React 18. TanStack Query for data fetching. Tailwind CSS.
 
 | Route | Page | Status |
 |-------|------|--------|
-| `/home` | Home — morning briefing, PMC, wellness, recent activity | Primary |
+| `/home` | Home — morning briefing, PMC, wellness, recent activity; week strip uses **`WeekChipDay`** (running-only primary distance; multi-run `+N`; other-sport icon links; `other_sport_summary` line) | Primary |
 | `/manual` | Personal Operating Manual V2 | Primary |
-| `/calendar` | Training calendar with plan, variant dropdown | Primary |
+| `/calendar` | Training calendar with plan, variant dropdown; API exposes **`running_*` / `other_*`** day fields plus legacy `total_*` (all-sport) | Primary |
 | `/coach` | AI coach chat | Primary |
 | `/activities` | Activity list (all sports, chronological) | Primary |
-| `/analytics` | Analytics (absorbed trends) | Primary |
+| `/analytics` | Analytics (absorbed trends); week strip reuses **`WeekChipDay`** (parity with `/home`) | Primary |
 | `/training-load` | PMC chart, TSS breakdown | Primary |
 | `/progress` | Progress page — correlation web, hero | Primary |
 | `/settings` | Settings (absorbed profile) | Primary |
@@ -101,7 +101,7 @@ Sport-specific components: `CyclingDetail`, `StrengthDetail`, `HikingDetail`, `F
 
 | Directory | Contents |
 |-----------|----------|
-| `components/home/` | Hero, PMC compact, signals, banners |
+| `components/home/` | Hero, PMC compact, signals, banners; **`WeekChipDay.tsx`** — shared week-strip day cell (home + analytics) |
 | `components/activities/` | Activity cards, splits, sport-specific detail panels, narrative; `feedback/` (FeedbackModal, ReflectPill, useFeedbackCompletion, useFeedbackTrigger), `share/` (ShareButton, ShareDrawer) |
 | `components/canvas-v2/` | CanvasV2 (hero), TerrainMap3D (Mapbox GL), StreamsStack (HR/pace/elevation, Tukey fence outlier clip), CanvasHelpButton, distance hover card |
 | `components/calendar/` | Day cells, week rows, `DayDetailPanel.tsx` (edit + swap) |

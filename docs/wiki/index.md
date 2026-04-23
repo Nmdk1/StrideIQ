@@ -1,6 +1,6 @@
 # StrideIQ Internal Wiki
 
-**Last updated:** April 23, 2026 (Quick Reference: coach + briefing models aligned to `apps/api/core/config.py`, `services/coaching/_llm.py`, `core/llm_client.py`)
+**Last updated:** April 23, 2026 (Quick Reference: coach + briefing models aligned to `apps/api/core/config.py`, `services/coaching/_llm.py`, `core/llm_client.py`; running vs other — home/calendar/analytics week UI + calendar API split fields documented in `docs/wiki/frontend.md`)
 
 This is the single onboarding document. Read this instead of the 12-document read order.
 

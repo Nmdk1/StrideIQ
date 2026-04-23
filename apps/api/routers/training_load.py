@@ -148,6 +148,7 @@ async def get_load_history(
         from models import Activity
         _end = _date_type.today()
         _start = _end - _td(days=6)
+        # Cross-sport TSS disclosure by design — do not filter to run-only here.
         recent = db.query(Activity).filter(
             Activity.athlete_id == athlete.id,
             Activity.is_duplicate == False,  # noqa: E712
@@ -211,6 +212,7 @@ async def get_workout_tss(
     """
     from models import Activity
     
+    # Single-activity fetch by primary key — sport-agnostic.
     activity = db.query(Activity).filter(
         Activity.id == activity_id,
         Activity.athlete_id == athlete.id

@@ -86,6 +86,33 @@ apps/api/scripts/_scratch/
 /_*.py
 /_*.sh
 
+# Root-level dot-prefixed dev scripts (per-session diagnostics, never in repo)
+/.commit_*
+/.hotpatch_*
+/.verify_*
+/.flip_*
+/.audit_*
+/.diag_*
+/.dejan_*
+/.smoke_*
+/.athlete_*
+/.replay_*
+/.test_*.sh
+/.sweep_*
+/.pr_body*
+/.ci_*
+/.local_test*
+/_commit_msg*
+/.tmp_*
+/.smoke
+/.smoke/
+/.smoke[0-9]*
+/.replay
+/.replay/
+
+# Per-athlete one-off audit scripts in scripts/ (e.g. scripts/jim_*)
+scripts/jim_*
+
 # Root-level temp/scratch by name
 /tmp_*.py
 /check_*.py

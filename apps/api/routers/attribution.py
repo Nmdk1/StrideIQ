@@ -124,7 +124,7 @@ def get_activity_attribution(
     from services.contextual_comparison import ContextualComparisonService
     from models import Activity
     
-    # Get the target activity
+    # Single-activity lookup (sport follows the row — comparison service is run-centric).
     activity = db.query(Activity).filter(
         Activity.id == activity_id,
         Activity.athlete_id == current_user.id,
@@ -196,7 +196,7 @@ def get_attribution_summary(
     from services.contextual_comparison import ContextualComparisonService
     from models import Activity
     
-    # Get the target activity
+    # Single-activity lookup by id — sport-agnostic at query; downstream is run comparisons.
     activity = db.query(Activity).filter(
         Activity.id == activity_id,
         Activity.athlete_id == current_user.id,

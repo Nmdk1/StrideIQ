@@ -168,7 +168,8 @@ async def classify_all_activities(
     """
     classifier = WorkoutClassifierService(db)
     
-    # Get unclassified activities
+    # Get unclassified activities (running-focused distance floor; not a weekly
+    # "running mileage" aggregate — compare engine backfill for meaningful runs).
     activities = db.query(Activity).filter(
         Activity.athlete_id == athlete.id,
         Activity.workout_type.is_(None),

@@ -316,7 +316,7 @@ class IndividualPerformanceModel:
         """Get daily TSS values from training history."""
         from services.training_load import TrainingLoadCalculator
         
-        # Get all activities in range
+        # Running-only: activities in range for per-day TSS curve.
         activities = self.db.query(Activity).filter(
             Activity.athlete_id == athlete_id,
             func.date(Activity.start_time) >= start_date,
@@ -371,6 +371,7 @@ class IndividualPerformanceModel:
         # 3. is_race_candidate = True with high confidence
         from sqlalchemy import or_
         
+        # Run rows with race signals (RPI inputs); not general all-sport volume.
         races = self.db.query(Activity).filter(
             Activity.athlete_id == athlete_id,
             func.date(Activity.start_time) >= start_date,
@@ -421,7 +422,7 @@ class IndividualPerformanceModel:
         
         Used as fallback when insufficient race data.
         """
-        # Get monthly efficiency averages as proxy for performance
+        # Running-only efficiency markers when race count is thin.
         activities = self.db.query(Activity).filter(
             Activity.athlete_id == athlete_id,
             func.date(Activity.start_time) >= start_date,

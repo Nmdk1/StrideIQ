@@ -1,7 +1,7 @@
 # StrideIQ — Living Site Audit
 
 **Purpose:** Canonical full-product audit. This is the always-current inventory of what exists on the site, what is shipped, and what operational tools are available.
-**Last updated:** April 23, 2026 — **Doc alignment:** §6 key-page table (run detail = CanvasV2 + 3-tab surface; `/coach` = universal Kimi via `COACH_CANARY_MODEL` default `kimi-k2.6` with Sonnet-only fallback; `/nutrition` = shipped product per `docs/wiki/nutrition.md`); §10 + §15 billing/Stripe text → two **canonical** tiers (`free`, `subscriber` in `apps/api/core/tier_utils.py`) with legacy paid labels mapping to subscriber; briefing models cross-checked to `BRIEFING_PRIMARY_MODEL` + optional Kimi canary + `core/llm_client.py` fallbacks. **Prior:** April 21 — unit-bypass fix (Efficiency + Age-Graded charts, coach page, recovery-day copy); API imperial-field debt named deferred. **Prior:** Activity-page Phases 1–4 (CanvasV2 hero, Mapbox 3D, 6→3 tabs, feedback + share pull-model); backend-green sweep; wiki currency rule.
+**Last updated:** April 23, 2026 — **Running vs other separation:** Home week strip + `WeekProgress` use running-only primary mileage; `other_sport_summary` rendered under trajectory; calendar API exposes `running_*` / `other_*` plus legacy all-sport `total_*`; planned-run completion uses running distance only; analytics week strip shares `WeekChipDay` with home; `.gitattributes` LF for `.sh`/`.py`/`.ts`/`.tsx`; hot-patch script fails if `/healthz` never OK. **Doc alignment:** §6 key-page table (run detail = CanvasV2 + 3-tab surface; `/coach` = universal Kimi via `COACH_CANARY_MODEL` default `kimi-k2.6` with Sonnet-only fallback; `/nutrition` = shipped product per `docs/wiki/nutrition.md`); §10 + §15 billing/Stripe text → two **canonical** tiers (`free`, `subscriber` in `apps/api/core/tier_utils.py`) with legacy paid labels mapping to subscriber; briefing models cross-checked to `BRIEFING_PRIMARY_MODEL` + optional Kimi canary + `core/llm_client.py` fallbacks. **Prior:** April 21 — unit-bypass fix (Efficiency + Age-Graded charts, coach page, recovery-day copy); API imperial-field debt named deferred. **Prior:** Activity-page Phases 1–4 (CanvasV2 hero, Mapbox 3D, 6→3 tabs, feedback + share pull-model); backend-green sweep; wiki currency rule.
 **Last updated by:** Agent (advisor + builder)
 
 ---
@@ -9,6 +9,8 @@
 ## 0. Delta Since Last Audit (Apr 6)
 
 Shipped and now live in product/system behavior:
+
+- **Running vs other activity separation (Apr 23, 2026):** Athlete-facing weekly/today **running** mileage and planned-run completion no longer mix walks, strength, or other sports. Home (`/v1/home`): `WeekDay.distance_mi` / `WeekProgress.completed_mi` runs-only; cross-training in `other_activities` + one-line `other_sport_summary` on the page. Calendar (`/v1/calendar`, `/v1/calendar/day/...`): `running_distance_m` / `running_duration_s` and `other_*` fields; `total_*` remains all-sport for back-compat; `get_day_status` compares **run** distance to planned run targets; web calendar rollups prefer `running_distance_m`. Analytics: `WeekChipDay` shared with home (`+N` multi-run, other-sport icon links). Backend audit comments on remaining `Activity` aggregation sites (Group 2.5). Tests: `test_calendar_running_separation.py`, `test_home_week_running_separation.py`, Jest `week-chip` + `sport-view-toggle`.
 
 - **Living audit + wiki truth pass (Apr 23, 2026 — docs only):** Corrected stale rows in §6 (`/activities/[id]`, `/coach`, `/nutrition`), §10 billing table, and §15 Stripe line to match shipped code (`tier_utils.py`, `config.py` coach/briefing env defaults, `services/coaching/_llm.py`, `core/llm_client.py`). No product code changes in this pass.
 
@@ -467,14 +469,14 @@ InsightLog → Adaptation Narrator → Narrated to athlete
 
 | Route | Purpose | Status |
 |-------|---------|--------|
-| `/home` | Morning command center: run shape + compact PMC (visual pair), coach briefing, **wellness row** (Recovery HRV + overnight avg + RHR + sleep with personal ranges), **mindset check-in** (enjoyment + confidence), workout, race countdown, **weekly chips show cross-training with sport icons** | Working — cross-training chips shipped Apr 4 |
+| `/home` | Morning command center: run shape + compact PMC (visual pair), coach briefing, **wellness row** (Recovery HRV + overnight avg + RHR + sleep with personal ranges), **mindset check-in** (enjoyment + confidence), workout, race countdown, **week strip** (`WeekChipDay`): running-only primary mileage, multi-run `+N`, other-sport icon links, optional **Also this week:** line from `other_sport_summary` | Working |
 | `/manual` | **Primary nav.** Personal Operating Manual: Race Character, Cascade Stories, Highlighted Findings, Full Record, What Changed delta tracking | Working — V2 shipped Apr 4 |
 | `/activities` | Activity list with sport icons (dumbbell/bike/mountain/footprints/stretch for cross-training), compare mode | Working — cross-training icons shipped Apr 4 |
 | `/activities/[id]` | Activity detail: **Runs:** **CanvasV2** chromeless hero (Mapbox 3D terrain), three tabs **Splits / Coach / Compare** (Coach tab absorbs narrative + findings + run intelligence), FeedbackModal + ReflectPill, ShareDrawer + Runtoon, streams stack, weather context. **Non-run:** sport-specific layouts — cycling (metrics + HR + elevation), strength (exercise sets by movement pattern + session type + volume), hiking (elevation hero + metrics), flexibility (minimal). Universal: wellness stamps, TSS training load card, title editing | Working — CanvasV2 + tab rebuild Apr 19 |
-| `/calendar` | Training calendar with plan overlay | Working |
+| `/calendar` | Training calendar with plan overlay; month/week distance rollups use **running** meters when API provides `running_distance_m` (falls back to `total_distance_m` for older backends) | Working |
 | `/coach` | AI coach chat interface | Strong — **universal Kimi** tool path (`settings.COACH_CANARY_MODEL`, default `kimi-k2.6` in `apps/api/core/config.py`); **Claude Sonnet 4.6** only on Kimi failure (`services/coaching/_llm.py`). Gemini is not used on the coach chat path. |
 | `/progress` | D3 force-directed correlation web, expandable proved facts, coach-voice hero — replaces old card grid | Working |
-| `/analytics` | Efficiency trends, correlations, load→response, **trends summary** (efficiency/volume trends + root cause analysis, absorbed from `/trends`) | Working — trends absorbed Apr 4 |
+| `/analytics` | Efficiency trends, correlations, load→response, **trends summary** (efficiency/volume trends + root cause analysis, absorbed from `/trends`); **week strip** matches home (`WeekChipDay`) | Working |
 | `/training-load` | PMC chart, N=1 zones, daily stress, **cross-training TSS disclosure with expandable 7-day breakdown** | Working — transparency disclosure shipped Apr 4 |
 | `/settings` | **Personal Information** (name, email, birthdate, sex, height — absorbed from `/profile`), Strava/Garmin integration, preferences, membership, data/privacy | Working — profile section added Apr 4 |
 | `/tools` | Pace calculator, age grading, heat adjustment | Working |
@@ -713,6 +715,15 @@ Non-negotiable operating rules:
 4. "Built but hidden/flagged" must still be listed with flag/gate status.
 5. If something is uncertain, mark it as unknown explicitly (never assume).
 
+### Running vs other separation (shipped Apr 23, 2026)
+
+Athlete-facing **running mileage** and **planned-run completion** use **running-only** distance where noted. Non-running activity is not mixed into those totals or used to satisfy a planned run target.
+
+1. **Home:** `WeekProgress.completed_mi` / per-day `WeekDay.distance_mi` are runs only; `other_activities` + `other_sport_summary` carry cross-training explicitly (summary line on the page when non-empty).
+2. **Calendar API:** `total_distance_m` / `total_duration_s` remain all-sport (legacy); **`running_distance_m` / `running_duration_s`** and **`other_*`** are the split fields; `get_day_status` compares planned run targets to **run** distance only; week `completed_miles` uses **running** day totals. Frontend calendar month/week summaries use **running** meters for the primary distance stat (fallback `total_*` for older APIs).
+3. **Analytics** week strip reuses **`WeekChipDay`** (same as home): multi-run `+N`, other-sport icon links, longest-run primary.
+4. **Repo hygiene:** `.gitattributes` enforces LF for `.sh` / `.py` / `.ts` / `.tsx` on checkout. `.hotpatch_weekly_fix.sh` exits non-zero if `/healthz` never goes healthy and prints API logs.
+
 ---
 
 ## 15. Current Platform Inventory (Founder View)
@@ -733,7 +744,7 @@ Current code scan snapshot (Apr 1, 2026):
 
 Current code scan snapshot:
 - App Router pages in `apps/web/app/**/page.tsx`: **63**
-- UI/component files in `apps/web/components/**/*.tsx`: **70**
+- UI/component files in `apps/web/components/**/*.tsx`: **71** (includes `components/home/WeekChipDay.tsx` — shared home + analytics week strip)
 - Query hook modules in `apps/web/lib/hooks/queries/`: **21**
 
 ### User-Facing Product Surfaces (live)

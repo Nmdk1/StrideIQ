@@ -99,24 +99,24 @@ def _build_weekday(day_date: date, day_abbrev: str, runs: list[FakeActivity],
     )
 
 
-def _summarize_others(days: list[WeekDay]) -> list[OtherSportSummary]:
-    agg: dict[str, dict] = {}
-    for d in days:
-        for o in d.other_activities:
-            b = agg.setdefault(o.sport, {"count": 0, "distance_mi": 0.0, "duration_min": 0.0})
+def _summarize_other_from_days_raw(other_by_day: dict) -> list[OtherSportSummary]:
+    """Mirrors ``routers.home`` other_sport_summary aggregation (raw m + s, single round)."""
+    _other_agg: dict[str, dict] = {}
+    for _acts in other_by_day.values():
+        for _a in _acts:
+            _sp = (_a.sport or "other").lower()
+            b = _other_agg.setdefault(_sp, {"count": 0, "distance_m": 0, "duration_s": 0})
             b["count"] += 1
-            if o.distance_mi:
-                b["distance_mi"] += o.distance_mi
-            if o.duration_min:
-                b["duration_min"] += o.duration_min
+            b["distance_m"] += int(_a.distance_m or 0)
+            b["duration_s"] += int(_a.duration_s or 0)
     return [
         OtherSportSummary(
             sport=s,
             count=v["count"],
-            distance_mi=round(v["distance_mi"], 1),
-            duration_min=round(v["duration_min"], 0),
+            distance_mi=round(v["distance_m"] / 1609.344, 1),
+            duration_min=(v["duration_s"] + 59) // 60 if v["duration_s"] else 0,
         )
-        for s, v in sorted(agg.items())
+        for s, v in sorted(_other_agg.items())
     ]
 
 
@@ -220,7 +220,7 @@ def test_week_completed_mi_is_running_only():
     assert total_runs == 4  # Mon 1 + Tue 2 + Wed 1
 
     # Walk + strength surface in the summary, not in completed_mi.
-    other_summary = _summarize_others(week_days)
+    other_summary = _summarize_other_from_days_raw(other_by_day)
     sports = {s.sport: s for s in other_summary}
     assert "walking" in sports and sports["walking"].count == 1
     assert "strength" in sports and sports["strength"].count == 1
@@ -231,27 +231,16 @@ def test_other_sport_summary_aggregates_distance_and_duration():
     """Per-sport weekly aggregate exposes distance_mi and duration_min."""
     monday, activities, day_of = _dejan_apr22_fixture()
     runs_by_day, other_by_day = _group(activities, day_of)
-    abbrev = ["M", "T", "W", "T", "F", "S", "S"]
-    week_days = [
-        _build_weekday(monday + timedelta(days=i), abbrev[i],
-                       runs_by_day.get(monday + timedelta(days=i), []),
-                       other_by_day.get(monday + timedelta(days=i), []))
-        for i in range(7)
-    ]
-    summary = {s.sport: s for s in _summarize_others(week_days)}
+    summary = {s.sport: s for s in _summarize_other_from_days_raw(other_by_day)}
 
-    # Walking: 1560 m = 0.969 mi (per-activity rounded to 2 dp = 0.97), the
-    # weekly aggregate rounds that sum to 1 dp = 1.0 mi.
+    # Walking: 1560 m → one rounding step to displayed miles.
     assert summary["walking"].distance_mi == 1.0
-    # Walking duration: 2029 s = 33.8 min (1 dp), aggregated and rounded to whole minutes.
+    # Walking duration: ceil minutes from total seconds (2029 s → 34 min).
     assert summary["walking"].duration_min == 34
 
-    # Strength has no distance but does have a duration (7767 s ≈ 129.45 min).
-    # Double-rounding (per-activity 1 dp then whole-minute sum) yields 129
-    # via IEEE-754 banker's rounding. We pin a whole-minute tolerance since
-    # the rounding path isn't the contract — the separation is.
+    # Strength: 7767 s → ceil to whole minutes = 130 (no per-row pre-rounding).
     assert summary["strength"].distance_mi == 0.0
-    assert summary["strength"].duration_min in (129, 130)
+    assert summary["strength"].duration_min == 130
 
 
 def test_weekprogress_with_other_sport_summary_roundtrip():

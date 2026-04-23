@@ -10,6 +10,8 @@ Phase 4 additions:
   - COACHING_LANGUAGE dictionary for DB field → coaching language translation
   - Lifecycle-state-aware labeling in format_finding_line
   - Closed findings grouped into a single summary line
+
+No SQL Activity aggregation here — correlation-finding text formatting only.
 """
 
 import logging

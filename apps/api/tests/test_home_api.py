@@ -442,26 +442,25 @@ class TestComputeCoachNoticed:
     def test_coach_noticed_picks_fingerprint_finding(self, _tz):
         """Priority 1: persisted fingerprint finding (times_confirmed >= 3)."""
         finding = MagicMock()
+        finding.id = _uuid4()
         finding.input_name = "sleep_hours"
         finding.output_metric = "efficiency"
         finding.direction = "positive"
         finding.times_confirmed = 8
         finding.insight_text = "More sleep improves your next-day efficiency"
         finding.threshold_value = 6.2
+        finding.threshold_direction = "below"
         finding.asymmetry_ratio = 3.1
         finding.decay_half_life_days = 2.0
         finding.time_lag_days = None
         finding.sample_size = 25
 
         db = MagicMock()
-        query_chain = MagicMock()
-        query_chain.filter.return_value = query_chain
-        query_chain.order_by.return_value = query_chain
-        query_chain.limit.return_value = query_chain
-        query_chain.all.return_value = [finding]
-        db.query.return_value = query_chain
 
-        with patch("routers.home._is_finding_in_cooldown", return_value=False):
+        with patch(
+            "services.intelligence.finding_eligibility.select_eligible_findings",
+            return_value=[finding],
+        ), patch("routers.home._is_finding_in_cooldown", return_value=False):
             result = compute_coach_noticed(str(_uuid4()), db)
         assert result is not None
         assert result.source == "fingerprint"

@@ -247,7 +247,7 @@ async def analyze_run(
     - Outlier and red flag detection
     - Root cause analysis if declining trends detected
     """
-    # Verify activity belongs to athlete
+    # Single-activity fetch; analysis path is run-oriented (engine validates semantics).
     activity = db.query(Activity).filter(
         Activity.id == activity_id,
         Activity.athlete_id == athlete.id

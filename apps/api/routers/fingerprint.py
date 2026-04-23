@@ -126,6 +126,7 @@ def _build_strip_data(athlete_id: UUID, db: Session) -> RacingLifeStripData:
         for ev in confirmed_events
     ]
 
+    # All-sport distance weeks for racing-life strip (not the home "running mileage" contract).
     activities = db.query(Activity).filter(
         Activity.athlete_id == athlete_id,
         Activity.is_duplicate == False,  # noqa: E712
@@ -198,6 +199,7 @@ async def get_race_candidates(
         dist_filters.append(
             (Activity.distance_m >= lo) & (Activity.distance_m <= hi)
         )
+    # All-sport count in standard distance bands (tier-3 browse pool).
     browse_count = db.query(Activity).filter(
         Activity.athlete_id == current_user.id,
         Activity.is_duplicate == False,  # noqa: E712
@@ -237,6 +239,7 @@ async def browse_activities(
         ).all()
     )
 
+    # All-sport browse (pace-sorted); not athlete running-totals.
     q = db.query(Activity).filter(
         Activity.athlete_id == current_user.id,
         Activity.is_duplicate == False,  # noqa: E712
@@ -346,6 +349,7 @@ async def add_race(
     db: Session = Depends(get_db),
 ):
     """Athlete identifies an activity as a race the system missed."""
+    # Single-activity by id (any sport).
     act = db.query(Activity).filter(
         Activity.id == activity_id,
         Activity.athlete_id == current_user.id,

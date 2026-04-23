@@ -71,6 +71,7 @@ def _run_history_snapshot(db: Session, athlete_id) -> dict:
     cutoff_28d = now - timedelta(days=28)
     cutoff_14d = now - timedelta(days=14)
 
+    # Running-only baseline for "thin history" — intentional (not all-sport volume).
     q = (
         db.query(Activity)
         .filter(

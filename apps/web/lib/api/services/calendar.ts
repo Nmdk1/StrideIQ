@@ -108,8 +108,13 @@ export interface CalendarDay {
   notes: CalendarNote[];
   insights: CalendarInsight[];
   inline_insight?: InlineInsight;  // Single key metric for calendar cell display
+  /** All sports — legacy. Prefer ``running_distance_m`` for running mileage UI. */
   total_distance_m: number;
   total_duration_s: number;
+  running_distance_m?: number;
+  running_duration_s?: number;
+  other_distance_m?: number;
+  other_duration_s?: number;
 }
 
 export interface WeekSummary {

@@ -31,28 +31,11 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
-import { BarChart3, TrendingUp, TrendingDown, Minus, Target, Calendar, ArrowRight, Activity, Zap, AlertTriangle, Info, Search, Dumbbell, Bike, Mountain, Footprints, StretchHorizontal } from 'lucide-react';
+import { BarChart3, TrendingUp, TrendingDown, Minus, Target, Calendar, ArrowRight, Activity, Zap, AlertTriangle, Info, Search } from 'lucide-react';
 import { WhyThisTrend } from '@/components/analytics/WhyThisTrend';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-
-// Helper to format workout type for display
-const workoutTypeColors: Record<string, string> = {
-  rest: 'bg-slate-700 text-slate-400',
-  easy: 'bg-green-900/50 text-green-400',
-  easy_strides: 'bg-green-900/50 text-green-400',
-  long: 'bg-blue-900/50 text-blue-400',
-  tempo: 'bg-orange-900/50 text-orange-400',
-  intervals: 'bg-red-900/50 text-red-400',
-  race: 'bg-yellow-900/50 text-yellow-400',
-};
-
-const SPORT_CHIP_ICONS: Record<string, { icon: React.ReactNode; label: string }> = {
-  strength:    { icon: <Dumbbell className="w-3.5 h-3.5" />, label: 'Strength' },
-  cycling:     { icon: <Bike className="w-3.5 h-3.5" />, label: 'Cycling' },
-  hiking:      { icon: <Mountain className="w-3.5 h-3.5" />, label: 'Hiking' },
-  walking:     { icon: <Footprints className="w-3.5 h-3.5" />, label: 'Walking' },
-  flexibility: { icon: <StretchHorizontal className="w-3.5 h-3.5" />, label: 'Flexibility' },
-};
+import { WeekChipDay } from '@/components/home/WeekChipDay';
+import { useUnits } from '@/lib/context/UnitsContext';
 
 function InfoTooltip({ content }: { content: string }) {
   return (
@@ -80,6 +63,12 @@ export default function DashboardPage() {
   const { data: plan, isLoading: planLoading } = useCurrentPlan();
   const { data: homeData, isLoading: homeLoading } = useHomeData();
   const week = homeData?.week;
+  const { formatDistance } = useUnits();
+  const formatMilesNoUnit = (mi: number | null | undefined, decimals: number = 1) => {
+    if (mi == null) return '—';
+    const meters = mi * 1609.344;
+    return formatDistance(meters, decimals).replace(/\s*(km|mi|m)$/i, '').trim();
+  };
 
   if (isLoading) {
     return (
@@ -218,65 +207,13 @@ export default function DashboardPage() {
                     This Week {week.phase ? `• ${week.phase} Phase` : ''}
                   </p>
                   <div className="flex justify-between gap-1">
-                    {week.days.map((day) => {
-                      const linkHref = day.activity_id 
-                        ? `/activities/${day.activity_id}`
-                        : day.workout_id 
-                          ? `/calendar?date=${day.date}`
-                          : null;
-                      
-                      const cardClasses = `
-                        flex-1 text-center py-2 px-1 rounded-lg transition-all
-                        ${day.is_today ? 'ring-2 ring-orange-500 bg-orange-500/10' : ''}
-                        ${day.completed ? 'bg-emerald-500/15 border border-emerald-500/25' : (day.workout_type ? workoutTypeColors[day.workout_type] : null) || 'bg-slate-700/50 border border-transparent'}
-                        ${linkHref ? 'cursor-pointer hover:scale-105 hover:opacity-80' : ''}
-                      `;
-                      
-                      const sportInfo = day.sport && day.sport !== 'run' ? SPORT_CHIP_ICONS[day.sport] : null;
-
-                      const dayContent = (
-                        <>
-                          <div className={`text-[10px] uppercase mb-1 ${day.is_today ? 'text-orange-400 font-semibold' : 'text-slate-400'}`}>
-                            {day.day_abbrev}
-                          </div>
-                          <div className="text-xs font-medium">
-                            {day.completed && sportInfo ? (
-                              <span className="flex flex-col items-center gap-0.5 text-emerald-400">
-                                {sportInfo.icon}
-                              </span>
-                            ) : day.completed && day.distance_mi ? (
-                              <span className="flex flex-col items-center gap-0.5 text-emerald-400">
-                                <span>&#10003;</span>
-                                <span>{day.distance_mi}</span>
-                              </span>
-                            ) : day.workout_type === 'rest' ? (
-                              <span className="text-slate-500">—</span>
-                            ) : day.distance_mi ? (
-                              <span>{day.distance_mi}</span>
-                            ) : (
-                              <span className="text-slate-500">—</span>
-                            )}
-                          </div>
-                        </>
-                      );
-                      
-                      return linkHref ? (
-                        <Link
-                          key={day.date}
-                          href={linkHref}
-                          className={cardClasses}
-                        >
-                          {dayContent}
-                        </Link>
-                      ) : (
-                        <div
-                          key={day.date}
-                          className={cardClasses}
-                        >
-                          {dayContent}
-                        </div>
-                      );
-                    })}
+                    {week.days.map((day) => (
+                      <WeekChipDay
+                        key={day.date}
+                        day={day}
+                        formatMilesNoUnit={(mi) => formatMilesNoUnit(mi)}
+                      />
+                    ))}
                   </div>
                 </div>
               )}

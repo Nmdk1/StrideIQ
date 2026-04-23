@@ -721,6 +721,7 @@ def log_fueling(
         raise HTTPException(status_code=404, detail="Product not found")
 
     if payload.entry_type in ("pre_activity", "during_activity", "post_activity") and payload.activity_id:
+        # Single-activity link validation (any sport).
         activity = db.query(Activity).filter(
             Activity.id == payload.activity_id,
             Activity.athlete_id == current_user.id,
@@ -891,6 +892,7 @@ def get_activity_linked_nutrition(
     if not activity_ids:
         return ActivityNutritionResponse(activities=[])
 
+    # Batch fetch by ids for activity-linked nutrition (any sport).
     activities = (
         db.query(Activity)
         .filter(Activity.id.in_(activity_ids))
@@ -1127,6 +1129,7 @@ def log_meal(
                 status_code=400,
                 detail=f"activity_id required for '{body.entry_type}'",
             )
+        # Single-activity link validation (any sport).
         activity = db.query(Activity).filter(
             Activity.id == body.activity_id,
             Activity.athlete_id == current_user.id,
@@ -1192,6 +1195,7 @@ def create_nutrition_entry(
     if nutrition.entry_type in ("pre_activity", "during_activity", "post_activity"):
         if not nutrition.activity_id:
             raise HTTPException(status_code=400, detail=f"activity_id required for '{nutrition.entry_type}'")
+        # Single-activity link validation (any sport).
         activity = db.query(Activity).filter(
             Activity.id == nutrition.activity_id,
             Activity.athlete_id == current_user.id,
@@ -1308,6 +1312,7 @@ def update_nutrition_entry(
     if nutrition.entry_type in ("pre_activity", "during_activity", "post_activity"):
         if not nutrition.activity_id:
             raise HTTPException(status_code=400, detail=f"activity_id required for '{nutrition.entry_type}'")
+        # Single-activity link validation (any sport).
         activity = db.query(Activity).filter(
             Activity.id == nutrition.activity_id,
             Activity.athlete_id == current_user.id,

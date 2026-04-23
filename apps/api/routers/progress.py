@@ -395,6 +395,7 @@ async def get_progress_summary(
         start_previous = start_current - timedelta(days=days)
 
         def fetch_period(start, end):
+            # Running-only period metrics (explicit sport filter — weekly distance semantics).
             acts = db.query(Activity).filter(
                 Activity.athlete_id == athlete_id,
                 Activity.sport == "run",
@@ -1591,6 +1592,7 @@ def _assemble_data_coverage(db: Session, athlete_id: UUID) -> DataCoverageRespon
     cutoff = datetime.utcnow() - timedelta(days=90)
 
     try:
+        # All-sport activity rows in window (coverage metric, not running mileage).
         coverage.activity_days = (
             db.query(Activity)
             .filter(Activity.athlete_id == athlete_id, Activity.start_time >= cutoff)

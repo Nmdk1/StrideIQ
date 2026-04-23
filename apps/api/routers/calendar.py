@@ -158,8 +158,14 @@ class CalendarDayResponse(BaseModel):
     inline_insight: Optional[InlineInsight] = None
     
     # Summary metrics for the day
+    # ``total_*`` = all sports (cross-training inclusive). Do not use as
+    # "running mileage" — use ``running_distance_m`` / ``running_duration_s``.
     total_distance_m: int = 0
     total_duration_s: int = 0
+    running_distance_m: int = 0
+    running_duration_s: int = 0
+    other_distance_m: int = 0
+    other_duration_s: int = 0
 
 
 class WeekSummaryResponse(BaseModel):
@@ -373,6 +379,32 @@ def _sanitize_day_coach_text(text: str) -> str:
     out = re.sub(r"\n{3,}", "\n\n", out).strip()
     return out
 
+def split_day_distance_duration_by_sport(activities: List[Activity]) -> tuple[int, int, int, int, int, int]:
+    """Split a day's activities into running vs other sports.
+
+    Returns:
+        (running_distance_m, running_duration_s,
+         other_distance_m, other_duration_s,
+         total_distance_m, total_duration_s)
+
+    ``total_*`` is the cross-sport sum (legacy / training-load style).
+    For *planned run* completion and *running mileage* UI, use the running
+    components only — cross-training must not satisfy a running target
+    (Dejan-class bug: walk + planned long run same day).
+    """
+    rd = rs = od = os_ = 0
+    for a in activities:
+        d = int(a.distance_m or 0)
+        t = int(a.duration_s or 0)
+        if (a.sport or "").lower() == "run":
+            rd += d
+            rs += t
+        else:
+            od += d
+            os_ += t
+    return rd, rs, od, os_, rd + od, rs + os_
+
+
 def get_day_status(planned: Optional[PlannedWorkout], activities: List[Activity], day_date: date, today: Optional[date] = None) -> str:
     """Determine the status of a calendar day."""
     if today is None:
@@ -396,11 +428,19 @@ def get_day_status(planned: Optional[PlannedWorkout], activities: List[Activity]
         return "missed"
     
     if activities:
-        # Check if activity matches plan (rough match)
-        total_distance = sum(a.distance_m or 0 for a in activities)
+        # ``target_distance_km`` on planned rows is a *running* distance target.
+        # Compare running mileage only — a walk or strength session must not
+        # move a missed planned run to completed/modified (see split_day_*).
+        running_activities = [a for a in activities if (a.sport or "").lower() == "run"]
+        total_distance = sum(int(a.distance_m or 0) for a in running_activities)
         planned_distance = (planned.target_distance_km or 0) * 1000
         
         if planned_distance > 0:
+            if total_distance == 0:
+                # Cross-training only — does not satisfy the planned run.
+                if day_date < today:
+                    return "missed"
+                return "future"
             ratio = total_distance / planned_distance
             if 0.8 <= ratio <= 1.2:
                 return "completed"
@@ -798,8 +838,7 @@ def get_calendar(
         
         status = get_day_status(planned, day_activities, current, today=local_today)
         
-        total_distance = sum(a.distance_m or 0 for a in day_activities)
-        total_duration = sum(a.duration_s or 0 for a in day_activities)
+        rd, rs, od, os_, td, ts = split_day_distance_duration_by_sport(day_activities)
         
         # Generate inline insight for completed days
         inline_insight = None
@@ -816,8 +855,12 @@ def get_calendar(
             notes=[CalendarNoteResponse.model_validate(n) for n in day_notes],
             insights=[InsightResponse.model_validate(i) for i in day_insights],
             inline_insight=inline_insight,
-            total_distance_m=total_distance,
-            total_duration_s=total_duration
+            total_distance_m=td,
+            total_duration_s=ts,
+            running_distance_m=rd,
+            running_duration_s=rs,
+            other_distance_m=od,
+            other_duration_s=os_,
         )
         days.append(day_response)
         current += timedelta(days=1)
@@ -842,8 +885,9 @@ def get_calendar(
                 (d.planned_workout.target_distance_km or 0) * 0.621371
                 for d in week_days if d.planned_workout
             )
+            # Running mileage only — matches planned distance semantics.
             completed_miles = sum(
-                meters_to_miles(d.total_distance_m)
+                meters_to_miles(d.running_distance_m)
                 for d in week_days
             )
             
@@ -935,8 +979,7 @@ def get_calendar_day(
     ).order_by(CalendarInsight.priority.desc()).all()
     
     status = get_day_status(planned, activities, calendar_date, today=local_today)
-    total_distance = sum(a.distance_m or 0 for a in activities)
-    total_duration = sum(a.duration_s or 0 for a in activities)
+    rd, rs, od, os_, td, ts = split_day_distance_duration_by_sport(activities)
     
     return CalendarDayResponse(
         date=calendar_date,
@@ -947,8 +990,12 @@ def get_calendar_day(
         status=status,
         notes=[CalendarNoteResponse.model_validate(n) for n in notes],
         insights=[InsightResponse.model_validate(i) for i in insights],
-        total_distance_m=total_distance,
-        total_duration_s=total_duration
+        total_distance_m=td,
+        total_duration_s=ts,
+        running_distance_m=rd,
+        running_duration_s=rs,
+        other_distance_m=od,
+        other_duration_s=os_,
     )
 
 
@@ -1463,11 +1510,12 @@ def get_calendar_week(
     # Build day responses
     days = []
     for planned in planned_workouts:
-        day_activities = activities_by_date.get(planned.scheduled_date, [])
+        day_activities = dedupe_activities_for_calendar_display(
+            activities_by_date.get(planned.scheduled_date, [])
+        )
         status = get_day_status(planned, day_activities, planned.scheduled_date, today=local_today)
         
-        total_distance = sum(a.distance_m or 0 for a in day_activities)
-        total_duration = sum(a.duration_s or 0 for a in day_activities)
+        rd, rs, od, os_, td, ts = split_day_distance_duration_by_sport(day_activities)
         
         days.append(CalendarDayResponse(
             date=planned.scheduled_date,
@@ -1478,8 +1526,12 @@ def get_calendar_week(
             status=status,
             notes=[],
             insights=[],
-            total_distance_m=total_distance,
-            total_duration_s=total_duration
+            total_distance_m=td,
+            total_duration_s=ts,
+            running_distance_m=rd,
+            running_duration_s=rs,
+            other_distance_m=od,
+            other_duration_s=os_,
         ))
     
     # Calculate week summary
@@ -1488,7 +1540,7 @@ def get_calendar_week(
         for w in planned_workouts
     )
     completed_miles = sum(
-        meters_to_miles(d.total_distance_m)
+        meters_to_miles(d.running_distance_m)
         for d in days
     )
     

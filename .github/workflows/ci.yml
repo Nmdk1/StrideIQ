@@ -103,7 +103,11 @@ jobs:
             tests/test_meal_template_service.py \
             tests/test_meal_template_endpoints.py \
             tests/test_nutrition_meal_parser.py \
-            tests/test_nutrition_parse_api.py
+            tests/test_nutrition_parse_api.py \
+            tests/test_home_api.py \
+            tests/test_home_week_running_separation.py \
+            tests/test_calendar_running_separation.py \
+            tests/test_activities_summary_sport_buckets.py
 
   backend-test:
     name: Backend Tests

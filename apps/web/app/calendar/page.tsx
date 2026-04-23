@@ -162,7 +162,12 @@ function ActionBar({
 
 function MonthTotals({ days }: { days: CalendarDay[] }) {
   const { formatDistance } = useUnits();
-  const totalDistance = days.reduce((sum, d) => sum + (d.total_distance_m || 0), 0);
+  // Month header: running mileage only (walks/cycles must not read as "run miles").
+  const totalDistance = days.reduce((sum, d) => {
+    const rm = d.running_distance_m;
+    if (typeof rm === 'number') return sum + rm;
+    return sum + (d.total_distance_m || 0);
+  }, 0);
   const totalDuration = days.reduce((sum, d) => sum + (d.total_duration_s || 0), 0);
   const totalActivities = days.reduce((sum, d) => sum + d.activities.length, 0);
 
@@ -417,7 +422,11 @@ export default function CalendarPage() {
               {/* Calendar grid with aligned weekly totals */}
               <div className="border-l border-slate-700">
                 {weeksWithDays.map((week, weekIndex) => {
-                  const weekDistance = week.days.reduce((sum, d) => sum + (d.total_distance_m || 0), 0);
+                  const weekDistance = week.days.reduce((sum, d) => {
+                    const rm = d.running_distance_m;
+                    if (typeof rm === 'number') return sum + rm;
+                    return sum + (d.total_distance_m || 0);
+                  }, 0);
                   const weekDuration = week.days.reduce((sum, d) => sum + (d.total_duration_s || 0), 0);
                   const hasActivity = weekDistance > 0;
                   const weekDistanceStr = formatDistance(weekDistance, 1);

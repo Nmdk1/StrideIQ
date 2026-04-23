@@ -1,5 +1,18 @@
 # Wiki Log
 
+## [2026-04-23] Running vs other activity separation (home, calendar, analytics)
+
+**Trigger:** Builder note `docs/BUILDER_NOTE_2026-04-23_RUNNING_OTHER_SEPARATION_CLEANUP.md` — eliminate mixed-sport aggregation for athlete-facing running mileage and planned-run completion; surface cross-training explicitly.
+
+**Shipped behavior (summary):**
+
+- `apps/api/routers/home.py`: `other_sport_summary` raw aggregation (no per-activity minute rounding before sum); week/day running fields runs-only per prior contract.
+- `apps/api/routers/calendar.py`: `running_*` / `other_*` on day payloads; `get_day_status` uses running distance vs planned run targets; week completed miles from running totals.
+- `apps/web/components/home/WeekChipDay.tsx`: shared week-strip cell (home + `app/analytics/page.tsx`); `app/calendar/page.tsx` prefers `running_distance_m` for rollups.
+- `docs/SITE_AUDIT_LIVING.md` §0, §6, §14 contract subsection; Group 2.5 doc-comments across listed routers/services.
+
+**Wiki:** `docs/wiki/frontend.md` route + component table updates. Session handoff: `docs/SESSION_HANDOFF_2026-04-23_RUNNING_OTHER_SEPARATION.md`.
+
 ## [2026-04-23] Docs aligned to shipped coach/briefing models + two-tier billing
 
 **Trigger:** `SITE_AUDIT_LIVING.md` §6 still described Run Shape Canvas + Opus/Gemini coach split + “placeholder” `/nutrition`; §10/§15 still said **4-tier** Stripe while code has been on **`free` / `subscriber`** normalization (`apps/api/core/tier_utils.py`) since the Mar 19 monetization reset. Internal wiki Quick Reference still listed **Opus** for briefing and **Kimi K2.5** as the hard-coded coach id.

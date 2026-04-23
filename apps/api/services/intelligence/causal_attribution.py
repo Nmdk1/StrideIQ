@@ -1308,7 +1308,7 @@ class CausalAttributionEngine:
         Requires only 10+ activities - no daily check-ins needed.
         Perfect for sparse data.
         """
-        # Get all runs with efficiency data
+        # Running-only pool for best/worst efficiency comparison.
         activities = self.db.query(Activity).filter(
             Activity.athlete_id == athlete_id,
             Activity.sport.ilike("run"),

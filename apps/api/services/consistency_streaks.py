@@ -65,6 +65,7 @@ def get_athlete_experience_level(db: Session, athlete_id: UUID) -> str:
     """
     cutoff = datetime.now() - timedelta(days=90)
     
+    # Running-only: calibrate experience tier from recent run volume.
     activities = db.query(Activity).filter(
         Activity.athlete_id == athlete_id,
         Activity.start_time >= cutoff,
@@ -98,6 +99,7 @@ def check_week_consistency(
     """
     week_end = week_start + timedelta(days=7)
     
+    # Running-only: weekly run count + distance vs consistency thresholds.
     activities = db.query(Activity).filter(
         Activity.athlete_id == athlete_id,
         Activity.start_time >= datetime.combine(week_start, datetime.min.time()),
@@ -128,6 +130,7 @@ def calculate_streak(db: Session, athlete_id: UUID) -> StreakInfo:
     current_week_start = today - timedelta(days=today.weekday())
     
     # Check if current week is at risk
+    # Running-only: progress toward this week's streak thresholds.
     current_week_activities = db.query(Activity).filter(
         Activity.athlete_id == athlete_id,
         Activity.start_time >= datetime.combine(current_week_start, datetime.min.time()),

@@ -238,7 +238,7 @@ def get_stream_analysis(
         - 404 when activity not found or not owned by current user
         - 401 when not authenticated
     """
-    # --- Activity lookup + ownership check ---
+    # Single-activity lookup (stream analysis; typically run FIT/streams).
     activity = (
         db.query(Activity)
         .filter(Activity.id == activity_id)

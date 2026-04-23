@@ -12,6 +12,10 @@ Key principles:
 - Filter noise (single-run improvements vs. sustained trends)
 
 Based on manifesto Section 3: Correlation Engines
+
+Activity ORM usage: run-scoped aggregates use ``sport == "run"``; cross-training
+blocks intentionally query non-run sports separately (never mixed into running
+mileage totals).
 """
 
 from datetime import datetime, timedelta
@@ -833,6 +837,7 @@ def aggregate_activity_level_inputs(
     """
     inputs: Dict[str, List[Tuple[date_type, float]]] = {}
 
+    # Running-only; longest run per calendar day becomes the day's activity row.
     activities = db.query(Activity).filter(
         Activity.athlete_id == athlete_id,
         Activity.is_duplicate == False,  # noqa: E712
@@ -1487,6 +1492,7 @@ def aggregate_pace_at_effort(
     if effort_level not in ("easy", "threshold"):
         return []
 
+    # Running-only pace-at-effort series.
     activities = db.query(Activity).filter(
         Activity.athlete_id == athlete_id,
         Activity.sport == "run",
@@ -1579,6 +1585,7 @@ def aggregate_efficiency_outputs(
     Returns:
         List of (activity_date, efficiency_factor) tuples
     """
+    # Running-only efficiency outputs.
     activities = db.query(Activity).filter(
         Activity.athlete_id == athlete_id,
         Activity.sport == "run",
@@ -1626,6 +1633,7 @@ def aggregate_efficiency_by_effort_zone(
     if not target:
         return []
 
+    # Running-only comparable-efficiency by effort zone.
     activities = db.query(Activity).filter(
         Activity.athlete_id == athlete_id,
         Activity.sport == "run",
@@ -1733,6 +1741,7 @@ def aggregate_race_pace(
     """
     from services.effort_classification import classify_effort_bulk
 
+    # Running-only race-pace (hard-effort) series.
     activities = db.query(Activity).filter(
         Activity.athlete_id == athlete_id,
         Activity.sport == "run",
@@ -1942,6 +1951,7 @@ def aggregate_cross_training_inputs(
 
     # --- Strength signals (from StrengthExerciseSet) ---
 
+    # Strength-only rows for structured lift data (cross-training inputs, not run totals).
     strength_activities = (
         db.query(Activity)
         .filter(
@@ -2141,6 +2151,7 @@ def aggregate_cross_training_inputs(
     # These are computed for each running activity: look back 7 days from
     # each run and compute the cross-training load context surrounding it.
 
+    # Intentional non-run bucket for CT TSS adjacent to runs (not run mileage).
     all_ct_activities = (
         db.query(Activity)
         .filter(
@@ -2154,6 +2165,7 @@ def aggregate_cross_training_inputs(
         .all()
     )
 
+    # Runs that anchor the per-run CT lookback window.
     run_activities_for_ct = (
         db.query(Activity)
         .filter(
@@ -2648,6 +2660,7 @@ def aggregate_recovery_rate(
     if readings_per_week < 5:
         return []
 
+    # Running-only hard sessions paired to HRV rebound dates.
     activities = db.query(Activity).filter(
         Activity.athlete_id == athlete_id,
         Activity.sport == "run",

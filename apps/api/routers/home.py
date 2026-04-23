@@ -3975,22 +3975,24 @@ async def get_home_data(
     activities_this_week = sum(d.run_count for d in week_days)
 
     # Aggregate non-running activity for the week so the UI can render
-    # "Other this week" without re-querying.
+    # "Other this week" without re-querying. Sum raw meters + seconds from ORM
+    # rows (not per-row rounded ``OtherActivityRef`` minutes) so totals match
+    # a single round at the end (avoids order-dependent double-rounding).
     _other_agg: dict[str, dict] = {}
-    for d in week_days:
-        for o in d.other_activities:
-            bucket = _other_agg.setdefault(o.sport, {"count": 0, "distance_mi": 0.0, "duration_min": 0.0})
+    for _day_key, _acts in _other_by_day.items():
+        for _a in _acts:
+            _sp = (_a.sport or "other").lower()
+            bucket = _other_agg.setdefault(_sp, {"count": 0, "distance_m": 0, "duration_s": 0})
             bucket["count"] += 1
-            if o.distance_mi:
-                bucket["distance_mi"] += o.distance_mi
-            if o.duration_min:
-                bucket["duration_min"] += o.duration_min
+            bucket["distance_m"] += int(_a.distance_m or 0)
+            bucket["duration_s"] += int(_a.duration_s or 0)
     other_sport_summary = [
         OtherSportSummary(
             sport=sport,
             count=v["count"],
-            distance_mi=round(v["distance_mi"], 1),
-            duration_min=round(v["duration_min"], 0),
+            distance_mi=round(v["distance_m"] / 1609.344, 1),
+            # Whole minutes: any partial minute counts (ceil), stable for long strength sessions.
+            duration_min=(v["duration_s"] + 59) // 60 if v["duration_s"] else 0,
         )
         for sport, v in sorted(_other_agg.items())
     ]

@@ -619,7 +619,7 @@ def backfill_activity_names(
     if not current_user.strava_access_token:
         raise HTTPException(status_code=400, detail="Strava not connected")
     
-    # Find activities missing names
+    # All-sport maintenance: Strava rows missing titles.
     activities_missing_names = db.query(Activity).filter(
         Activity.athlete_id == current_user.id,
         Activity.provider == "strava",
