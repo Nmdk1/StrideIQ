@@ -75,33 +75,71 @@ class YesterdayInsight(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class OtherActivityRef(BaseModel):
+    """Non-running activity logged on a given day. Surfaced as a small,
+    selectable icon next to the running total so the athlete can reach it
+    in one tap without it polluting running mileage."""
+    activity_id: str
+    sport: str  # 'walking' | 'strength' | 'cycling' | 'hiking' | 'flexibility' | ...
+    distance_mi: Optional[float] = None  # None for sports without a distance (e.g. strength)
+    duration_min: Optional[float] = None
+    name: Optional[str] = None
+
+
 class WeekDay(BaseModel):
-    """Single day in week view."""
+    """Single day in week view.
+
+    Running-only invariants:
+      - `distance_mi` = SUM of all runs on this day (never a walk/strength/cycle)
+      - `completed` = True iff at least one run happened
+      - `activity_id` = the LONGEST run that day (primary tap target)
+      - `run_count` = total runs that day (drives "+N" affordance)
+
+    Other-sport activity is surfaced separately via `other_activities` so the
+    athlete can reach walks/strength/cycling without us silently counting them
+    as running.
+    """
     date: str
     day_abbrev: str  # M, T, W, etc.
     workout_type: Optional[str] = None
-    sport: Optional[str] = None
-    distance_mi: Optional[float] = None
-    planned_distance_mi: Optional[float] = None  # Show both for comparison
+    sport: Optional[str] = None  # legacy: sport of the primary run (kept for compat)
+    distance_mi: Optional[float] = None  # day's running total
+    planned_distance_mi: Optional[float] = None
     completed: bool
     is_today: bool
-    activity_id: Optional[str] = None  # For linking to activity
-    workout_id: Optional[str] = None  # For linking to planned workout
+    activity_id: Optional[str] = None  # longest run that day
+    workout_id: Optional[str] = None
+    run_count: int = 0
+    other_activities: List[OtherActivityRef] = []
+
+
+class OtherSportSummary(BaseModel):
+    """Weekly aggregate for one non-running sport."""
+    sport: str
+    count: int
+    distance_mi: float = 0.0
+    duration_min: float = 0.0
 
 
 class WeekProgress(BaseModel):
-    """This week's progress."""
+    """This week's progress.
+
+    `completed_mi` and `planned_mi` are RUNNING-ONLY by contract.
+    Non-running activity is surfaced via `other_sport_summary` so views can
+    show it on its own or grouped — never silently mixed into running totals.
+    """
     week_number: Optional[int] = None
     total_weeks: Optional[int] = None
     phase: Optional[str] = None
-    completed_mi: float
-    planned_mi: float
+    completed_mi: float  # running only
+    planned_mi: float  # running only
     progress_pct: float
     days: List[WeekDay]
     status: str  # "on_track", "ahead", "behind", "no_plan"
-    trajectory_sentence: Optional[str] = None  # One sparse sentence about trajectory
-    tsb_context: Optional[str] = None  # "Fresh" | "Building" | "Fatigued"
-    load_trend: Optional[str] = None  # "up" | "stable" | "down"
+    trajectory_sentence: Optional[str] = None
+    tsb_context: Optional[str] = None
+    load_trend: Optional[str] = None
+    other_sport_summary: List[OtherSportSummary] = []
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -3810,17 +3848,27 @@ async def get_home_data(
         ).all()
         _week_planned = {w.scheduled_date: w for w in _week_workouts}
 
+    # Pull EVERY activity in the week (all sports). Running and non-running are
+    # separated below so that:
+    #   - running mileage is never inflated by walks/strength/cycling
+    #   - multi-run days are summed (we never silently drop the 2nd run)
+    #   - non-running activity remains visible/tappable on the day chip
     _week_actuals_raw = db.query(Activity).filter(
         Activity.athlete_id == current_user.id,
+        Activity.is_duplicate.is_(False),
         Activity.start_time >= local_day_bounds_utc(monday, _ath_tz)[0],
         Activity.start_time < local_day_bounds_utc(sunday, _ath_tz)[1],
     ).all()
-    _week_actuals: dict = {}
+
+    from services.timezone_utils import to_activity_local_date as _to_act_local2
+    _runs_by_day: dict = {}   # day -> list[Activity] (sport='run' only)
+    _other_by_day: dict = {}  # day -> list[Activity] (everything else)
     for _a in _week_actuals_raw:
-        from services.timezone_utils import to_activity_local_date as _to_act_local2
         _day = _to_act_local2(_a, _ath_tz)
-        if _day not in _week_actuals:
-            _week_actuals[_day] = _a  # keep first per day
+        if (_a.sport or "").lower() == "run":
+            _runs_by_day.setdefault(_day, []).append(_a)
+        else:
+            _other_by_day.setdefault(_day, []).append(_a)
 
     for i in range(7):
         day_date = monday + timedelta(days=i)
@@ -3829,7 +3877,8 @@ async def get_home_data(
         is_today_or_future = day_date >= today
 
         planned_workout = _week_planned.get(day_date)
-        actual = _week_actuals.get(day_date)
+        runs_today = _runs_by_day.get(day_date, [])
+        others_today = _other_by_day.get(day_date, [])
 
         workout_type = None
         sport = None
@@ -3847,30 +3896,48 @@ async def get_home_data(
             planned_mi += planned_distance
             planned_distance_mi = round(planned_distance, 1) if planned_distance else None
 
-            # Only count future planned miles as "remaining"
-            if is_today_or_future and not actual:
+            # Only count future planned miles as "remaining". A run today
+            # satisfies the planned workout — walks/strength do not.
+            if is_today_or_future and not runs_today:
                 remaining_mi += planned_distance
 
             if day_date == today:
                 current_week_number = planned_workout.week_number
                 current_phase = planned_workout.phase
 
-        if actual:
+        if runs_today:
             completed = True
-            activity_id = str(actual.id)
-            sport = actual.sport
-            if actual.distance_m:
-                actual_mi = actual.distance_m / 1609.344
-                completed_mi += actual_mi
-                distance_mi = round(actual_mi, 1)
+            day_run_mi = sum(
+                (r.distance_m or 0) / 1609.344 for r in runs_today
+            )
+            completed_mi += day_run_mi
+            distance_mi = round(day_run_mi, 1) if day_run_mi else None
+            # Primary tap target = longest run that day
+            longest = max(
+                runs_today, key=lambda r: (r.distance_m or 0)
+            )
+            activity_id = str(longest.id)
+            sport = longest.sport  # always 'run' here, kept for back-compat
         elif planned_workout and planned_workout.target_distance_km:
-            # Past day with no activity = missed
             if is_past:
                 is_missed = True
-                distance_mi = None  # Don't show planned distance for missed days
+                distance_mi = None
             else:
-                # Future day - show planned distance
                 distance_mi = round(planned_workout.target_distance_km * 0.621371, 0)
+
+        # Surface non-running activity on this day so the chip can show small
+        # selectable icons (walk / strength / cycle / hike / etc.).
+        other_refs: list[OtherActivityRef] = []
+        for _o in others_today:
+            _dist_mi = round((_o.distance_m or 0) / 1609.344, 2) if _o.distance_m else None
+            _dur_min = round((_o.duration_s or 0) / 60.0, 1) if _o.duration_s else None
+            other_refs.append(OtherActivityRef(
+                activity_id=str(_o.id),
+                sport=(_o.sport or "other").lower(),
+                distance_mi=_dist_mi,
+                duration_min=_dur_min,
+                name=_o.name,
+            ))
 
         week_days.append(WeekDay(
             date=day_date.isoformat(),
@@ -3883,6 +3950,8 @@ async def get_home_data(
             is_today=(day_date == today),
             activity_id=activity_id,
             workout_id=workout_id,
+            run_count=len(runs_today),
+            other_activities=other_refs,
         ))
 
     # Determine status
@@ -3901,8 +3970,30 @@ async def get_home_data(
         else:
             status = "behind"
 
-    # Count activities this week for trajectory
-    activities_this_week = sum(1 for day in week_days if day.completed)
+    # Count RUNS this week for the trajectory sentence (was "activities" — the
+    # sentence renders "across N runs" so it must mean runs, not walks).
+    activities_this_week = sum(d.run_count for d in week_days)
+
+    # Aggregate non-running activity for the week so the UI can render
+    # "Other this week" without re-querying.
+    _other_agg: dict[str, dict] = {}
+    for d in week_days:
+        for o in d.other_activities:
+            bucket = _other_agg.setdefault(o.sport, {"count": 0, "distance_mi": 0.0, "duration_min": 0.0})
+            bucket["count"] += 1
+            if o.distance_mi:
+                bucket["distance_mi"] += o.distance_mi
+            if o.duration_min:
+                bucket["duration_min"] += o.duration_min
+    other_sport_summary = [
+        OtherSportSummary(
+            sport=sport,
+            count=v["count"],
+            distance_mi=round(v["distance_mi"], 1),
+            duration_min=round(v["duration_min"], 0),
+        )
+        for sport, v in sorted(_other_agg.items())
+    ]
 
     # Get TSB context for trajectory
     tsb_label, load_trend, tsb_short_context = get_tsb_context(str(current_user.id), db)
@@ -3928,7 +4019,8 @@ async def get_home_data(
         status=status,
         trajectory_sentence=trajectory_sentence,
         tsb_context=tsb_label,
-        load_trend=load_trend
+        load_trend=load_trend,
+        other_sport_summary=other_sport_summary,
     )
 
     # Check Strava and Garmin connection status

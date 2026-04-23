@@ -288,66 +288,123 @@ def get_activities_summary(
     days: int = Query(30, ge=1, le=365, description="Number of days to look back"),
 ):
     """
-    Get summary statistics for user's activities.
-    
-    Optimized to use SQL aggregation instead of loading all activities into memory.
-    
-    Returns:
-        - Total activities
-        - Total distance
-        - Total time
-        - Average pace
-        - Activities by sport type
-        - Activities by run type (if classified)
+    Sport-aware activity summary.
+
+    Returns three views so the UI can show running, other-sport, or combined
+    independently — never silently mixed:
+
+    - `running`:  sport=='run' only. This is the canonical training metric.
+                  Average pace and race count live here (running concepts).
+    - `other`:    everything else, broken down `by_sport`. No average pace
+                  (not meaningful across walking + strength + cycling).
+    - `combined`: every activity. Useful for "how active was I overall?"
+                  Distance is intentionally not the headline here — it
+                  conflates units (running km vs walking km vs cycling km).
+
+    Backwards-compatible top-level fields mirror `running` so existing
+    consumers keep working until they migrate.
     """
     from sqlalchemy import func, case
-    
+
     cutoff_date = datetime.utcnow() - timedelta(days=days)
-    
-    # Use SQL aggregation instead of loading all activities
-    summary = db.query(
-        func.count(Activity.id).label('total_activities'),
-        func.sum(Activity.distance_m).label('total_distance_m'),
-        func.sum(Activity.duration_s).label('total_duration_s'),
-        func.avg(
-            case(
-                (Activity.average_speed > 0, 26.8224 / Activity.average_speed),
-                else_=None
-            )
-        ).label('avg_pace_per_mile'),
-        func.sum(
-            case(
-                (Activity.user_verified_race.is_(True) | Activity.is_race_candidate.is_(True), 1),
-                else_=0
-            )
-        ).label('race_count')
-    ).filter(
+
+    base_filter = [
         Activity.athlete_id == current_user.id,
-        Activity.start_time >= cutoff_date
-    ).first()
-    
-    # Get activities by sport (still need to load for grouping)
-    activities_by_sport_query = db.query(
+        Activity.start_time >= cutoff_date,
+        Activity.is_duplicate.is_(False),
+    ]
+
+    def _agg(*extra_filters):
+        q = db.query(
+            func.count(Activity.id).label('total_activities'),
+            func.sum(Activity.distance_m).label('total_distance_m'),
+            func.sum(Activity.duration_s).label('total_duration_s'),
+            func.avg(
+                case(
+                    (Activity.average_speed > 0, 26.8224 / Activity.average_speed),
+                    else_=None,
+                )
+            ).label('avg_pace_per_mile'),
+            func.sum(
+                case(
+                    (Activity.user_verified_race.is_(True) | Activity.is_race_candidate.is_(True), 1),
+                    else_=0,
+                )
+            ).label('race_count'),
+        ).filter(*base_filter, *extra_filters)
+        return q.first()
+
+    running = _agg(Activity.sport == "run")
+    combined = _agg()
+
+    # Per-sport breakdown for the "other" bucket.
+    by_sport_rows = db.query(
         Activity.sport,
-        func.count(Activity.id).label('count')
-    ).filter(
-        Activity.athlete_id == current_user.id,
-        Activity.start_time >= cutoff_date
-    ).group_by(Activity.sport).all()
-    
-    sports = {sport or "unknown": count for sport, count in activities_by_sport_query}
-    
-    total_distance_m = summary.total_distance_m or 0
-    total_duration_s = summary.total_duration_s or 0
-    
+        func.count(Activity.id).label('count'),
+        func.sum(Activity.distance_m).label('distance_m'),
+        func.sum(Activity.duration_s).label('duration_s'),
+    ).filter(*base_filter, Activity.sport != "run").group_by(Activity.sport).all()
+
+    other_by_sport: dict[str, dict] = {}
+    other_total_count = 0
+    other_total_dist_m = 0
+    other_total_dur_s = 0
+    for sport, count, dist_m, dur_s in by_sport_rows:
+        key = sport or "unknown"
+        d = int(dist_m or 0)
+        t = int(dur_s or 0)
+        other_by_sport[key] = {
+            "count": int(count or 0),
+            "total_distance_km": round(d / 1000, 2),
+            "total_distance_miles": round(d / 1609.34, 2),
+            "total_duration_hours": round(t / 3600, 2),
+        }
+        other_total_count += int(count or 0)
+        other_total_dist_m += d
+        other_total_dur_s += t
+
+    # Counts grouped by sport (running included) — keeps backward compat.
+    sports_count_rows = db.query(
+        Activity.sport,
+        func.count(Activity.id).label('count'),
+    ).filter(*base_filter).group_by(Activity.sport).all()
+    sports = {sport or "unknown": count for sport, count in sports_count_rows}
+
+    def _bucket(row):
+        d = int(row.total_distance_m or 0)
+        t = int(row.total_duration_s or 0)
+        return {
+            "total_activities": int(row.total_activities or 0),
+            "total_distance_km": round(d / 1000, 2),
+            "total_distance_miles": round(d / 1609.34, 2),
+            "total_duration_hours": round(t / 3600, 2),
+            "average_pace_per_mile": round(float(row.avg_pace_per_mile), 2) if row.avg_pace_per_mile else None,
+            "race_count": int(row.race_count or 0),
+        }
+
+    running_bucket = _bucket(running)
+    combined_bucket = _bucket(combined)
+    other_bucket = {
+        "total_activities": other_total_count,
+        "total_distance_km": round(other_total_dist_m / 1000, 2),
+        "total_distance_miles": round(other_total_dist_m / 1609.34, 2),
+        "total_duration_hours": round(other_total_dur_s / 3600, 2),
+        "by_sport": other_by_sport,
+    }
+
     return {
-        "total_activities": summary.total_activities or 0,
-        "total_distance_km": round(total_distance_m / 1000, 2),
-        "total_distance_miles": round(total_distance_m / 1609.34, 2),
-        "total_duration_hours": round(total_duration_s / 3600, 2),
-        "average_pace_per_mile": round(float(summary.avg_pace_per_mile), 2) if summary.avg_pace_per_mile else None,
+        # Sport-aware buckets (new contract)
+        "running": running_bucket,
+        "other": other_bucket,
+        "combined": combined_bucket,
+        # Back-compat top-level (mirrors `running`, the canonical view)
+        "total_activities": running_bucket["total_activities"],
+        "total_distance_km": running_bucket["total_distance_km"],
+        "total_distance_miles": running_bucket["total_distance_miles"],
+        "total_duration_hours": running_bucket["total_duration_hours"],
+        "average_pace_per_mile": running_bucket["average_pace_per_mile"],
         "activities_by_sport": sports,
-        "race_count": summary.race_count or 0,
+        "race_count": running_bucket["race_count"],
         "period_days": days,
     }
 

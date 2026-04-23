@@ -37,31 +37,58 @@ export interface YesterdayInsight {
   days_since_last?: number;
 }
 
+/** Non-running activity (walk / strength / cycle / hike / etc.) on a given day. */
+export interface OtherActivityRef {
+  activity_id: string;
+  sport: string;
+  distance_mi?: number | null;
+  duration_min?: number | null;
+  name?: string | null;
+}
+
 export interface WeekDay {
   date: string;
   day_abbrev: string;
   workout_type?: string;
+  /** Sport of the primary (longest) run that day. Always 'run' when completed=true. */
   sport?: string;
+  /** Day's RUNNING total (sum of all runs that day). Walks/strength never count here. */
   distance_mi?: number;
-  planned_distance_mi?: number;  // Show both for comparison
+  planned_distance_mi?: number;
+  /** True iff at least one RUN happened on this day. */
   completed: boolean;
   is_today: boolean;
-  activity_id?: string;  // For linking to activity
-  workout_id?: string;   // For linking to planned workout
+  /** Longest run that day — primary tap target for the chip. */
+  activity_id?: string;
+  workout_id?: string;
+  /** Number of runs on this day. Drives the "+N" affordance for multi-run days. */
+  run_count?: number;
+  /** Non-running activity on this day (walk, strength, cycle, hike, ...). */
+  other_activities?: OtherActivityRef[];
+}
+
+export interface OtherSportSummary {
+  sport: string;
+  count: number;
+  distance_mi: number;
+  duration_min: number;
 }
 
 export interface WeekProgress {
   week_number?: number;
   total_weeks?: number;
   phase?: string;
+  /** RUNNING-only mileage (contract). */
   completed_mi: number;
   planned_mi: number;
   progress_pct: number;
   days: WeekDay[];
   status: 'on_track' | 'ahead' | 'behind' | 'no_plan';
   trajectory_sentence?: string;
-  tsb_context?: 'Fresh' | 'Building' | 'Fatigued';  // ADR-020: Training stress context
-  load_trend?: 'up' | 'stable' | 'down';  // ADR-020: Load direction
+  tsb_context?: 'Fresh' | 'Building' | 'Fatigued';
+  load_trend?: 'up' | 'stable' | 'down';
+  /** Per-sport non-running aggregates for the week. */
+  other_sport_summary?: OtherSportSummary[];
 }
 
 // --- ADR-17 Phase 2 Types ---
