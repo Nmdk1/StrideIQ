@@ -354,7 +354,7 @@ def get_activities_summary(
         d = int(dist_m or 0)
         t = int(dur_s or 0)
         other_by_sport[key] = {
-            "count": int(count or 0),
+            "total_activities": int(count or 0),
             "total_distance_km": round(d / 1000, 2),
             "total_distance_miles": round(d / 1609.34, 2),
             "total_duration_hours": round(t / 3600, 2),
