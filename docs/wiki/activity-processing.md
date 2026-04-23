@@ -34,7 +34,7 @@ Stored as `Activity.run_shape` (JSONB) — the full `RunShape` object containing
 - `services/run_stream_analysis.py` — stream-based analysis
 - `services/stream_analysis_cache.py` — caches expensive analyses
 - `CachedStreamAnalysis` model — persisted cache
-- Frontend: `useStreamAnalysis` hook for the RunShapeCanvas
+- Frontend: `useStreamAnalysis` hook; run activity detail renders **CanvasV2** (legacy `RunShapeCanvas` retained on disk for reference only)
 
 ### Effort Classification
 

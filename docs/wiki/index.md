@@ -1,6 +1,6 @@
 # StrideIQ Internal Wiki
 
-**Last updated:** April 16, 2026 (Marketing voice rewrite — Hero / WhyGuidedCoaching / Mission rewritten, false "no credit card required" claim retired, two de-identified case studies shipped at `/case-studies/*`)
+**Last updated:** April 23, 2026 (Quick Reference: coach + briefing models aligned to `apps/api/core/config.py`, `services/coaching/_llm.py`, `core/llm_client.py`)
 
 This is the single onboarding document. Read this instead of the 12-document read order.
 
@@ -22,8 +22,8 @@ This is the single onboarding document. Read this instead of the 12-document rea
 | **API container** | `strideiq_api` |
 | **Worker containers** | `strideiq_worker`, `strideiq_worker_default` |
 | **Beat container** | `strideiq_beat` |
-| **Coach model** | Kimi K2.5 (all athletes), Claude Sonnet 4.6 (fallback only) |
-| **Briefing model** | Claude Opus 4.6 (primary), Gemini 2.5 Flash (fallback) — different from coach |
+| **Coach model** | **Kimi** primary: `COACH_CANARY_MODEL` (default `kimi-k2.6` in `apps/api/core/config.py`), OpenAI-compatible Moonshot API in `services/coaching/_llm.py` `query_kimi_coach`. **Claude Sonnet 4.6** silent fallback on Kimi errors. Coach chat does not use Gemini. |
+| **Briefing model** | Default **`BRIEFING_PRIMARY_MODEL`** = `claude-sonnet-4-6`. Optional **Kimi** for athletes listed when `KIMI_CANARY_ENABLED` + `KIMI_CANARY_ATHLETE_IDS` (model `KIMI_CANARY_MODEL`, default `kimi-k2.6`). Provider routing + **Sonnet → Gemini 2.5 Flash** fallback chain in `apps/api/core/llm_client.py` (`call_llm` / `call_llm_with_json_parse`). |
 | **Plan engine (V1)** | `services/plan_framework/n1_engine.py` |
 | **Plan engine (V2)** | `services/plan_engine_v2/engine.py` — active behind `engine=v2` flag, admin/owner only |
 | **Deploy** | `ssh root@187.124.67.153` then `cd /opt/strideiq/repo && git pull origin main && docker compose -f docker-compose.prod.yml up -d --build` |
@@ -37,7 +37,7 @@ Before writing any code, understand these five things:
 
 2. **[Product Vision](./product-vision.md)** — what StrideIQ is and why. The intelligence moat. The visual → narrative → fluency loop. The founder is a BQ runner who coaches state-record holders. The bar is extremely high.
 
-3. **[Coach Architecture](./coach-architecture.md)** — the most-used surface. Kimi K2.5 universal routing. Context builders. Anti-hallucination guardrails. Budget caps. Date rendering discipline.
+3. **[Coach Architecture](./coach-architecture.md)** — the most-used surface. Universal Kimi coach path + Sonnet fallback. Context builders. Anti-hallucination guardrails. Budget caps. Date rendering discipline.
 
 4. **[Briefing System](./briefing-system.md)** — the most fragile surface. Lane 2A architecture. 8+ intelligence sources. Repeated regressions. **Approach with extreme caution.**
 
@@ -49,12 +49,12 @@ Before writing any code, understand these five things:
 |------|---------------|
 | **[Quality & Trust Principles](./quality-trust.md)** | Five non-negotiable rules, KB registry, anti-hallucination, OutputMetricMeta, coach guardrails |
 | **[Product Vision](./product-vision.md)** | Manifesto, strategy, 16 priority-ranked concepts, design philosophy, competitive frame, founder context |
-| **[Coach Architecture](./coach-architecture.md)** | AI coach system — Kimi K2.5 routing, context builders, system prompt, tools, KB scanner, budget caps |
+| **[Coach Architecture](./coach-architecture.md)** | AI coach system — Kimi primary (`COACH_CANARY_MODEL`), Sonnet fallback, context builders, system prompt, tools, KB scanner, budget caps |
 | **[Briefing System](./briefing-system.md)** | Morning briefing — Lane 2A, prompt assembly, 8 intelligence sources, workout structure detection, guardrails |
 | **[Correlation Engine](./correlation-engine.md)** | N=1 intelligence pipeline — Layers 1-4, AutoDiscovery, finding lifecycle, limiter taxonomy, cross-training inputs, fingerprint bridge |
 | **[Plan Engine](./plan-engine.md)** | V1 (N1 Engine V3) + **V2 deployed** — V2 wired to production behind `engine=v2` flag, 13 coaching science KB docs, extension-based progression, rich segments, fueling |
 | **[Garmin Integration](./garmin-integration.md)** | Three webhook types, FIT file pipeline, weather enrichment (Open-Meteo), health API, accepted sports |
-| **[Activity Processing](./activity-processing.md)** | Shape extraction, effort classification, heat adjustment, maps (Leaflet), Runtoons, cross-training detail pages |
+| **[Activity Processing](./activity-processing.md)** | Shape extraction, effort classification, heat adjustment, run maps (**CanvasV2** / Mapbox GL), Leaflet on some cross-training surfaces, Runtoons, activity detail tabs |
 | **[Operating Manual](./operating-manual.md)** | Personal Operating Manual V2 — findings display, cascade chains, race character, interestingness filter |
 | **[Infrastructure](./infrastructure.md)** | Server, containers, deployment, Celery/Beat, database, CI, environment variables |
 | **[Monetization](./monetization.md)** | Two-tier model ($24.99/mo), Stripe integration, promo codes |

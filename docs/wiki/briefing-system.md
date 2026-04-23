@@ -14,8 +14,9 @@ The briefing uses a two-lane architecture:
 
 - **Lane 2A (Worker path):** A Celery task (`home_briefing_tasks.py`) generates the briefing asynchronously. It builds the full context, calls the LLM, and writes the result to Redis. The Lane 2A worker always passes `skip_cache=True` to bypass stale legacy cache keys.
 
-- **Primary model:** Claude Opus 4.6 (highest reasoning quality)
-- **Fallback:** Gemini 2.5 Flash (if Opus unavailable)
+- **Primary model (default):** **`claude-sonnet-4-6`** — `BRIEFING_PRIMARY_MODEL` in `apps/api/core/config.py`, selected by `resolve_briefing_model()` in `apps/api/core/llm_client.py` when Kimi canary routing does not apply.
+- **Kimi canary cohort:** When `KIMI_CANARY_ENABLED` is true **and** the athlete UUID is listed in `KIMI_CANARY_ATHLETE_IDS`, briefings use **`KIMI_CANARY_MODEL`** (default **`kimi-k2.6`**).
+- **Provider failures:** `call_llm` / `call_llm_with_json_parse` implement a fallback chain — **Anthropic → Gemini 2.5 Flash** for Sonnet-shaped primaries; **Kimi → Sonnet → Gemini** when the primary is Kimi (see `_FALLBACK_CHAIN` in `llm_client.py`).
 - **Cache key:** `home_briefing:{athlete_id}` (written by Lane 2A)
 - **Legacy key:** `coach_home_briefing:{athlete_id}:{data_hash}` (request path only, being phased out)
 
@@ -100,7 +101,9 @@ The `splits_available` flag is computed in both the request path (`routers/home.
 
 ## Sources
 
-- `apps/api/routers/home.py` — prompt assembly, workout structure detection
+- `apps/api/core/llm_client.py` — `resolve_briefing_model`, `call_llm`, `call_llm_with_json_parse`, provider fallback chain
+- `apps/api/core/config.py` — `BRIEFING_PRIMARY_MODEL`, `KIMI_CANARY_*`, `KIMI_CANARY_MODEL`
+- `apps/api/routers/home.py` — prompt assembly, workout structure detection, `_call_opus_briefing_sync`
 - `apps/api/tasks/home_briefing_tasks.py` — Lane 2A worker
 - `apps/api/services/coach_tools/brief.py` — `build_athlete_brief`
 - `apps/api/services/coach_tools/wellness.py` — wellness trends

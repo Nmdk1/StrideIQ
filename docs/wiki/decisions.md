@@ -10,10 +10,10 @@
 
 | ADR | Decision | Current state |
 |-----|----------|---------------|
-| ADR-060 | Coach LLM tiering (GPT-based) | **Superseded** — universal Kimi K2.5 routing (Apr 6, 2026) |
+| ADR-060 | Coach LLM tiering (GPT-based) | **Superseded** — universal **Kimi** coach chat routing (`COACH_CANARY_MODEL`, default `kimi-k2.6`; Apr 2026) |
 | ADR-061 | Athlete Plan Profile — N=1 overrides | Active — `AthleteOverride`, `AthleteLearning` models |
 | ADR-062 | Taper democratization — personalized taper | Active — taper calculator uses individual data |
-| COACH_MODEL_ROUTING_RESET_SPEC | Sonnet premium lane, remove Opus runtime | **Superseded** — Kimi K2.5 for all (Apr 6, 2026) |
+| COACH_MODEL_ROUTING_RESET_SPEC | Sonnet premium lane, remove Opus runtime | **Superseded** — Kimi primary for coach **chat**; Sonnet remains **fallback** only (Apr 2026) |
 
 ### Planning & Training
 

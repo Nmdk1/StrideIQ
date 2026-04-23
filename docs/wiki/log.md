@@ -1,5 +1,16 @@
 # Wiki Log
 
+## [2026-04-23] Docs aligned to shipped coach/briefing models + two-tier billing
+
+**Trigger:** `SITE_AUDIT_LIVING.md` §6 still described Run Shape Canvas + Opus/Gemini coach split + “placeholder” `/nutrition`; §10/§15 still said **4-tier** Stripe while code has been on **`free` / `subscriber`** normalization (`apps/api/core/tier_utils.py`) since the Mar 19 monetization reset. Internal wiki Quick Reference still listed **Opus** for briefing and **Kimi K2.5** as the hard-coded coach id.
+
+**Verified in code (this session):**
+
+- Coach chat: `AICoach.chat` → `_query_kimi_with_fallback` → `query_kimi_coach` uses `settings.COACH_CANARY_MODEL` (default **`kimi-k2.6`**, `apps/api/core/config.py`); Sonnet fallback in `services/coaching/_llm.py`.
+- Briefing: `resolve_briefing_model` (`apps/api/core/llm_client.py`); defaults **`BRIEFING_PRIMARY_MODEL=claude-sonnet-4-6`**; optional Kimi when canary env + athlete allow-list; centralized fallbacks in `call_llm*`.
+
+**Doc edits:** `docs/SITE_AUDIT_LIVING.md` (§6 table, §10, §15, top “Last updated”, delta bullet), `docs/wiki/index.md` Quick Reference + coach row in All Pages + activity-processing blurb, `docs/wiki/coach-architecture.md`, `docs/wiki/briefing-system.md`, `docs/wiki/activity-processing.md` (stream-analysis hook line), `docs/wiki/nutrition.md` (parser/photo model ids), `docs/wiki/product-vision.md`, `docs/wiki/decisions.md`. No runtime code changes in this entry.
+
 ## [2026-04-16] Marketing voice rewrite — Hero, WhyGuidedCoaching, Mission, case studies; CC claim contract restored
 
 Outside-Opus advisor reading the live landing page surfaced two issues the April 16 marketing review (`docs/reviews/MARKETING_REVIEW_2026-04-16.md`) had missed: zero customer social proof, and the calculator distribution flywheel as an underused asset. Founder also re-prioritized Priority 2 of the original review (Hero + WhyGuidedCoaching voice rewrite), which had shipped neither in the original review pass nor in the subsequent claim-contract fix (`0bd5f24`).

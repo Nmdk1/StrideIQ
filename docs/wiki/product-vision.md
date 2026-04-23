@@ -88,7 +88,7 @@ From `docs/PRODUCT_STRATEGY_2026-03-03.md` (16 priority-ranked concepts). Rows 1
 - **Intelligence engine complete:** N=1 correlation engine (4 layers + nutrition inputs), temporal weighting, lifecycle classifier (6 states), AutoDiscovery, fingerprint bridge
 - **Plan engine complete:** Diagnosis-first, KB-grounded (76 rules, 445 PASS), 14 archetypes, 38 workout variants. V2 algorithm spec written with Build/Maintain/Custom modes, extension-based progression, 13 coaching science KB documents (Davis, Green, Roche)
 - **Nutrition intelligence:** Photo/barcode/NL parsing, USDA integration (1.8M foods), fueling shelf (97 products), load-adaptive daily targets, 9 correlation inputs. Elevated to first-class metric (#3 in hierarchy)
-- **Athlete experience:** Personal Operating Manual V2, morning briefing, AI coach (Kimi K2.5), activity calendar, cross-training (6 sports), Runtoons, maps, unified reports
+- **Athlete experience:** Personal Operating Manual V2, morning briefing, AI coach (universal **Kimi** tool path + Sonnet fallback), activity calendar, cross-training (6 sports), Runtoons, maps, unified reports
 - **Telemetry:** First-party usage tracking, admin dashboard — no third-party analytics
 - **Business:** Stripe integration, 30-day trial, 2-tier monetization ($24.99/mo or $199/yr), RUNTHEDIST promo code
 

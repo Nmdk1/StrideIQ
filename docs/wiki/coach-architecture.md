@@ -2,7 +2,7 @@
 
 ## Current State
 
-The AI coach is the primary conversational interface. Every athlete query routes through the `AICoach` class in `services/coaching/core.py` (legacy import path `services/ai_coach.py` is a 5-line shim that still re-exports `AICoach`). The current production model is **Kimi K2.5** for all athletes (universal routing as of Apr 6, 2026). Claude Sonnet 4.6 is the silent fallback on Kimi errors only. Gemini Flash is retired from the coach path.
+The AI coach is the primary conversational interface. Every athlete query routes through the `AICoach` class in `services/coaching/core.py` (legacy import path `services/ai_coach.py` is a 5-line shim that still re-exports `AICoach`). The production path is **universal Kimi**: `AICoach.chat` calls `_query_kimi_with_fallback()` → `query_kimi_coach()` in `services/coaching/_llm.py`, which uses **`settings.COACH_CANARY_MODEL`** (default **`kimi-k2.6`** in `apps/api/core/config.py`). **Claude Sonnet 4.6** is the silent fallback (`query_opus`) on Kimi errors or missing `KIMI_API_KEY`. **Gemini is not used** on the coach chat path (a `query_gemini` implementation remains for non-chat legacy/experiment only).
 
 The `AICoach` class is composed of seven mixins living alongside `core.py` in the `coaching/` package: `_context.py`, `_llm.py`, `_thread.py`, `_tools.py`, `_budget.py`, `_guardrails.py`, `_prescriptions.py`. Shared constants and the KB violation scanner live in `_constants.py`.
 
@@ -12,11 +12,10 @@ The `AICoach` class is composed of seven mixins living alongside `core.py` in th
 
 Routing lives on the `AICoach` class in `services/coaching/core.py`:
 
-- **`_determine_model()`** — routes every query to Kimi K2.5
-- **`_handle_coach_query()`** — orchestrates the full query lifecycle
-- **`get_model_for_query()`** — legacy complexity query classification (now all premium lane)
-- **Fallback chain:** Kimi K2.5 → Claude Sonnet 4.6 (on Kimi error only)
-- **Model audit trail:** Every coach response records `"model": "kimi-k2.5"` (or fallback model) in the `coach_chat` JSONB message dict
+- **`chat()`** — consent gate, budget check, then **`_query_kimi_with_fallback()`** (Kimi → Sonnet on failure)
+- **`get_model_for_query()`** — still logs “premium lane” for budgets; **does not** select Gemini for chat (commentary in code references Kimi universal path)
+- **Fallback chain:** Kimi (`COACH_CANARY_MODEL`) → Claude Sonnet 4.6 (on Kimi error / empty content / import or key failure)
+- **Model audit trail:** Assistant messages in `coach_chat` JSONB record the **`model`** string returned by the LLM path (e.g. `kimi-k2.6`, `claude-sonnet-4-6`, or deterministic shortcuts)
 
 ### Budget & Caps
 
@@ -29,7 +28,7 @@ Implemented in the `_budget.py` mixin (`check_budget`, `_is_founder`, `is_athlet
 | Monthly tokens | 5,000,000 | 5,000,000 | Uncapped |
 | Monthly opus tokens | 5,000,000 | 5,000,000 | Uncapped |
 
-Since all traffic routes through the "opus" lane (Kimi K2.5 = premium lane), the opus and overall caps are aligned at 5M. At Kimi K2.5 rates ($0.383/M input, $1.72/M output), worst-case 5M tokens ≈ $4.59/user/month against $24.99/mo subscription revenue (18%). Realistic usage (~450K tokens) costs ~$0.84/month (3%). The `opus_*` column names are vestigial from Sonnet-era routing — semantic meaning is now "premium lane."
+Since all traffic routes through the premium lane (Kimi primary = same budget flags as the historical “Opus” lane), the opus and overall caps are aligned at 5M. At Kimi rates ($0.383/M input, $1.72/M output) worst-case 5M tokens ≈ $4.59/user/month against $24.99/mo subscription revenue (18%). Realistic usage (~450K tokens) costs ~$0.84/month (3%). The `opus_*` column names are vestigial from Sonnet-era routing — semantic meaning is now "premium lane."
 
 - **`check_budget()`** — enforces caps per `CoachUsage` records
 - **`_is_founder()`** — `OWNER_ATHLETE_ID` env var bypasses all caps
@@ -90,7 +89,7 @@ The coach has access to ~26 tools defined in the `services/coach_tools/` package
 
 ## Key Decisions
 
-- **Universal Kimi K2.5** (Apr 6, 2026): Replaced per-tier routing. All athletes get the same model. Canary flag removed.
+- **Universal Kimi coach** (Apr 2026): Replaced per-tier Gemini/Sonnet routing for chat. All athletes share the same Kimi tool path; production default model id advanced to **`kimi-k2.6`** via `COACH_CANARY_MODEL` (was marketed as K2.5 during rollout).
 - **Caps recalibrated** (Apr 7, 2026): Raised from Sonnet-era levels (50K tokens/month) to Kimi-appropriate levels (2M standard, 5M VIP). No athlete should ever cap out — it's a product-killer.
 - **Date rendering fix** (Apr 7, 2026): All 7 date-emitting code paths now include pre-computed relative labels. `_relative_date()` precision extended to day-level through 30 days.
 - **Athlete calibration** (Apr 6, 2026): Coach prompt no longer defaults to conservatism regardless of athlete experience.

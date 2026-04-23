@@ -8,7 +8,7 @@ Full nutrition tracking with three input modes (photo, barcode, text), a fueling
 
 ### Photo Parsing
 - Camera capture → LLM vision analysis → macro estimation
-- Primary: Kimi K2.5 (multimodal), Fallback: GPT-4.1 Mini
+- Primary: **Kimi `kimi-k2.6`** (multimodal, Moonshot API — `nutrition_photo_parser.py`), Fallback: **GPT-4.1 Mini**
 - Returns per-item breakdown with portion estimates
 - `macro_source: "llm_estimated"`
 
@@ -19,7 +19,7 @@ Full nutrition tracking with three input modes (photo, barcode, text), a fueling
 - `macro_source: "branded_barcode"` or `"usda_local"`
 
 ### Natural Language Text
-- "0.5 lb hamburger patty, kaiser roll" → parsed by Kimi K2.5 or GPT-4.1 Mini
+- "0.5 lb hamburger patty, kaiser roll" → parsed by **Kimi `kimi-k2.6`** or GPT-4.1 Mini (`nutrition_parser.py`)
 - Prompt instructs LLM to respect explicit weights/quantities, not default to standard servings
 - USDA lookup attempted on parsed notes for verification
 - `macro_source: "llm_estimated"` or `"usda_local"` / `"usda_api"`
@@ -162,7 +162,7 @@ Athletes save recurring meals ("Workday Breakfast", "Long-run Pre-fuel") under a
 
 The meal builder has a "Paste your meal" textarea above the item rows. Athletes type free text ("2 eggs scrambled, 1 slice whole wheat toast, 1 tbsp peanut butter") and `POST /v1/nutrition/parse-meal` returns a list of structured items that pre-populate the rows. Each row stays editable so the athlete can adjust quantities or correct macros before saving.
 
-**Service:** `services/nutrition_parser.py::parse_meal_items()`. Same provider order as the single-entry parser (Kimi K2.5 primary, OpenAI fallback). Per-item USDA enrichment fills only the macros the LLM left null — never overwrites a value the LLM already produced. Empty input → 422. Both providers fail → 503.
+**Service:** `services/nutrition_parser.py::parse_meal_items()`. Same provider order as the single-entry parser (**Kimi `kimi-k2.6`** primary, OpenAI fallback). Per-item USDA enrichment fills only the macros the LLM left null — never overwrites a value the LLM already produced. Empty input → 422. Both providers fail → 503.
 
 The endpoint mirrors `/v1/nutrition/parse` but returns `{items: [{food, calories, protein_g, carbs_g, fat_g, fiber_g, macro_source}]}` instead of one merged total. Use `/parse` for the Today-tab "Type" input (single entry) and `/parse-meal` for the meal builder (per-item array).
 
