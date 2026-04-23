@@ -722,7 +722,10 @@ def generate_home_briefing_task(self: Task, athlete_id: str) -> Dict:
         from core.llm_client import is_canary_athlete
 
         use_opus = bool(os.getenv("ANTHROPIC_API_KEY"))
-        source_model = "claude-sonnet-4-6" if use_opus else "gemini-2.5-flash"
+        from core.config import settings as _sb_settings
+        source_model = _sb_settings.BRIEFING_PRIMARY_MODEL or (
+            "claude-sonnet-4-6" if use_opus else "gemini-2.5-flash"
+        )
         is_canary = is_canary_athlete(athlete_id)
         result = _call_llm_for_briefing(prompt, schema_fields, required_fields, athlete_id=athlete_id, local_now=_local_now)
 
@@ -751,7 +754,9 @@ def generate_home_briefing_task(self: Task, athlete_id: str) -> Dict:
                 if result is None:
                     result = _call_gemini_briefing(prompt, schema_fields, required_fields)
                 if result is not None:
-                    source_model = "claude-sonnet-4-6" if use_opus else "gemini-2.5-flash"
+                    source_model = _sb_settings.BRIEFING_PRIMARY_MODEL or (
+                        "claude-sonnet-4-6" if use_opus else "gemini-2.5-flash"
+                    )
                     logger.info("Primary model retry succeeded for %s", athlete_id)
 
         if result is None:

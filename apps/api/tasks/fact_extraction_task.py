@@ -101,47 +101,58 @@ class ExtractionError(Exception):
 
 def _run_extraction(user_text: str) -> list:
     """
-    Call Gemini to extract structured facts from athlete messages.
+    Call the knowledge LLM (kimi-k2.6 by default) to extract structured facts
+    from athlete messages.
 
     Returns [] when the LLM finds no facts (legitimate empty).
     Raises ExtractionError on provider/parse failures so the caller
     can distinguish "nothing found" from "couldn't reach the model".
     """
-    try:
-        from google import genai
-        from google.genai import types as genai_types
-    except ImportError:
-        raise ExtractionError("google-genai not installed")
+    from core.config import settings
+    from core.llm_client import call_llm
 
-    api_key = os.getenv("GOOGLE_AI_API_KEY")
-    if not api_key:
-        raise ExtractionError("GOOGLE_AI_API_KEY not set")
-
-    client = genai.Client(api_key=api_key)
-    config = genai_types.GenerateContentConfig(
-        temperature=0.1,
-        response_mime_type="application/json",
+    user_prompt = f"{EXTRACTION_PROMPT}\n\nATHLETE MESSAGES:\n{user_text}"
+    system = (
+        'Respond with ONLY a JSON object of the form {"facts": [...]} where '
+        '"facts" is the array of fact objects described below. If no facts are '
+        'found, return {"facts": []}. No markdown, no prose, no code fences.'
     )
     try:
-        response = client.models.generate_content(
-            model="gemini-3-flash-preview",
-            contents=[
-                genai_types.Content(
-                    role="user",
-                    parts=[genai_types.Part(text=f"{EXTRACTION_PROMPT}\n\nATHLETE MESSAGES:\n{user_text}")],
-                ),
-            ],
-            config=config,
+        result = call_llm(
+            model=settings.KNOWLEDGE_PRIMARY_MODEL,
+            system=system,
+            messages=[{"role": "user", "content": user_prompt}],
+            max_tokens=4000,
+            temperature=0.1,
+            response_mode="json",
+            timeout_s=60,
         )
-        raw = response.text.strip()
-        facts = json.loads(raw)
-        if not isinstance(facts, list):
-            raise ExtractionError(f"Extraction returned non-list: {type(facts)}")
-        return facts
-    except ExtractionError:
-        raise
     except Exception as e:
         raise ExtractionError(f"LLM call failed: {e}") from e
+
+    raw = (result.get("text") or "").strip()
+    if raw.startswith("```"):
+        raw = raw.split("\n", 1)[1] if "\n" in raw else raw[3:]
+    if raw.endswith("```"):
+        raw = raw[:-3]
+    raw = raw.strip()
+    try:
+        facts = json.loads(raw)
+    except json.JSONDecodeError as e:
+        if raw.startswith("{"):
+            try:
+                obj = json.loads(raw)
+                if isinstance(obj, dict) and isinstance(obj.get("facts"), list):
+                    return obj["facts"]
+            except Exception:
+                pass
+        raise ExtractionError(f"LLM returned non-JSON: {e}") from e
+
+    if isinstance(facts, dict) and isinstance(facts.get("facts"), list):
+        return facts["facts"]
+    if not isinstance(facts, list):
+        raise ExtractionError(f"Extraction returned non-list: {type(facts)}")
+    return facts
 
 
 def _upsert_fact(db, athlete_id: UUID, chat_id: UUID, extracted: dict):

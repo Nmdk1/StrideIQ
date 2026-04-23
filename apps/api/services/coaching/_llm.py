@@ -278,9 +278,8 @@ class LLMMixin:
         kimi_tools = self._kimi_tools()
         is_reasoning_model = model_name.lower() in ("kimi-k2.5", "kimi-k2.6")
         for iteration in range(5):
-            use_thinking_disabled = is_reasoning_model and iteration == 0
             extra_body: dict = {}
-            if use_thinking_disabled:
+            if is_reasoning_model:
                 extra_body["thinking"] = {"type": "disabled"}
             tc = "required" if iteration == 0 else "auto"
             response = await client.chat.completions.create(

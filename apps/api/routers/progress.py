@@ -795,43 +795,28 @@ def _generate_progress_headline(
     )
 
     try:
-        from google import genai
-        import os
+        from core.config import settings
+        from core.llm_client import call_llm_with_json_parse
 
-        api_key = os.getenv("GOOGLE_AI_API_KEY")
-        if not api_key:
-            return None
-
-        client = genai.Client(api_key=api_key)
-        response = client.models.generate_content(
-            model="gemini-2.5-flash",
-            contents=prompt,
-            config=genai.types.GenerateContentConfig(
-                max_output_tokens=2000,
-                temperature=0.3,
-                response_mime_type="application/json",
-                response_schema={
-                    "type": "OBJECT",
-                    "properties": {
-                        "text": {
-                            "type": "STRING",
-                            "description": "One coaching headline about overall progress. No raw metric readouts.",
-                        },
-                        "subtext": {
-                            "type": "STRING",
-                            "description": "One supporting sentence with context and action. No raw metric readouts.",
-                        },
-                    },
-                    "required": ["text", "subtext"],
-                },
-            ),
+        system = (
+            "You are an elite running coach. Respond with ONLY a JSON object: "
+            '{"text": "...", "subtext": "..."}. '
+            '"text" is one coaching headline (no raw metric readouts). '
+            '"subtext" is one supporting sentence with context and action.'
         )
-
-        data = json.loads(response.text)
-        headline = ProgressHeadline(**data)
-        _set_cache(cache_key, data, ttl=1800)
+        data = call_llm_with_json_parse(
+            model=settings.KNOWLEDGE_PRIMARY_MODEL,
+            system=system,
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=2000,
+            temperature=0.3,
+            timeout_s=30,
+        )
+        if not data or not data.get("text") or not data.get("subtext"):
+            return None
+        headline = ProgressHeadline(text=data["text"], subtext=data["subtext"])
+        _set_cache(cache_key, {"text": data["text"], "subtext": data["subtext"]}, ttl=1800)
         return headline
-
     except Exception as e:
         logger.warning(f"Progress headline LLM failed: {type(e).__name__}: {e}")
         return None
@@ -1104,56 +1089,27 @@ def _generate_progress_cards(
     prompt = "\n".join(prompt_parts)
 
     try:
-        import os
-        from google import genai
+        from core.config import settings
+        from core.llm_client import call_llm_with_json_parse
 
-        api_key = os.getenv("GOOGLE_AI_API_KEY")
-        if not api_key:
-            return _fallback_progress_cards(summary, checkin_context, days)
-
-        client = genai.Client(api_key=api_key)
-        response = client.models.generate_content(
-            model="gemini-2.5-flash",
-            contents=prompt,
-            config=genai.types.GenerateContentConfig(
-                max_output_tokens=2200,
-                temperature=0.25,
-                response_mime_type="application/json",
-                response_schema={
-                    "type": "OBJECT",
-                    "properties": {
-                        "cards": {
-                            "type": "ARRAY",
-                            "items": {
-                                "type": "OBJECT",
-                                "properties": {
-                                    "id": {"type": "STRING"},
-                                    "title": {"type": "STRING"},
-                                    "summary": {"type": "STRING"},
-                                    "trend_context": {"type": "STRING"},
-                                    "drivers": {"type": "STRING"},
-                                    "next_step": {"type": "STRING"},
-                                    "ask_coach_query": {"type": "STRING"},
-                                },
-                                "required": [
-                                    "id",
-                                    "title",
-                                    "summary",
-                                    "trend_context",
-                                    "drivers",
-                                    "next_step",
-                                    "ask_coach_query",
-                                ],
-                            },
-                        }
-                    },
-                    "required": ["cards"],
-                },
-            ),
+        system = (
+            "You are an elite running coach. Respond with ONLY a JSON object of the form: "
+            '{"cards": [{"id": "...", "title": "...", "summary": "...", '
+            '"trend_context": "...", "drivers": "...", "next_step": "...", '
+            '"ask_coach_query": "..."}]}. '
+            "Every card must include all seven fields. No markdown, no commentary."
         )
-
-        data = json.loads(response.text)
-        cards = [ProgressCoachCard(**card) for card in data.get("cards", [])]
+        data = call_llm_with_json_parse(
+            model=settings.KNOWLEDGE_PRIMARY_MODEL,
+            system=system,
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=2200,
+            temperature=0.25,
+            timeout_s=45,
+        )
+        if not data or not isinstance(data.get("cards"), list):
+            return _fallback_progress_cards(summary, checkin_context, days)
+        cards = [ProgressCoachCard(**card) for card in data["cards"]]
         if not cards:
             return _fallback_progress_cards(summary, checkin_context, days)
         if not all(_valid_progress_card_contract(c) for c in cards):
@@ -1682,9 +1638,6 @@ def _generate_narrative_llm(visual_snapshot: Dict[str, Any]) -> Optional[Dict[st
     Returns a dict with narrative fields for verdict, chapters, patterns,
     looking_ahead. Returns None if LLM is unavailable or fails.
     """
-    if gemini_client is None:
-        return None
-
     prompt_parts = [
         "You are an elite running coach writing a progress narrative for one specific athlete.",
         "You are given their visual data snapshot. Write coaching narrative for each section.",
@@ -1708,52 +1661,26 @@ def _generate_narrative_llm(visual_snapshot: Dict[str, Any]) -> Optional[Dict[st
     prompt = "\n".join(prompt_parts)
 
     try:
-        from google import genai
+        from core.config import settings
+        from core.llm_client import call_llm_with_json_parse
 
-        response = gemini_client.models.generate_content(
-            model="gemini-2.5-flash",
-            contents=prompt,
-            config=genai.types.GenerateContentConfig(
-                max_output_tokens=3000,
-                temperature=0.3,
-                response_mime_type="application/json",
-                response_schema={
-                    "type": "OBJECT",
-                    "properties": {
-                        "verdict_text": {"type": "STRING"},
-                        "chapters": {
-                            "type": "ARRAY",
-                            "items": {
-                                "type": "OBJECT",
-                                "properties": {
-                                    "topic": {"type": "STRING"},
-                                    "observation": {"type": "STRING"},
-                                    "interpretation": {"type": "STRING"},
-                                    "action": {"type": "STRING"},
-                                },
-                                "required": ["topic", "observation", "interpretation", "action"],
-                            },
-                        },
-                        "patterns": {
-                            "type": "ARRAY",
-                            "items": {
-                                "type": "OBJECT",
-                                "properties": {
-                                    "input_metric": {"type": "STRING"},
-                                    "narrative": {"type": "STRING"},
-                                    "current_relevance": {"type": "STRING"},
-                                },
-                                "required": ["input_metric", "narrative", "current_relevance"],
-                            },
-                        },
-                        "looking_ahead_narrative": {"type": "STRING"},
-                    },
-                    "required": ["verdict_text", "chapters"],
-                },
-            ),
+        system = (
+            "You are an elite running coach. Respond with ONLY a JSON object of the form: "
+            '{"verdict_text": "...", '
+            '"chapters": [{"topic": "...", "observation": "...", "interpretation": "...", "action": "..."}], '
+            '"patterns": [{"input_metric": "...", "narrative": "...", "current_relevance": "..."}], '
+            '"looking_ahead_narrative": "..."}. '
+            "verdict_text and chapters are required; patterns and looking_ahead_narrative are optional. "
+            "No markdown, no commentary."
         )
-
-        return json.loads(response.text)
+        return call_llm_with_json_parse(
+            model=settings.KNOWLEDGE_PRIMARY_MODEL,
+            system=system,
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=3000,
+            temperature=0.3,
+            timeout_s=60,
+        )
     except Exception as e:
         logger.warning(f"Narrative LLM generation failed: {type(e).__name__}: {e}")
         return None
@@ -2191,12 +2118,7 @@ def _assemble_knowledge(athlete_id, db: Session) -> KnowledgeResponse:
 
 def _generate_knowledge_llm(response: KnowledgeResponse, athlete_id) -> Optional[Dict]:
     """LLM pass: generate hero headline + per-finding implications."""
-    if not gemini_client:
-        return None
-
     try:
-        from google import genai
-
         facts_summary = []
         for f in response.proved_facts[:8]:
             facts_summary.append(
@@ -2224,16 +2146,26 @@ Rules:
 - Every sentence must be grounded in the data provided
 - Suppress over hallucinate — if uncertain, omit"""
 
-        result = gemini_client.models.generate_content(
-            model="gemini-2.5-flash",
-            contents=prompt,
-            config=genai.types.GenerateContentConfig(
-                max_output_tokens=1500,
-                temperature=0.3,
-                response_mime_type="application/json",
-            ),
+        from core.config import settings
+        from core.llm_client import call_llm_with_json_parse
+
+        system = (
+            "You are a running coach. Respond with ONLY a JSON object of the form: "
+            '{"headline": "...", "headline_accent": "...", "subtext": "...", '
+            '"implications": {"0": "...", "1": "..."}}. '
+            "headline is max 8 words. headline_accent is max 10 words. "
+            "subtext is one paragraph (2-3 sentences). "
+            "implications maps fact index strings to one-sentence current implications. "
+            "No markdown, no commentary."
         )
-        return json.loads(result.text)
+        return call_llm_with_json_parse(
+            model=settings.KNOWLEDGE_PRIMARY_MODEL,
+            system=system,
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=1500,
+            temperature=0.3,
+            timeout_s=45,
+        )
     except Exception as e:
         logger.warning(f"Knowledge LLM failed: {e}")
         return None
