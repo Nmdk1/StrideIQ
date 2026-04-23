@@ -374,8 +374,8 @@ class ConstraintAwarePlanner:
                         race_distance, goal_time, _best_rpi,
                     )
 
-        if not _best_rpi or _best_rpi <= 0:
-            _best_rpi = self._rpi_from_anchors_or_pbs(athlete_id, db)
+        if (not _best_rpi or _best_rpi <= 0) and self.db is not None:
+            _best_rpi = self._rpi_from_anchors_or_pbs(athlete_id, self.db)
             if _best_rpi and _best_rpi > 0:
                 logger.info("RPI recovered from race anchors/PBs: %.1f", _best_rpi)
 
