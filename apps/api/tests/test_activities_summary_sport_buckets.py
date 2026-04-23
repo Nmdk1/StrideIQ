@@ -9,8 +9,8 @@ independently without silently mixing sports.
   - `combined`: every activity.
 
 Backwards-compatible top-level fields mirror `running` so existing clients
-keep working. Avg pace is only meaningful for running; non-running buckets
-don't carry a pace number.
+keep working. All distances are in meters, durations in seconds, pace in
+seconds per kilometre.
 """
 from __future__ import annotations
 
@@ -94,7 +94,7 @@ def test_summary_returns_running_other_combined_buckets(auth_headers):
     assert "other" in body
     assert "combined" in body
 
-    for key in ("total_activities", "total_distance_km", "total_distance_miles", "total_duration_hours"):
+    for key in ("total_activities", "total_distance_m", "total_duration_s"):
         assert key in body["running"]
         assert key in body["other"]
         assert key in body["combined"]
@@ -107,10 +107,8 @@ def test_running_bucket_excludes_walks_and_strength(auth_headers):
     body = r.json()
     running = body["running"]
 
-    # Exactly 1 running activity for the fixture athlete.
     assert running["total_activities"] == 1
-    # 10 km seeded; allow for any other runs on shared-DB tests by asserting >= 10.
-    assert running["total_distance_km"] >= 10.0
+    assert running["total_distance_m"] >= 10000
 
 
 def test_other_bucket_breaks_down_by_sport(auth_headers):
@@ -138,7 +136,7 @@ def test_backwards_compat_top_level_mirrors_running(auth_headers):
     r = client.get("/v1/activities/summary?days=30", headers=auth_headers)
     body = r.json()
     assert body["total_activities"] == body["running"]["total_activities"]
-    assert body["total_distance_miles"] == body["running"]["total_distance_miles"]
+    assert body["total_distance_m"] == body["running"]["total_distance_m"]
     assert body["race_count"] == body["running"].get("race_count", 0)
 
 
@@ -147,7 +145,5 @@ def test_avg_pace_only_on_running_bucket(auth_headers):
     avg_pace lives on the running bucket and is None on others (or omitted)."""
     r = client.get("/v1/activities/summary?days=30", headers=auth_headers)
     body = r.json()
-    # Running bucket has a pace field (populated because we seeded a run with speed).
-    assert "average_pace_per_mile" in body["running"]
-    # Other bucket MUST NOT carry a misleading cross-sport pace.
-    assert body["other"].get("average_pace_per_mile") in (None, )
+    assert "avg_pace_s_per_km" in body["running"]
+    assert body["other"].get("avg_pace_s_per_km") in (None, )

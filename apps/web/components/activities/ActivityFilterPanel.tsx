@@ -67,25 +67,19 @@ function prettyWorkoutLabel(value: string): string {
 
 export function ActivityFilterPanel({ value, onChange }: ActivityFilterPanelProps) {
   const { data, isLoading } = useFilterDistributions();
-  const { units } = useUnits();
+  const { convertDistance, convertElevation, distanceUnitShort, elevationUnit } = useUnits();
 
   const formatDistance = useMemo(() => {
     return (lo: number, hi: number) => {
-      if (units === 'metric') {
-        return `${(lo / 1000).toFixed(1)}–${(hi / 1000).toFixed(1)} km`;
-      }
-      return `${(lo / 1609.34).toFixed(1)}–${(hi / 1609.34).toFixed(1)} mi`;
+      return `${convertDistance(lo).toFixed(1)}–${convertDistance(hi).toFixed(1)} ${distanceUnitShort}`;
     };
-  }, [units]);
+  }, [convertDistance, distanceUnitShort]);
 
   const formatElev = useMemo(() => {
     return (lo: number, hi: number) => {
-      if (units === 'metric') {
-        return `${Math.round(lo)}–${Math.round(hi)} m`;
-      }
-      return `${Math.round(lo * 3.28084)}–${Math.round(hi * 3.28084)} ft`;
+      return `${Math.round(convertElevation(lo))}–${Math.round(convertElevation(hi))} ${elevationUnit}`;
     };
-  }, [units]);
+  }, [convertElevation, elevationUnit]);
 
   const formatTemp = (lo: number, hi: number) => `${Math.round(lo)}–${Math.round(hi)} °F`;
 

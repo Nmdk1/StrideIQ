@@ -20,6 +20,7 @@
 
 import React, { useId, useMemo, useRef } from 'react';
 import { useScrubState } from './hooks/useScrubState';
+import { useUnits } from '@/lib/context/UnitsContext';
 import type { TrackPoint } from './hooks/useResampledTrack';
 
 // Visual treatment matches the splits-tab ElevationProfile (gentler peaks):
@@ -251,6 +252,7 @@ export interface StreamsStackProps {
 export function StreamsStack({ track, width }: StreamsStackProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const { position, setPosition, clear } = useScrubState();
+  const { units, convertPace, paceUnit, elevationUnit } = useUnits();
 
   const paceSeries = useMemo(() => buildSeries(track, (p) => p.pace), [track]);
   const hrSeries = useMemo(() => buildSeries(track, (p) => p.hr), [track]);
@@ -292,22 +294,25 @@ export function StreamsStack({ track, width }: StreamsStackProps) {
       <div className="h-px bg-slate-800/50" />
       <Band
         title="Pace"
-        unit="/mi"
+        unit={`/${units === 'imperial' ? 'mi' : 'km'}`}
         series={paceSeries}
         width={width}
         colorClass="text-emerald-400"
         invertY
-        formatValue={(secPerKm) => paceSecondsToMinSec(secPerKm * 1.609344)}
+        formatValue={(secPerKm) => paceSecondsToMinSec(convertPace(secPerKm))}
         scrubT={position}
       />
       <div className="h-px bg-slate-800/50" />
       <Band
         title="Elevation"
-        unit="ft"
+        unit={elevationUnit}
         series={elevationSeries}
         width={width}
         colorClass="text-amber-400"
-        formatValue={(meters) => Math.round(meters * 3.28084).toString()}
+        formatValue={(meters) => {
+          if (units === 'imperial') return Math.round(meters * 3.28084).toString();
+          return Math.round(meters).toString();
+        }}
         scrubT={position}
       />
     </div>

@@ -123,15 +123,13 @@ function CoachPageInner() {
   // Progress summary for empty state brief + context panel
   const { data: progressData } = useProgressSummary(28);
 
-  // Athlete unit preference. The progress API returns weekly volume as
-  // miles (the field is literally `current_week_mi`), so we round-trip
-  // through meters to render in the athlete's preferred units.
+  // Athlete unit preference. The progress API returns weekly volume in
+  // canonical meters (`current_week_m`), formatted via useUnits().
   const { formatDistance, distanceUnitShort } = useUnits();
-  const MI_TO_M = 1609.344;
-  const formatWeeklyVolume = (mi: number, decimals = 1) =>
-    formatDistance(mi * MI_TO_M, decimals);
-  const formatWeeklyVolumeNoUnit = (mi: number, decimals = 0) => {
-    const v = formatDistance(mi * MI_TO_M, decimals);
+  const formatWeeklyVolume = (m: number, decimals = 1) =>
+    formatDistance(m, decimals);
+  const formatWeeklyVolumeNoUnit = (m: number, decimals = 0) => {
+    const v = formatDistance(m, decimals);
     return v.replace(/\s*(mi|km)\s*$/, '');
   };
   const [baselineDraft, setBaselineDraft] = useState({
@@ -239,11 +237,11 @@ function CoachPageInner() {
     }
     if (progressData.volume_trajectory) {
       const vol = progressData.volume_trajectory;
-      if (vol.current_week_mi != null) {
-        const target = vol.peak_week_mi
-          ? ' (peak ' + formatWeeklyVolumeNoUnit(vol.peak_week_mi) + distanceUnitShort + ')'
+      if (vol.current_week_m != null) {
+        const target = vol.peak_week_m
+          ? ' (peak ' + formatWeeklyVolumeNoUnit(vol.peak_week_m) + distanceUnitShort + ')'
           : '';
-        lines.push('**This week:** ' + formatWeeklyVolume(vol.current_week_mi) + target);
+        lines.push('**This week:** ' + formatWeeklyVolume(vol.current_week_m) + target);
       }
     }
     if (progressData.recovery) {
@@ -1010,10 +1008,10 @@ function CoachPageInner() {
                           <span className="text-slate-100 font-medium">{progressData.goal_race_days_remaining} days</span>
                         </div>
                       )}
-                      {progressData.volume_trajectory?.current_week_mi != null && (
+                      {progressData.volume_trajectory?.current_week_m != null && (
                         <div className="flex justify-between">
                           <span className="text-slate-400">This week</span>
-                          <span className="text-slate-100 font-medium">{formatWeeklyVolume(progressData.volume_trajectory.current_week_mi)}</span>
+                          <span className="text-slate-100 font-medium">{formatWeeklyVolume(progressData.volume_trajectory.current_week_m)}</span>
                         </div>
                       )}
                     </div>

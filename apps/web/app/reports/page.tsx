@@ -141,7 +141,7 @@ function DayDetail({ day, healthMetrics, showActivities, showNutrition, showBody
   showNutrition: boolean;
   showBodyComp: boolean;
 }) {
-  const { formatDistance, formatPace, units } = useUnits();
+  const { formatDistance, formatPace, formatElevation, units } = useUnits();
   return (
     <div className="space-y-3 pt-2">
       {day.health && healthMetrics.length > 0 && (
@@ -180,7 +180,7 @@ function DayDetail({ day, healthMetrics, showActivities, showNutrition, showBody
                 </div>
               </div>
               <div className="flex flex-wrap gap-x-3 mt-1 text-[10px] text-slate-500">
-                {a.total_elevation_gain && <span>{Math.round(a.total_elevation_gain * 3.28084)}ft gain</span>}
+                {a.total_elevation_gain && <span>{formatElevation(a.total_elevation_gain)} gain</span>}
                 {a.avg_cadence && <span>{a.avg_cadence} spm</span>}
                 {a.avg_power_w && <span>{a.avg_power_w}W</span>}
                 {a.performance_percentage && <span>AG: {a.performance_percentage.toFixed(1)}%</span>}

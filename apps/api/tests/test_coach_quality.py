@@ -425,19 +425,15 @@ class TestCoachPlanDistanceMatchesDb:
 
     def test_planned_workout_distance_from_db(self):
         """The PlannedWorkout distance must be read from target_distance_km and passed
-        to the LLM prompt as PLANNED miles — not inferred or estimated."""
+        to the LLM prompt as unit-aware text — not inferred or estimated."""
         from tasks.home_briefing_tasks import _build_briefing_prompt
         source = inspect.getsource(_build_briefing_prompt)
 
-        # Must read target_distance_km from PlannedWorkout and convert to miles
         assert "target_distance_km" in source, (
             "target_distance_km not read from PlannedWorkout — distance may be hallucinated"
         )
-        assert "0.621371" in source or "1609" in source or "miles" in source.lower(), (
-            "Distance conversion to miles not found in _build_briefing_prompt"
-        )
-        assert "distance_mi" in source, (
-            "distance_mi not in briefing prompt — planned distance not grounded"
+        assert "distance_text" in source, (
+            "distance_text not in briefing prompt — planned distance not grounded in athlete units"
         )
 
     def _run_briefing(self, athlete_id, db, planned_workout=None):
@@ -466,19 +462,19 @@ class TestCoachPlanDistanceMatchesDb:
         return db
 
     def test_planned_workout_distance_injected_into_prompt(self):
-        """PLANNED line in prompt must include the actual distance_mi from DB."""
+        """PLANNED line in prompt must include the actual distance from DB."""
         athlete_id = str(uuid.uuid4())
         planned_workout = {
             "has_workout": True,
             "workout_type": "long_run",
             "title": "Long run",
-            "distance_mi": 10.0,   # From DB: 10 miles (not 15)
+            "distance_text": "10.0 mi",
         }
 
         prep = self._run_briefing(athlete_id, self._make_min_db(), planned_workout=planned_workout)
         prompt = prep[1]
-        assert "10.0mi" in prompt or "10.0 mi" in prompt, (
-            f"Planned distance 10.0mi not in prompt. Prompt excerpt: {prompt[:500]}"
+        assert "10.0 mi" in prompt, (
+            f"Planned distance 10.0 mi not in prompt. Prompt excerpt: {prompt[:500]}"
         )
 
 

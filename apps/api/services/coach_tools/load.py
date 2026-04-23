@@ -231,6 +231,7 @@ def get_weekly_volume(db: Session, athlete_id: UUID, weeks: int = 12) -> Dict[st
                 "week_start": b["week_start"],
                 "week_end": b["week_end"],
                 "run_count": int(b["run_count"]),
+                "total_distance_m": round(dist_m, 1),
                 "total_distance_km": round(dist_m / 1000.0, 2),
                 "total_distance_mi": round(dist_m / _M_PER_MI, 2),
                 "total_duration_hr": round(dur_s / 3600.0, 2),

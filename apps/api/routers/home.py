@@ -48,7 +48,7 @@ class TodayWorkout(BaseModel):
     has_workout: bool
     workout_type: Optional[str] = None
     title: Optional[str] = None
-    distance_mi: Optional[float] = None
+    distance_m: Optional[int] = None
     pace_guidance: Optional[str] = None
     why_context: Optional[str] = None  # "Why this workout" explanation
     why_source: Optional[str] = None  # "correlation" | "load" | "plan"
@@ -63,8 +63,8 @@ class YesterdayInsight(BaseModel):
     has_activity: bool
     activity_name: Optional[str] = None
     activity_id: Optional[str] = None
-    distance_mi: Optional[float] = None
-    pace_per_mi: Optional[str] = None
+    distance_m: Optional[int] = None
+    pace_s_per_km: Optional[float] = None
     insight: Optional[str] = None  # One sparse insight
     # Fallback: most recent activity if no yesterday activity
     last_activity_date: Optional[str] = None  # ISO date of most recent activity
@@ -81,8 +81,8 @@ class OtherActivityRef(BaseModel):
     in one tap without it polluting running mileage."""
     activity_id: str
     sport: str  # 'walking' | 'strength' | 'cycling' | 'hiking' | 'flexibility' | ...
-    distance_mi: Optional[float] = None  # None for sports without a distance (e.g. strength)
-    duration_min: Optional[float] = None
+    distance_m: Optional[int] = None  # None for sports without a distance (e.g. strength)
+    duration_s: Optional[int] = None
     name: Optional[str] = None
 
 
@@ -90,7 +90,7 @@ class WeekDay(BaseModel):
     """Single day in week view.
 
     Running-only invariants:
-      - `distance_mi` = SUM of all runs on this day (never a walk/strength/cycle)
+      - `distance_m` = SUM of all runs on this day in meters (never a walk/strength/cycle)
       - `completed` = True iff at least one run happened
       - `activity_id` = the LONGEST run that day (primary tap target)
       - `run_count` = total runs that day (drives "+N" affordance)
@@ -103,8 +103,8 @@ class WeekDay(BaseModel):
     day_abbrev: str  # M, T, W, etc.
     workout_type: Optional[str] = None
     sport: Optional[str] = None  # legacy: sport of the primary run (kept for compat)
-    distance_mi: Optional[float] = None  # day's running total
-    planned_distance_mi: Optional[float] = None
+    distance_m: Optional[int] = None  # day's running total (meters)
+    planned_distance_m: Optional[int] = None
     completed: bool
     is_today: bool
     activity_id: Optional[str] = None  # longest run that day
@@ -117,22 +117,22 @@ class OtherSportSummary(BaseModel):
     """Weekly aggregate for one non-running sport."""
     sport: str
     count: int
-    distance_mi: float = 0.0
-    duration_min: float = 0.0
+    distance_m: int = 0
+    duration_s: int = 0
 
 
 class WeekProgress(BaseModel):
     """This week's progress.
 
-    `completed_mi` and `planned_mi` are RUNNING-ONLY by contract.
+    `completed_m` and `planned_m` are RUNNING-ONLY by contract (meters).
     Non-running activity is surfaced via `other_sport_summary` so views can
     show it on its own or grouped — never silently mixed into running totals.
     """
     week_number: Optional[int] = None
     total_weeks: Optional[int] = None
     phase: Optional[str] = None
-    completed_mi: float  # running only
-    planned_mi: float  # running only
+    completed_m: int  # running only (meters)
+    planned_m: int  # running only (meters)
     progress_pct: float
     days: List[WeekDay]
     status: str  # "on_track", "ahead", "behind", "no_plan"
@@ -491,9 +491,9 @@ def generate_why_context(
 
 def generate_trajectory_sentence(
     status: str,
-    completed_mi: float,
-    planned_mi: float,
-    remaining_mi: float = 0.0,
+    completed_m: int,
+    planned_m: int,
+    remaining_m: int = 0,
     quality_completed: int = 0,
     quality_planned: int = 0,
     activities_this_week: int = 0,
@@ -504,33 +504,30 @@ def generate_trajectory_sentence(
     Generate a sparse trajectory sentence.
     Tone: Data speaks. No praise, no prescription.
 
-    Includes TSB context when available.
-
-    remaining_mi: Only counts today + future planned miles (excludes missed past days)
-    Units are formatted per the athlete's preferred_units ("metric" -> km, else miles).
+    All distance inputs are in meters. Formatted to athlete's preferred_units.
     """
     is_metric = (preferred_units or "imperial").lower() == "metric"
     unit = "km" if is_metric else "mi"
 
-    def _fmt(value_mi: float) -> str:
-        v = value_mi * 1.60934 if is_metric else value_mi
+    def _fmt(meters: int) -> str:
+        v = meters / 1000 if is_metric else meters / 1609.344
         return f"{v:.0f} {unit}"
 
-    remaining = remaining_mi if remaining_mi > 0 else max(0, planned_mi - completed_mi)
+    remaining = remaining_m if remaining_m > 0 else max(0, planned_m - completed_m)
 
     if status == "no_plan":
-        if completed_mi > 0:
+        if completed_m > 0:
             if activities_this_week == 1:
-                return f"{_fmt(completed_mi)} logged this week. Consistency compounds."
+                return f"{_fmt(completed_m)} logged this week. Consistency compounds."
             elif activities_this_week > 1:
-                base = f"{_fmt(completed_mi)} across {activities_this_week} runs this week."
+                base = f"{_fmt(completed_m)} across {activities_this_week} runs this week."
                 if tsb_context:
                     return f"{base} {tsb_context}"
                 return base
         return None
 
     if status == "ahead":
-        base = f"Ahead of schedule. {_fmt(completed_mi)} done of {_fmt(planned_mi)} planned."
+        base = f"Ahead of schedule. {_fmt(completed_m)} done of {_fmt(planned_m)} planned."
     elif status == "on_track":
         base = f"On track. {_fmt(remaining)} remaining this week."
     elif status == "behind":
@@ -576,11 +573,10 @@ def generate_yesterday_insight(activity: Activity) -> str:
             insights.append("Variable pacing.")
 
     if not insights:
-        if activity.distance_m and activity.duration_s:
-            pace_per_mile = (activity.duration_s / (activity.distance_m / 1609.344))
-            pace_str = format_pace(pace_per_mile)
-            distance_mi = activity.distance_m / 1609.344
-            insights.append(f"{distance_mi:.1f} mi at {pace_str}.")
+        if activity.distance_m and activity.duration_s and activity.avg_hr:
+            insights.append(f"Avg HR {int(activity.avg_hr)}.")
+        elif activity.distance_m:
+            pass  # distance/pace displayed via structured fields, not insight text
 
     return " ".join(insights[:2]) if insights else None
 
@@ -2627,13 +2623,11 @@ def generate_coach_home_briefing(
         # Prefer pre-formatted *_text fields written by the briefing builder
         # (which respects the athlete's preferred units). Fall back to the
         # legacy imperial keys for any caller that hasn't been migrated yet.
-        _dist_text = c.get("distance_text")
-        if not _dist_text and c.get("distance_mi") is not None:
-            _dist_text = f"{c['distance_mi']} mi"
-        today_line = f"COMPLETED today: {c.get('name')}, {_dist_text or '?'}, pace {c.get('pace')}, HR {c.get('avg_hr', 'N/A')}, {c.get('duration_min')}min"
+        _dist_text = c.get("distance_text") or "?"
+        _dur_s = c.get("duration_s")
+        _dur_text = f"{int(_dur_s) // 60}min" if _dur_s else "?"
+        today_line = f"COMPLETED today: {c.get('name')}, {_dist_text}, pace {c.get('pace')}, HR {c.get('avg_hr', 'N/A')}, {_dur_text}"
         _elev_text = c.get("elevation_text")
-        if not _elev_text and c.get("elevation_gain_ft") is not None:
-            _elev_text = f"+{c['elevation_gain_ft']} ft"
         if _elev_text:
             today_line += f", elevation {_elev_text}"
         _temp_text = c.get("temperature_text")
@@ -2648,17 +2642,13 @@ def generate_coach_home_briefing(
         parts.append(today_line)
         parts.append(_render_workout_structure_block(c))
         if planned_workout and planned_workout.get("has_workout"):
-            plan_mi = planned_workout.get("distance_mi")
+            _plan_text = planned_workout.get("distance_text")
             plan_type = planned_workout.get("title") or planned_workout.get("workout_type")
-            if plan_mi and c.get("distance_mi") and abs(c["distance_mi"] - plan_mi) > 1.0:
-                # Compare in miles (the canonical stored field) but render
-                # both numbers in the athlete's units.
-                _plan_text = planned_workout.get("distance_text") or f"{plan_mi} mi"
-                _ran_text = c.get("distance_text") or f"{c['distance_mi']} mi"
-                parts.append(f"Note: plan had {_plan_text} {plan_type}, athlete ran {_ran_text} instead.")
+            if _plan_text and _dist_text and _dist_text != "?" and _plan_text != _dist_text:
+                parts.append(f"Note: plan had {_plan_text} {plan_type}, athlete ran {_dist_text} instead.")
     elif planned_workout and planned_workout.get("has_workout"):
         w = planned_workout
-        _w_dist = w.get("distance_text") or (f"{w.get('distance_mi')} mi" if w.get("distance_mi") is not None else "?")
+        _w_dist = w.get("distance_text") or "?"
         parts.append(f"PLANNED (not yet completed): {w.get('title') or w.get('workout_type')}, {_w_dist}")
         parts.append("The athlete may or may not follow this plan. Coach based on their actual patterns, not the plan.")
     else:
@@ -2670,8 +2660,6 @@ def generate_coach_home_briefing(
             _up_type = _up.get("title") or _up.get("workout_type") or "workout"
             if _up.get("distance_text"):
                 _up_dist = f", {_up['distance_text']}"
-            elif _up.get("distance_mi"):
-                _up_dist = f", {_up['distance_mi']} mi"
             else:
                 _up_dist = ""
             _up_desc = f" — {_up['description']}" if _up.get("description") else ""
@@ -2902,9 +2890,7 @@ def generate_coach_home_briefing(
     today_summary = ""
     if today_completed:
         c = today_completed
-        _ts_dist = c.get("distance_text") or (
-            f"{c.get('distance_mi')} mi" if c.get("distance_mi") is not None else "?"
-        )
+        _ts_dist = c.get("distance_text") or "?"
         if c.get("workout_structure"):
             today_summary = (
                 f"Completed: {c.get('name')}, {_ts_dist} total\n"
@@ -2917,9 +2903,7 @@ def generate_coach_home_briefing(
             )
     elif planned_workout and planned_workout.get("has_workout"):
         w = planned_workout
-        _w_dist = w.get("distance_text") or (
-            f"{w.get('distance_mi')} mi" if w.get("distance_mi") is not None else "?"
-        )
+        _w_dist = w.get("distance_text") or "?"
         today_summary = (
             f"Planned: {w.get('title') or w.get('workout_type')}, {_w_dist}"
         )
@@ -3437,6 +3421,7 @@ def compute_race_countdown(
     athlete_id: str,
     db: Session,
     local_today: Optional[date] = None,
+    preferred_units: Optional[str] = None,
 ) -> Optional[RaceCountdown]:
     """
     ADR-17 Phase 2: Race countdown from active training plan.
@@ -3457,8 +3442,8 @@ def compute_race_countdown(
         return None
 
     race_name = getattr(plan, "goal_race_name", None)
+    _is_metric = (preferred_units or "imperial").lower() == "metric"
 
-    # Format goal_time
     goal_time_str = None
     goal_time_s = getattr(plan, "goal_time_seconds", None)
     if goal_time_s:
@@ -3467,14 +3452,16 @@ def compute_race_countdown(
         secs = int(goal_time_s % 60)
         goal_time_str = f"{hours}:{mins:02d}:{secs:02d}"
 
-    # Derive goal pace from goal_time and distance
     goal_pace_str = None
     distance_m = getattr(plan, "goal_race_distance_m", None)
     if goal_time_s and distance_m and distance_m > 0:
-        pace_s_per_mile = goal_time_s / (distance_m / 1609.344)
-        p_mins = int(pace_s_per_mile // 60)
-        p_secs = int(pace_s_per_mile % 60)
-        goal_pace_str = f"{p_mins}:{p_secs:02d}/mi"
+        if _is_metric:
+            _pace_s = goal_time_s / (distance_m / 1000)
+        else:
+            _pace_s = goal_time_s / (distance_m / 1609.344)
+        p_mins = int(_pace_s // 60)
+        p_secs = int(_pace_s % 60)
+        goal_pace_str = f"{p_mins}:{p_secs:02d}/{('km' if _is_metric else 'mi')}"
 
     # Predicted time from race predictor
     predicted_str = None
@@ -3739,11 +3726,8 @@ async def get_home_data(
         ).first()
 
         if planned:
-            distance_mi = None
-            if planned.target_distance_km:
-                distance_mi = planned.target_distance_km * 0.621371
+            distance_m = int(planned.target_distance_km * 1000) if planned.target_distance_km else None
 
-            # Enhanced why_context with correlation/load priority
             why_context, why_source = generate_why_context(
                 planned,
                 active_plan,
@@ -3757,7 +3741,7 @@ async def get_home_data(
                 has_workout=True,
                 workout_type=planned.workout_type,
                 title=planned.title,
-                distance_mi=round(distance_mi, 1) if distance_mi else None,
+                distance_m=distance_m,
                 pace_guidance=planned.coach_notes,
                 why_context=why_context,
                 why_source=why_source,
@@ -3776,17 +3760,11 @@ async def get_home_data(
     ).order_by(Activity.start_time.desc()).first()
 
     if yesterday_activity:
-        distance_mi = None
-        pace_str = None
-
-        if yesterday_activity.distance_m:
-            distance_mi = yesterday_activity.distance_m / 1609.344
-
+        distance_m = int(yesterday_activity.distance_m) if yesterday_activity.distance_m else None
+        pace_s_per_km = None
         if yesterday_activity.distance_m and yesterday_activity.duration_s:
-            pace_per_mile = yesterday_activity.duration_s / (yesterday_activity.distance_m / 1609.344)
-            pace_str = format_pace(pace_per_mile)
+            pace_s_per_km = round(yesterday_activity.duration_s / (yesterday_activity.distance_m / 1000), 1)
 
-        # Try to get insight from InsightAggregator (CalendarInsight) first
         stored_insight = db.query(CalendarInsight).filter(
             CalendarInsight.athlete_id == current_user.id,
             CalendarInsight.insight_date == yesterday,
@@ -3796,15 +3774,14 @@ async def get_home_data(
         if stored_insight:
             insight = stored_insight.content or stored_insight.title
         else:
-            # Fallback to inline generation
             insight = generate_yesterday_insight(yesterday_activity)
 
         yesterday_insight = YesterdayInsight(
             has_activity=True,
             activity_name=yesterday_activity.name or "Run",
             activity_id=str(yesterday_activity.id),
-            distance_mi=round(distance_mi, 1) if distance_mi else None,
-            pace_per_mi=pace_str,
+            distance_m=distance_m,
+            pace_s_per_km=pace_s_per_km,
             insight=insight
         )
     else:
@@ -3832,9 +3809,9 @@ async def get_home_data(
     sunday = monday + timedelta(days=6)
 
     week_days = []
-    completed_mi = 0.0
-    planned_mi = 0.0
-    remaining_mi = 0.0  # Only count today + future planned miles
+    completed_m = 0  # meters
+    planned_m = 0  # meters
+    remaining_m = 0  # meters — only today + future planned
     current_week_number = None
     current_phase = None
 
@@ -3882,8 +3859,8 @@ async def get_home_data(
 
         workout_type = None
         sport = None
-        distance_mi = None
-        planned_distance_mi = None
+        distance_m = None
+        planned_distance_m = None
         completed = False
         is_missed = False
         activity_id = None
@@ -3892,14 +3869,12 @@ async def get_home_data(
         if planned_workout:
             workout_type = planned_workout.workout_type
             workout_id = str(planned_workout.id)
-            planned_distance = planned_workout.target_distance_km * 0.621371 if planned_workout.target_distance_km else 0
-            planned_mi += planned_distance
-            planned_distance_mi = round(planned_distance, 1) if planned_distance else None
+            planned_dist = int(planned_workout.target_distance_km * 1000) if planned_workout.target_distance_km else 0
+            planned_m += planned_dist
+            planned_distance_m = planned_dist if planned_dist else None
 
-            # Only count future planned miles as "remaining". A run today
-            # satisfies the planned workout — walks/strength do not.
             if is_today_or_future and not runs_today:
-                remaining_mi += planned_distance
+                remaining_m += planned_dist
 
             if day_date == today:
                 current_week_number = planned_workout.week_number
@@ -3907,35 +3882,28 @@ async def get_home_data(
 
         if runs_today:
             completed = True
-            day_run_mi = sum(
-                (r.distance_m or 0) / 1609.344 for r in runs_today
-            )
-            completed_mi += day_run_mi
-            distance_mi = round(day_run_mi, 1) if day_run_mi else None
-            # Primary tap target = longest run that day
+            day_run_m = sum(int(r.distance_m or 0) for r in runs_today)
+            completed_m += day_run_m
+            distance_m = day_run_m if day_run_m else None
             longest = max(
                 runs_today, key=lambda r: (r.distance_m or 0)
             )
             activity_id = str(longest.id)
-            sport = longest.sport  # always 'run' here, kept for back-compat
+            sport = longest.sport
         elif planned_workout and planned_workout.target_distance_km:
             if is_past:
                 is_missed = True
-                distance_mi = None
+                distance_m = None
             else:
-                distance_mi = round(planned_workout.target_distance_km * 0.621371, 0)
+                distance_m = int(planned_workout.target_distance_km * 1000)
 
-        # Surface non-running activity on this day so the chip can show small
-        # selectable icons (walk / strength / cycle / hike / etc.).
         other_refs: list[OtherActivityRef] = []
         for _o in others_today:
-            _dist_mi = round((_o.distance_m or 0) / 1609.344, 2) if _o.distance_m else None
-            _dur_min = round((_o.duration_s or 0) / 60.0, 1) if _o.duration_s else None
             other_refs.append(OtherActivityRef(
                 activity_id=str(_o.id),
                 sport=(_o.sport or "other").lower(),
-                distance_mi=_dist_mi,
-                duration_min=_dur_min,
+                distance_m=int(_o.distance_m) if _o.distance_m else None,
+                duration_s=int(_o.duration_s) if _o.duration_s else None,
                 name=_o.name,
             ))
 
@@ -3944,8 +3912,8 @@ async def get_home_data(
             day_abbrev=day_abbrev,
             workout_type=workout_type if not is_missed else None,
             sport=sport,
-            distance_mi=distance_mi,
-            planned_distance_mi=planned_distance_mi,
+            distance_m=distance_m,
+            planned_distance_m=planned_distance_m,
             completed=completed,
             is_today=(day_date == today),
             activity_id=activity_id,
@@ -3957,10 +3925,10 @@ async def get_home_data(
     # Determine status
     if not active_plan:
         status = "no_plan"
-    elif planned_mi == 0:
+    elif planned_m == 0:
         status = "no_plan"
     else:
-        progress_ratio = completed_mi / planned_mi if planned_mi > 0 else 0
+        progress_ratio = completed_m / planned_m if planned_m > 0 else 0
         expected_ratio = (today.weekday() + 1) / 7  # How far into the week
 
         if progress_ratio >= expected_ratio * 1.1:
@@ -3990,21 +3958,19 @@ async def get_home_data(
         OtherSportSummary(
             sport=sport,
             count=v["count"],
-            distance_mi=round(v["distance_m"] / 1609.344, 1),
-            # Whole minutes: any partial minute counts (ceil), stable for long strength sessions.
-            duration_min=(v["duration_s"] + 59) // 60 if v["duration_s"] else 0,
+            distance_m=v["distance_m"],
+            duration_s=v["duration_s"],
         )
         for sport, v in sorted(_other_agg.items())
     ]
 
-    # Get TSB context for trajectory
     tsb_label, load_trend, tsb_short_context = get_tsb_context(str(current_user.id), db)
 
     trajectory_sentence = generate_trajectory_sentence(
         status=status,
-        completed_mi=round(completed_mi, 1),
-        planned_mi=round(planned_mi, 1),
-        remaining_mi=round(remaining_mi, 1),
+        completed_m=completed_m,
+        planned_m=planned_m,
+        remaining_m=remaining_m,
         activities_this_week=activities_this_week,
         tsb_context=tsb_short_context,
         preferred_units=getattr(current_user, "preferred_units", None),
@@ -4014,9 +3980,9 @@ async def get_home_data(
         week_number=current_week_number,
         total_weeks=active_plan.total_weeks if active_plan else None,
         phase=format_phase(current_phase),
-        completed_mi=round(completed_mi, 1),
-        planned_mi=round(planned_mi, 1),
-        progress_pct=round((completed_mi / planned_mi * 100) if planned_mi > 0 else 0, 0),
+        completed_m=completed_m,
+        planned_m=planned_m,
+        progress_pct=round((completed_m / planned_m * 100) if planned_m > 0 else 0, 0),
         days=week_days,
         status=status,
         trajectory_sentence=trajectory_sentence,
@@ -4119,7 +4085,8 @@ async def get_home_data(
 
     # --- Phase 2 (ADR-17): Race Countdown ---
     race_countdown = compute_race_countdown(
-        active_plan, str(current_user.id), db, local_today=today
+        active_plan, str(current_user.id), db, local_today=today,
+        preferred_units=getattr(current_user, "preferred_units", None),
     )
 
     # --- Phase 2 (ADR-17): Check-in Needed + Today's Check-in Summary ---
@@ -4219,22 +4186,39 @@ async def get_home_data(
                 ).order_by(Activity.start_time.desc()).first()
 
                 today_completed = None
+                _u = getattr(current_user, "preferred_units", "imperial")
+                _is_metric = (_u or "imperial").lower() == "metric"
                 if today_actual:
-                    actual_mi = round(today_actual.distance_m / 1609.344, 1) if today_actual.distance_m else None
-                    actual_pace = None
-                    if today_actual.distance_m and today_actual.duration_s:
-                        pace_s = today_actual.duration_s / (today_actual.distance_m / 1609.344)
-                        mins = int(pace_s // 60)
-                        secs = int(pace_s % 60)
-                        actual_pace = f"{mins}:{secs:02d}/mi"
+                    _dist_m = today_actual.distance_m
+                    actual_dist_text = None
+                    actual_pace_text = None
+                    if _dist_m:
+                        if _is_metric:
+                            actual_dist_text = f"{_dist_m / 1000:.1f} km"
+                        else:
+                            actual_dist_text = f"{_dist_m / 1609.344:.1f} mi"
+                    if _dist_m and today_actual.duration_s:
+                        if _is_metric:
+                            _ps = today_actual.duration_s / (_dist_m / 1000)
+                        else:
+                            _ps = today_actual.duration_s / (_dist_m / 1609.344)
+                        _pm = int(_ps // 60)
+                        _psec = int(_ps % 60)
+                        actual_pace_text = f"{_pm}:{_psec:02d}/{('km' if _is_metric else 'mi')}"
                     elev_m = float(today_actual.total_elevation_gain) if today_actual.total_elevation_gain is not None else None
+                    elev_text = None
+                    if elev_m is not None:
+                        if _is_metric:
+                            elev_text = f"+{int(round(elev_m))} m"
+                        else:
+                            elev_text = f"+{int(round(elev_m * 3.28084))} ft"
                     today_completed = {
                         "name": today_actual.name or "Run",
-                        "distance_mi": actual_mi,
-                        "pace": actual_pace,
+                        "distance_text": actual_dist_text,
+                        "pace": actual_pace_text,
                         "avg_hr": int(today_actual.avg_hr) if today_actual.avg_hr else None,
-                        "duration_min": round(today_actual.duration_s / 60, 0) if today_actual.duration_s else None,
-                        "elevation_gain_ft": int(round(elev_m * 3.28084)) if elev_m is not None else None,
+                        "duration_s": int(today_actual.duration_s) if today_actual.duration_s else None,
+                        "elevation_text": elev_text,
                         "temperature_f": round(float(today_actual.temperature_f), 1) if today_actual.temperature_f is not None else None,
                         "humidity_pct": round(float(today_actual.humidity_pct), 0) if today_actual.humidity_pct is not None else None,
                         "heat_adjustment_pct": round(float(today_actual.heat_adjustment_pct), 1) if today_actual.heat_adjustment_pct is not None else None,
@@ -4261,11 +4245,15 @@ async def get_home_data(
 
                 planned_workout_dict = None
                 if today_workout and today_workout.has_workout:
+                    _td = today_workout.distance_m
+                    _td_text = None
+                    if _td:
+                        _td_text = f"{_td / 1000:.1f} km" if _is_metric else f"{_td / 1609.344:.1f} mi"
                     planned_workout_dict = {
                         "has_workout": True,
                         "workout_type": today_workout.workout_type,
                         "title": today_workout.title,
-                        "distance_mi": today_workout.distance_mi,
+                        "distance_text": _td_text,
                     }
 
                 upcoming_plan_list = []
@@ -4281,13 +4269,18 @@ async def get_home_data(
                         .all()
                     )
                     for pw in _upcoming_days:
-                        _pw_mi = round(pw.target_distance_km * 0.621371, 1) if pw.target_distance_km else None
+                        _pw_dist_text = None
+                        if pw.target_distance_km:
+                            if _is_metric:
+                                _pw_dist_text = f"{pw.target_distance_km:.1f} km"
+                            else:
+                                _pw_dist_text = f"{pw.target_distance_km * 0.621371:.1f} mi"
                         upcoming_plan_list.append({
                             "date": pw.scheduled_date.isoformat(),
                             "day_name": pw.scheduled_date.strftime("%A"),
                             "workout_type": pw.workout_type,
                             "title": pw.title,
-                            "distance_mi": _pw_mi,
+                            "distance_text": _pw_dist_text,
                             "description": pw.description,
                         })
 

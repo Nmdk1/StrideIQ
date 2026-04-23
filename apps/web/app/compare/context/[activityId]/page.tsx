@@ -275,27 +275,22 @@ function GhostOverlayChart({
   result: ContextualComparisonResult 
 }) {
   const { target_run, ghost_average } = result;
-  const { units, distanceUnitShort } = useUnits();
-  
-  // Conversion factor: pace per km to pace per mile
-  const KM_TO_MILES = 0.621371;
+  const { units, distanceUnitShort, convertPace } = useUnits();
   
   const chartData = useMemo(() => {
     if (!target_run.splits || target_run.splits.length === 0) return null;
     
     return target_run.splits.map((split, idx) => {
       const ghostSplit = ghost_average.avg_splits[idx];
-      // Convert pace from seconds/km to minutes, adjusting for unit preference
-      const paceMultiplier = units === 'imperial' ? (1 / KM_TO_MILES) : 1;
       return {
         split: idx + 1,
-        yourPace: split.pace_per_km ? (split.pace_per_km * paceMultiplier) / 60 : null,
-        ghostPace: ghostSplit?.avg_pace_per_km ? (ghostSplit.avg_pace_per_km * paceMultiplier) / 60 : null,
+        yourPace: split.pace_per_km ? convertPace(split.pace_per_km) / 60 : null,
+        ghostPace: ghostSplit?.avg_pace_per_km ? convertPace(ghostSplit.avg_pace_per_km) / 60 : null,
         yourHR: split.avg_hr,
         ghostHR: ghostSplit?.avg_hr,
       };
     });
-  }, [target_run.splits, ghost_average.avg_splits, units]);
+  }, [target_run.splits, ghost_average.avg_splits, convertPace]);
   
   if (!chartData) {
     return (
@@ -922,7 +917,7 @@ function SplitsTable({ result }: { result: ContextualComparisonResult }) {
                 <th className="px-4 py-3 text-right font-medium">
                   <span title="Steps per minute">Cadence</span>
                 </th>
-                {splits.some(s => s.gap_per_mile) && (
+                {splits.some(s => s.gap_s_per_km) && (
                   <th className="px-4 py-3 text-right font-medium">
                     <span title="Grade Adjusted Pace - what your pace would be on flat ground">GAP</span>
                   </th>
@@ -960,9 +955,9 @@ function SplitsTable({ result }: { result: ContextualComparisonResult }) {
                     <td className="px-4 py-3 text-right text-slate-400">
                       {split.cadence ? `${Math.round(split.cadence)} spm` : '—'}
                     </td>
-                    {splits.some(s => s.gap_per_mile) && (
+                    {splits.some(s => s.gap_s_per_km) && (
                       <td className="px-4 py-3 text-right text-slate-400 font-mono">
-                        {split.gap_per_mile ? formatPace(split.gap_per_mile * 0.621371) : '—'}
+                        {split.gap_s_per_km ? formatPace(split.gap_s_per_km) : '—'}
                       </td>
                     )}
                   </tr>
@@ -977,7 +972,7 @@ function SplitsTable({ result }: { result: ContextualComparisonResult }) {
           <span className="font-medium">Legend:</span>{' '}
           HR = Heart Rate (bpm) · 
           Cadence = Steps per minute · 
-          {splits.some(s => s.gap_per_mile) && 'GAP = Grade Adjusted Pace (flat equivalent) · '}
+          {splits.some(s => s.gap_s_per_km) && 'GAP = Grade Adjusted Pace (flat equivalent) · '}
           Ghost = Your average from {result.ghost_average.num_runs_averaged} similar runs
         </div>
       </div>

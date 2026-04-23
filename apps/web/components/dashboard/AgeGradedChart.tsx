@@ -21,12 +21,6 @@ import {
 import type { EfficiencyTrendPoint } from '@/lib/api/services/analytics';
 import { useUnits } from '@/lib/context/UnitsContext';
 
-// API returns pace as decimal minutes-per-mile; convert to seconds-per-km
-// for the global formatter so the athlete's unit preference is respected.
-const MILES_PER_KM = 0.621371;
-const minPerMileToSecPerKm = (minPerMile: number): number =>
-  (minPerMile * 60) * MILES_PER_KM;
-
 interface AgeGradedChartProps {
   data: EfficiencyTrendPoint[];
   className?: string;
@@ -42,7 +36,7 @@ export function AgeGradedChart({ data, className = '' }: AgeGradedChartProps) {
       fullDate: point.date,
       ageGraded: point.performance_percentage!,
       efficiency: point.efficiency_factor,
-      pace: point.pace_per_mile,
+      pace: point.pace_s_per_km,
     }));
 
   if (chartData.length === 0) {
@@ -86,7 +80,7 @@ export function AgeGradedChart({ data, className = '' }: AgeGradedChartProps) {
             <p>
               <span className="text-slate-400">Pace:</span>{' '}
               <span className="text-white">
-                {formatPace(minPerMileToSecPerKm(data.pace))}
+                {formatPace(data.pace)}
               </span>
             </p>
           </div>

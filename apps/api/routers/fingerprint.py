@@ -40,20 +40,11 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/v1/fingerprint", tags=["Fingerprint"])
 
 
-def _format_pace(distance_m: float, duration_s: int, units: str = "imperial") -> str:
-    """Format pace as min:ss/mi (imperial) or min:ss/km (metric)."""
+def _pace_s_per_km(distance_m: float, duration_s: int) -> Optional[float]:
+    """Return pace in seconds per km, or None if inputs are invalid."""
     if not distance_m or not duration_s or distance_m <= 0:
-        return "—"
-    if units == "metric":
-        divisor = distance_m / 1000
-        label = "/km"
-    else:
-        divisor = distance_m / 1609.34
-        label = "/mi"
-    sec_per_unit = duration_s / divisor
-    mins = int(sec_per_unit // 60)
-    secs = int(sec_per_unit % 60)
-    return f"{mins}:{secs:02d}{label}"
+        return None
+    return round(duration_s / (distance_m / 1000), 2)
 
 
 def _format_duration(seconds: int) -> str:
@@ -71,7 +62,6 @@ def _format_duration(seconds: int) -> str:
 def _activity_to_card(
     act: Activity,
     event: Optional[PerformanceEvent] = None,
-    units: str = "imperial",
     tz=None,
 ) -> RaceCard:
     dist_m = float(act.distance_m) if act.distance_m else 0
@@ -97,7 +87,7 @@ def _activity_to_card(
         day_of_week=day_of_week,
         distance_category=dist_cat,
         distance_meters=int(dist_m),
-        pace_display=_format_pace(dist_m, act.duration_s, units),
+        pace_s_per_km=_pace_s_per_km(dist_m, act.duration_s),
         duration_display=_format_duration(act.duration_s),
         avg_hr=act.avg_hr,
         detection_confidence=event.detection_confidence if event else None,
@@ -186,7 +176,7 @@ async def get_race_candidates(
     candidates = []
 
     for ev, act in rows:
-        card = _activity_to_card(act, ev, units=current_user.preferred_units or "imperial", tz=get_athlete_timezone(current_user))
+        card = _activity_to_card(act, ev, tz=get_athlete_timezone(current_user))
 
         if ev.user_confirmed is True or (ev.detection_confidence and ev.detection_confidence >= 0.7) or ev.detection_source in ('strava_tag', 'user_verified'):
             confirmed.append(card)
@@ -279,9 +269,8 @@ async def browse_activities(
         (Activity.duration_s / Activity.distance_m).asc()
     ).offset(offset).limit(limit).all()
 
-    units = current_user.preferred_units or "imperial"
     _tz = get_athlete_timezone(current_user)
-    items = [_activity_to_card(act, units=units, tz=_tz) for act in activities]
+    items = [_activity_to_card(act, tz=_tz) for act in activities]
 
     return BrowseResponse(items=items, total=total, offset=offset, limit=limit)
 

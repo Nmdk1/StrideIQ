@@ -11,6 +11,7 @@
 
 import React from 'react';
 import type { WeekSummary } from '@/lib/api/services/calendar';
+import { useUnits } from '@/lib/context/UnitsContext';
 
 // Phase display names - clean, no abbreviations
 const PHASE_NAMES: Record<string, string> = {
@@ -55,26 +56,26 @@ export interface WeekTrajectoryData {
 
 interface WeekSummaryRowProps {
   week: WeekSummary;
-  previousWeekMiles?: number;  // For trend calculation
+  previousWeekM?: number;
   trajectory?: WeekTrajectoryData;
 }
 
-export function WeekSummaryRow({ week, previousWeekMiles, trajectory }: WeekSummaryRowProps) {
+export function WeekSummaryRow({ week, previousWeekM, trajectory }: WeekSummaryRowProps) {
+  const { formatDistance } = useUnits();
+  const fmtNoUnit = (m: number) => formatDistance(m, 0).replace(/\s*(mi|km)$/i, '');
   const phaseKey = week.phase?.toLowerCase().replace(/ /g, '_') || 'base';
   const phaseName = PHASE_NAMES[phaseKey] || week.phase || '';
   const phaseColor = phaseColors[phaseKey] || 'text-slate-400';
   
-  // Calculate completion percentage
-  const completionPct = week.planned_miles > 0 
-    ? Math.round((week.completed_miles / week.planned_miles) * 100) 
+  const completionPct = week.planned_m > 0 
+    ? Math.round((week.completed_m / week.planned_m) * 100) 
     : 0;
   
-  // Calculate week-over-week trend (if previous data available)
   let trend: 'up' | 'down' | 'flat' | null = null;
   let trendPct: number | null = null;
   
-  if (previousWeekMiles !== undefined && previousWeekMiles > 0 && week.completed_miles > 0) {
-    const change = ((week.completed_miles - previousWeekMiles) / previousWeekMiles) * 100;
+  if (previousWeekM !== undefined && previousWeekM > 0 && week.completed_m > 0) {
+    const change = ((week.completed_m - previousWeekM) / previousWeekM) * 100;
     trendPct = Math.abs(Math.round(change));
     if (change > 5) trend = 'up';
     else if (change < -5) trend = 'down';
@@ -113,10 +114,10 @@ export function WeekSummaryRow({ week, previousWeekMiles, trajectory }: WeekSumm
             completionPct >= 70 ? 'text-white' : 
             'text-slate-400'
           }`}>
-            {week.completed_miles.toFixed(0)}
+            {fmtNoUnit(week.completed_m)}
           </span>
           <span className="text-slate-600">/</span>
-          <span className="text-slate-500">{week.planned_miles.toFixed(0)}</span>
+          <span className="text-slate-500">{fmtNoUnit(week.planned_m)}</span>
         </div>
         
         {/* Quality sessions - only show if planned */}

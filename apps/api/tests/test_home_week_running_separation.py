@@ -9,8 +9,8 @@ Concrete bug this guards against (Dejan, Apr 22 2026):
     instead of ~23 km across 3 runs).
 
 Invariants asserted:
-  1. `WeekProgress.completed_mi` includes runs only (walks / strength / cycling
-     never count toward running mileage).
+  1. `WeekProgress.completed_m` includes runs only (walks / strength / cycling
+     never count toward running distance).
   2. Multiple runs on the same day are SUMMED, not silently dropped.
   3. The longest run becomes the chip's primary `activity_id`.
   4. Non-running activity still appears on that day via `other_activities`
@@ -62,13 +62,13 @@ def _build_weekday(day_date: date, day_abbrev: str, runs: list[FakeActivity],
     """Mirrors the per-day construction in routers.home.get_home_data."""
     completed = bool(runs)
     if runs:
-        day_run_mi = sum((r.distance_m or 0) / 1609.344 for r in runs)
-        distance_mi = round(day_run_mi, 1) if day_run_mi else None
+        day_run_m = sum(int(r.distance_m or 0) for r in runs)
+        distance_m = day_run_m if day_run_m else None
         longest = max(runs, key=lambda r: (r.distance_m or 0))
         activity_id = longest.id
         sport: Optional[str] = longest.sport
     else:
-        distance_mi = None
+        distance_m = None
         activity_id = None
         sport = None
 
@@ -76,8 +76,8 @@ def _build_weekday(day_date: date, day_abbrev: str, runs: list[FakeActivity],
         OtherActivityRef(
             activity_id=o.id,
             sport=(o.sport or "other").lower(),
-            distance_mi=round((o.distance_m or 0) / 1609.344, 2) if o.distance_m else None,
-            duration_min=round((o.duration_s or 0) / 60.0, 1) if o.duration_s else None,
+            distance_m=int(o.distance_m) if o.distance_m else None,
+            duration_s=int(o.duration_s) if o.duration_s else None,
             name=o.name,
         )
         for o in others
@@ -88,8 +88,8 @@ def _build_weekday(day_date: date, day_abbrev: str, runs: list[FakeActivity],
         day_abbrev=day_abbrev,
         workout_type=None,
         sport=sport,
-        distance_mi=distance_mi,
-        planned_distance_mi=None,
+        distance_m=distance_m,
+        planned_distance_m=None,
         completed=completed,
         is_today=is_today,
         activity_id=activity_id,
@@ -100,7 +100,7 @@ def _build_weekday(day_date: date, day_abbrev: str, runs: list[FakeActivity],
 
 
 def _summarize_other_from_days_raw(other_by_day: dict) -> list[OtherSportSummary]:
-    """Mirrors ``routers.home`` other_sport_summary aggregation (raw m + s, single round)."""
+    """Mirrors ``routers.home`` other_sport_summary aggregation (raw m + s)."""
     _other_agg: dict[str, dict] = {}
     for _acts in other_by_day.values():
         for _a in _acts:
@@ -113,8 +113,8 @@ def _summarize_other_from_days_raw(other_by_day: dict) -> list[OtherSportSummary
         OtherSportSummary(
             sport=s,
             count=v["count"],
-            distance_mi=round(v["distance_m"] / 1609.344, 1),
-            duration_min=(v["duration_s"] + 59) // 60 if v["duration_s"] else 0,
+            distance_m=v["distance_m"],
+            duration_s=v["duration_s"],
         )
         for s, v in sorted(_other_agg.items())
     ]
@@ -167,8 +167,7 @@ def test_wed_running_total_excludes_the_walk():
 
     day = _build_weekday(wed, "W", runs_by_day.get(wed, []), other_by_day.get(wed, []))
 
-    # 16130 m / 1609.344 = 10.02 mi ; round(_, 1) == 10.0
-    assert day.distance_mi == 10.0
+    assert day.distance_m == 16130
     assert day.run_count == 1
     assert day.activity_id == "wed-run"  # primary tap = the long run
     # The walk is still surfaced, not silently dropped
@@ -181,7 +180,7 @@ def test_multi_run_day_is_summed_and_longest_is_primary_link():
     """Tuesday had 2 runs (treadmill + 0-distance blip) + a strength session.
 
     Contract:
-      - distance_mi = SUM of both runs (no silent drop)
+      - distance_m = SUM of both runs (no silent drop)
       - run_count = 2
       - activity_id = the LONGER of the two (treadmill)
       - the strength session stays visible under other_activities
@@ -192,8 +191,7 @@ def test_multi_run_day_is_summed_and_longest_is_primary_link():
 
     day = _build_weekday(tue, "T", runs_by_day.get(tue, []), other_by_day.get(tue, []))
 
-    # 650 m / 1609.344 ≈ 0.404 mi ; rounded to 0.4
-    assert day.distance_mi == 0.4
+    assert day.distance_m == 650
     assert day.run_count == 2
     assert day.activity_id == "tue-tmill", "longest run must be the primary tap target"
     assert any(o.sport == "strength" for o in day.other_activities)
@@ -210,16 +208,15 @@ def test_week_completed_mi_is_running_only():
         d = monday + timedelta(days=i)
         week_days.append(_build_weekday(d, abbrev[i], runs_by_day.get(d, []), other_by_day.get(d, [])))
 
-    completed_mi = sum((wd.distance_mi or 0.0) for wd in week_days)
-    # Runs only: 5730 + 650 + 0 + 16130 = 22510 m → 13.99 mi. Summed from
-    # rounded per-day totals (3.6 + 0.4 + 10.0) = 14.0 mi.
-    assert round(completed_mi, 1) == 14.0
+    completed_m = sum((wd.distance_m or 0) for wd in week_days)
+    # Runs only: 5730 + 650 + 0 + 16130 = 22510 m
+    assert completed_m == 22510
 
     # "N runs this week" must count runs, not walks/strength.
     total_runs = sum(wd.run_count for wd in week_days)
     assert total_runs == 4  # Mon 1 + Tue 2 + Wed 1
 
-    # Walk + strength surface in the summary, not in completed_mi.
+    # Walk + strength surface in the summary, not in completed_m.
     other_summary = _summarize_other_from_days_raw(other_by_day)
     sports = {s.sport: s for s in other_summary}
     assert "walking" in sports and sports["walking"].count == 1
@@ -228,33 +225,30 @@ def test_week_completed_mi_is_running_only():
 
 
 def test_other_sport_summary_aggregates_distance_and_duration():
-    """Per-sport weekly aggregate exposes distance_mi and duration_min."""
+    """Per-sport weekly aggregate exposes distance_m and duration_s."""
     monday, activities, day_of = _dejan_apr22_fixture()
     runs_by_day, other_by_day = _group(activities, day_of)
     summary = {s.sport: s for s in _summarize_other_from_days_raw(other_by_day)}
 
-    # Walking: 1560 m → one rounding step to displayed miles.
-    assert summary["walking"].distance_mi == 1.0
-    # Walking duration: ceil minutes from total seconds (2029 s → 34 min).
-    assert summary["walking"].duration_min == 34
+    assert summary["walking"].distance_m == 1560
+    assert summary["walking"].duration_s == 2029
 
-    # Strength: 7767 s → ceil to whole minutes = 130 (no per-row pre-rounding).
-    assert summary["strength"].distance_mi == 0.0
-    assert summary["strength"].duration_min == 130
+    assert summary["strength"].distance_m == 0
+    assert summary["strength"].duration_s == 7767
 
 
 def test_weekprogress_with_other_sport_summary_roundtrip():
     """WeekProgress schema accepts other_sport_summary and round-trips via pydantic."""
     monday = date(2026, 4, 20)
     wp = WeekProgress(
-        completed_mi=14.0,
-        planned_mi=0.0,
+        completed_m=22510,
+        planned_m=0,
         progress_pct=0.0,
         days=[],
         status="no_plan",
         other_sport_summary=[
-            OtherSportSummary(sport="walking", count=1, distance_mi=1.0, duration_min=34),
-            OtherSportSummary(sport="strength", count=1, distance_mi=0.0, duration_min=130),
+            OtherSportSummary(sport="walking", count=1, distance_m=1560, duration_s=2029),
+            OtherSportSummary(sport="strength", count=1, distance_m=0, duration_s=7767),
         ],
     )
     dumped = wp.model_dump()

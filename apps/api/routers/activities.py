@@ -247,7 +247,7 @@ def list_activities(
             "average_heartrate": activity.avg_hr,
             "average_cadence": None,  # Calculate from splits if needed
             "total_elevation_gain": float(activity.total_elevation_gain) if activity.total_elevation_gain else None,
-            "pace_per_mile": None,  # Calculate if needed
+            "pace_s_per_km": None,
             "duration_formatted": None,  # Format if needed
             "splits": None,  # Load splits if needed
             "performance_percentage": activity.performance_percentage,
@@ -259,12 +259,8 @@ def list_activities(
             "resolved_title": resolve_activity_title(activity),
         }
         
-        # Calculate pace if we have speed
         if activity.average_speed and float(activity.average_speed) > 0:
-            pace_per_mile = 26.8224 / float(activity.average_speed)
-            minutes = int(pace_per_mile)
-            seconds = int(round((pace_per_mile - minutes) * 60))
-            activity_dict["pace_per_mile"] = f"{minutes}:{seconds:02d}/mi"
+            activity_dict["pace_s_per_km"] = round(1000 / float(activity.average_speed), 1)
         
         # Format duration
         if activity.duration_s:
@@ -355,9 +351,8 @@ def get_activities_summary(
         t = int(dur_s or 0)
         other_by_sport[key] = {
             "total_activities": int(count or 0),
-            "total_distance_km": round(d / 1000, 2),
-            "total_distance_miles": round(d / 1609.34, 2),
-            "total_duration_hours": round(t / 3600, 2),
+            "total_distance_m": d,
+            "total_duration_s": t,
         }
         other_total_count += int(count or 0)
         other_total_dist_m += d
@@ -373,12 +368,13 @@ def get_activities_summary(
     def _bucket(row):
         d = int(row.total_distance_m or 0)
         t = int(row.total_duration_s or 0)
+        avg_pace = round(float(row.avg_pace_per_mile), 2) if row.avg_pace_per_mile else None
+        avg_pace_s_km = round(avg_pace * 1609.344 / 1000, 1) if avg_pace else None
         return {
             "total_activities": int(row.total_activities or 0),
-            "total_distance_km": round(d / 1000, 2),
-            "total_distance_miles": round(d / 1609.34, 2),
-            "total_duration_hours": round(t / 3600, 2),
-            "average_pace_per_mile": round(float(row.avg_pace_per_mile), 2) if row.avg_pace_per_mile else None,
+            "total_distance_m": d,
+            "total_duration_s": t,
+            "avg_pace_s_per_km": avg_pace_s_km,
             "race_count": int(row.race_count or 0),
         }
 
@@ -386,23 +382,19 @@ def get_activities_summary(
     combined_bucket = _bucket(combined)
     other_bucket = {
         "total_activities": other_total_count,
-        "total_distance_km": round(other_total_dist_m / 1000, 2),
-        "total_distance_miles": round(other_total_dist_m / 1609.34, 2),
-        "total_duration_hours": round(other_total_dur_s / 3600, 2),
+        "total_distance_m": other_total_dist_m,
+        "total_duration_s": other_total_dur_s,
         "by_sport": other_by_sport,
     }
 
     return {
-        # Sport-aware buckets (new contract)
         "running": running_bucket,
         "other": other_bucket,
         "combined": combined_bucket,
-        # Back-compat top-level (mirrors `running`, the canonical view)
         "total_activities": running_bucket["total_activities"],
-        "total_distance_km": running_bucket["total_distance_km"],
-        "total_distance_miles": running_bucket["total_distance_miles"],
-        "total_duration_hours": running_bucket["total_duration_hours"],
-        "average_pace_per_mile": running_bucket["average_pace_per_mile"],
+        "total_distance_m": running_bucket["total_distance_m"],
+        "total_duration_s": running_bucket["total_duration_s"],
+        "avg_pace_s_per_km": running_bucket["avg_pace_s_per_km"],
         "activities_by_sport": sports,
         "race_count": running_bucket["race_count"],
         "period_days": days,
@@ -1062,7 +1054,7 @@ def get_route_sibling_splits(
                 "elapsed_time": row.elapsed_time,
                 "moving_time": row.moving_time,
                 "average_heartrate": row.average_heartrate,
-                "gap_seconds_per_mile": float(row.gap_seconds_per_mile) if row.gap_seconds_per_mile else None,
+                "gap_s_per_km": round(float(row.gap_seconds_per_mile) * 1000 / 1609.34, 2) if row.gap_seconds_per_mile else None,
             })
 
     current_splits = (
@@ -1078,7 +1070,7 @@ def get_route_sibling_splits(
             "elapsed_time": row.elapsed_time,
             "moving_time": row.moving_time,
             "average_heartrate": row.average_heartrate,
-            "gap_seconds_per_mile": float(row.gap_seconds_per_mile) if row.gap_seconds_per_mile else None,
+            "gap_s_per_km": round(float(row.gap_seconds_per_mile) * 1000 / 1609.34, 2) if row.gap_seconds_per_mile else None,
         }
         for row in current_splits
     ]

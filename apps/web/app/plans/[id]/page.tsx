@@ -30,8 +30,8 @@ interface PlannedWorkout {
   title: string;
   description: string | null;
   phase: string;
-  target_distance_km: number | null;
-  target_duration_minutes: number | null;
+  target_distance_m: number | null;
+  target_duration_s: number | null;
   coach_notes: string | null;
   completed: boolean;
   skipped: boolean;
@@ -130,7 +130,7 @@ export default function PlanOverviewPage() {
 
   // Calculate week volume
   const getWeekVolume = (workouts: PlannedWorkout[]): number => {
-    return workouts.reduce((sum, w) => sum + (w.target_distance_km || 0), 0);
+    return workouts.reduce((sum, w) => sum + (w.target_distance_m || 0), 0);
   };
   
   // Get phase color
@@ -253,8 +253,7 @@ export default function PlanOverviewPage() {
                   .map(([weekNum, workouts]) => {
                     const weekNumber = parseInt(weekNum);
                     const isExpanded = expandedWeek === weekNumber;
-                    const volume = getWeekVolume(workouts);
-                    const volumeMiles = (volume * 0.621371).toFixed(0);
+                    const volumeM = getWeekVolume(workouts);
                     const phase = workouts[0]?.phase || 'base';
                     const qualitySessions = workouts.filter(w => 
                       ['threshold', 'tempo', 'intervals', 'long_mp'].includes(w.workout_type)
@@ -296,7 +295,7 @@ export default function PlanOverviewPage() {
                           
                           <div className="flex items-center gap-6">
                             <div className="text-right">
-                              <div className="text-white font-semibold">{volumeMiles} mi</div>
+                              <div className="text-white font-semibold">{formatDistance(volumeM, 0)}</div>
                               <div className="text-xs text-slate-500">
                                 {qualitySessions} quality • {completedCount}/{workouts.length} done
                               </div>
@@ -358,9 +357,9 @@ export default function PlanOverviewPage() {
                                         <div className={`font-semibold text-sm ${style.text}`}>
                                           {dayWorkout.title}
                                         </div>
-                                        {dayWorkout.target_distance_km && (
+                                        {dayWorkout.target_distance_m && (
                                           <div className="text-xs text-slate-400 mt-1">
-                                            {formatDistance(dayWorkout.target_distance_km * 1000, 1)}
+                                            {formatDistance(dayWorkout.target_distance_m, 1)}
                                           </div>
                                         )}
                                         {dayWorkout.coach_notes && (

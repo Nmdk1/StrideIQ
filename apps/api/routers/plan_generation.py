@@ -28,6 +28,70 @@ from services.plan_framework import (
     VolumeTierClassifier,
     Distance,
 )
+
+_MI_TO_M = 1609.344
+
+
+def _weeks_to_meters(weeks: list) -> list:
+    m = _MI_TO_M
+    out = []
+    for w in weeks:
+        w = dict(w)
+        if "total_miles" in w:
+            w["total_distance_m"] = round(w.pop("total_miles") * m, 0)
+        if "days" in w:
+            days = []
+            for d in w["days"]:
+                d = dict(d)
+                if "target_miles" in d:
+                    d["target_distance_m"] = round(d.pop("target_miles") * m, 0)
+                days.append(d)
+            w["days"] = days
+        out.append(w)
+    return out
+
+
+def _volume_contract_to_meters(vc: Dict[str, Any]) -> Dict[str, Any]:
+    m = _MI_TO_M
+    out = dict(vc)
+    for k in ("band_min", "band_max", "applied_peak", "requested_peak"):
+        v = out.pop(k, None)
+        if v is not None:
+            out[f"{k}_m"] = round(float(v) * m, 0)
+    return out
+
+
+def _fitness_bank_to_meters(fb: Dict[str, Any]) -> Dict[str, Any]:
+    m = _MI_TO_M
+    out = dict(fb)
+    if "peak" in out:
+        p = dict(out["peak"])
+        out["peak"] = {
+            "weekly_m": round(p.pop("weekly_miles", 0) * m, 0),
+            "monthly_m": round(p.pop("monthly_miles", 0) * m, 0),
+            "long_run_m": round(p.pop("long_run", 0) * m, 0),
+            "mp_long_run_m": round(p.pop("mp_long_run", 0) * m, 0),
+            **{k: v for k, v in p.items()},
+        }
+    if "current" in out:
+        c = dict(out["current"])
+        out["current"] = {
+            "weekly_m": round(c.pop("weekly_miles", 0) * m, 0),
+            "long_run_m": round(c.pop("long_run", 0) * m, 0),
+            "avg_long_run_m": round(c.pop("avg_long_run", 0) * m, 0),
+            **{k: v for k, v in c.items()},
+        }
+    if "volume_contract" in out:
+        vc = dict(out["volume_contract"])
+        out["volume_contract"] = {
+            "recent_8w_median_weekly_m": round(vc.pop("recent_8w_median_weekly_miles", 0) * m, 0),
+            "recent_16w_p90_weekly_m": round(vc.pop("recent_16w_p90_weekly_miles", 0) * m, 0),
+            "recent_8w_p75_long_run_m": round(vc.pop("recent_8w_p75_long_run_miles", 0) * m, 0),
+            "recent_16w_p50_long_run_m": round(vc.pop("recent_16w_p50_long_run_miles", 0) * m, 0),
+            "last_complete_week_m": round(vc.pop("last_complete_week_miles", 0) * m, 0),
+            **{k: v for k, v in vc.items()},
+        }
+    return out
 from services.plan_framework.feature_flags import FeatureFlagService
 from services.plan_framework.entitlements import EntitlementsService
 from services.plan_audit import (
@@ -65,7 +129,7 @@ class SemiCustomPlanRequest(BaseModel):
     race_name: Optional[str] = Field(None, description="Goal race name (e.g., 'Boston Marathon')")
     
     # Current fitness
-    current_weekly_miles: float = Field(..., ge=10, le=150, description="Current weekly mileage")
+    current_weekly_m: float = Field(..., ge=16000, le=240000, description="Current weekly volume in meters")
     
     # For pace calculation
     recent_race_distance: Optional[str] = Field(None, description="Recent race distance")
@@ -88,8 +152,8 @@ class CustomPlanRequest(BaseModel):
     race_name: Optional[str] = Field(None, description="Goal race name (e.g., 'Boston Marathon')")
 
     # Fitness
-    current_weekly_miles: Optional[float] = Field(None, ge=10, le=150)
-    current_long_run_miles: Optional[float] = None
+    current_weekly_m: Optional[float] = Field(None, ge=16000, le=240000)
+    current_long_run_m: Optional[float] = None
 
     # Paces
     recent_race_distance: Optional[str] = None
@@ -111,7 +175,7 @@ class CustomPlanRequest(BaseModel):
 
 class VolumeTierRequest(BaseModel):
     """Request for volume tier classification."""
-    current_weekly_miles: float = Field(..., ge=0, le=200)
+    current_weekly_m: float = Field(..., ge=0, le=320000)
     goal_distance: str
 
 
@@ -134,9 +198,9 @@ class PlanPreview(BaseModel):
     phases: List[Dict[str, Any]]
     workouts: List[Dict[str, Any]]
     
-    weekly_volumes: List[float]
-    peak_volume: float
-    total_miles: float
+    weekly_volumes_m: List[float]
+    peak_volume_m: float
+    total_distance_m: float
     total_quality_sessions: int
 
 
@@ -144,10 +208,10 @@ class VolumeTierResult(BaseModel):
     """Result of volume tier classification."""
     tier: str
     tier_description: str
-    min_weekly_miles: float
-    max_weekly_miles: float
-    peak_weekly_miles: float
-    long_run_peak_miles: float
+    min_weekly_m: float
+    max_weekly_m: float
+    peak_weekly_m: float
+    long_run_peak_m: float
     cutback_frequency: int
 
 
@@ -253,8 +317,9 @@ async def classify_volume_tier(
     """
     classifier = VolumeTierClassifier(db)
     
+    MI_PER_M = 1 / 1609.344
     tier = classifier.classify(
-        current_weekly_miles=request.current_weekly_miles,
+        current_weekly_miles=request.current_weekly_m * MI_PER_M,
         goal_distance=request.goal_distance,
     )
     
@@ -264,10 +329,10 @@ async def classify_volume_tier(
     return VolumeTierResult(
         tier=tier.value,
         tier_description=description,
-        min_weekly_miles=params["min_weekly_miles"],
-        max_weekly_miles=params["max_weekly_miles"],
-        peak_weekly_miles=params["peak_weekly_miles"],
-        long_run_peak_miles=params["long_run_peak_miles"],
+        min_weekly_m=round(params["min_weekly_miles"] * 1609.344),
+        max_weekly_m=round(params["max_weekly_miles"] * 1609.344),
+        peak_weekly_m=round(params["peak_weekly_miles"] * 1609.344),
+        long_run_peak_m=round(params["long_run_peak_miles"] * 1609.344),
         cutback_frequency=params["cutback_frequency"],
     )
 
@@ -364,6 +429,7 @@ def _plan_to_preview(plan, show_paces: bool = False) -> PlanPreview:
     dicts. Defaults to False — callers must explicitly opt in by
     checking athlete entitlements.
     """
+    _MI_TO_M = 1609.344
     return PlanPreview(
         plan_tier=plan.plan_tier.value,
         distance=plan.distance,
@@ -394,8 +460,8 @@ def _plan_to_preview(plan, show_paces: bool = False) -> PlanPreview:
                 "description": w.description,
                 "phase": w.phase,
                 "phase_name": w.phase_name,
-                "distance_miles": w.distance_miles,
-                "duration_minutes": w.duration_minutes,
+                "distance_m": round(w.distance_miles * _MI_TO_M, 0) if w.distance_miles else None,
+                "duration_s": (w.duration_minutes * 60) if w.duration_minutes else None,
                 "pace_description": w.pace_description if show_paces else None,
                 "segments": w.segments,
                 "option": w.option,
@@ -404,9 +470,9 @@ def _plan_to_preview(plan, show_paces: bool = False) -> PlanPreview:
             }
             for w in plan.workouts
         ],
-        weekly_volumes=plan.weekly_volumes,
-        peak_volume=plan.peak_volume,
-        total_miles=plan.total_miles,
+        weekly_volumes_m=[round(v * _MI_TO_M, 0) for v in plan.weekly_volumes],
+        peak_volume_m=round(plan.peak_volume * _MI_TO_M, 0),
+        total_distance_m=round(plan.total_miles * _MI_TO_M, 0),
         total_quality_sessions=plan.total_quality_sessions,
     )
 
@@ -901,8 +967,8 @@ async def get_plan(
             "title": w.title,
             "description": w.description,
             "phase": w.phase,
-            "target_distance_km": w.target_distance_km,
-            "target_duration_minutes": w.target_duration_minutes,
+            "target_distance_m": round(w.target_distance_km * 1000, 0) if w.target_distance_km else None,
+            "target_duration_s": (w.target_duration_minutes * 60) if w.target_duration_minutes else None,
             "coach_notes": w.coach_notes if show_paces else None,
             "completed": w.completed,
             "skipped": w.skipped,
@@ -1199,8 +1265,8 @@ async def get_week_workouts(
                 "workout_type": w.workout_type,
                 "title": w.title,
                 "description": w.description,
-                "target_distance_km": w.target_distance_km,
-                "target_duration_minutes": w.target_duration_minutes,
+                "target_distance_m": round(w.target_distance_km * 1000, 0) if w.target_distance_km else None,
+                "target_duration_s": (w.target_duration_minutes * 60) if w.target_duration_minutes else None,
                 "coach_notes": w.coach_notes if show_paces else None,
                 "completed": w.completed,
                 "skipped": w.skipped,
@@ -1431,8 +1497,8 @@ async def update_workout(
             "id": str(workout.id),
             "title": workout.title,
             "workout_type": workout.workout_type,
-            "target_distance_km": workout.target_distance_km,
-            "target_duration_minutes": workout.target_duration_minutes,
+            "target_distance_m": round(workout.target_distance_km * 1000, 0) if workout.target_distance_km else None,
+            "target_duration_s": (workout.target_duration_minutes * 60) if workout.target_duration_minutes else None,
             "coach_notes": workout.coach_notes,
             "description": workout.description,
         },
@@ -1856,11 +1922,11 @@ async def create_model_driven_plan(
                 "notes": plan.counter_conventional_notes,
                 "summary": plan.personalization_summary
             },
-            "weeks": [w.to_dict() for w in plan.weeks],
+            "weeks": _weeks_to_meters([w.to_dict() for w in plan.weeks]),
             "summary": {
                 "total_weeks": plan.total_weeks,
-                "total_miles": round(plan.total_miles, 1),
-                "total_tss": round(plan.total_tss, 0)
+                "total_distance_m": round(plan.total_miles * 1609.344, 0),
+                "total_tss": round(plan.total_tss, 0),
             },
             "generated_at": plan.created_at.isoformat()
         }
@@ -1945,8 +2011,8 @@ class ConstraintAwarePlanRequest(BaseModel):
     goal_time_seconds: Optional[int] = Field(None, ge=600, description="Goal race time in seconds")
     tune_up_races: Optional[List[TuneUpRace]] = Field(None, description="Tune-up races before goal race")
     race_name: Optional[str] = Field(None, description="Goal race name")
-    target_peak_weekly_miles: Optional[float] = Field(None, ge=10, le=200, description="Optional athlete-requested peak weekly mileage")
-    target_peak_weekly_range: Optional[Dict[str, float]] = Field(None, description="Optional athlete-requested peak weekly mileage range")
+    target_peak_weekly_m: Optional[float] = Field(None, ge=16000, le=320000, description="Optional athlete-requested peak weekly volume in meters")
+    target_peak_weekly_range: Optional[Dict[str, float]] = Field(None, description="Optional athlete-requested peak weekly volume range in meters")
     taper_weeks: Optional[int] = Field(None, ge=1, le=3, description="Taper length: 1, 2, or 3 weeks. Auto-selected by distance if omitted.")
 
 
@@ -2298,6 +2364,9 @@ async def create_constraint_aware_plan(
         logger.warning("intake safety gate check failed, proceeding: %s", ex)
 
     # ── V2 Engine Path ──────────────────────────────────────────────
+    _MI_PER_M = 1 / 1609.344
+    _target_peak_miles = round(request.target_peak_weekly_m * _MI_PER_M, 1) if request.target_peak_weekly_m else None
+
     if engine == "v2" and getattr(athlete, "role", None) in ("admin", "owner"):
         try:
             from services.plan_engine_v2.router_adapter import generate_and_save_v2
@@ -2309,7 +2378,7 @@ async def create_constraint_aware_plan(
                 race_name=request.race_name,
                 goal_time_seconds=request.goal_time_seconds,
                 tune_up_races=request.tune_up_races,
-                target_peak_weekly_miles=request.target_peak_weekly_miles,
+                target_peak_weekly_miles=_target_peak_miles,
                 taper_weeks=request.taper_weeks,
                 dry_run=dry_run,
                 preferred_units=getattr(athlete, "preferred_units", "imperial"),
@@ -2328,6 +2397,11 @@ async def create_constraint_aware_plan(
         from services.constraint_aware_planner import generate_constraint_aware_plan
         from services.plan_quality_gate import evaluate_constraint_aware_plan
         
+        _target_range_miles = (
+            {"min": request.target_peak_weekly_range["min"] * _MI_PER_M,
+             "max": request.target_peak_weekly_range["max"] * _MI_PER_M}
+            if request.target_peak_weekly_range else None
+        )
         plan = generate_constraint_aware_plan(
             athlete_id=athlete.id,
             race_date=request.race_date,
@@ -2335,8 +2409,8 @@ async def create_constraint_aware_plan(
             db=db,
             goal_time=str(request.goal_time_seconds) if request.goal_time_seconds else None,
             tune_up_races=tune_ups,
-            target_peak_weekly_miles=request.target_peak_weekly_miles,
-            target_peak_weekly_range=request.target_peak_weekly_range,
+            target_peak_weekly_miles=_target_peak_miles,
+            target_peak_weekly_range=_target_range_miles,
             taper_weeks=request.taper_weeks,
         )
         # Pace coherence is enforced at the source: every pace in this plan
@@ -2370,7 +2444,7 @@ async def create_constraint_aware_plan(
                 gate_midpoint = None
             fallback_peak = gate_midpoint if (gate_midpoint and gate_midpoint > 0) else band_fallback_peak
 
-            soft_gate_requested_peak_miles = request.target_peak_weekly_miles
+            soft_gate_requested_peak_miles = _target_peak_miles
             soft_gate_display_message = gate.display_message
             soft_gate_reasons = list(gate.reasons or [])
             soft_gate_safe_bounds_km = gate.safe_bounds_km
@@ -2392,7 +2466,7 @@ async def create_constraint_aware_plan(
                 # Gate gave us no usable safe bounds. Fall back to the athlete's
                 # original input so they at least get the plan they asked for,
                 # gate-flagged. Better than no plan.
-                fallback_requested_peak = request.target_peak_weekly_miles
+                fallback_requested_peak = _target_peak_miles
             plan = generate_constraint_aware_plan(
                 athlete_id=athlete.id,
                 race_date=request.race_date,
@@ -2455,7 +2529,7 @@ async def create_constraint_aware_plan(
                 "distance": plan.race_distance,
                 "name": request.race_name
             },
-            "fitness_bank": plan.fitness_bank,
+            "fitness_bank": _fitness_bank_to_meters(plan.fitness_bank),
             "model": {
                 "confidence": plan.model_confidence,
                 "tau1": round(plan.tau1, 1),
@@ -2469,12 +2543,12 @@ async def create_constraint_aware_plan(
                 "rationale_tags": plan.prediction_rationale_tags,
                 "scenarios": plan.prediction_scenarios,
             },
-            "volume_contract": plan.volume_contract,
+            "volume_contract": _volume_contract_to_meters(plan.volume_contract or {}),
             "quality_gate_fallback": plan.quality_gate_fallback,
             "quality_gate_reasons": plan.quality_gate_reasons,
             "warnings": soft_gate_warnings,
-            "soft_gate_applied_peak_weekly_miles": soft_gate_applied_peak_miles,
-            "soft_gate_requested_peak_weekly_miles": soft_gate_requested_peak_miles,
+            "soft_gate_applied_peak_weekly_m": round(soft_gate_applied_peak_miles * 1609.344, 0) if soft_gate_applied_peak_miles is not None else None,
+            "soft_gate_requested_peak_weekly_m": round(soft_gate_requested_peak_miles * 1609.344, 0) if soft_gate_requested_peak_miles is not None else None,
             "soft_gate_display_message": soft_gate_display_message,
             "soft_gate_reasons": soft_gate_reasons,
             "soft_gate_safe_bounds_km": soft_gate_safe_bounds_km,
@@ -2484,10 +2558,10 @@ async def create_constraint_aware_plan(
             },
             "summary": {
                 "total_weeks": plan.total_weeks,
-                "total_miles": round(plan.total_miles, 1),
-                "peak_miles": round(max(w.total_miles for w in plan.weeks), 1) if plan.weeks else 0
+                "total_distance_m": round(plan.total_miles * 1609.344, 0),
+                "peak_distance_m": round(max(w.total_miles for w in plan.weeks) * 1609.344, 0) if plan.weeks else 0,
             },
-            "weeks": [w.to_dict() for w in plan.weeks],
+            "weeks": _weeks_to_meters([w.to_dict() for w in plan.weeks]),
             "generated_at": datetime.now().isoformat()
         }
         

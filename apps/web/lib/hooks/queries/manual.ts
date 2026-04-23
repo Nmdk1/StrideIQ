@@ -79,7 +79,7 @@ export interface ManualSummary {
 export interface RaceEntry {
   date: string;
   name: string;
-  distance_mi: number;
+  distance_m: number;
   race_pace: string;
   race_pace_s: number;
   avg_hr: number | null;

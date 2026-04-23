@@ -32,7 +32,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Activity, BarChart3, Clock, Flame, Trophy, ChevronLeft, ChevronRight, Footprints, Layers } from 'lucide-react';
-import type { ActivityListParams } from '@/lib/api/services/activities';
+import type { ActivityListParams, ActivitySummaryBucket } from '@/lib/api/services/activities';
 
 type SportView = 'running' | 'other' | 'combined';
 
@@ -137,14 +137,12 @@ export function ActivitiesPageInner() {
     if (!summary) return null;
     const bucket = summary[sportView];
     if (bucket) return bucket;
-    // Legacy fallback: only running fields existed at the top level.
     if (sportView === 'running') {
       return {
         total_activities: summary.total_activities,
-        total_distance_km: summary.total_distance_km,
-        total_distance_miles: summary.total_distance_miles,
-        total_duration_hours: summary.total_duration_hours,
-        average_pace_per_mile: summary.average_pace_per_mile,
+        total_distance_m: summary.total_distance_m,
+        total_duration_s: summary.total_duration_s,
+        avg_pace_s_per_km: summary.avg_pace_s_per_km,
         race_count: summary.race_count,
       };
     }
@@ -153,20 +151,14 @@ export function ActivitiesPageInner() {
 
   const getTotalDistance = () => {
     if (!activeBucket) return null;
-    const meters = activeBucket.total_distance_miles * 1609.34;
-    return formatDistance(meters, 1);
+    return formatDistance(activeBucket.total_distance_m, 1);
   };
 
-  // Average pace is only meaningful for a single sport (and really only for
-  // running). For "other" or "combined" we hide it rather than fabricate.
   const getAveragePace = () => {
-    if (sportView !== 'running' || !activeBucket?.average_pace_per_mile) return null;
-    const paceMinPerMile = activeBucket.average_pace_per_mile;
-    if (units === 'metric') {
-      const paceMinPerKm = paceMinPerMile / 1.60934;
-      return `${Math.floor(paceMinPerKm)}:${Math.round((paceMinPerKm % 1) * 60).toString().padStart(2, '0')}/km`;
-    }
-    return `${Math.floor(paceMinPerMile)}:${Math.round((paceMinPerMile % 1) * 60).toString().padStart(2, '0')}/mi`;
+    if (sportView !== 'running' || !activeBucket) return null;
+    const pace = (activeBucket as ActivitySummaryBucket).avg_pace_s_per_km;
+    if (!pace) return null;
+    return formatPace(pace);
   };
 
   const handleFilterChange = (newFilters: Partial<ActivityListParams>) => {
@@ -294,7 +286,7 @@ export function ActivitiesPageInner() {
                   <Clock className="w-3.5 h-3.5 text-blue-500" />
                   Total Time
                 </p>
-                <p className="text-lg font-semibold">{activeBucket.total_duration_hours.toFixed(1)} hrs</p>
+                <p className="text-lg font-semibold">{(activeBucket.total_duration_s / 3600).toFixed(1)} hrs</p>
               </CardContent>
             </Card>
             {sportView === 'running' ? (
@@ -326,7 +318,7 @@ export function ActivitiesPageInner() {
                 </p>
                 <p className="text-lg font-semibold">
                   {sportView === 'running'
-                    ? (activeBucket.race_count ?? 0)
+                    ? ((activeBucket as ActivitySummaryBucket).race_count ?? 0)
                     : sportView === 'other'
                       ? Object.keys(summary.other?.by_sport ?? {}).length
                       : Object.keys(summary.activities_by_sport ?? {}).length}
@@ -356,11 +348,11 @@ export function ActivitiesPageInner() {
                 <span className="font-semibold">{sport}</span>
                 <span className="text-slate-400">·</span>
                 <span className="tabular-nums">{bucket.total_activities}</span>
-                {bucket.total_distance_miles > 0 && (
+                {bucket.total_distance_m > 0 && (
                   <>
                     <span className="text-slate-400">·</span>
                     <span className="tabular-nums">
-                      {units === 'metric' ? `${bucket.total_distance_km.toFixed(1)} km` : `${bucket.total_distance_miles.toFixed(1)} mi`}
+                      {formatDistance(bucket.total_distance_m, 1)}
                     </span>
                   </>
                 )}

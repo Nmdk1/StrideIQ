@@ -28,7 +28,7 @@ export interface SplitData {
   avg_hr: number | null;
   max_hr: number | null;
   cadence: number | null;
-  gap_per_mile: number | null;  // Grade Adjusted Pace
+  gap_s_per_km: number | null;
   efficiency: number | null;     // speed / HR for this split
   cumulative_distance_m: number;
 }

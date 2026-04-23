@@ -49,8 +49,7 @@ export function LoadResponseChart({ data, className = '' }: LoadResponseChartPro
     return data.map((week) => ({
       weekStart: week.week_start,
       week: new Date(week.week_start).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' }),
-      // API returns miles, convert to meters for formatDistance
-      distanceMeters: week.total_distance_miles * 1609.34,
+      distanceMeters: week.total_distance_m,
       efficiencyDelta: week.efficiency_delta || 0,
       loadType: week.load_type,
       activityCount: week.activity_count,

@@ -34,6 +34,7 @@ class GuardrailsMixin:
             target = "imperial" if wants_miles else "metric"
             if athlete.preferred_units != target:
                 athlete.preferred_units = target
+                athlete.preferred_units_set_explicitly = True
                 self.db.commit()
         except Exception:
             try:

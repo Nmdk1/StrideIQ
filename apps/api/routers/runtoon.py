@@ -540,8 +540,8 @@ PHOTO_REQUIRED_FOR_PROMPT = 3
 
 class ActivitySummary(BaseModel):
     name: Optional[str]
-    distance_mi: float
-    pace: str
+    distance_m: float
+    pace_s_per_km: Optional[float] = None
     duration: str
 
 
@@ -640,7 +640,7 @@ def get_pending(
     has_runtoon = existing_runtoon is not None
 
     # Format activity summary
-    miles = (candidate.distance_m / 1609.344) if candidate.distance_m else 0.0
+    dist_m = float(candidate.distance_m) if candidate.distance_m else 0.0
     duration_str = ""
     if candidate.moving_time_s:
         h = int(candidate.moving_time_s // 3600)
@@ -648,19 +648,16 @@ def get_pending(
         s = int(candidate.moving_time_s % 60)
         duration_str = f"{h}:{m:02d}:{s:02d}" if h else f"{m}:{s:02d}"
 
-    pace_str = ""
-    if candidate.distance_m and candidate.moving_time_s:
-        pace_spm = candidate.moving_time_s / (candidate.distance_m / 1609.344)
-        pace_min = int(pace_spm // 60)
-        pace_sec = int(pace_spm % 60)
-        pace_str = f"{pace_min}:{pace_sec:02d}/mi"
+    pace_s_per_km = None
+    if candidate.distance_m and candidate.moving_time_s and candidate.distance_m > 0:
+        pace_s_per_km = round(candidate.moving_time_s / (candidate.distance_m / 1000), 2)
 
     return PendingRuntoonResponse(
         activity_id=candidate.id,
         activity_summary=ActivitySummary(
             name=getattr(candidate, "name", None),
-            distance_mi=round(miles, 1),
-            pace=pace_str,
+            distance_m=round(dist_m, 1),
+            pace_s_per_km=pace_s_per_km,
             duration=duration_str,
         ),
         has_runtoon=has_runtoon,

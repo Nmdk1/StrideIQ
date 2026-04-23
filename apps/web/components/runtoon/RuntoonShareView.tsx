@@ -32,6 +32,7 @@ import {
   Check,
   ChevronDown,
 } from 'lucide-react';
+import { useUnits } from '@/lib/context/UnitsContext';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -39,8 +40,8 @@ import {
 
 interface ActivitySummary {
   name: string | null;
-  distance_mi: number;
-  pace: string;
+  distance_m: number;
+  pace_s_per_km: number | null;
   duration: string;
 }
 
@@ -368,10 +369,11 @@ export function RuntoonShareView({
   // Render helpers
   // ---------------------------------------------------------------------------
 
+  const { formatDistance, formatPace } = useUnits();
   const runLabel = activitySummary
     ? [
-        `${activitySummary.distance_mi.toFixed(1)} mi`,
-        activitySummary.pace,
+        formatDistance(activitySummary.distance_m),
+        activitySummary.pace_s_per_km ? formatPace(activitySummary.pace_s_per_km) : null,
         activitySummary.duration,
       ]
         .filter(Boolean)

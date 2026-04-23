@@ -95,14 +95,8 @@ function ActionBar({
   const showProgress = weekStats.planned > 0;
   const progressPct = showProgress ? Math.min(100, (weekStats.completed / weekStats.planned) * 100) : 0;
 
-  // weekStats is reported in miles by the API (legacy field name `completed_miles`).
-  // Convert to meters so formatDistance can render in the athlete's preferred units.
-  const completedMeters = weekStats.completed * 1609.344;
-  const plannedMeters = weekStats.planned * 1609.344;
-  const completedStr = formatDistance(completedMeters, 0);
-  const plannedStr = formatDistance(plannedMeters, 0);
-  // Strip the unit suffix from the completed value so the slash reads naturally
-  // ("4 / 25 mi" rather than "4 mi / 25 mi"); the unit comes from the planned side.
+  const completedStr = formatDistance(weekStats.completed, 0);
+  const plannedStr = formatDistance(weekStats.planned, 0);
   const completedNumStr = completedStr.replace(/\s*(mi|km)\s*$/, '');
   
   return (
@@ -349,8 +343,8 @@ export default function CalendarPage() {
     }
     
     return {
-      completed: todayWeek.completed_miles || 0,
-      planned: todayWeek.planned_miles || 0,
+      completed: todayWeek.completed_m || 0,
+      planned: todayWeek.planned_m || 0,
     };
   }, [calendar, today]);
   

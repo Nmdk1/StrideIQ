@@ -25,7 +25,7 @@ interface SplitData {
   elapsed_time: number | null;
   moving_time: number | null;
   average_heartrate: number | null;
-  gap_seconds_per_mile: number | null;
+  gap_s_per_km: number | null;
 }
 
 interface Props {

@@ -56,9 +56,9 @@ function _otherSportPhrase(s: OtherSportSummary): string {
   const meta = SPORT_CHIP_ICONS[s.sport];
   const lbl = (meta?.label ?? s.sport).toLowerCase();
   const short = s.sport === 'walking' ? 'walk' : lbl;
-  const noDistance = !s.distance_mi || s.distance_mi < 0.05;
-  if (noDistance && s.duration_min > 0) {
-    return `${Math.round(s.duration_min)} min ${lbl}`;
+  const noDistance = !s.distance_m || s.distance_m < 80;
+  if (noDistance && s.duration_s > 0) {
+    return `${Math.round(s.duration_s / 60)} min ${lbl}`;
   }
   if (s.count === 1) {
     return `1 ${short}`;
@@ -648,14 +648,13 @@ function BriefingPendingPlaceholder({
 export default function HomePage() {
   const invalidateHome = useInvalidateHome();
   const { data, isLoading, error } = useHomeData();
-  const { units, formatDistance } = useUnits();
-  const MI_TO_M = 1609.344;
-  const formatMiles = (mi: number | null | undefined, decimals: number = 1) =>
-    mi === null || mi === undefined ? '-' : formatDistance(mi * MI_TO_M, decimals);
-  const formatMilesNoUnit = (mi: number | null | undefined, decimals: number = 1) =>
-    mi === null || mi === undefined
+  const { units, formatDistance, formatPace } = useUnits();
+  const fmtDist = (m: number | null | undefined, decimals: number = 1) =>
+    m === null || m === undefined ? '-' : formatDistance(m, decimals);
+  const fmtDistNoUnit = (m: number | null | undefined, decimals: number = 1) =>
+    m === null || m === undefined
       ? '-'
-      : (units === 'metric' ? mi * 1.60934 : mi).toFixed(decimals);
+      : formatDistance(m, decimals).replace(/\s*(mi|km)$/i, '');
   const rewriteImperialToMetric = (
     text: string | null | undefined,
   ): string | null | undefined => {
@@ -741,7 +740,7 @@ export default function HomePage() {
     : null;
 
   const isConnected = strava_connected || garmin_connected;
-  const hasAnyData = has_any_activities || week.completed_mi > 0;
+  const hasAnyData = has_any_activities || week.completed_m > 0;
   const workoutConfig = getWorkoutConfig(today.workout_type);
 
   return (
@@ -885,8 +884,8 @@ export default function HomePage() {
                 </p>
               )}
               <p className="text-xs text-slate-500 mt-1.5">
-                {today.distance_mi && <span>{formatMiles(today.distance_mi)}</span>}
-                {today.distance_mi && today.pace_guidance && <span> · </span>}
+                {today.distance_m && <span>{fmtDist(today.distance_m)}</span>}
+                {today.distance_m && today.pace_guidance && <span> · </span>}
                 {today.pace_guidance && <span>{rewriteImperialToMetric(today.pace_guidance)}</span>}
                 {today.week_number && <span> · Week {today.week_number}</span>}
                 {today.phase && <span> · {today.phase}</span>}
@@ -982,7 +981,7 @@ export default function HomePage() {
                   <WeekChipDay
                     key={day.date}
                     day={day}
-                    formatMilesNoUnit={(mi) => formatMilesNoUnit(mi)}
+                    formatDistNoUnit={(m) => fmtDistNoUnit(m)}
                   />
                 ))}
               </div>
@@ -990,11 +989,11 @@ export default function HomePage() {
               {/* Progress / Volume */}
               {week.status === 'no_plan' ? (
                 <div className="text-center py-1">
-                  {week.completed_mi > 0 ? (
+                  {week.completed_m > 0 ? (
                     <>
                       <div className="flex items-center justify-center gap-2 mb-1">
                         <Footprints className="w-4 h-4 text-orange-500" />
-                        <span className="text-lg font-bold text-white">{formatMiles(week.completed_mi)}</span>
+                        <span className="text-lg font-bold text-white">{fmtDist(week.completed_m)}</span>
                         <span className="text-xs text-slate-500">logged</span>
                       </div>
                       {week.trajectory_sentence && (
@@ -1017,7 +1016,7 @@ export default function HomePage() {
                 </div>
               ) : (
                 <>
-                  {week.planned_mi > 0 && (
+                  {week.planned_m > 0 && (
                     <Progress
                       value={Math.min(100, week.progress_pct)}
                       className="h-2"
@@ -1030,8 +1029,8 @@ export default function HomePage() {
                   )}
                   <div className="flex items-center justify-between">
                     <div className="flex items-baseline gap-1.5">
-                      <span className="text-lg font-bold text-white">{formatMilesNoUnit(week.completed_mi)}</span>
-                      <span className="text-sm text-slate-500">/ {formatMiles(week.planned_mi)}</span>
+                      <span className="text-lg font-bold text-white">{fmtDistNoUnit(week.completed_m)}</span>
+                      <span className="text-sm text-slate-500">/ {fmtDist(week.planned_m)}</span>
                     </div>
                     {getStatusBadge(week.status)}
                   </div>

@@ -228,7 +228,7 @@ async def get_workout_tss(
         "activity_id": str(stress.activity_id),
         "date": stress.date.isoformat(),
         "tss": stress.tss,
-        "duration_minutes": round(stress.duration_minutes, 1),
+        "duration_s": round(stress.duration_minutes * 60, 1),
         "intensity_factor": stress.intensity_factor,
         "calculation_method": stress.calculation_method
     }

@@ -1,4 +1,4 @@
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, model_validator
 from datetime import datetime, date
 from uuid import UUID
 from typing import Any, Dict, List, Optional
@@ -71,7 +71,7 @@ class ActivitySplitResponse(BaseModel):
     average_heartrate: Optional[int] = None
     max_heartrate: Optional[int] = None
     average_cadence: Optional[float] = None
-    gap_seconds_per_mile: Optional[float] = None
+    gap_s_per_km: Optional[float] = None
     lap_type: Optional[str] = None
     interval_number: Optional[int] = None
 
@@ -87,6 +87,23 @@ class ActivitySplitResponse(BaseModel):
     extras: Optional[Dict[str, Any]] = None
 
     model_config = ConfigDict(from_attributes=True)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _convert_gap_from_db(cls, data: Any) -> Any:
+        if hasattr(data, "gap_seconds_per_mile"):
+            raw = getattr(data, "gap_seconds_per_mile", None)
+            if raw is not None:
+                data = {
+                    k: getattr(data, k, None)
+                    for k in cls.model_fields
+                }
+                data["gap_s_per_km"] = round(float(raw) * 1000 / 1609.34, 2)
+        elif isinstance(data, dict) and "gap_seconds_per_mile" in data:
+            raw = data.pop("gap_seconds_per_mile", None)
+            if raw is not None and "gap_s_per_km" not in data:
+                data["gap_s_per_km"] = round(float(raw) * 1000 / 1609.34, 2)
+        return data
 
 
 class IntervalSummaryResponse(BaseModel):
@@ -120,7 +137,7 @@ class ActivityResponse(BaseModel):
     average_heartrate: Optional[int] = None
     average_cadence: Optional[float] = None
     total_elevation_gain: Optional[float] = None
-    pace_per_mile: Optional[str] = None  # Formatted as "MM:SS/mi"
+    pace_s_per_km: Optional[float] = None
     duration_formatted: Optional[str] = None  # Formatted as "HH:MM:SS" or "MM:SS"
     splits: Optional[List[ActivitySplitResponse]] = None
     # Performance Physics Engine fields

@@ -851,7 +851,7 @@ class _ActivityNutrition(BaseModel):
     activity_id: str
     activity_name: str
     activity_date: str
-    distance_mi: Optional[float] = None
+    distance_m: Optional[float] = None
     pre_entries: List[Dict[str, Any]]
     during_entries: List[Dict[str, Any]]
     post_entries: List[Dict[str, Any]]
@@ -872,7 +872,6 @@ def get_activity_linked_nutrition(
 ):
     _tz = get_athlete_timezone(current_user)
     cutoff = athlete_local_today(_tz) - timedelta(days=days)
-    M_PER_MI = 1609.344
 
     linked_entries = (
         db.query(NutritionEntry)
@@ -918,12 +917,12 @@ def get_activity_linked_nutrition(
                 "macro_source": e.macro_source or "",
             }
 
-        dist = (act.distance_meters or 0) / M_PER_MI if act.distance_meters else None
+        dist_m = float(act.distance_meters) if act.distance_meters else None
         result.append(_ActivityNutrition(
             activity_id=str(act.id),
             activity_name=act.name or "Run",
             activity_date=to_activity_local_date(act, _tz).isoformat() if act.start_time else "",
-            distance_mi=round(dist, 1) if dist else None,
+            distance_m=round(dist_m, 1) if dist_m else None,
             pre_entries=[_entry_dict(e) for e in pre],
             during_entries=[_entry_dict(e) for e in during],
             post_entries=[_entry_dict(e) for e in post],

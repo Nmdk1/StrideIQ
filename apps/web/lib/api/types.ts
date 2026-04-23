@@ -38,7 +38,7 @@ export interface Activity {
   average_heartrate?: number;
   average_cadence?: number;
   total_elevation_gain?: number;
-  pace_per_mile?: string; // Formatted as "MM:SS/mi"
+  pace_s_per_km?: number;
   duration_formatted?: string; // Formatted as "HH:MM:SS" or "MM:SS"
   splits?: Array<{
     split: number;
@@ -48,7 +48,7 @@ export interface Activity {
     average_heartrate?: number;
     max_heartrate?: number;
     average_cadence?: number;
-    pace_per_mile?: string;
+    pace_s_per_km?: number;
   }>;
   performance_percentage?: number;
   performance_percentage_national?: number;
@@ -68,7 +68,7 @@ export interface ActivityAnalysis {
   has_meaningful_insight: boolean;
   insights: string[];
   metrics: {
-    pace_per_mile?: number;
+    pace_s_per_km?: number;
     avg_heart_rate?: number;
     efficiency_score?: number;
   };
@@ -106,7 +106,7 @@ export interface RunDelivery {
   insight_tone: 'irreverent' | 'sparse';
   show_insights: boolean;
   metrics: {
-    pace_per_mile?: number;
+    pace_s_per_km?: number;
     avg_heart_rate?: number;
     efficiency_score?: number;
   };

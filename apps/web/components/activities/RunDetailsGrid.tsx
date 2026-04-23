@@ -24,7 +24,7 @@
 import React from 'react';
 import { useUnits } from '@/lib/context/UnitsContext';
 
-const M_TO_FT = 3.28084;
+
 
 export interface RunDetailsGridProps {
   /** Average running power (Watts). Stryd, Forerunner 9xx/Fenix native power, etc. */
@@ -61,8 +61,7 @@ interface Card {
 }
 
 export function RunDetailsGrid(props: RunDetailsGridProps): React.ReactElement | null {
-  const { units } = useUnits();
-  const isImperial = units === 'imperial';
+  const { formatElevation } = useUnits();
 
   const cards: Card[] = [];
 
@@ -100,12 +99,9 @@ export function RunDetailsGrid(props: RunDetailsGridProps): React.ReactElement |
     });
   }
   if (props.totalDescentM != null) {
-    const descent = isImperial
-      ? `${Math.round(props.totalDescentM * M_TO_FT)} ft`
-      : `${Math.round(props.totalDescentM)} m`;
     cards.push({
       label: 'Descent',
-      value: descent,
+      value: formatElevation(props.totalDescentM),
     });
   }
 

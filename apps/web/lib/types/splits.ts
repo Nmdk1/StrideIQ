@@ -11,7 +11,7 @@ export interface Split {
   average_heartrate: number | null;
   max_heartrate: number | null;
   average_cadence: number | null;
-  gap_seconds_per_mile: number | null;
+  gap_s_per_km: number | null;
   lap_type: string | null;       // warm_up, work, rest, cool_down
   interval_number: number | null;
 

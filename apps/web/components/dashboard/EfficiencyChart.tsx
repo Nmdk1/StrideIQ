@@ -20,13 +20,6 @@ import {
 import type { EfficiencyTrendPoint } from '@/lib/api/services/analytics';
 import { useUnits } from '@/lib/context/UnitsContext';
 
-// API returns pace as decimal minutes-per-mile (the field is literally
-// `pace_per_mile`). Convert to seconds-per-km so the global formatter
-// can render it in the athlete's preferred units.
-const MILES_PER_KM = 0.621371;
-const minPerMileToSecPerKm = (minPerMile: number): number =>
-  (minPerMile * 60) * MILES_PER_KM;
-
 interface EfficiencyChartProps {
   data: EfficiencyTrendPoint[];
   showRollingAverage?: boolean;
@@ -51,7 +44,7 @@ export function EfficiencyChart({
     rolling60d: point.rolling_60d_avg,
     rolling90d: point.rolling_90d_avg,
     rolling120d: point.rolling_120d_avg,
-    pace: point.pace_per_mile,
+    pace: point.pace_s_per_km,
     hr: point.avg_hr,
     annotations: point.annotations || [],
   }));
@@ -83,7 +76,7 @@ export function EfficiencyChart({
             <p>
               <span className="text-slate-400">Pace:</span>{' '}
               <span className="text-white">
-                {formatPace(minPerMileToSecPerKm(data.pace))}
+                {formatPace(data.pace)}
               </span>
             </p>
             <p>

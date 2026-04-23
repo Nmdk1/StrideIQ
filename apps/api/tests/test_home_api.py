@@ -61,37 +61,48 @@ class TestFormatPace:
 
 
 class TestGenerateTrajectory:
-    """Tests for trajectory sentence generation (ADR-020)."""
-    
+    """Tests for trajectory sentence generation (ADR-020).
+
+    All distance inputs are meters; the function formats to the athlete's
+    preferred unit system.
+    """
+
     def test_ahead_status(self):
-        result = generate_trajectory_sentence("ahead", 30, 40)
+        result = generate_trajectory_sentence("ahead", 48280, 64374, preferred_units="imperial")
         assert "Ahead of schedule" in result
         assert "30 mi done" in result
         assert "40 mi planned" in result
-    
+
     def test_on_track_status(self):
-        result = generate_trajectory_sentence("on_track", 20, 40)
+        result = generate_trajectory_sentence("on_track", 32187, 64374, preferred_units="imperial")
         assert "On track" in result
         assert "20 mi remaining" in result
-    
+
     def test_behind_status(self):
-        result = generate_trajectory_sentence("behind", 10, 40)
+        result = generate_trajectory_sentence("behind", 16093, 64374, preferred_units="imperial")
         assert "Behind schedule" in result
         assert "30 mi to go" in result
-    
+
     def test_no_plan_returns_none(self):
         result = generate_trajectory_sentence("no_plan", 0, 0)
         assert result is None
-    
+
     def test_no_plan_with_activities_includes_tsb(self):
         """No plan but has activities can include TSB context."""
         result = generate_trajectory_sentence(
-            "no_plan", 20, 0, 
-            activities_this_week=3, 
-            tsb_context="TSB +15. Good window."
+            "no_plan", 32187, 0,
+            activities_this_week=3,
+            tsb_context="TSB +15. Good window.",
+            preferred_units="imperial",
         )
         assert "20 mi across 3 runs" in result
         assert "TSB +15" in result
+
+    def test_metric_units(self):
+        result = generate_trajectory_sentence("ahead", 30000, 50000, preferred_units="metric")
+        assert "Ahead of schedule" in result
+        assert "30 km done" in result
+        assert "50 km planned" in result
 
 
 class TestGenerateWhyContext:
@@ -359,19 +370,18 @@ class TestGenerateYesterdayInsight:
         
         assert "HR ran high" in result
     
-    def test_fallback_to_distance_pace(self):
+    def test_fallback_to_avg_hr(self):
         activity = MagicMock()
         activity.shape_sentence = None
         activity.efficiency_score = None
-        activity.avg_hr = 150  # Neither low nor high
-        activity.distance_m = 8046.72  # 5 miles
-        activity.duration_s = 2400  # 40 minutes
-        activity.pace_variability = None  # Avoid MagicMock comparison issue
-        
+        activity.avg_hr = 150
+        activity.distance_m = 8046.72
+        activity.duration_s = 2400
+        activity.pace_variability = None
+
         result = generate_yesterday_insight(activity)
-        
-        assert "mi at" in result
-        assert "/mi" in result
+
+        assert "Avg HR 150" in result
 
 
 class TestWeekDayModel:
@@ -380,56 +390,56 @@ class TestWeekDayModel:
     def test_weekday_includes_activity_id_field(self):
         """WeekDay model has activity_id for linking to completed activities."""
         from routers.home import WeekDay
-        
+
         day = WeekDay(
             date="2026-01-30",
             day_abbrev="T",
             workout_type="easy",
-            distance_mi=5.0,
-            planned_distance_mi=5.0,
+            distance_m=8047,
+            planned_distance_m=8047,
             completed=True,
             is_today=False,
             activity_id="abc-123",
             workout_id="workout-456"
         )
-        
+
         assert day.activity_id == "abc-123"
         assert day.workout_id == "workout-456"
-        assert day.planned_distance_mi == 5.0
-    
+        assert day.planned_distance_m == 8047
+
     def test_weekday_allows_none_ids(self):
         """WeekDay model allows None for optional ID fields."""
         from routers.home import WeekDay
-        
+
         day = WeekDay(
             date="2026-01-30",
             day_abbrev="T",
             completed=False,
             is_today=True
         )
-        
+
         assert day.activity_id is None
         assert day.workout_id is None
-        assert day.planned_distance_mi is None
-    
+        assert day.planned_distance_m is None
+
     def test_weekday_completed_day_has_both_distances(self):
         """Completed day can have both actual and planned distances."""
         from routers.home import WeekDay
-        
+
         day = WeekDay(
             date="2026-01-30",
             day_abbrev="T",
             workout_type="easy",
-            distance_mi=5.2,  # Actual ran slightly more
-            planned_distance_mi=5.0,  # Originally planned
+            distance_m=8369,
+            planned_distance_m=8047,
             completed=True,
             is_today=False,
             activity_id="abc-123"
         )
-        
-        assert day.distance_mi == 5.2
-        assert day.planned_distance_mi == 5.0
-        assert day.distance_mi != day.planned_distance_mi  # Shows difference
+
+        assert day.distance_m == 8369
+        assert day.planned_distance_m == 8047
+        assert day.distance_m != day.planned_distance_m
 
 
 # ── ADR-17 Phase 2: Coach Noticed ───────────────────────────────────

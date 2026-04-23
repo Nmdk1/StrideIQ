@@ -5,8 +5,6 @@ import { useUnits } from '@/lib/context/UnitsContext';
 import type { Split } from '@/lib/types/splits';
 import { GarminBadge } from '@/components/integrations/GarminBadge';
 
-const MILES_TO_KM = 1.60934;
-const M_TO_FT = 3.28084;
 
 const COLUMN_PREFS_KEY = 'splits:columnPrefs:v1';
 
@@ -33,9 +31,9 @@ function paceSecondsPerKm(timeS: number | null | undefined, distanceM: number | 
   return timeS / (distanceM / 1000);
 }
 
-function gapSecondsPerKmFromPerMile(gapSecondsPerMile: number | null | undefined): number | null {
-  if (!gapSecondsPerMile || gapSecondsPerMile <= 0) return null;
-  return gapSecondsPerMile / MILES_TO_KM;
+function gapSecondsPerKm(gapSPerKm: number | null | undefined): number | null {
+  if (!gapSPerKm || gapSPerKm <= 0) return null;
+  return gapSPerKm;
 }
 
 function fmt(v: number | null | undefined, digits = 0, suffix = ''): string {
@@ -83,8 +81,7 @@ export interface SplitsTableProps {
 }
 
 export function SplitsTable({ splits, provider, deviceName, onRowHover, rowRefs }: SplitsTableProps) {
-  const { formatDistance, formatPace, units } = useUnits();
-  const isImperial = units === 'imperial';
+  const { formatDistance, formatPace, formatElevation } = useUnits();
 
   const availableOptional = useMemo(
     () => OPTIONAL_COLUMNS.filter((c) => splits.some((s) => c.has(s))),
@@ -129,7 +126,7 @@ export function SplitsTable({ splits, provider, deviceName, onRowHover, rowRefs 
       const splitTime = s.moving_time ?? s.elapsed_time ?? null;
       if (splitTime) cumulativeTime += splitTime;
       const paceSecKm = paceSecondsPerKm(splitTime, s.distance);
-      const gapSecKm = gapSecondsPerKmFromPerMile(s.gap_seconds_per_mile);
+      const gapSecKm = gapSecondsPerKm(s.gap_s_per_km);
       const cadenceSpm = normalizeCadenceToSpm(s.average_cadence);
       return {
         ...s,
@@ -207,8 +204,8 @@ export function SplitsTable({ splits, provider, deviceName, onRowHover, rowRefs 
               <th className="px-3 py-2 text-left font-semibold">Avg HR</th>
               <th className="px-3 py-2 text-left font-semibold">Cadence</th>
               {showCol('maxHr')   && <th className="px-3 py-2 text-left font-semibold">Max HR</th>}
-              {showCol('ascent')  && <th className="px-3 py-2 text-left font-semibold">{isImperial ? 'Ascent (ft)' : 'Ascent (m)'}</th>}
-              {showCol('descent') && <th className="px-3 py-2 text-left font-semibold">{isImperial ? 'Descent (ft)' : 'Descent (m)'}</th>}
+              {showCol('ascent')  && <th className="px-3 py-2 text-left font-semibold">Ascent</th>}
+              {showCol('descent') && <th className="px-3 py-2 text-left font-semibold">Descent</th>}
               {showCol('power')   && <th className="px-3 py-2 text-left font-semibold">Power (W)</th>}
               {showCol('stride')  && <th className="px-3 py-2 text-left font-semibold">Stride (m)</th>}
               {showCol('gct')     && <th className="px-3 py-2 text-left font-semibold">GCT (ms)</th>}
@@ -239,8 +236,8 @@ export function SplitsTable({ splits, provider, deviceName, onRowHover, rowRefs 
                     {r.cadenceSpm !== null && r.cadenceSpm !== undefined ? Math.round(r.cadenceSpm) : '—'}
                   </td>
                   {showCol('maxHr')   && <td className="px-3 py-2 whitespace-nowrap">{r.max_heartrate ?? '—'}</td>}
-                  {showCol('ascent')  && <td className="px-3 py-2 whitespace-nowrap">{r.total_ascent_m == null ? '—' : isImperial ? fmt(r.total_ascent_m * M_TO_FT, 0) : fmt(r.total_ascent_m, 0)}</td>}
-                  {showCol('descent') && <td className="px-3 py-2 whitespace-nowrap">{r.total_descent_m == null ? '—' : isImperial ? fmt(r.total_descent_m * M_TO_FT, 0) : fmt(r.total_descent_m, 0)}</td>}
+                  {showCol('ascent')  && <td className="px-3 py-2 whitespace-nowrap">{r.total_ascent_m == null ? '—' : formatElevation(r.total_ascent_m)}</td>}
+                  {showCol('descent') && <td className="px-3 py-2 whitespace-nowrap">{r.total_descent_m == null ? '—' : formatElevation(r.total_descent_m)}</td>}
                   {showCol('power')   && <td className="px-3 py-2 whitespace-nowrap">{r.avg_power_w ?? '—'}</td>}
                   {showCol('stride')  && <td className="px-3 py-2 whitespace-nowrap">{fmt(r.avg_stride_length_m, 2)}</td>}
                   {showCol('gct')     && <td className="px-3 py-2 whitespace-nowrap">{fmt(r.avg_ground_contact_ms, 0)}</td>}

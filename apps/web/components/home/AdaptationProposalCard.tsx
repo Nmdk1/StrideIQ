@@ -3,6 +3,7 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api/client';
+import { useUnits } from '@/lib/context/UnitsContext';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -21,10 +22,10 @@ interface ProposalChange {
   day_of_week: number;
   original_type: string;
   original_title: string;
-  original_miles: number | null;
+  original_m: number | null;
   proposed_type: string;
   proposed_title: string;
-  proposed_miles: number | null;
+  proposed_m: number | null;
   reason: string;
   changed: boolean;
 }
@@ -56,7 +57,7 @@ function formatWorkoutType(type: string): string {
     .replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
-function DayDiffRow({ change }: { change: ProposalChange }) {
+function DayDiffRow({ change, formatDistance }: { change: ProposalChange; formatDistance: (m: number | null | undefined, d?: number) => string }) {
   const dayName = DAY_NAMES[change.day_of_week] || 'Day';
   const dateStr = new Date(change.scheduled_date + 'T12:00:00').toLocaleDateString('en-US', {
     month: 'short',
@@ -79,12 +80,12 @@ function DayDiffRow({ change }: { change: ProposalChange }) {
       <div className="flex-1 flex items-center gap-2">
         <span className="text-slate-400 line-through text-xs">
           {formatWorkoutType(change.original_type)}
-          {change.original_miles ? ` ${change.original_miles}mi` : ''}
+          {change.original_m ? ` ${formatDistance(change.original_m, 1)}` : ''}
         </span>
         <ArrowRight className="w-3 h-3 text-blue-400 flex-shrink-0" />
         <span className="text-slate-200 font-medium">
           {formatWorkoutType(change.proposed_type)}
-          {change.proposed_miles ? ` ${change.proposed_miles}mi` : ''}
+          {change.proposed_m ? ` ${formatDistance(change.proposed_m, 1)}` : ''}
         </span>
       </div>
     </div>
@@ -94,6 +95,7 @@ function DayDiffRow({ change }: { change: ProposalChange }) {
 export function AdaptationProposalCard() {
   const [expanded, setExpanded] = useState(false);
   const queryClient = useQueryClient();
+  const { formatDistance } = useUnits();
 
   const { data: proposal, isLoading } = useQuery<AdaptationProposal | null>({
     queryKey: ['adaptation-proposal'],
@@ -168,7 +170,7 @@ export function AdaptationProposalCard() {
         {expanded && (
           <div className="space-y-0.5 pt-1">
             {proposal.proposed_changes.map((change) => (
-              <DayDiffRow key={change.scheduled_date} change={change} />
+              <DayDiffRow key={change.scheduled_date} change={change} formatDistance={formatDistance} />
             ))}
           </div>
         )}

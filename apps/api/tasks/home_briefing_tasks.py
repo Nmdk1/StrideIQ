@@ -215,31 +215,16 @@ def _build_briefing_prompt(athlete_id: str, db: Session) -> Optional[tuple]:
             .first()
         )
         if today_actual:
-            # Imperial-keyed values are kept for backward compatibility with
-            # any legacy consumer reading the dict, but the prompt template
-            # now reads the *_text fields so the LLM never sees raw numbers
-            # divorced from their unit.
-            actual_mi = (
-                round(today_actual.distance_m / 1609.344, 1)
-                if today_actual.distance_m
-                else None
-            )
             actual_pace = units.format_pace_from_distance_duration(
                 today_actual.distance_m, today_actual.duration_s
             )
             elev_m = float(today_actual.total_elevation_gain) if today_actual.total_elevation_gain is not None else None
             today_completed = {
                 "name": today_actual.name or "Run",
-                "distance_mi": actual_mi,
                 "distance_text": units.format_distance(today_actual.distance_m),
                 "pace": actual_pace,
                 "avg_hr": int(today_actual.avg_hr) if today_actual.avg_hr else None,
-                "duration_min": (
-                    round(today_actual.duration_s / 60, 0)
-                    if today_actual.duration_s
-                    else None
-                ),
-                "elevation_gain_ft": int(round(elev_m * 3.28084)) if elev_m is not None else None,
+                "duration_s": int(today_actual.duration_s) if today_actual.duration_s else None,
                 "elevation_text": units.format_elevation(elev_m),
                 "temperature_f": round(float(today_actual.temperature_f), 1) if today_actual.temperature_f is not None else None,
                 "temperature_text": units.format_temperature_from_f(today_actual.temperature_f),
@@ -279,16 +264,11 @@ def _build_briefing_prompt(athlete_id: str, db: Session) -> Optional[tuple]:
                 .first()
             )
             if planned:
-                distance_mi = None
-                planned_distance_m = None
-                if planned.target_distance_km:
-                    distance_mi = round(planned.target_distance_km * 0.621371, 1)
-                    planned_distance_m = float(planned.target_distance_km) * 1000.0
+                planned_distance_m = float(planned.target_distance_km) * 1000.0 if planned.target_distance_km else None
                 planned_workout_dict = {
                     "has_workout": True,
                     "workout_type": planned.workout_type,
                     "title": planned.title,
-                    "distance_mi": distance_mi,
                     "distance_text": units.format_distance(planned_distance_m),
                 }
 
@@ -334,14 +314,12 @@ def _build_briefing_prompt(athlete_id: str, db: Session) -> Optional[tuple]:
                 .all()
             )
             for pw in _upcoming_days:
-                _pw_mi = round(pw.target_distance_km * 0.621371, 1) if pw.target_distance_km else None
                 _pw_distance_m = float(pw.target_distance_km) * 1000.0 if pw.target_distance_km else None
                 upcoming_plan_list.append({
                     "date": pw.scheduled_date.isoformat(),
                     "day_name": pw.scheduled_date.strftime("%A"),
                     "workout_type": pw.workout_type,
                     "title": pw.title,
-                    "distance_mi": _pw_mi,
                     "distance_text": units.format_distance(_pw_distance_m),
                     "description": pw.description,
                 })
@@ -474,23 +452,27 @@ def _call_llm_for_briefing(
     required_fields: list,
     athlete_id: Optional[str] = None,
     local_now=None,
-) -> Optional[dict]:
+) -> tuple[Optional[dict], str]:
     """
     Single LLM dispatch point for home briefing generation.
 
-    Always tries primary model first (Sonnet or Kimi canary), falls back to
-    Gemini Flash. Matches the behaviour of _fetch_llm_briefing_sync in
-    home.py. The use_opus feature flag has been retired — the model
-    selection is driven by API key availability and canary config.
+    Returns (result_dict, source_model_name).
 
-    This wrapper exists so consent gating in generate_home_briefing_task
-    can be verified by tests via patching this function.  All actual LLM
-    calls go through _call_opus_briefing (Sonnet/Kimi) or _call_gemini_briefing.
+    Always tries primary model first (Sonnet or Kimi canary), falls back to
+    Gemini Flash. The model selection is driven by API key availability and
+    canary config.
     """
+    from core.config import settings as _cfg
+    primary = _cfg.BRIEFING_PRIMARY_MODEL or "claude-sonnet-4-6"
+    fallback = "gemini-2.5-flash"
+
     result = _call_opus_briefing(prompt, schema_fields, required_fields, athlete_id=athlete_id, local_now=local_now)
     if result is not None:
-        return result
-    return _call_gemini_briefing(prompt, schema_fields, required_fields)
+        return result, primary
+    gemini_result = _call_gemini_briefing(prompt, schema_fields, required_fields)
+    if gemini_result is not None:
+        return gemini_result, fallback
+    return None, primary
 
 
 def _build_deterministic_briefing(athlete_id: str, db: Session) -> Dict[str, str]:
@@ -721,13 +703,8 @@ def generate_home_briefing_task(self: Task, athlete_id: str) -> Dict:
         )
         from core.llm_client import is_canary_athlete
 
-        use_opus = bool(os.getenv("ANTHROPIC_API_KEY"))
-        from core.config import settings as _sb_settings
-        source_model = _sb_settings.BRIEFING_PRIMARY_MODEL or (
-            "claude-sonnet-4-6" if use_opus else "gemini-2.5-flash"
-        )
         is_canary = is_canary_athlete(athlete_id)
-        result = _call_llm_for_briefing(prompt, schema_fields, required_fields, athlete_id=athlete_id, local_now=_local_now)
+        result, source_model = _call_llm_for_briefing(prompt, schema_fields, required_fields, athlete_id=athlete_id, local_now=_local_now)
 
         if result is not None and is_canary:
             canary_failed = False
@@ -751,12 +728,14 @@ def generate_home_briefing_task(self: Task, athlete_id: str) -> Dict:
             if canary_failed:
                 validation_flags["canary_retried"] = True
                 result = _call_opus_briefing(prompt, schema_fields, required_fields, athlete_id=None)
-                if result is None:
-                    result = _call_gemini_briefing(prompt, schema_fields, required_fields)
                 if result is not None:
-                    source_model = _sb_settings.BRIEFING_PRIMARY_MODEL or (
-                        "claude-sonnet-4-6" if use_opus else "gemini-2.5-flash"
-                    )
+                    from core.config import settings as _retry_cfg
+                    source_model = _retry_cfg.BRIEFING_PRIMARY_MODEL or "claude-sonnet-4-6"
+                else:
+                    result = _call_gemini_briefing(prompt, schema_fields, required_fields)
+                    if result is not None:
+                        source_model = "gemini-2.5-flash"
+                if result is not None:
                     logger.info("Primary model retry succeeded for %s", athlete_id)
 
         if result is None:

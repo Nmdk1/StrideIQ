@@ -21,6 +21,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/lib/hooks/useAuth';
 import { API_CONFIG } from '@/lib/api/config';
 import { X, Zap } from 'lucide-react';
+import { useUnits } from '@/lib/context/UnitsContext';
 import { RuntoonShareView } from './RuntoonShareView';
 
 // ---------------------------------------------------------------------------
@@ -29,8 +30,8 @@ import { RuntoonShareView } from './RuntoonShareView';
 
 interface ActivitySummary {
   name: string | null;
-  distance_mi: number;
-  pace: string;
+  distance_m: number;
+  pace_s_per_km: number | null;
   duration: string;
 }
 
@@ -45,10 +46,6 @@ interface PendingRuntoon {
 // ---------------------------------------------------------------------------
 
 const AUTO_DISMISS_MS = 10 * 60 * 1000; // 10 minutes per spec
-
-function formatDistance(mi: number): string {
-  return `${mi.toFixed(1)} mi`;
-}
 
 async function authedFetch(url: string, token: string, opts: RequestInit = {}) {
   return fetch(url, {
@@ -187,11 +184,12 @@ export function RuntoonSharePrompt() {
   // Render
   // ---------------------------------------------------------------------------
 
+  const { formatDistance, formatPace } = useUnits();
+
   if (!isAuthenticated || !isMobile || !visible || !pending) return null;
   if (shareViewOpen) return null; // Share view takes over
-
   const { activity_id, activity_summary, has_runtoon } = pending;
-  const { name, distance_mi, pace, duration } = activity_summary;
+  const { name, distance_m, pace_s_per_km, duration } = activity_summary;
 
   return (
     <>
@@ -236,8 +234,8 @@ export function RuntoonSharePrompt() {
             {name ?? 'Recent Run'}
           </p>
           <p className="mb-5 text-sm text-slate-400">
-            {formatDistance(distance_mi)}
-            {pace ? ` • ${pace}` : ''}
+            {formatDistance(distance_m)}
+            {pace_s_per_km ? ` • ${formatPace(pace_s_per_km)}` : ''}
             {duration ? ` • ${duration}` : ''}
           </p>
 

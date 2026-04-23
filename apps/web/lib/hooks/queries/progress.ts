@@ -17,8 +17,8 @@ export { useWhatWorks, useWhatDoesntWork, useEfficiencyTrends };
 
 export interface PeriodMetrics {
   run_count: number;
-  total_distance_mi: number;
-  total_duration_hr: number;
+  total_distance_m: number;
+  total_duration_s: number;
   avg_hr: number | null;
 }
 
@@ -89,14 +89,14 @@ export interface WellnessTrends {
 
 export interface VolumeWeek {
   week_start: string;
-  miles: number;
+  distance_m: number;
   runs: number;
 }
 
 export interface VolumeTrajectory {
   recent_weeks: VolumeWeek[] | null;
-  current_week_mi: number | null;
-  peak_week_mi: number | null;
+  current_week_m: number | null;
+  peak_week_m: number | null;
   trend_pct: number | null;
 }
 
@@ -143,7 +143,7 @@ export interface PersonalBest {
   distance_category: string;
   distance_meters: number;
   time_seconds: number;
-  pace_per_mile: number | null;
+  pace_s_per_km: number | null;
   activity_id: string;
   achieved_at: string;
   is_race: boolean;

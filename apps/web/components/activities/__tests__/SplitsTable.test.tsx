@@ -37,7 +37,7 @@ function makeSplit(overrides: Partial<Split>, n: number): Split {
     average_heartrate: 155,
     max_heartrate: null,
     average_cadence: 175,
-    gap_seconds_per_mile: null,
+    gap_s_per_km: null,
     lap_type: null,
     interval_number: null,
     ...overrides,

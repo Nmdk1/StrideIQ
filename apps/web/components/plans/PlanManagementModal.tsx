@@ -21,6 +21,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/lib/hooks/useAuth';
 import { API_CONFIG } from '@/lib/api/config';
 import { localToday } from '@/lib/utils/date';
+import { useUnits } from '@/lib/context/UnitsContext';
 
 interface ActivePlan {
   id: string;
@@ -46,7 +47,7 @@ interface WeekWorkout {
   workout_type: string;
   title: string;
   description: string | null;
-  target_distance_km: number | null;
+  target_distance_m: number | null;
   completed: boolean;
   skipped: boolean;
 }
@@ -64,6 +65,9 @@ export function PlanManagementModal({ plan, currentWeek, isOpen, onClose }: Plan
   const router = useRouter();
   const { token } = useAuth();
   const queryClient = useQueryClient();
+  const { units, formatDistance } = useUnits();
+  const isMetric = units === 'metric';
+  const distanceUnitShort = isMetric ? 'km' : 'mi';
   
   const [selectedAction, setSelectedAction] = useState<Action>(null);
   const [confirmText, setConfirmText] = useState('');
@@ -79,17 +83,17 @@ export function PlanManagementModal({ plan, currentWeek, isOpen, onClose }: Plan
   const [editForm, setEditForm] = useState<{
     workout_type: string;
     title: string;
-    target_distance_km: string;
+    target_distance_m: string;
     coach_notes: string;
-  }>({ workout_type: '', title: '', target_distance_km: '', coach_notes: '' });
+  }>({ workout_type: '', title: '', target_distance_m: '', coach_notes: '' });
   const [moveDate, setMoveDate] = useState('');
   const [newWorkout, setNewWorkout] = useState<{
     scheduled_date: string;
     workout_type: string;
     title: string;
-    target_distance_km: string;
+    target_distance_m: string;
     coach_notes: string;
-  }>({ scheduled_date: '', workout_type: 'easy', title: '', target_distance_km: '', coach_notes: '' });
+  }>({ scheduled_date: '', workout_type: 'easy', title: '', target_distance_m: '', coach_notes: '' });
   const [canModify, setCanModify] = useState(false);
   
   // Fetch current week's workouts when in adjust mode
@@ -316,7 +320,7 @@ export function PlanManagementModal({ plan, currentWeek, isOpen, onClose }: Plan
           scheduled_date: workout.scheduled_date,
           workout_type: workout.workout_type,
           title: workout.title || `${workout.workout_type.replace('_', ' ')} Run`,
-          target_distance_km: workout.target_distance_km ? parseFloat(workout.target_distance_km) : null,
+          target_distance_m: workout.target_distance_m ? parseFloat(workout.target_distance_m) : null,
           coach_notes: workout.coach_notes || null,
         }),
       });
@@ -329,7 +333,7 @@ export function PlanManagementModal({ plan, currentWeek, isOpen, onClose }: Plan
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['calendar'] });
       refetchWeek();
-      setNewWorkout({ scheduled_date: '', workout_type: 'easy', title: '', target_distance_km: '', coach_notes: '' });
+      setNewWorkout({ scheduled_date: '', workout_type: 'easy', title: '', target_distance_m: '', coach_notes: '' });
       setAdjustMode('menu');
     },
   });
@@ -362,8 +366,8 @@ export function PlanManagementModal({ plan, currentWeek, isOpen, onClose }: Plan
       setConfirmText('');
       setSelectedWorkout(null);
       setMoveDate('');
-      setEditForm({ workout_type: '', title: '', target_distance_km: '', coach_notes: '' });
-      setNewWorkout({ scheduled_date: '', workout_type: 'easy', title: '', target_distance_km: '', coach_notes: '' });
+      setEditForm({ workout_type: '', title: '', target_distance_m: '', coach_notes: '' });
+      setNewWorkout({ scheduled_date: '', workout_type: 'easy', title: '', target_distance_m: '', coach_notes: '' });
     }
   }, [isOpen]);
   
@@ -373,7 +377,7 @@ export function PlanManagementModal({ plan, currentWeek, isOpen, onClose }: Plan
     setEditForm({
       workout_type: workout.workout_type,
       title: workout.title,
-      target_distance_km: workout.target_distance_km?.toString() || '',
+      target_distance_m: workout.target_distance_m?.toString() || '',
       coach_notes: '',
     });
     setAdjustMode('edit');
@@ -733,9 +737,6 @@ export function PlanManagementModal({ plan, currentWeek, isOpen, onClose }: Plan
                       <div className="space-y-2 mb-4">
                         {(weekData.workouts as WeekWorkout[]).filter((w: WeekWorkout) => !w.completed && !w.skipped).map((workout: WeekWorkout) => {
                           const isSelected = swapSelection.includes(workout.id);
-                          const distanceMiles = workout.target_distance_km 
-                            ? (workout.target_distance_km * 0.621371).toFixed(1)
-                            : null;
                           
                           return (
                             <button
@@ -754,8 +755,8 @@ export function PlanManagementModal({ plan, currentWeek, isOpen, onClose }: Plan
                                   <div className={`font-semibold ${isSelected ? 'text-white' : 'text-slate-200'}`}>
                                     {workout.title}
                                   </div>
-                                  {distanceMiles && (
-                                    <div className="text-xs text-slate-400 mt-0.5">{distanceMiles} mi</div>
+                                  {workout.target_distance_m && (
+                                    <div className="text-xs text-slate-400 mt-0.5">{formatDistance(workout.target_distance_m, 1)}</div>
                                   )}
                                 </div>
                                 {isSelected && (
@@ -1007,8 +1008,8 @@ export function PlanManagementModal({ plan, currentWeek, isOpen, onClose }: Plan
                                   <div>
                                     <div className="text-xs text-slate-400 mb-0.5">{workout.day_name} · {workout.workout_type}</div>
                                     <div className="font-semibold text-slate-200">{workout.title}</div>
-                                    {workout.target_distance_km && (
-                                      <div className="text-xs text-slate-500">{(workout.target_distance_km * 0.621371).toFixed(1)} mi</div>
+                                    {workout.target_distance_m && (
+                                      <div className="text-xs text-slate-500">{formatDistance(workout.target_distance_m, 1)}</div>
                                     )}
                                   </div>
                                   <svg className="w-5 h-5 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -1076,14 +1077,14 @@ export function PlanManagementModal({ plan, currentWeek, isOpen, onClose }: Plan
                         </div>
                         
                         <div>
-                          <label className="block text-sm text-slate-400 mb-2">Distance (km)</label>
+                          <label className="block text-sm text-slate-400 mb-2">Distance (meters)</label>
                           <input
                             type="number"
-                            step="0.1"
-                            value={editForm.target_distance_km}
-                            onChange={(e) => setEditForm({ ...editForm, target_distance_km: e.target.value })}
+                            step="100"
+                            value={editForm.target_distance_m}
+                            onChange={(e) => setEditForm({ ...editForm, target_distance_m: e.target.value })}
                             className="w-full bg-slate-800 border border-slate-700/50 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-blue-500"
-                            placeholder="e.g., 10.5"
+                            placeholder="e.g., 16000"
                           />
                         </div>
                         
@@ -1093,7 +1094,7 @@ export function PlanManagementModal({ plan, currentWeek, isOpen, onClose }: Plan
                             updates: {
                               workout_type: editForm.workout_type,
                               title: editForm.title,
-                              target_distance_km: editForm.target_distance_km ? parseFloat(editForm.target_distance_km) : null,
+                              target_distance_m: editForm.target_distance_m ? parseFloat(editForm.target_distance_m) : null,
                             },
                           })}
                           disabled={editWorkout.isPending}
@@ -1168,14 +1169,14 @@ export function PlanManagementModal({ plan, currentWeek, isOpen, onClose }: Plan
                       </div>
                       
                       <div>
-                        <label className="block text-sm text-slate-400 mb-2">Distance (km, optional)</label>
+                        <label className="block text-sm text-slate-400 mb-2">Distance (meters, optional)</label>
                         <input
                           type="number"
-                          step="0.1"
-                          value={newWorkout.target_distance_km}
-                          onChange={(e) => setNewWorkout({ ...newWorkout, target_distance_km: e.target.value })}
+                          step="100"
+                          value={newWorkout.target_distance_m}
+                          onChange={(e) => setNewWorkout({ ...newWorkout, target_distance_m: e.target.value })}
                           className="w-full bg-slate-800 border border-slate-700/50 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-blue-500"
-                          placeholder="e.g., 8.0"
+                          placeholder="e.g., 8000"
                         />
                       </div>
                       
@@ -1204,7 +1205,7 @@ export function PlanManagementModal({ plan, currentWeek, isOpen, onClose }: Plan
                       <button
                         onClick={() => {
                           setAdjustMode('menu');
-                          setNewWorkout({ scheduled_date: '', workout_type: 'easy', title: '', target_distance_km: '', coach_notes: '' });
+                          setNewWorkout({ scheduled_date: '', workout_type: 'easy', title: '', target_distance_m: '', coach_notes: '' });
                         }}
                         className="flex-1 px-4 py-2 bg-slate-800 hover:bg-slate-700 rounded-lg transition-colors"
                       >

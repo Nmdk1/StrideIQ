@@ -64,10 +64,9 @@ export default function DashboardPage() {
   const { data: homeData, isLoading: homeLoading } = useHomeData();
   const week = homeData?.week;
   const { formatDistance } = useUnits();
-  const formatMilesNoUnit = (mi: number | null | undefined, decimals: number = 1) => {
-    if (mi == null) return '—';
-    const meters = mi * 1609.344;
-    return formatDistance(meters, decimals).replace(/\s*(km|mi|m)$/i, '').trim();
+  const fmtDistNoUnit = (m: number | null | undefined, decimals: number = 1) => {
+    if (m == null) return '—';
+    return formatDistance(m, decimals).replace(/\s*(km|mi|m)$/i, '').trim();
   };
 
   if (isLoading) {
@@ -211,7 +210,7 @@ export default function DashboardPage() {
                       <WeekChipDay
                         key={day.date}
                         day={day}
-                        formatMilesNoUnit={(mi) => formatMilesNoUnit(mi)}
+                        formatDistNoUnit={(m) => fmtDistNoUnit(m)}
                       />
                     ))}
                   </div>

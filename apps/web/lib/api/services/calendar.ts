@@ -121,12 +121,12 @@ export interface WeekSummary {
   week_number: number;
   phase?: string;
   phase_week?: number;
-  planned_miles: number;
-  completed_miles: number;
+  planned_m: number;
+  completed_m: number;
   quality_sessions_planned: number;
   quality_sessions_completed: number;
-  long_run_planned_miles?: number;
-  long_run_completed_miles?: number;
+  long_run_planned_m?: number;
+  long_run_completed_m?: number;
   focus?: string;
   days: CalendarDay[];
 }

@@ -34,6 +34,7 @@ import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { nutritionService } from '@/lib/api/services/nutrition';
 import type { NutritionEntryCreate, DaySummary } from '@/lib/api/services/nutrition';
 import { localToday } from '@/lib/utils/date';
+import { useUnits } from '@/lib/context/UnitsContext';
 
 type ActiveTab = 'log' | 'meals' | 'history' | 'insights';
 
@@ -143,6 +144,7 @@ function TrendChart({ days }: { days: DaySummary[] }) {
 
 export default function NutritionPage() {
   const { user } = useAuth();
+  const { formatDistance } = useUnits();
   const today = localToday();
 
   const [activeTab, setActiveTab] = useState<ActiveTab>('log');
@@ -2212,7 +2214,7 @@ export default function NutritionPage() {
                             <p className="text-sm font-medium text-white truncate">{act.activity_name}</p>
                             <p className="text-xs text-slate-500">
                               {formatDateShort(act.activity_date)}
-                              {act.distance_mi != null && ` · ${act.distance_mi.toFixed(1)} mi`}
+                              {act.distance_m != null && ` · ${formatDistance(act.distance_m)}`}
                             </p>
                           </div>
                         </div>

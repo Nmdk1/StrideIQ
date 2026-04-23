@@ -44,10 +44,10 @@ export function ActivityMetrics({ activity, className = '' }: ActivityMetricsPro
             <p className="text-lg font-semibold">{formatDuration(activity.moving_time)}</p>
           </div>
         )}
-        {activity.pace_per_mile && (
+        {activity.pace_s_per_km && (
           <div>
             <p className="text-sm text-slate-400">Pace</p>
-            <p className="text-lg font-semibold">{activity.pace_per_mile}</p>
+            <p className="text-lg font-semibold">{formatPace(activity.pace_s_per_km)}</p>
           </div>
         )}
         {activity.average_heartrate && (

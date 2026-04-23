@@ -173,15 +173,13 @@ class WeekSummaryResponse(BaseModel):
     phase: Optional[str] = None
     phase_week: Optional[int] = None
     
-    # Volume
-    planned_miles: float
-    completed_miles: float
+    planned_m: int = 0
+    completed_m: int = 0
     
-    # Sessions
     quality_sessions_planned: int
     quality_sessions_completed: int
-    long_run_planned_miles: Optional[float] = None
-    long_run_completed_miles: Optional[float] = None
+    long_run_planned_m: Optional[int] = None
+    long_run_completed_m: Optional[int] = None
     
     # Focus text
     focus: Optional[str] = None
@@ -565,7 +563,7 @@ def get_primary_activity(activities: List[Activity]) -> Optional[Activity]:
     return max(activities, key=lambda a: a.distance_m or 0)
 
 
-def generate_inline_insight(activities: List[Activity], planned: Optional[PlannedWorkout]) -> Optional[InlineInsight]:
+def generate_inline_insight(activities: List[Activity], planned: Optional[PlannedWorkout], preferred_units: Optional[str] = None) -> Optional[InlineInsight]:
     """
     Generate a single inline insight for a calendar day.
     
@@ -605,37 +603,39 @@ def generate_inline_insight(activities: List[Activity], planned: Optional[Planne
     
     # Pace-based insight
     if activity.distance_m and activity.duration_s and activity.distance_m > 0:
-        pace_per_mile = activity.duration_s / (activity.distance_m / 1609.344)
-        mins = int(pace_per_mile // 60)
-        secs = int(pace_per_mile % 60)
+        _is_met = (preferred_units or "imperial").lower() == "metric"
+        _pu = "km" if _is_met else "mi"
+        _div = 1000 if _is_met else 1609.344
+        _pace_s = activity.duration_s / (activity.distance_m / _div)
+        mins = int(_pace_s // 60)
+        secs = int(_pace_s % 60)
         pace_str = f'{mins}:{secs:02d}'
         
-        # Compare to planned pace if available
         if planned and planned.workout_type:
             wt = planned.workout_type
+            pace_s_per_km = activity.duration_s / (activity.distance_m / 1000)
             if 'easy' in wt or 'recovery' in wt:
-                # Easy pace check - should be slower than 8:00 for most
-                if pace_per_mile > 480:  # > 8:00/mi
+                if pace_s_per_km > 298:  # ~4:58/km ≈ 8:00/mi
                     return InlineInsight(
                         metric='pace',
-                        value=f'{pace_str}/mi',
+                        value=f'{pace_str}/{_pu}',
                         sentiment='positive'
                     )
             elif 'threshold' in wt or 'tempo' in wt:
                 return InlineInsight(
                     metric='pace',
-                    value=f'{pace_str}/mi',
+                    value=f'{pace_str}/{_pu}',
                     sentiment='neutral'
                 )
     
-    # Default: just show distance completed
     if activity.distance_m:
-        miles = round(activity.distance_m / 1609.344, 1)
-        return InlineInsight(
-            metric='distance',
-            value=f'{miles}mi',
-            sentiment='neutral'
-        )
+        _is_met = (preferred_units or "imperial").lower() == "metric"
+        if _is_met:
+            _val = round(activity.distance_m / 1000, 1)
+            return InlineInsight(metric='distance', value=f'{_val}km', sentiment='neutral')
+        else:
+            _val = round(activity.distance_m / 1609.344, 1)
+            return InlineInsight(metric='distance', value=f'{_val}mi', sentiment='neutral')
     
     return None
 
@@ -843,7 +843,7 @@ def get_calendar(
         # Generate inline insight for completed days
         inline_insight = None
         if day_activities and status in ('completed', 'modified'):
-            inline_insight = generate_inline_insight(day_activities, planned)
+            inline_insight = generate_inline_insight(day_activities, planned, getattr(current_user, "preferred_units", None))
         
         day_response = CalendarDayResponse(
             date=current,
@@ -881,14 +881,12 @@ def get_calendar(
         for week_num, week_data in sorted(weeks.items()):
             week_days = week_data["days"]
             
-            planned_miles = sum(
-                (d.planned_workout.target_distance_km or 0) * 0.621371
+            planned_m = sum(
+                int((d.planned_workout.target_distance_km or 0) * 1000)
                 for d in week_days if d.planned_workout
             )
-            # Running mileage only — matches planned distance semantics.
-            completed_miles = sum(
-                meters_to_miles(d.running_distance_m)
-                for d in week_days
+            completed_m = sum(
+                d.running_distance_m for d in week_days
             )
             
             quality_planned = sum(
@@ -903,8 +901,8 @@ def get_calendar(
             week_summaries.append(WeekSummaryResponse(
                 week_number=week_num,
                 phase=week_data["phase"],
-                planned_miles=round(planned_miles, 1),
-                completed_miles=round(completed_miles, 1),
+                planned_m=planned_m,
+                completed_m=completed_m,
                 quality_sessions_planned=quality_planned,
                 quality_sessions_completed=quality_completed,
                 days=week_days
@@ -1534,14 +1532,12 @@ def get_calendar_week(
             other_duration_s=os_,
         ))
     
-    # Calculate week summary
-    planned_miles = sum(
-        (w.target_distance_km or 0) * 0.621371
+    planned_m = sum(
+        int((w.target_distance_km or 0) * 1000)
         for w in planned_workouts
     )
-    completed_miles = sum(
-        meters_to_miles(d.running_distance_m)
-        for d in days
+    completed_m = sum(
+        d.running_distance_m for d in days
     )
     
     quality_types = ['threshold', 'intervals', 'tempo', 'long_mp', 'progression']
@@ -1556,8 +1552,8 @@ def get_calendar_week(
     return WeekSummaryResponse(
         week_number=week_number,
         phase=phase,
-        planned_miles=round(planned_miles, 1),
-        completed_miles=round(completed_miles, 1),
+        planned_m=planned_m,
+        completed_m=completed_m,
         quality_sessions_planned=quality_planned,
         quality_sessions_completed=quality_completed,
         days=days

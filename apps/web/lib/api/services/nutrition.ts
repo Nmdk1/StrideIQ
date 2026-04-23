@@ -399,7 +399,7 @@ export interface ActivityNutrition {
   activity_id: string;
   activity_name: string;
   activity_date: string;
-  distance_mi?: number;
+  distance_m?: number;
   pre_entries: ActivityNutritionEntry[];
   during_entries: ActivityNutritionEntry[];
   post_entries: ActivityNutritionEntry[];

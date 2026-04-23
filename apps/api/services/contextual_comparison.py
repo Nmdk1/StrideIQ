@@ -793,7 +793,7 @@ class ContextualComparisonService:
                 "avg_hr": split.average_heartrate,
                 "max_hr": split.max_heartrate,
                 "cadence": float(split.average_cadence) if split.average_cadence else None,
-                "gap_per_mile": float(split.gap_seconds_per_mile) if split.gap_seconds_per_mile else None,
+                "gap_s_per_km": round(float(split.gap_seconds_per_mile) * 1000 / 1609.34, 2) if split.gap_seconds_per_mile else None,
                 "efficiency": round(efficiency, 4) if efficiency else None,
                 "cumulative_distance_m": cumulative_distance,
             })

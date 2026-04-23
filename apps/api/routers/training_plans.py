@@ -62,9 +62,9 @@ class WorkoutSummary(BaseModel):
     title: str
     description: Optional[str]
     phase: str
-    target_duration_minutes: Optional[int]
-    target_distance_km: Optional[float]
-    target_pace_per_km_seconds: Optional[int]
+    target_duration_s: Optional[int]
+    target_distance_m: Optional[float]
+    target_pace_s_per_km: Optional[int]
     completed: bool
     skipped: bool
     completed_activity_id: Optional[str]
@@ -87,8 +87,8 @@ class CalendarWeek(BaseModel):
     week_number: int
     phase: Optional[str]
     days: List[CalendarDay]
-    planned_volume_km: float
-    actual_volume_km: float
+    planned_volume_m: float
+    actual_volume_m: float
 
 
 class CalendarResponse(BaseModel):
@@ -105,8 +105,8 @@ class WeeklyPlanResponse(BaseModel):
     phase: str
     phase_week: int
     workouts: List[WorkoutSummary]
-    total_planned_duration: int
-    total_planned_distance: float
+    total_planned_duration_s: int
+    total_planned_distance_m: float
     completed_workouts: int
     skipped_workouts: int
 
@@ -196,21 +196,7 @@ async def get_current_week(
     first_workout = workouts[0]
     
     workout_summaries = [
-        WorkoutSummary(
-            id=str(w.id),
-            scheduled_date=w.scheduled_date,
-            week_number=w.week_number,
-            workout_type=w.workout_type,
-            title=w.title,
-            description=w.description,
-            phase=w.phase,
-            target_duration_minutes=w.target_duration_minutes,
-            target_distance_km=w.target_distance_km,
-            target_pace_per_km_seconds=w.target_pace_per_km_seconds,
-            completed=w.completed,
-            skipped=w.skipped,
-            completed_activity_id=str(w.completed_activity_id) if w.completed_activity_id else None,
-        )
+        _workout_to_summary(w)
         for w in workouts
     ]
     
@@ -219,8 +205,8 @@ async def get_current_week(
         phase=first_workout.phase,
         phase_week=first_workout.phase_week or 1,
         workouts=workout_summaries,
-        total_planned_duration=sum(w.target_duration_minutes or 0 for w in workouts),
-        total_planned_distance=sum(w.target_distance_km or 0 for w in workouts),
+        total_planned_duration_s=sum((w.target_duration_minutes or 0) * 60 for w in workouts),
+        total_planned_distance_m=sum((w.target_distance_km or 0) * 1000 for w in workouts),
         completed_workouts=len([w for w in workouts if w.completed]),
         skipped_workouts=len([w for w in workouts if w.skipped]),
     )
@@ -279,9 +265,9 @@ async def get_calendar(
         activities_by_date[d].append({
             "id": str(a.id),
             "sport": a.sport,
-            "distance_km": round(a.distance_m / 1000, 2) if a.distance_m else None,
-            "duration_minutes": a.duration_s // 60 if a.duration_s else None,
-            "pace_per_km": a.duration_s / (a.distance_m / 1000) if a.distance_m and a.duration_s else None,
+            "distance_m": a.distance_m,
+            "duration_s": a.duration_s,
+            "pace_s_per_km": round(a.duration_s / (a.distance_m / 1000), 1) if a.distance_m and a.duration_s else None,
         })
     
     # Build calendar days
@@ -291,21 +277,7 @@ async def get_calendar(
         pw = planned.get(current)
         workout_summary = None
         if pw:
-            workout_summary = WorkoutSummary(
-                id=str(pw.id),
-                scheduled_date=pw.scheduled_date,
-                week_number=pw.week_number,
-                workout_type=pw.workout_type,
-                title=pw.title,
-                description=pw.description,
-                phase=pw.phase,
-                target_duration_minutes=pw.target_duration_minutes,
-                target_distance_km=pw.target_distance_km,
-                target_pace_per_km_seconds=pw.target_pace_per_km_seconds,
-                completed=pw.completed,
-                skipped=pw.skipped,
-                completed_activity_id=str(pw.completed_activity_id) if pw.completed_activity_id else None,
-            )
+            workout_summary = _workout_to_summary(pw)
         
         is_race_day = plan and current == plan.goal_race_date if plan else False
         
@@ -337,14 +309,14 @@ async def get_calendar(
             if current_week_days and current_week_days[0].planned_workout:
                 phase = current_week_days[0].planned_workout.phase
             
-            planned_volume = sum(
-                d.planned_workout.target_distance_km or 0
+            planned_volume_m = sum(
+                d.planned_workout.target_distance_m or 0
                 for d in current_week_days
                 if d.planned_workout
             )
             
-            actual_volume = sum(
-                sum(a.get('distance_km', 0) or 0 for a in d.actual_activities)
+            actual_volume_m = sum(
+                sum(a.get('distance_m', 0) or 0 for a in d.actual_activities)
                 for d in current_week_days
             )
             
@@ -352,8 +324,8 @@ async def get_calendar(
                 week_number=current_week_num or 0,
                 phase=phase,
                 days=current_week_days,
-                planned_volume_km=round(planned_volume, 1),
-                actual_volume_km=round(actual_volume, 1),
+                planned_volume_m=round(planned_volume_m, 0),
+                actual_volume_m=round(actual_volume_m, 0),
             ))
             
             current_week_days = []
@@ -488,11 +460,26 @@ def get_pending_proposal(
         db.commit()
         return None
 
+    changes_m = []
+    for c in (proposal.proposed_changes or []):
+        c = dict(c)
+        if c.get("original_miles") is not None:
+            c["original_m"] = round(c.pop("original_miles") * 1609.344, 0)
+        else:
+            c.pop("original_miles", None)
+            c["original_m"] = None
+        if c.get("proposed_miles") is not None:
+            c["proposed_m"] = round(c.pop("proposed_miles") * 1609.344, 0)
+        else:
+            c.pop("proposed_miles", None)
+            c["proposed_m"] = None
+        changes_m.append(c)
+
     return AdaptationProposalResponse(
         id=str(proposal.id),
         trigger_type=proposal.trigger_type,
         trigger_detail=proposal.trigger_detail,
-        proposed_changes=proposal.proposed_changes,
+        proposed_changes=changes_m,
         original_snapshot=proposal.original_snapshot,
         affected_week_start=proposal.affected_week_start,
         affected_week_end=proposal.affected_week_end,
@@ -552,6 +539,24 @@ def reject_adaptation_proposal(
 
 
 # ============ Helper Functions ============
+
+def _workout_to_summary(w: PlannedWorkout) -> WorkoutSummary:
+    return WorkoutSummary(
+        id=str(w.id),
+        scheduled_date=w.scheduled_date,
+        week_number=w.week_number,
+        workout_type=w.workout_type,
+        title=w.title,
+        description=w.description,
+        phase=w.phase,
+        target_duration_s=(w.target_duration_minutes * 60) if w.target_duration_minutes else None,
+        target_distance_m=round(w.target_distance_km * 1000, 0) if w.target_distance_km else None,
+        target_pace_s_per_km=w.target_pace_per_km_seconds,
+        completed=w.completed,
+        skipped=w.skipped,
+        completed_activity_id=str(w.completed_activity_id) if w.completed_activity_id else None,
+    )
+
 
 def _calculate_current_week(plan: TrainingPlan, today: Optional[date] = None) -> Optional[int]:
     """Calculate which week of the plan we're currently in."""

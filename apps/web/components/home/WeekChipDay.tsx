@@ -1,7 +1,7 @@
 'use client';
 
 /**
- * Single day chip for the home/analytics “This week” row.
+ * Single day chip for the home/analytics "This week" row.
  * Primary tap = longest run; +N = extra runs; icons = other sports (separate links).
  */
 
@@ -54,10 +54,10 @@ export const SPORT_CHIP_ICONS: Record<string, { icon: React.ReactNode; label: st
 
 export interface WeekChipDayProps {
   day: WeekDay;
-  formatMilesNoUnit: (mi: number) => string;
+  formatDistNoUnit: (m: number) => string;
 }
 
-export function WeekChipDay({ day, formatMilesNoUnit }: WeekChipDayProps) {
+export function WeekChipDay({ day, formatDistNoUnit }: WeekChipDayProps) {
   const dayConfig = getWorkoutConfig(day.workout_type);
   const longestRunHref = day.activity_id ? `/activities/${day.activity_id}` : null;
   const dayDetailHref = `/calendar?date=${day.date}`;
@@ -75,15 +75,15 @@ export function WeekChipDay({ day, formatMilesNoUnit }: WeekChipDayProps) {
 
   const distanceEl = (
     <div className={`text-xs font-semibold ${day.completed ? 'text-emerald-400' : dayConfig.color}`}>
-      {day.completed && day.distance_mi ? (
+      {day.completed && day.distance_m ? (
         <span className="flex flex-col items-center gap-0.5">
           <CheckCircle2 className="w-3.5 h-3.5" />
-          <span className="text-[10px] tabular-nums">{formatMilesNoUnit(day.distance_mi)}</span>
+          <span className="text-[10px] tabular-nums">{formatDistNoUnit(day.distance_m)}</span>
         </span>
       ) : day.workout_type === 'rest' ? (
         <span className="text-slate-600">&mdash;</span>
-      ) : day.distance_mi ? (
-        <span>{formatMilesNoUnit(day.distance_mi)}</span>
+      ) : day.distance_m ? (
+        <span>{formatDistNoUnit(day.distance_m)}</span>
       ) : (
         <span className="text-slate-600">&mdash;</span>
       )}
@@ -98,8 +98,8 @@ export function WeekChipDay({ day, formatMilesNoUnit }: WeekChipDayProps) {
     <Link
       href={primaryHref}
       aria-label={
-        day.completed && day.distance_mi
-          ? `${day.day_abbrev}: ${formatMilesNoUnit(day.distance_mi)} of running. Open longest run.`
+        day.completed && day.distance_m
+          ? `${day.day_abbrev}: ${formatDistNoUnit(day.distance_m)} of running. Open longest run.`
           : `${day.day_abbrev}: open day`
       }
       className="block hover:opacity-90"
@@ -130,10 +130,10 @@ export function WeekChipDay({ day, formatMilesNoUnit }: WeekChipDayProps) {
         {others.map((o) => {
           const sportInfo = SPORT_CHIP_ICONS[o.sport];
           if (!sportInfo) return null;
-          const label = o.distance_mi
-            ? `${sportInfo.label}: ${formatMilesNoUnit(o.distance_mi)}`
-            : o.duration_min
-              ? `${sportInfo.label}: ${Math.round(o.duration_min)} min`
+          const label = o.distance_m
+            ? `${sportInfo.label}: ${formatDistNoUnit(o.distance_m)}`
+            : o.duration_s
+              ? `${sportInfo.label}: ${Math.round(o.duration_s / 60)} min`
               : sportInfo.label;
           return (
             <Link

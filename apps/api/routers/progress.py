@@ -186,8 +186,8 @@ class NarrativeFeedbackRequest(BaseModel):
 
 class PeriodMetrics(BaseModel):
     run_count: int = 0
-    total_distance_mi: float = 0
-    total_duration_hr: float = 0
+    total_distance_m: float = 0
+    total_duration_s: float = 0
     avg_hr: Optional[float] = None
 
 
@@ -292,8 +292,8 @@ class WellnessTrends(BaseModel):
 
 class VolumeTrajectory(BaseModel):
     recent_weeks: Optional[List[Dict[str, Any]]] = None
-    current_week_mi: Optional[float] = None
-    peak_week_mi: Optional[float] = None
+    current_week_m: Optional[float] = None
+    peak_week_m: Optional[float] = None
     trend_pct: Optional[float] = None
 
 
@@ -407,8 +407,8 @@ async def get_progress_summary(
             hrs = [int(a.avg_hr) for a in acts if a.avg_hr is not None]
             return PeriodMetrics(
                 run_count=len([a for a in acts if a.distance_m]),
-                total_distance_mi=round(total_m / 1609.344, 1),
-                total_duration_hr=round(total_s / 3600.0, 1),
+                total_distance_m=round(total_m, 1),
+                total_duration_s=round(total_s, 1),
                 avg_hr=round(sum(hrs) / len(hrs), 1) if hrs else None,
             )
 
@@ -416,10 +416,10 @@ async def get_progress_summary(
         previous = fetch_period(start_previous, end_previous)
 
         vol_change = None
-        if previous.total_distance_mi > 0:
+        if previous.total_distance_m > 0:
             vol_change = round(
-                ((current.total_distance_mi - previous.total_distance_mi)
-                 / previous.total_distance_mi) * 100, 1
+                ((current.total_distance_m - previous.total_distance_m)
+                 / previous.total_distance_m) * 100, 1
             )
 
         hr_change = None
@@ -544,29 +544,29 @@ async def get_progress_summary(
                          weekly.get("data", {}).get("weeks", []))
             if weeks_data:
                 completed = []
-                current_mi = None
+                current_m = None
                 for w in weeks_data:
-                    dist = w.get("total_distance_mi", 0)
+                    dist_m = w.get("total_distance_m") or w.get("total_distance_mi", 0) * 1609.344
                     if w.get("is_current_week"):
-                        current_mi = round(dist, 1)
+                        current_m = round(dist_m, 0)
                     else:
                         completed.append({
                             "week_start": w.get("week_start", ""),
-                            "miles": round(dist, 1),
+                            "distance_m": round(dist_m, 0),
                             "runs": w.get("run_count", 0),
                         })
 
-                peak = max((c["miles"] for c in completed), default=0) if completed else 0
+                peak = max((c["distance_m"] for c in completed), default=0) if completed else 0
                 trend_pct = None
-                if len(completed) >= 2 and completed[0]["miles"] > 0:
+                if len(completed) >= 2 and completed[0]["distance_m"] > 0:
                     trend_pct = round(
-                        ((completed[-1]["miles"] - completed[0]["miles"]) / completed[0]["miles"]) * 100, 1
+                        ((completed[-1]["distance_m"] - completed[0]["distance_m"]) / completed[0]["distance_m"]) * 100, 1
                     )
 
                 result.volume_trajectory = VolumeTrajectory(
                     recent_weeks=completed[-6:],
-                    current_week_mi=current_mi,
-                    peak_week_mi=round(peak, 1) if peak else None,
+                    current_week_m=current_m,
+                    peak_week_m=round(peak, 0) if peak else None,
                     trend_pct=trend_pct,
                 )
     except Exception as e:
@@ -1205,11 +1205,12 @@ def _assemble_chapters_data(db: Session, athlete_id: UUID) -> List[ChapterRespon
                 values = []
                 for w in weeks_data:
                     labels.append(w.get("week_start", "")[-5:])
-                    values.append(round(w.get("total_distance_mi", 0), 1))
+                    dist_m = w.get("total_distance_m") or w.get("total_distance_mi", 0) * 1609.344
+                    values.append(round(dist_m, 0))
 
-                current_mi = values[-1] if values else 0
-                avg_4wk = sum(values[-4:]) / len(values[-4:]) if len(values) >= 4 else current_mi
-                trend_pct = round(((current_mi - avg_4wk) / avg_4wk * 100), 1) if avg_4wk > 0 else 0
+                current_val = values[-1] if values else 0
+                avg_4wk = sum(values[-4:]) / len(values[-4:]) if len(values) >= 4 else current_val
+                trend_pct = round(((current_val - avg_4wk) / avg_4wk * 100), 1) if avg_4wk > 0 else 0
 
                 chapters.append(ChapterResponse(
                     title="Volume Trajectory",
@@ -1219,10 +1220,10 @@ def _assemble_chapters_data(db: Session, athlete_id: UUID) -> List[ChapterRespon
                         "labels": labels,
                         "values": values,
                         "highlight_index": len(values) - 1,
-                        "unit": "mi",
+                        "unit": "m",
                     },
-                    observation=f"Weekly volume: {current_mi}mi this week. {trend_pct:+.0f}% vs 4-week average.",
-                    evidence=f"{current_mi}mi this week | Avg: {avg_4wk:.1f}mi | Trend: {trend_pct:+.1f}%",
+                    observation=f"Weekly volume: {current_val:.0f}m this week. {trend_pct:+.0f}% vs 4-week average.",
+                    evidence=f"{current_val:.0f}m this week | Avg: {avg_4wk:.0f}m | Trend: {trend_pct:+.1f}%",
                     relevance_score=0.85,
                 ))
     except Exception as e:

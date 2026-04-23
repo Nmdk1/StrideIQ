@@ -253,6 +253,18 @@ def infer_and_persist_athlete_timezone(db: Session, athlete_id: UUID) -> Optiona
         return None
 
     athlete.timezone = str(tz)
+
+    if not getattr(athlete, "preferred_units_set_explicitly", False):
+        from services.units_default import derive_default_units
+        derived = derive_default_units(str(tz))
+        if derived != athlete.preferred_units:
+            logger.info(
+                "Timezone inference: deriving preferred_units=%s for athlete %s "
+                "from timezone=%s (was %s)",
+                derived, athlete.id, tz, athlete.preferred_units,
+            )
+            athlete.preferred_units = derived
+
     db.commit()
     logger.info(
         "Inferred and persisted timezone %s for athlete %s from activity %s",

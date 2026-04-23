@@ -643,7 +643,7 @@ class ActivityComparisonService:
                 "average_heartrate": split.average_heartrate,
                 "max_heartrate": split.max_heartrate,
                 "average_cadence": float(split.average_cadence) if split.average_cadence else None,
-                "gap_seconds_per_mile": float(split.gap_seconds_per_mile) if split.gap_seconds_per_mile else None,
+                "gap_s_per_km": round(float(split.gap_seconds_per_mile) * 1000 / 1609.34, 2) if split.gap_seconds_per_mile else None,
             })
         
         return {

@@ -527,7 +527,7 @@ def _get_personal_records(db: Session, athlete: Athlete) -> dict:
             "distance_meters": pb.distance_meters,
             "time_seconds": pb.time_seconds,
             "time_formatted": _format_duration(pb.time_seconds),
-            "pace_per_mile": pb.pace_per_mile,
+            "pace_s_per_km": round(pb.pace_per_mile * 60 * 1000 / 1609.344, 2) if pb.pace_per_mile else None,
             "date": pb.achieved_at.isoformat() if pb.achieved_at else None,
             "activity_id": str(pb.activity_id) if pb.activity_id else None,
             "is_race": pb.is_race,

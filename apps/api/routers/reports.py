@@ -564,8 +564,8 @@ def export_report_csv(
     if "activities" in cats:
         headers += [
             "activity_name", "sport", "workout_type", "duration_min",
-            "distance_mi", "avg_hr", "pace_min_mi", "activity_kcal",
-            "intensity", "elevation_ft",
+            "distance_m", "avg_hr", "pace_s_per_km", "activity_kcal",
+            "intensity", "elevation_m",
         ]
     if "nutrition" in cats:
         headers += [
@@ -602,17 +602,15 @@ def export_report_csv(
                 if has_activities and i < len(day.activities):  # type: ignore[arg-type]
                     a = day.activities[i]  # type: ignore[index]
                     dur_min = round(a.duration_s / 60, 1) if a.duration_s else ""
-                    dist_mi = round(a.distance_m / 1609.34, 2) if a.distance_m else ""
-                    pace = ""
-                    if a.avg_pace_min_per_km:
-                        pace = round(a.avg_pace_min_per_km * 1.60934, 2)
-                    elev_ft = round(a.total_elevation_gain * 3.28084) if a.total_elevation_gain else ""
+                    dist_m = round(a.distance_m, 1) if a.distance_m else ""
+                    pace_s_km = round(a.avg_pace_min_per_km * 60, 2) if a.avg_pace_min_per_km else ""
+                    elev_m = round(a.total_elevation_gain, 1) if a.total_elevation_gain else ""
                     row += [
                         a.name or "", a.sport or "", a.workout_type or "",
-                        dur_min, dist_mi, a.avg_hr or "", pace,
+                        dur_min, dist_m, a.avg_hr or "", pace_s_km,
                         a.active_kcal or "",
                         round(a.intensity_score, 1) if a.intensity_score else "",
-                        elev_ft,
+                        elev_m,
                     ]
                 else:
                     row += [""] * 10

@@ -1221,7 +1221,7 @@ class TestCeleryTask:
              patch("tasks.home_briefing_tasks.get_redis_client", return_value=fake_redis), \
              patch("tasks.home_briefing_tasks._build_data_fingerprint", return_value=fingerprint), \
              patch("tasks.home_briefing_tasks._build_briefing_prompt", return_value=("prompt", {}, [], {}, {}, None, datetime.now(), None, None, None)) as mock_prompt, \
-             patch("tasks.home_briefing_tasks._call_llm_for_briefing", return_value=payload) as mock_llm, \
+             patch("tasks.home_briefing_tasks._call_llm_for_briefing", return_value=(payload, "claude-sonnet-4-6")) as mock_llm, \
              patch("routers.home._valid_home_briefing_contract", return_value=True), \
              patch("routers.home.validate_voice_output", return_value={"valid": True}), \
              patch("routers.home.validate_sleep_claims", return_value={"valid": True}), \
@@ -1278,7 +1278,7 @@ class TestCeleryTask:
              patch("tasks.home_briefing_tasks.get_redis_client", return_value=fake_redis), \
              patch("tasks.home_briefing_tasks._build_data_fingerprint", return_value=fingerprint), \
              patch("tasks.home_briefing_tasks._build_briefing_prompt", return_value=("prompt", {}, [], {}, {}, None, datetime.now(), None, None, None)) as mock_prompt, \
-             patch("tasks.home_briefing_tasks._call_llm_for_briefing", return_value=llm_payload) as mock_llm, \
+             patch("tasks.home_briefing_tasks._call_llm_for_briefing", return_value=(llm_payload, "claude-sonnet-4-6")) as mock_llm, \
              patch("routers.home._valid_home_briefing_contract", return_value=True), \
              patch("routers.home.validate_voice_output", return_value={"valid": True}), \
              patch("routers.home.validate_sleep_claims", return_value={"valid": True}), \
@@ -1308,7 +1308,7 @@ class TestCeleryTask:
              patch("tasks.home_briefing_tasks.get_db_sync", return_value=mock_db), \
              patch("tasks.home_briefing_tasks._build_data_fingerprint", return_value="fp1"), \
              patch("tasks.home_briefing_tasks._build_briefing_prompt", return_value=("prompt", {}, [], {}, {}, None, datetime.now(), None, None, None)), \
-             patch("tasks.home_briefing_tasks._call_llm_for_briefing", return_value=None), \
+             patch("tasks.home_briefing_tasks._call_llm_for_briefing", return_value=(None, "claude-sonnet-4-6")), \
              patch("tasks.home_briefing_tasks._build_deterministic_briefing", return_value={
                  "coach_noticed": "Latest run synced: 6.0 mi at 8:56/mi.",
                  "today_context": "Sync completed.",
@@ -1345,7 +1345,7 @@ class TestCeleryTask:
              patch("tasks.home_briefing_tasks.get_db_sync", return_value=mock_db), \
              patch("tasks.home_briefing_tasks._build_data_fingerprint", return_value="fp-fallback"), \
              patch("tasks.home_briefing_tasks._build_briefing_prompt", return_value=("prompt", {}, [], {}, {}, None, datetime.now(), None, None, None)), \
-             patch("tasks.home_briefing_tasks._call_llm_for_briefing", return_value=None), \
+             patch("tasks.home_briefing_tasks._call_llm_for_briefing", return_value=(None, "claude-sonnet-4-6")), \
              patch("tasks.home_briefing_tasks._build_deterministic_briefing", return_value={
                  "coach_noticed": "Latest run synced.",
                  "today_context": "Sync completed.",
@@ -1379,7 +1379,7 @@ class TestCeleryTask:
              patch("tasks.home_briefing_tasks.get_db_sync", return_value=mock_db), \
              patch("tasks.home_briefing_tasks._build_data_fingerprint", return_value="fp-llm"), \
              patch("tasks.home_briefing_tasks._build_briefing_prompt", return_value=("prompt", {}, [], {}, {}, None, datetime.now(), None, None, None)), \
-             patch("tasks.home_briefing_tasks._call_llm_for_briefing", return_value=llm_payload), \
+             patch("tasks.home_briefing_tasks._call_llm_for_briefing", return_value=(llm_payload, "claude-sonnet-4-6")), \
              patch("routers.home._valid_home_briefing_contract", return_value=True), \
              patch("routers.home.validate_voice_output", return_value={"valid": True}), \
              patch("routers.home.validate_sleep_claims", return_value={"valid": True}), \
@@ -1568,7 +1568,7 @@ class TestCacheWriteReliability:
              patch("tasks.home_briefing_tasks.get_db_sync", return_value=MagicMock()), \
              patch("tasks.home_briefing_tasks._build_data_fingerprint", return_value="fp1"), \
              patch("tasks.home_briefing_tasks._build_briefing_prompt", return_value=("prompt", {}, [], {}, {}, None, datetime.now(), None, None, None)), \
-             patch("tasks.home_briefing_tasks._call_llm_for_briefing", return_value=payload), \
+             patch("tasks.home_briefing_tasks._call_llm_for_briefing", return_value=(payload, "claude-sonnet-4-6")), \
              patch("tasks.home_briefing_tasks.record_task_failure"), \
              patch("routers.home._valid_home_briefing_contract", return_value=True), \
              patch("routers.home.validate_voice_output", return_value={"valid": True}), \

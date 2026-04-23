@@ -18,7 +18,7 @@ import { useUnits } from '@/lib/context/UnitsContext';
 import { parseTimeToSeconds } from '@/lib/utils/time';
 import { calendarKeys } from '@/lib/hooks/queries/calendar';
 
-const KM_PER_MI = 1.60934;
+const M_PER_MI = 1609.344;
 
 type Step = 'plan-type' | 'distance' | 'race-date' | 'current-fitness' | 'availability' | 'recent-race' | 'experience' | 'review' | 'model-driven-form' | 'model-driven-preview' | 'constraint-aware-form' | 'constraint-aware-tune-up' | 'constraint-aware-preview';
 
@@ -36,8 +36,8 @@ interface PlanFormData {
   distance: string;
   race_date: string;
   race_name: string;
-  current_weekly_miles: number;
-  longest_recent_run: number;
+  current_weekly_m: number;
+  longest_recent_run_m: number;
   days_per_week: number;
   recent_race_distance?: string;
   recent_race_time?: string;
@@ -45,9 +45,9 @@ interface PlanFormData {
   injury_history: string;
   goal_time_seconds?: number;
   tune_up_races: TuneUpRace[];
-  target_peak_weekly_miles?: number;
-  target_peak_weekly_min?: number;
-  target_peak_weekly_max?: number;
+  target_peak_weekly_m?: number;
+  target_peak_weekly_min_m?: number;
+  target_peak_weekly_max_m?: number;
 }
 
 interface ModelDrivenPreview {
@@ -74,9 +74,6 @@ interface ModelDrivenPreview {
 type PlanCreateError = {
   message: string;
   isUpgrade?: boolean;
-  // Set when the backend returns a quality_gate_failed payload with usable
-  // safe bounds. The frontend uses this to render a "Use safe range" button
-  // that pre-fills target_peak_weekly_miles and re-submits.
   safeBoundsMiles?: { min: number; max: number };
   recommendedPeakMiles?: number;
   // Optional debug context (technical reasons) that we keep available but
@@ -145,11 +142,11 @@ function formatPlanCreateError(err: unknown): PlanCreateError {
 
 interface PlanCreateErrorBannerProps {
   error: PlanCreateError;
-  isMetric: boolean;
+  formatDistance: (meters: number | null | undefined, decimals?: number) => string;
   onAcceptSafeRange?: (recommendedPeakMiles: number) => void;
 }
 
-function PlanCreateErrorBanner({ error, isMetric, onAcceptSafeRange }: PlanCreateErrorBannerProps) {
+function PlanCreateErrorBanner({ error, formatDistance, onAcceptSafeRange }: PlanCreateErrorBannerProps) {
   if (error.isUpgrade) {
     return (
       <div className="mt-4 p-5 bg-gradient-to-r from-amber-900/40 to-amber-800/20 border border-amber-600/50 rounded-lg">
@@ -170,18 +167,14 @@ function PlanCreateErrorBanner({ error, isMetric, onAcceptSafeRange }: PlanCreat
 
   const formatBoundsLabel = () => {
     if (!safe) return null;
-    if (isMetric) {
-      const minKm = Math.round(safe.min * 1.60934);
-      const maxKm = Math.round(safe.max * 1.60934);
-      return `${minKm}-${maxKm} km/week`;
-    }
-    return `${Math.round(safe.min)}-${Math.round(safe.max)} mi/week`;
+    const minM = safe.min * M_PER_MI;
+    const maxM = safe.max * M_PER_MI;
+    return `${formatDistance(minM, 0)}-${formatDistance(maxM, 0)}/week`;
   };
 
   const formatRecommended = () => {
     if (typeof recommendedMiles !== 'number') return null;
-    if (isMetric) return `${Math.round(recommendedMiles * 1.60934)} km/week`;
-    return `${Math.round(recommendedMiles)} mi/week`;
+    return `${formatDistance(recommendedMiles * M_PER_MI, 0)}/week`;
   };
 
   return (
@@ -240,7 +233,7 @@ export default function CreatePlanPage() {
   const router = useRouter();
   const queryClient = useQueryClient();
   const { user, isAuthenticated: authAuthenticated } = useAuth();
-  const { units } = useUnits();
+  const { units, formatDistance } = useUnits();
   const isMetric = units === 'metric';
   const distanceUnitShort = isMetric ? 'km' : 'mi';
   const distanceUnitLong = isMetric ? 'kilometers' : 'miles';
@@ -257,15 +250,15 @@ export default function CreatePlanPage() {
     distance: '',
     race_date: '',
     race_name: '',
-    current_weekly_miles: 30,
-    longest_recent_run: 10,
+    current_weekly_m: 48280,
+    longest_recent_run_m: 16093,
     days_per_week: 6,
     experience_level: 'intermediate',
     injury_history: '',
     tune_up_races: [],
-    target_peak_weekly_miles: undefined,
-    target_peak_weekly_min: undefined,
-    target_peak_weekly_max: undefined,
+    target_peak_weekly_m: undefined,
+    target_peak_weekly_min_m: undefined,
+    target_peak_weekly_max_m: undefined,
   });
   const [goalTimeDisplay, setGoalTimeDisplay] = useState('');
   const [constraintAwareResult, setConstraintAwareResult] = useState<import('@/lib/api/services/plans').ConstraintAwarePlanResponse | null>(null);
@@ -293,9 +286,10 @@ export default function CreatePlanPage() {
   
   // Determine volume tier based on current miles
   const getVolumeTier = () => {
-    if (formData.current_weekly_miles < 35) return 'builder';
-    if (formData.current_weekly_miles < 45) return 'low';
-    if (formData.current_weekly_miles < 60) return 'mid';
+    const weeklyMi = formData.current_weekly_m / M_PER_MI;
+    if (weeklyMi < 35) return 'builder';
+    if (weeklyMi < 45) return 'low';
+    if (weeklyMi < 60) return 'mid';
     return 'high';
   };
   
@@ -323,34 +317,31 @@ export default function CreatePlanPage() {
   };
 
   // Handle constraint-aware plan creation
-  const handleConstraintAwareSubmit = async (overrides?: { target_peak_weekly_miles?: number }) => {
+  const handleConstraintAwareSubmit = async (overrides?: { target_peak_weekly_m?: number }) => {
     setIsLoading(true);
     setError(null);
 
     try {
-      // First get preview to show fitness bank
       const preview = await planService.previewConstraintAware(
         formData.race_date,
         formData.distance
       );
       setConstraintAwarePreview(preview);
 
-      const peakMilesOverride = overrides?.target_peak_weekly_miles;
-      const peakMiles = peakMilesOverride !== undefined
-        ? peakMilesOverride
-        : (formData.target_peak_weekly_miles || undefined);
+      const peakM = overrides?.target_peak_weekly_m
+        ?? formData.target_peak_weekly_m
+        ?? undefined;
 
-      // Then create the full plan
       const result = await planService.createConstraintAware({
         race_date: formData.race_date,
         race_distance: formData.distance,
         goal_time_seconds: formData.goal_time_seconds,
         race_name: formData.race_name || undefined,
         tune_up_races: formData.tune_up_races.length > 0 ? formData.tune_up_races : undefined,
-        target_peak_weekly_miles: peakMiles,
+        target_peak_weekly_m: peakM,
         target_peak_weekly_range:
-          formData.target_peak_weekly_min && formData.target_peak_weekly_max
-            ? { min: formData.target_peak_weekly_min, max: formData.target_peak_weekly_max }
+          formData.target_peak_weekly_min_m && formData.target_peak_weekly_max_m
+            ? { min: formData.target_peak_weekly_min_m, max: formData.target_peak_weekly_max_m }
             : undefined,
       });
       
@@ -469,7 +460,7 @@ export default function CreatePlanPage() {
           race_date: formData.race_date,
           race_name: formData.race_name || undefined,
           days_per_week: formData.days_per_week,
-          current_weekly_miles: formData.current_weekly_miles,
+          current_weekly_m: formData.current_weekly_m,
           recent_race_distance: formData.recent_race_distance,
           recent_race_time_seconds: raceTimeSeconds ?? undefined,
         });
@@ -513,14 +504,11 @@ export default function CreatePlanPage() {
   };
 
   const acceptSafeRangeAndResubmit = (recommendedPeakMiles: number) => {
-    // Persist the accepted peak on the form (in miles, the canonical unit).
-    // The slider/peak-override fields render in the athlete's preferred unit.
-    setFormData((prev) => ({ ...prev, target_peak_weekly_miles: recommendedPeakMiles }));
+    const peakM = recommendedPeakMiles * M_PER_MI;
+    setFormData((prev) => ({ ...prev, target_peak_weekly_m: peakM }));
     setError(null);
-    // Pass the override directly to the submit handler so the request uses
-    // the new value even before React commits the state update.
     if (formData.planType === 'constraint-aware') {
-      void handleConstraintAwareSubmit({ target_peak_weekly_miles: recommendedPeakMiles });
+      void handleConstraintAwareSubmit({ target_peak_weekly_m: peakM });
     } else if (formData.planType === 'model-driven') {
       void handleModelDrivenSubmit();
     } else {
@@ -833,7 +821,7 @@ export default function CreatePlanPage() {
               {error && (
                 <PlanCreateErrorBanner
                   error={error}
-                  isMetric={isMetric}
+                  formatDistance={formatDistance}
                   onAcceptSafeRange={acceptSafeRangeAndResubmit}
                 />
               )}
@@ -909,11 +897,9 @@ export default function CreatePlanPage() {
                   </div>
                   <div className="bg-slate-900 rounded-lg p-3 text-center">
                     <div className="text-xl font-bold text-white">
-                      {isMetric
-                        ? Math.round(modelPlanResult.summary.total_miles * KM_PER_MI)
-                        : Math.round(modelPlanResult.summary.total_miles)}
+                      {formatDistance(modelPlanResult.summary.total_distance_m, 0)}
                     </div>
-                    <div className="text-xs text-slate-500">total {distanceUnitLong}</div>
+                    <div className="text-xs text-slate-500">total</div>
                   </div>
                   <div className="bg-slate-900 rounded-lg p-3 text-center">
                     <div className="text-xl font-bold text-white">{Math.round(modelPlanResult.summary.total_tss)}</div>
@@ -1009,13 +995,11 @@ export default function CreatePlanPage() {
                 {/* Athlete peak weekly volume override */}
                 {(() => {
                   const peakDisplay =
-                    formData.target_peak_weekly_miles !== undefined
-                      ? isMetric
-                        ? Math.round(formData.target_peak_weekly_miles * KM_PER_MI)
-                        : formData.target_peak_weekly_miles
+                    formData.target_peak_weekly_m !== undefined
+                      ? formatDistance(formData.target_peak_weekly_m, 0).replace(/[^\d.]/g, '')
                       : '';
-                  const peakMin = isMetric ? 16 : 10;
-                  const peakMax = isMetric ? 320 : 200;
+                  const peakMin = isMetric ? 25000 : 16093;
+                  const peakMax = isMetric ? 515000 : 321869;
                   const peakPlaceholder = isMetric ? 'e.g. 110' : 'e.g. 68';
                   return (
                     <div>
@@ -1024,18 +1008,18 @@ export default function CreatePlanPage() {
                       </label>
                       <input
                         type="number"
-                        min={peakMin}
-                        max={peakMax}
+                        min={isMetric ? 16 : 10}
+                        max={isMetric ? 320 : 200}
                         value={peakDisplay}
                         onChange={(e) => {
                           const raw = e.target.value;
                           if (!raw) {
-                            setFormData({ ...formData, target_peak_weekly_miles: undefined });
+                            setFormData({ ...formData, target_peak_weekly_m: undefined });
                             return;
                           }
                           const display = Number(raw);
-                          const miles = isMetric ? display / KM_PER_MI : display;
-                          setFormData({ ...formData, target_peak_weekly_miles: miles });
+                          const meters = isMetric ? display * 1000 : display * M_PER_MI;
+                          setFormData({ ...formData, target_peak_weekly_m: meters });
                         }}
                         placeholder={peakPlaceholder}
                         className="w-full px-4 py-3 bg-slate-900 border border-slate-700/50 rounded-lg text-white placeholder-slate-500"
@@ -1140,7 +1124,7 @@ export default function CreatePlanPage() {
               {error && (
                 <PlanCreateErrorBanner
                   error={error}
-                  isMetric={isMetric}
+                  formatDistance={formatDistance}
                   onAcceptSafeRange={acceptSafeRangeAndResubmit}
                 />
               )}
@@ -1159,15 +1143,11 @@ export default function CreatePlanPage() {
                 {(() => {
                   const warnings = constraintAwareResult.warnings || [];
                   if (warnings.length === 0) return null;
-                  const peakMiles = constraintAwareResult.soft_gate_applied_peak_weekly_miles;
-                  const requestedMiles =
-                    constraintAwareResult.soft_gate_requested_peak_weekly_miles;
-                  const fmtPeak = (mi: number | null | undefined) =>
-                    mi == null
-                      ? null
-                      : isMetric
-                        ? `${(mi * KM_PER_MI).toFixed(1)} ${distanceUnitShort}/wk`
-                        : `${mi.toFixed(1)} ${distanceUnitShort}/wk`;
+                  const peakM = constraintAwareResult.soft_gate_applied_peak_weekly_m;
+                  const requestedM =
+                    constraintAwareResult.soft_gate_requested_peak_weekly_m;
+                  const fmtPeak = (m: number | null | undefined) =>
+                    m == null ? null : `${formatDistance(m, 1)}/wk`;
                   const cappedFromTo = warnings.find((w) =>
                     w.startsWith('capped_requested_peak_to_safe_range:'),
                   );
@@ -1187,9 +1167,9 @@ export default function CreatePlanPage() {
                   if (cappedFromTo) {
                     body = (
                       <>
-                        You asked for a peak of <strong>{fmtPeak(requestedMiles)}</strong>.
+                        You asked for a peak of <strong>{fmtPeak(requestedM)}</strong>.
                         That is higher than your training history supports right now, so
-                        we capped this plan at <strong>{fmtPeak(peakMiles)}</strong>. The
+                        we capped this plan at <strong>{fmtPeak(peakM)}</strong>. The
                         plan you are seeing uses that safer peak. If you still want the
                         higher volume, change the peak in the form and re-generate.
                       </>
@@ -1199,7 +1179,7 @@ export default function CreatePlanPage() {
                       <>
                         You asked for a peak weekly volume range. Your training history
                         does not support the top of that range, so we built this plan at
-                        a single safer peak of <strong>{fmtPeak(peakMiles)}</strong>.
+                        a single safer peak of <strong>{fmtPeak(peakM)}</strong>.
                         Use this plan as-is, or set a specific peak in the form and
                         re-generate.
                       </>
@@ -1207,7 +1187,7 @@ export default function CreatePlanPage() {
                   } else if (autoTuned) {
                     body = (
                       <>
-                        We picked a peak of <strong>{fmtPeak(peakMiles)}</strong> based
+                        We picked a peak of <strong>{fmtPeak(peakM)}</strong> based
                         on what your training history supports. You can override this
                         manually from the form if you want a different peak.
                       </>
@@ -1239,30 +1219,21 @@ export default function CreatePlanPage() {
                   <div className="grid grid-cols-3 gap-4">
                     <div>
                       <div className="text-2xl font-bold text-white">
-                        {(isMetric
-                          ? constraintAwareResult.fitness_bank.peak.weekly_miles * KM_PER_MI
-                          : constraintAwareResult.fitness_bank.peak.weekly_miles
-                        ).toFixed(0)}
+                        {formatDistance(constraintAwareResult.fitness_bank.peak.weekly_m, 0)}
                       </div>
-                      <div className="text-xs text-slate-400">peak {isMetric ? 'kpw' : 'mpw'}</div>
+                      <div className="text-xs text-slate-400">peak weekly</div>
                     </div>
                     <div>
                       <div className="text-2xl font-bold text-white">
-                        {(isMetric
-                          ? constraintAwareResult.fitness_bank.peak.long_run * KM_PER_MI
-                          : constraintAwareResult.fitness_bank.peak.long_run
-                        ).toFixed(0)}
+                        {formatDistance(constraintAwareResult.fitness_bank.peak.long_run_m, 0)}
                       </div>
-                      <div className="text-xs text-slate-400">longest run ({distanceUnitShort})</div>
+                      <div className="text-xs text-slate-400">longest run</div>
                     </div>
                     <div>
                       <div className="text-2xl font-bold text-white">
-                        {(isMetric
-                          ? constraintAwareResult.fitness_bank.peak.mp_long_run * KM_PER_MI
-                          : constraintAwareResult.fitness_bank.peak.mp_long_run
-                        ).toFixed(0)}
+                        {formatDistance(constraintAwareResult.fitness_bank.peak.mp_long_run_m, 0)}
                       </div>
-                      <div className="text-xs text-slate-400">proven @MP ({distanceUnitShort})</div>
+                      <div className="text-xs text-slate-400">proven @MP</div>
                     </div>
                   </div>
                   {constraintAwareResult.fitness_bank.constraint.returning && (
@@ -1356,19 +1327,15 @@ export default function CreatePlanPage() {
                   </div>
                   <div className="bg-slate-900 rounded-lg p-3 text-center">
                     <div className="text-xl font-bold text-white">
-                      {isMetric
-                        ? Math.round(constraintAwareResult.summary.total_miles * KM_PER_MI)
-                        : Math.round(constraintAwareResult.summary.total_miles)}
+                      {formatDistance(constraintAwareResult.summary.total_distance_m, 0)}
                     </div>
-                    <div className="text-xs text-slate-500">total {distanceUnitLong}</div>
+                    <div className="text-xs text-slate-500">total</div>
                   </div>
                   <div className="bg-slate-900 rounded-lg p-3 text-center">
                     <div className="text-xl font-bold text-white">
-                      {isMetric
-                        ? Math.round(constraintAwareResult.summary.peak_miles * KM_PER_MI)
-                        : Math.round(constraintAwareResult.summary.peak_miles)}
+                      {formatDistance(constraintAwareResult.summary.peak_distance_m, 0)}
                     </div>
-                    <div className="text-xs text-slate-500">peak week ({distanceUnitShort})</div>
+                    <div className="text-xs text-slate-500">peak week</div>
                   </div>
                 </div>
 
@@ -1377,9 +1344,7 @@ export default function CreatePlanPage() {
                   <div className="bg-slate-900 rounded-xl p-5">
                     <div className="text-sm text-slate-400 mb-2">Volume Contract</div>
                     <div className="text-sm text-slate-300">
-                      Band: {isMetric
-                        ? `${(constraintAwareResult.volume_contract.band_min * KM_PER_MI).toFixed(0)} - ${(constraintAwareResult.volume_contract.band_max * KM_PER_MI).toFixed(0)} kpw`
-                        : `${constraintAwareResult.volume_contract.band_min} - ${constraintAwareResult.volume_contract.band_max} mpw`}
+                      Band: {formatDistance(constraintAwareResult.volume_contract.band_min_m, 0)} - {formatDistance(constraintAwareResult.volume_contract.band_max_m, 0)}/wk
                     </div>
                     <div className="text-xs text-slate-500 mt-1">
                       Source: {constraintAwareResult.volume_contract.source.replace('_', ' ')} | Peak confidence: {constraintAwareResult.volume_contract.peak_confidence}
@@ -1412,9 +1377,7 @@ export default function CreatePlanPage() {
                       <div key={i} className="flex justify-between text-sm">
                         <span className="text-slate-300">Week {week.week}: {week.theme.replace('_', ' ')}</span>
                         <span className="text-slate-500">
-                          {isMetric
-                            ? `${(week.total_miles * KM_PER_MI).toFixed(0)}km`
-                            : `${week.total_miles.toFixed(0)}mi`}
+                          {formatDistance(week.total_distance_m, 0)}
                         </span>
                       </div>
                     ))}
@@ -1494,20 +1457,17 @@ export default function CreatePlanPage() {
           
           {/* Current Fitness */}
           {step === 'current-fitness' && (() => {
-            const weeklyDisplay = isMetric
-              ? Math.round(formData.current_weekly_miles * KM_PER_MI)
-              : formData.current_weekly_miles;
+            const mPerUnit = isMetric ? 1000 : M_PER_MI;
+            const weeklyDisplay = Math.round(formData.current_weekly_m / mPerUnit);
             const weeklyMin = isMetric ? 16 : 10;
             const weeklyMax = isMetric ? 160 : 100;
             const weeklyStep = 5;
             const weeklyMid = isMetric ? 80 : 50;
 
-            const longRunDisplay = isMetric
-              ? Math.round(formData.longest_recent_run * KM_PER_MI)
-              : formData.longest_recent_run;
+            const longRunDisplay = Math.round(formData.longest_recent_run_m / mPerUnit);
             const longMin = isMetric ? 5 : 3;
             const longMax = isMetric ? 35 : 22;
-            const longStep = isMetric ? 1 : 1;
+            const longStep = 1;
             const longMid = isMetric ? 20 : 12;
 
             return (
@@ -1526,8 +1486,7 @@ export default function CreatePlanPage() {
                       value={weeklyDisplay}
                       onChange={(e) => {
                         const display = Number(e.target.value);
-                        const miles = isMetric ? display / KM_PER_MI : display;
-                        setFormData({ ...formData, current_weekly_miles: miles });
+                        setFormData({ ...formData, current_weekly_m: display * mPerUnit });
                       }}
                       className="w-full"
                     />
@@ -1550,8 +1509,7 @@ export default function CreatePlanPage() {
                       value={longRunDisplay}
                       onChange={(e) => {
                         const display = Number(e.target.value);
-                        const miles = isMetric ? display / KM_PER_MI : display;
-                        setFormData({ ...formData, longest_recent_run: miles });
+                        setFormData({ ...formData, longest_recent_run_m: display * mPerUnit });
                       }}
                       className="w-full"
                     />
@@ -1828,7 +1786,7 @@ export default function CreatePlanPage() {
               {error && (
                 <PlanCreateErrorBanner
                   error={error}
-                  isMetric={isMetric}
+                  formatDistance={formatDistance}
                   onAcceptSafeRange={acceptSafeRangeAndResubmit}
                 />
               )}

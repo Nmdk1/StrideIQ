@@ -15,10 +15,10 @@ export interface TodayWorkout {
   has_workout: boolean;
   workout_type?: string;
   title?: string;
-  distance_mi?: number;
+  distance_m?: number;
   pace_guidance?: string;
   why_context?: string;
-  why_source?: 'correlation' | 'load' | 'plan';  // ADR-020: Source of context
+  why_source?: 'correlation' | 'load' | 'plan';
   week_number?: number;
   phase?: string;
 }
@@ -27,10 +27,9 @@ export interface YesterdayInsight {
   has_activity: boolean;
   activity_name?: string;
   activity_id?: string;
-  distance_mi?: number;
-  pace_per_mi?: string;
+  distance_m?: number;
+  pace_s_per_km?: number;
   insight?: string;
-  // Fallback: most recent activity if no yesterday activity
   last_activity_date?: string;
   last_activity_name?: string;
   last_activity_id?: string;
@@ -41,8 +40,8 @@ export interface YesterdayInsight {
 export interface OtherActivityRef {
   activity_id: string;
   sport: string;
-  distance_mi?: number | null;
-  duration_min?: number | null;
+  distance_m?: number | null;
+  duration_s?: number | null;
   name?: string | null;
 }
 
@@ -50,44 +49,36 @@ export interface WeekDay {
   date: string;
   day_abbrev: string;
   workout_type?: string;
-  /** Sport of the primary (longest) run that day. Always 'run' when completed=true. */
   sport?: string;
-  /** Day's RUNNING total (sum of all runs that day). Walks/strength never count here. */
-  distance_mi?: number;
-  planned_distance_mi?: number;
-  /** True iff at least one RUN happened on this day. */
+  distance_m?: number;
+  planned_distance_m?: number;
   completed: boolean;
   is_today: boolean;
-  /** Longest run that day — primary tap target for the chip. */
   activity_id?: string;
   workout_id?: string;
-  /** Number of runs on this day. Drives the "+N" affordance for multi-run days. */
   run_count?: number;
-  /** Non-running activity on this day (walk, strength, cycle, hike, ...). */
   other_activities?: OtherActivityRef[];
 }
 
 export interface OtherSportSummary {
   sport: string;
   count: number;
-  distance_mi: number;
-  duration_min: number;
+  distance_m: number;
+  duration_s: number;
 }
 
 export interface WeekProgress {
   week_number?: number;
   total_weeks?: number;
   phase?: string;
-  /** RUNNING-only mileage (contract). */
-  completed_mi: number;
-  planned_mi: number;
+  completed_m: number;
+  planned_m: number;
   progress_pct: number;
   days: WeekDay[];
   status: 'on_track' | 'ahead' | 'behind' | 'no_plan';
   trajectory_sentence?: string;
   tsb_context?: 'Fresh' | 'Building' | 'Fatigued';
   load_trend?: 'up' | 'stable' | 'down';
-  /** Per-sport non-running aggregates for the week. */
   other_sport_summary?: OtherSportSummary[];
 }
 

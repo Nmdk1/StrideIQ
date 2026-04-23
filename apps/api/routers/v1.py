@@ -274,15 +274,6 @@ def get_my_training_pace_profile(
     )
 
 
-def format_pace(pace_per_mile: Optional[float]) -> Optional[str]:
-    """Format pace as MM:SS/mi"""
-    if pace_per_mile is None:
-        return None
-    
-    minutes = int(pace_per_mile)
-    seconds = int(round((pace_per_mile - minutes) * 60))
-    return f"{minutes}:{seconds:02d}/mi"
-
 
 def format_duration(seconds: Optional[int]) -> Optional[str]:
     """Format duration as HH:MM:SS or MM:SS"""
@@ -332,7 +323,7 @@ def create_activity(
         "average_heartrate": db_activity.avg_hr,
         "average_cadence": None,
         "total_elevation_gain": float(db_activity.total_elevation_gain) if db_activity.total_elevation_gain else None,
-        "pace_per_mile": None,
+        "pace_s_per_km": None,
         "duration_formatted": None,
         "splits": None,
         "performance_percentage": db_activity.performance_percentage,
@@ -341,10 +332,7 @@ def create_activity(
         "race_confidence": db_activity.race_confidence,
     }
     if db_activity.average_speed and float(db_activity.average_speed) > 0:
-        pace_per_mile = 26.8224 / float(db_activity.average_speed)
-        minutes = int(pace_per_mile)
-        seconds = int(round((pace_per_mile - minutes) * 60))
-        activity_dict["pace_per_mile"] = f"{minutes}:{seconds:02d}/mi"
+        activity_dict["pace_s_per_km"] = round(1000 / float(db_activity.average_speed), 2)
     if db_activity.duration_s:
         h, m, s = db_activity.duration_s // 3600, (db_activity.duration_s % 3600) // 60, db_activity.duration_s % 60
         activity_dict["duration_formatted"] = f"{h}:{m:02d}:{s:02d}" if h > 0 else f"{m}:{s:02d}"
@@ -413,7 +401,7 @@ def get_activity_splits(
             average_heartrate=ls.average_heartrate,
             max_heartrate=ls.max_heartrate,
             average_cadence=float(ls.average_cadence) if ls.average_cadence is not None else None,
-            gap_seconds_per_mile=float(ls.gap_seconds_per_mile) if ls.gap_seconds_per_mile is not None else None,
+            gap_s_per_km=round(float(ls.gap_seconds_per_mile) * 1000 / 1609.34, 2) if ls.gap_seconds_per_mile is not None else None,
             lap_type=ls.lap_type,
             interval_number=ls.interval_number,
             total_ascent_m=getattr(src, "total_ascent_m", None),

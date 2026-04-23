@@ -18,13 +18,14 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Trophy, RefreshCw, Clock, Activity, Calendar, Medal } from 'lucide-react';
+import { useUnits } from '@/lib/context/UnitsContext';
 
 interface PersonalBest {
   id: string;
   distance_category: string;
   distance_meters: number;
   time_seconds: number;
-  pace_per_mile: number | null;
+  pace_s_per_km: number | null;
   achieved_at: string;
   is_race: boolean;
   age_at_achievement: number | null;
@@ -87,15 +88,9 @@ function formatDuration(seconds: number): string {
   return `${minutes}:${secs.toString().padStart(2, '0')}`;
 }
 
-function formatPace(pacePerMile: number | null): string {
-  if (!pacePerMile) return '--';
-  const mins = Math.floor(pacePerMile);
-  const secs = Math.round((pacePerMile % 1) * 60);
-  return `${mins}:${secs.toString().padStart(2, '0')}/mi`;
-}
-
 function PersonalBestsContent() {
   const queryClient = useQueryClient();
+  const { formatPace } = useUnits();
   const [recalculating, setRecalculating] = useState(false);
 
   // Get current user
@@ -330,7 +325,7 @@ function PersonalBestsContent() {
                         {formatDuration(pb.time_seconds)}
                       </td>
                       <td className="px-4 py-4 text-slate-300 font-mono">
-                        {formatPace(pb.pace_per_mile)}
+                        {formatPace(pb.pace_s_per_km)}
                       </td>
                       <td className="px-4 py-4 text-slate-400">
                         {new Date(pb.achieved_at).toLocaleDateString()}

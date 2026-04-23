@@ -13,6 +13,7 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
+import { useUnits } from '@/lib/context/UnitsContext';
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import {
@@ -80,6 +81,7 @@ function formatDate(iso: string | null | undefined): string {
 // ─── Race Character ─────────────────────────────────────────────────────
 
 function RaceCharacterSection({ data }: { data: RaceCharacter }) {
+  const { formatDistance } = useUnits();
   const [expanded, setExpanded] = useState(false);
 
   if (!data.has_gap_data && data.race_count === 0) return null;
@@ -145,7 +147,7 @@ function RaceCharacterSection({ data }: { data: RaceCharacter }) {
                   <div className="flex items-center gap-3">
                     <span className="text-slate-500 w-20">{race.date}</span>
                     <span className="text-slate-300">
-                      {race.distance_mi}mi at {race.race_pace}
+                      {formatDistance(race.distance_m)} at {race.race_pace}
                     </span>
                     {race.name && (
                       <span className="text-slate-600 truncate max-w-[120px]">{race.name}</span>

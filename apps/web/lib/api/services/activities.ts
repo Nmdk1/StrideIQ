@@ -59,29 +59,28 @@ export interface FilterDistributions {
 /** A single sport-bucket inside an ActivitySummary. */
 export interface ActivitySummaryBucket {
   total_activities: number;
-  total_distance_km: number;
-  total_distance_miles: number;
-  total_duration_hours: number;
-  average_pace_per_mile?: number | null;
+  total_distance_m: number;
+  total_duration_s: number;
+  avg_pace_s_per_km?: number | null;
   race_count?: number;
 }
 
-export interface ActivitySummaryOtherBucket extends ActivitySummaryBucket {
+export interface ActivitySummaryOtherBucket {
+  total_activities: number;
+  total_distance_m: number;
+  total_duration_s: number;
   by_sport: Record<string, ActivitySummaryBucket>;
 }
 
 export interface ActivitySummary {
-  // Sport-aware buckets — running is the canonical metric.
   running: ActivitySummaryBucket;
   other: ActivitySummaryOtherBucket;
   combined: ActivitySummaryBucket;
 
-  // Backwards-compatible top-level (mirrors `running`).
   total_activities: number;
-  total_distance_km: number;
-  total_distance_miles: number;
-  total_duration_hours: number;
-  average_pace_per_mile: number | null;
+  total_distance_m: number;
+  total_duration_s: number;
+  avg_pace_s_per_km: number | null;
   activities_by_sport: Record<string, number>;
   race_count: number;
   period_days: number;
