@@ -131,6 +131,20 @@ class ToolsMixin:
                 },
             },
             {
+                "name": "get_race_strategy_packet",
+                "description": "Build the full deterministic race strategy packet before answering a race plan: target race, plan week, prior course/race activity, recent race-relevant workouts, race history, anchors, invalid anchors, injury context, training load context, and athlete-stated race psychology. Use this FIRST for race strategy, race plan, pacing, or execution questions.",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "race_name": {"type": "string", "description": "Optional race name from the athlete message, e.g. Mayor's Cup 5K"},
+                        "race_date": {"type": "string", "description": "Optional race date YYYY-MM-DD"},
+                        "race_distance": {"type": "string", "description": "Optional distance label, e.g. 5k, 10k, half marathon, marathon"},
+                        "lookback_days": {"type": "integer", "description": "How far back to search for race-relevant workouts (default 120, max 365)"},
+                    },
+                    "required": [],
+                },
+            },
+            {
                 "name": "get_recovery_status",
                 "description": "Get recovery metrics: half-life, durability index, false fitness and masked fatigue signals.",
                 "input_schema": {
@@ -392,6 +406,8 @@ class ToolsMixin:
                 result = coach_tools.get_correlations(self.db, athlete_id, **tool_input)
             elif tool_name == "get_race_predictions":
                 result = coach_tools.get_race_predictions(self.db, athlete_id)
+            elif tool_name == "get_race_strategy_packet":
+                result = coach_tools.get_race_strategy_packet(self.db, athlete_id, **tool_input)
             elif tool_name == "get_recovery_status":
                 result = coach_tools.get_recovery_status(self.db, athlete_id)
             elif tool_name == "get_active_insights":

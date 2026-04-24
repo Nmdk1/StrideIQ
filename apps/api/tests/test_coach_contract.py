@@ -188,7 +188,7 @@ class TestNormalizationPipeline:
 
 class TestToolDefinitions:
     """
-    The coach has 26 tools. All must be importable and callable from coach_tools.
+    The coach has 27 tools. All must be importable and callable from coach_tools.
     Missing tools mean the coach can't answer certain questions.
     """
 
@@ -204,6 +204,7 @@ class TestToolDefinitions:
         "get_training_paces",
         "get_correlations",
         "get_race_predictions",
+        "get_race_strategy_packet",
         "get_recovery_status",
         "get_active_insights",
         "get_pb_patterns",
@@ -246,9 +247,9 @@ class TestToolDefinitions:
         assert not non_callable, f"Non-callable tools: {non_callable}"
 
     def test_tool_count_matches(self):
-        """Tool list must have exactly 26 entries (reconciliation check)."""
-        assert len(self.REQUIRED_TOOLS) == 26, \
-            f"Expected 26 tools, found {len(self.REQUIRED_TOOLS)} in REQUIRED_TOOLS list"
+        """Tool list must have exactly 27 entries (reconciliation check)."""
+        assert len(self.REQUIRED_TOOLS) == 27, \
+            f"Expected 27 tools, found {len(self.REQUIRED_TOOLS)} in REQUIRED_TOOLS list"
 
 
 # ---------------------------------------------------------------------------

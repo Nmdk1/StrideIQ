@@ -110,10 +110,16 @@ def test_race_strategy_requires_execution_shape():
     )
     valid, ok_reason = validate_conversation_contract_response(
         user_message,
-        "Strategy: open controlled, hold effort through mile 2, then close aggressively if breathing is stable.",
+        (
+            "Objective: race assertively. Primary limiter: continuous pressure. "
+            "False limiter: do not treat old injury-compromised anchors as current fitness. "
+            "Pacing shape: open controlled, hold effort through mile 2, then close aggressively. "
+            "Course risk: late rise. Execution cues: relax shoulders and keep cadence tall. "
+            "Success beyond time: commit to the middle mile. Post-race learning: compare effort fade to splits."
+        ),
     )
 
     assert invalid is False
-    assert reason == "race_strategy_missing_execution"
+    assert reason == "race_strategy_missing_packet"
     assert valid is True
     assert ok_reason == "ok"

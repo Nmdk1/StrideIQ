@@ -68,15 +68,35 @@ def classify_conversation_contract(message: str) -> ConversationContract:
             max_words=80,
         )
 
-    if "race" in lower and any(
-        token in lower for token in ("strategy", "tomorrow", "5k", "10k", "tune up", "tune-up", "pacing")
-    ):
+    race_terms = (
+        "race",
+        "5k",
+        "10k",
+        "half marathon",
+        "marathon",
+        "tune up",
+        "tune-up",
+        "mayor",
+    )
+    strategy_terms = (
+        "strategy",
+        "plan",
+        "pacing",
+        "pace",
+        "execution",
+        "execute",
+        "tactic",
+        "approach",
+        "tomorrow",
+    )
+    if any(token in lower for token in race_terms) and any(token in lower for token in strategy_terms):
         return ConversationContract(
             contract_type=ConversationContractType.RACE_STRATEGY,
             outcome_target="Produce an execution plan that makes the athlete strategically sharper.",
             required_behavior=(
-                "Ground the answer in race history, course/activity evidence, current training, "
-                "and athlete-stated psychology when available."
+                "Use the race strategy packet. Identify the realistic objective, primary limiter, "
+                "false limiter, pacing or effort shape, course-specific risk, execution cues, "
+                "success definition beyond time, and post-race learning target."
             ),
             max_words=260,
         )
@@ -169,22 +189,23 @@ def validate_conversation_contract_response(user_message: str, assistant_message
         return True, "ok"
 
     if contract.contract_type == ConversationContractType.RACE_STRATEGY:
-        has_execution = any(
-            token in lower
-            for token in (
-                "strategy",
-                "execution",
-                "open",
-                "hold",
-                "close",
-                "surge",
-                "pace",
-                "effort",
-                "mile",
-            )
-        )
-        if not has_execution:
-            return False, "race_strategy_missing_execution"
+        required_groups = {
+            "objective": ("objective", "goal", "target", "realistic", "race for"),
+            "primary_limiter": ("primary limiter", "limiter", "limit is", "bottleneck"),
+            "false_limiter": ("false limiter", "ignore", "not the limiter", "not your limiter"),
+            "pacing_shape": ("pacing", "pace", "effort shape", "open", "hold", "close", "surge"),
+            "course_risk": ("course", "hill", "rise", "turn", "wind", "weather", "risk"),
+            "execution_cues": ("cue", "cues", "relax", "cadence", "breathing", "shoulders"),
+            "success_definition": ("success beyond time", "success", "win condition", "beyond time"),
+            "learning_target": ("post-race", "learning", "learn", "after the race", "compare"),
+        }
+        missing = [
+            name
+            for name, tokens in required_groups.items()
+            if not any(token in lower for token in tokens)
+        ]
+        if missing:
+            return False, "race_strategy_missing_packet"
         return True, "ok"
 
     return True, "ok"
@@ -205,7 +226,11 @@ def build_conversation_contract_retry_instruction(user_message: str, reason: str
     if contract.contract_type == ConversationContractType.EMOTIONAL_LOAD:
         return base + "Do not pry. Give grounded food/recovery guidance and one next step."
     if contract.contract_type == ConversationContractType.RACE_STRATEGY:
-        return base + "Give an execution strategy: open, middle, close, cues, and risk."
+        return base + (
+            "Use this shape: Objective, Primary limiter, False limiter, Pacing shape, "
+            "Course risk, Execution cues, Success beyond time, Post-race learning. "
+            "Ground it in the race strategy packet and state uncertainty instead of guessing."
+        )
     return base + contract.required_behavior
 
 

@@ -152,6 +152,7 @@ class GuardrailsMixin:
             "get_weekly_volume",
             "get_training_paces",
             "get_race_predictions",
+            "get_race_strategy_packet",
             "get_nutrition_log",
             "get_nutrition_correlations",
             "get_best_runs",

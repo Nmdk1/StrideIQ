@@ -287,6 +287,8 @@ class LLMMixin:
             "role": "user",
             "content": (
                 "MANDATORY: Use the appropriate coach tools before making data claims. "
+                "For race strategy, race plan, pacing, or execution questions, call "
+                "get_race_strategy_packet first. "
                 "For specific older activities or athlete corrections that something exists, "
                 "call search_activities instead of relying on recent-run summaries. "
                 "Do NOT answer analytic/data questions without tool data.\n\n"
@@ -561,6 +563,19 @@ class LLMMixin:
                 "parameters": {"type": "object", "properties": {}}
             },
             {
+                "name": "get_race_strategy_packet",
+                "description": "Build the full deterministic race strategy packet before answering race plan, pacing, or execution questions.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "race_name": {"type": "string"},
+                        "race_date": {"type": "string"},
+                        "race_distance": {"type": "string"},
+                        "lookback_days": {"type": "integer"},
+                    },
+                },
+            },
+            {
                 "name": "get_recovery_status",
                 "description": "Get recovery metrics: half-life, durability index, false fitness and masked fatigue signals.",
                 "parameters": {"type": "object", "properties": {}}
@@ -833,6 +848,7 @@ YOU HAVE TOOLS — USE THEM PROACTIVELY:
 - Call get_training_load_history for load progression over time
 - Call get_recovery_status for injury risk assessment
 - Call get_race_predictions for RPI-based equivalent times and actual race history
+- For race strategy, race plan, pacing, or execution questions, call get_race_strategy_packet first
 - Call get_plan_week for the current training plan
 - Call get_calendar_day_context for specific day plan + actual
 - Call get_wellness_trends for sleep, stress, soreness patterns
