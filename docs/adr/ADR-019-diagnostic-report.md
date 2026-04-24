@@ -59,6 +59,11 @@ Functions:
 `GET /v1/analytics/diagnostic-report`
 
 Response:
+
+> **Updated Apr 2026 — Canonical Units Migration:** API response fields below
+> reflect the canonical units migration. `total_distance_km` → `total_distance_m`
+> (meters), `distance_km` → `distance_m` (meters). Original ADR examples used km.
+
 ```json
 {
   "generated_at": "2026-01-14T12:00:00Z",
@@ -67,7 +72,7 @@ Response:
   "period_end": "2026-01-14",
   "executive_summary": {
     "total_activities": 196,
-    "total_distance_km": 823,
+    "total_distance_m": 823000,
     "peak_volume_km": 113,
     "current_phase": "recovery",
     "efficiency_trend_pct": -5.4,
@@ -88,7 +93,7 @@ Response:
   ],
   "volume_trajectory": {
     "weeks": [
-      {"week": "2025-W47", "distance_km": 113, "runs": 8, "phase": "peak"}
+      {"week": "2025-W47", "distance_m": 113000, "runs": 8, "phase": "peak"}
     ],
     "total_km": 823,
     "total_runs": 71,
@@ -100,14 +105,14 @@ Response:
     "trend_pct": -5.4,
     "interpretation": "Expected during injury recovery",
     "recent_runs": [
-      {"date": "2026-01-13", "distance_km": 19.3, "pace": 5.24, "hr": 139, "efficiency": 1.37}
+      {"date": "2026-01-13", "distance_m": 19300, "pace": 5.24, "hr": 139, "efficiency": 1.37}
     ]
   },
   "race_history": [
     {
       "date": "2025-11-29",
       "name": "Coastal Half Marathon",
-      "distance_km": 21.2,
+      "distance_m": 21200,
       "time_seconds": 5260,
       "pace_per_km": "4:08",
       "notes": "7-min PR, 4 days post-injury"

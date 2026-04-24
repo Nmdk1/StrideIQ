@@ -198,7 +198,7 @@ class Acceleration:
     end_time_s: int
     duration_s: int
     distance_m: float
-    avg_pace_sec_per_mile: float
+    avg_pace_s_per_km: float
     avg_pace_heat_adjusted: Optional[float]  # if weather data exists
     pace_zone: str        # 'easy', 'marathon', 'threshold', 'interval', 'repetition'
     avg_hr: Optional[float]
@@ -215,7 +215,7 @@ class Phase:
     end_time_s: int
     duration_s: int
     distance_m: float
-    avg_pace_sec_per_mile: float
+    avg_pace_s_per_km: float
     avg_pace_heat_adjusted: Optional[float]
     pace_zone: str
     avg_hr: Optional[float]

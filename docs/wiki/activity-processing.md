@@ -23,7 +23,7 @@ The classification uses a priority cascade: hill repeats → progression → str
 
 ### Shape Sentence
 
-Stored as `Activity.shape_sentence` — a natural language description (e.g., "5.5 miles building from 8:57 to 8:04"). Generated from the shape classification and summary data.
+Stored as `Activity.shape_sentence` — a natural language description (e.g., "5.5 mi building from 8:57 to 8:04" or "8.9 km building from 5:34 to 4:59"). Generated from the shape classification and summary data, using the athlete's preferred units.
 
 ### Run Shape Data
 
@@ -75,9 +75,10 @@ implementation described below.
   low opacity) + emerald glow (medium width, mid opacity) + deep emerald
   line (narrow, full opacity). Replaces the original yellow route that
   vanished against pale terrain.
-- **Distance hover card** (leftmost moment-readout card): two-decimal miles
-  matching watch convention, with a secondary time line. Replaces the
-  earlier inline distance label per founder direction.
+- **Distance hover card** (leftmost moment-readout card): distance in the
+  athlete's preferred units (miles or km), two-decimal precision matching
+  watch convention, with a secondary time line. Replaces the earlier
+  inline distance label per founder direction.
 - **Navigation:** Mapbox `NavigationControl` is mounted so runners can
   rotate, tilt, and zoom freely.
 - **Fullscreen:** desktop-only fullscreen toggle (Google-Maps-style) on the
@@ -113,7 +114,7 @@ implementation described below.
 
 - **GPS trace:** Two-source normalization (Garmin `track` field and `streamPoints`), downsampled to 2000 points using RDP algorithm with adaptive epsilon
 - **Pace-colored route:** Red = fast (red-lining), blue = slow (easy). 5th-95th percentile normalization
-- **Mile markers:** Interval-based filtering (≤5mi: every mile, 5-15mi: every 2, 15+: every 5)
+- **Distance markers:** Interval-based filtering (≤5mi/8km: every unit, 5-15mi/8-24km: every 2, 15+mi/24+km: every 5), displayed in athlete's preferred units
 - **Start/end markers:** Combined when within 50m (loops)
 - **Elevation profile:** Interactive — hover shows elevation, gradient, pace, HR; dot moves on map. Wired to `StreamHoverContext`
 - **Map aspect ratio:** 4:3 for usable surface area

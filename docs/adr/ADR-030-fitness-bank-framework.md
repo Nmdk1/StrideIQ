@@ -84,7 +84,7 @@ class RacePerformance:
     distance: str                     # "5k", "10k", "half", "marathon"
     distance_m: float
     finish_time_seconds: int
-    pace_per_mile: float
+    pace_per_mile: float             # Note (Apr 2026): internal model field; API responses now use pace_s_per_km (canonical units migration)
     rpi: float
     conditions: Optional[str]         # "limping", "hot", "hilly"
     confidence: float                 # How much to weight this

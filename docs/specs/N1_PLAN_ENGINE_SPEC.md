@@ -64,6 +64,9 @@ injury_constraints: list         # from athlete facts
 training_recency: enum           # BUILDING / MAINTAINING / REBUILDING / NEW
 easy_pace_per_mile: float        # from RPI or stated (for time-based floors)
 ```
+<!-- Note: easy_pace_per_mile is an internal engine field, not an API response field.
+     Verify if this was renamed in the canonical units migration. -->
+
 
 **RPI resolution order (no fabrication):**
 1. Race history → `_find_best_race` returns actual RPI (>0)

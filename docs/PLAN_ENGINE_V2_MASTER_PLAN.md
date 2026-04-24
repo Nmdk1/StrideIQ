@@ -59,8 +59,8 @@ density decision, every pace decision flows from this.
 
 **Sacred function:** `calculate_paces_from_rpi(rpi) → dict`
 
-Returns named Daniels zones in min/mi: `easy`, `long`, `marathon`,
-`threshold`, `interval`, `repetition`, `recovery`.
+Returns named Daniels zones in min/mi internally: `easy`, `long`, `marathon`,
+`threshold`, `interval`, `repetition`, `recovery`. API boundary converts to seconds-per-km (`pace_s_per_km`); frontend `useUnits()` hook formats for display.
 
 **V2 usage:** Call this FIRST. These are the anchors. V2 extends them
 with the percentage ladder (filling gaps between named zones) but

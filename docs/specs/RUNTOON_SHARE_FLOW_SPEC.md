@@ -294,7 +294,7 @@ The `has_runtoon` field tells the frontend what to do next:
   "activity_id": "uuid",
   "activity_summary": {
     "name": "Afternoon Run",
-    "distance_mi": 13.0,
+    "distance_m": 20921,
     "pace": "7:27/mi",
     "duration": "1:37:00"
   },

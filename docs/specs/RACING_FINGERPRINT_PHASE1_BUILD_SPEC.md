@@ -689,6 +689,7 @@ class PerformanceEvent(Base):
     # Performance
     time_seconds = Column(Integer, nullable=False)
     pace_per_mile = Column(Float, nullable=True)
+    # Note: pace_per_mile is a database column. Verify if renamed in canonical units migration.
     rpi_at_event = Column(Float, nullable=True)
     performance_percentage = Column(Float, nullable=True)
     is_personal_best = Column(Boolean, default=False)

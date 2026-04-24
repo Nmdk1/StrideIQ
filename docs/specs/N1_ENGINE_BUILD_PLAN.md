@@ -77,7 +77,7 @@ The engine receives these resolved values and returns `List[WeekPlan]`.
 - `ConstraintAwarePlan` — `apps/api/services/constraint_aware_planner.py` line 116
 
 ### Supporting infrastructure (already exists)
-- `calculate_paces_from_rpi(rpi)` → `{"easy": 8.5, "threshold": 6.5, ...}` (min/mi floats)
+- `calculate_paces_from_rpi(rpi)` → `{"easy": 8.5, "threshold": 6.5, ...}` (min/mi floats internally; display uses athlete's preferred units via `useUnits()`)
 - `format_pace(pace_minutes)` → `"6:30"` string
 - `WorkoutStructure` dataclass + `THRESHOLD_STRUCTURES`, `INTERVAL_STRUCTURES`, `MP_LONG_RUN_STRUCTURES`
 - `ExperienceLevel` enum: BEGINNER, INTERMEDIATE, EXPERIENCED, ELITE
@@ -92,6 +92,7 @@ This is mostly done by the existing code in `generate_plan()`. The engine
 function signature receives these pre-resolved values. The engine adds:
 - `training_recency` (BUILDING/MAINTAINING/REBUILDING/NEW) from bank fields
 - `easy_pace_per_mile` from RPI or conservative default
+<!-- Note: easy_pace_per_mile is an internal engine field. Verify if renamed in canonical units migration. -->
 - Readiness gate check (marathon: current_lr must reach 12mi before starting)
 
 #### Step 2 — Phase Schedule

@@ -157,7 +157,8 @@ These are enforced by regex or prefix checks in `apps/api/services/plan_framewor
 **Threshold — implemented (P3.1)**
 
 - **`prev_threshold_continuous_min`:** optional `int` (last `threshold` stem’s continuous minutes).  
-- **`prev_threshold_intervals`:** optional `(reps, duration_min)` for last `threshold_intervals` stem.  
+- **`prev_threshold_intervals`:** optional `(reps, duration_min)` for last `threshold_intervals` stem.
+<!-- Note: duration_min here is an internal engine field (segment duration), not an API response field. -->  
 - Maintained in `_generate_workouts` after each week (extract from segments); passed into `scale_workout` → `_scale_threshold_continuous` / `_scale_threshold_intervals`. Stems are independent (continuous vs intervals).
 
 **Explicit non-fabrication rule:** If `prev_mp_miles` / threshold prevs are missing, use **non-comparative** templates — never imply prior-week numbers.

@@ -356,6 +356,7 @@ be expanded to all 8.
 **Performance:**
 - `time_seconds` (integer)
 - `pace_per_mile` (float)
+<!-- Note: pace_per_mile is a database column. Verify if this column was renamed in the canonical units migration. -->
 - `rpi_at_event` (float — derived from race time via RPI calculator)
 - `performance_percentage` (float — age-graded, from WMA)
 - `is_personal_best` (boolean — was this a PB at the time?)

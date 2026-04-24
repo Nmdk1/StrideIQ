@@ -17,7 +17,7 @@ Single endpoint returns all data in one call:
 | Endpoint | Purpose |
 |----------|---------|
 | `GET /v1/reports` | Unified report. Params: `start_date`, `end_date`, `categories` (comma-separated). |
-| `GET /v1/reports/export/csv` | Same filters, CSV download. Imperial units (miles, lbs, °F, min/mi). |
+| `GET /v1/reports/export/csv` | Same filters, CSV download. Uses athlete's preferred units (imperial: miles, lbs, °F, min/mi; metric: km, kg, °C, min/km). |
 | `GET /v1/reports/available-metrics` | Returns curated + extended metric lists. |
 
 Router: `routers/reports.py`. Queries `GarminDay`, `Activity`, `NutritionEntry`, `BodyComposition` in a single pass, indexes by date, computes period averages.
@@ -61,7 +61,7 @@ Hook: `lib/hooks/queries/reports.ts` → `useReport()`
 - **GarminDay exposed to frontend for the first time.** Previously health data was only consumed server-side (home, progress, correlations). Reports surface it directly.
 - **Curated + extended metric pattern.** Defaults show what matters; athletes can toggle on niche metrics (VO2max, intensity minutes, etc.).
 - **One API call.** The backend assembles all four data categories in a single query pass rather than requiring 4 separate frontend calls.
-- **CSV uses imperial units.** Miles, lbs, °F, min/mi pace — matches the primary athlete base.
+- **CSV respects athlete's preferred units.** Imperial athletes see miles, lbs, °F, min/mi; metric athletes see km, kg, °C, min/km. Preference derived from `Athlete.preferred_units` (country-aware default or explicit setting).
 
 ## Sources
 

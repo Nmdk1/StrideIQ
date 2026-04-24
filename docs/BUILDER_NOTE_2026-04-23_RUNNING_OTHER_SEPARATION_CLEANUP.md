@@ -43,7 +43,7 @@ When done, no surface in production conflates a walk, strength session, or cycle
 - Verify: a freshly checked-out `.sh` runs on the production droplet without `sed -i 's/\r$//'`.
 
 1.3 **Fix double-rounding in the new `other_sport_summary` aggregation in `apps/api/routers/home.py`.**
-- Current code rounds `duration_min` per-activity to 1 dp, then sums, then rounds to whole minutes. This is order-dependent and dropped 1 minute on a 7,767-second strength session in tests.
+- Current code rounds `duration_s` per-activity to 1 dp, then sums, then rounds to whole minutes. This is order-dependent and dropped 1 minute on a 7,767-second strength session in tests.
 - Fix: in the `_other_agg` loop accumulate raw `duration_s` (int seconds) and `distance_m`, divide and round once at the end. Same change in the per-day `other_activities` loop only if you want consistent display rounding — discuss before changing the per-activity values, since tests pin them.
 - Update `apps/api/tests/test_home_week_running_separation.py` so the strength duration assertion is `== 130` (not `in (129, 130)`). The looser assertion is a bandaid and must be removed.
 
@@ -120,7 +120,7 @@ For each site, the deliverable is either: (a) a one-line code comment stating th
 - Any change to `apps/api/services/plan_framework/**` or `apps/api/routers/plan_generation.py`. Those touch the P0 plan registry gate. If you must touch them, stop and request a separate builder note with the P0 attestation rules attached.
 - Any new OAuth or third-party permission scopes. None are needed for this work.
 - Adding new top-level surfaces or pages. This is a correctness + cleanup pass, not a new feature.
-- Replacing or extending the `WeekDay` / `WeekProgress` schemas in any way that breaks the back-compat fields (`completed_mi`, `planned_mi`, `distance_mi`, `activity_id`).
+- Replacing or extending the `WeekDay` / `WeekProgress` schemas in any way that breaks the back-compat fields (`completed_m`, `planned_m`, `distance_m`, `activity_id`). **Note:** these fields were renamed from `_mi` to `_m` (meters) in the canonical units migration (Apr 2026).
 - Changing `routers/training_load.py`'s cross-sport TSS aggregation. That mixing is intentional.
 
 ---
@@ -152,12 +152,12 @@ Repo hygiene
 
 **Core contracts to preserve:**
 
-1. The `WeekDay` schema fields shipped in commit `0af4bcd` are now part of the public API surface for the home and (after 2.4) the analytics page:
-   - `distance_mi` is RUNNING ONLY.
+1. The `WeekDay` schema fields are part of the public API surface for the home and analytics pages:
+   - `distance_m` is RUNNING ONLY (meters; renamed from `distance_mi` in the canonical units migration).
    - `activity_id` is the LONGEST run that day.
    - `run_count` reflects the count of runs that day.
    - `other_activities[]` carries non-running activity for the day.
-2. `WeekProgress.completed_mi` and `WeekProgress.planned_mi` are RUNNING ONLY.
+2. `WeekProgress.completed_m` and `WeekProgress.planned_m` are RUNNING ONLY (meters; renamed from `_mi`).
 3. `/v1/activities/summary` returns `running` / `other` / `combined` buckets and ALSO mirrors `running` to the legacy top-level fields. Do not remove the back-compat mirroring this session.
 4. `Avg Pace` is only meaningful for the running bucket. Do not compute or display a cross-sport pace average.
 5. Never use `keep first per day` style dedup that drops real rows. If multiple activities share a day, separate by sport, then aggregate.

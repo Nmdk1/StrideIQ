@@ -147,6 +147,8 @@ def get_dynamic_suggestions(self, athlete_id: UUID) -> List[str]:
             .first()
         )
         if completed_today:
+            # Note (Apr 2026): distance_km here is a derived display variable from the
+            # canonical distance_m field. Not an API response field — unchanged by migration.
             distance_km = (completed_today.distance_m or 0) / 1000
             add(f"Review my run from today ({distance_km:.1f} km). Cite the activity id + distance + pace + avg HR (from get_recent_runs).")
     except Exception:

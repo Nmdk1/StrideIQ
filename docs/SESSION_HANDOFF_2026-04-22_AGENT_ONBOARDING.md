@@ -140,7 +140,7 @@ apps/web/                  # Frontend
 - CI is the source of truth. If CI is green, the code is correct.
 
 ### Known issues / tech debt
-- Imperial-baked API field names (`distance_mi`, `pace_per_mile`) — frontend must convert. Every new surface that forgets is a unit-bug landmine.
+- ~~Imperial-baked API field names~~ — **RESOLVED (Apr 2026).** All API endpoints now use canonical units: `distance_m` (meters), `pace_s_per_km` (seconds/km), `duration_s` (seconds). Frontend `useUnits()` hook converts at render based on `Athlete.preferred_units`.
 - Compare tab is a placeholder — redesign spec exists at `docs/specs/COMPARE_REDESIGN.md`, sequenced behind canvas vocabulary redesign.
 - 119 xfail contract tests for Phases 3B, 3C, Phase 4, and Monetization — these become real tests when gates clear.
 

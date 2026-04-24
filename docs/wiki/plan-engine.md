@@ -41,9 +41,9 @@ The engine follows a diagnosis-first flow:
 
 Respected athlete inputs (cannot be overridden):
 - `race_date`, `race_distance`, `days_per_week`, `rest_days`, `long_run_day`
-- `target_peak_weekly_miles`, `goal_time_seconds`, `tune_up_races`
+- `target_peak_weekly_m` (meters), `goal_time_seconds`, `tune_up_races`
 
-API: `ConstraintAwarePlanRequest` in `routers/plan_generation.py`.
+API: `ConstraintAwarePlanRequest` in `routers/plan_generation.py`. All distance inputs are in meters at the API boundary; the engine converts internally.
 
 ### 14 Archetypes
 
@@ -210,7 +210,7 @@ V2 is a ground-up rewrite of the plan generator, informed by modern coaching sci
 | Phase model | Theme-driven (rebuild_easy, build_t, etc.) | Coaching periodization (general, supportive, specific, taper) |
 | Workout output | Flat paces dict + description | Rich segments JSONB (warmup → work → cooldown with pace, distance, duration) |
 | Long run | Single type per week | Three rotating types (easy progressive, threshold segments, fatigue resistance) + oscillation at peak |
-| Volume control | `sustainable_peak_weekly` ceiling | `desired_peak_weekly_miles` (athlete decides peak) |
+| Volume control | `sustainable_peak_weekly` ceiling | `desired_peak_weekly_miles` (athlete decides peak; API accepts `target_peak_weekly_m` in meters, converted at the router boundary) |
 | Fueling | Not present | Automatic on all runs exceeding 90 minutes |
 | Distance prescription | Single target | Ranges (min, max) for athlete self-selection |
 | Effort language | Zone names | Effort-based descriptions (10K effort, easy/mod) with pace as secondary |
