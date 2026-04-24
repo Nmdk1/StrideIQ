@@ -1667,16 +1667,12 @@ def _call_opus_briefing_sync(
 
     _today = local_today or date.today()
     _now = local_now or datetime.now()
-    try:
-        _time_str = _now.strftime("%-I:%M %p")
-    except ValueError:
-        _time_str = _now.strftime("%I:%M %p").lstrip("0")
     _tod = "morning" if _now.hour < 12 else ("afternoon" if _now.hour < 17 else "evening")
     system_prompt = (
         f"You are an elite running coach generating a structured home page briefing. "
         f"Today is {_today.isoformat()} ({_today.strftime('%A')}). "
-        f"The athlete's current local time is {_time_str} ({_tod}). "
-        "Use time-appropriate language — say 'this afternoon' if it's afternoon, 'this evening' if evening, 'this morning' ONLY if it's actually morning. "
+        f"Time of day: {_tod}. "
+        "Use time-appropriate language (e.g. 'this morning', 'this afternoon', 'tonight'). Do NOT state or repeat the clock time — the athlete already has a clock. "
         "All dates include pre-computed relative times like '(2 days ago)'. USE those labels — do NOT compute your own. "
         "Respond with ONLY a valid JSON object — no markdown, no code fences, no explanation. "
         "The JSON must contain these fields:\n"
