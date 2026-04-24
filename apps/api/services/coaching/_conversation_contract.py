@@ -34,6 +34,16 @@ _CORRECTION_RE = re.compile(
     re.IGNORECASE,
 )
 
+_PRYING_RE = re.compile(
+    r"\b("
+    r"what(?:'s| is) going on|tell me (?:more )?about (?:your )?life|"
+    r"why are you stressed|what caused (?:the )?stress|unpack that"
+    r")\b",
+    re.IGNORECASE,
+)
+
+_EVIDENCE_HEADING_RE = re.compile(r"(?mi)(^|\n)##\s*Evidence\s*\n")
+
 
 def classify_conversation_contract(message: str) -> ConversationContract:
     text = (message or "").strip()
@@ -93,3 +103,119 @@ def classify_conversation_contract(message: str) -> ConversationContract:
         required_behavior="Use tools for data claims; suppress unsupported claims.",
         max_words=None,
     )
+
+
+def _split_main_and_evidence(text: str) -> tuple[str, str]:
+    match = _EVIDENCE_HEADING_RE.search(text or "")
+    if not match:
+        return (text or "").strip(), ""
+    split_idx = match.start() + (1 if match.group(1) == "\n" else 0)
+    return (text[:split_idx] or "").strip(), (text[split_idx:] or "").strip()
+
+
+def _word_count(text: str) -> int:
+    return len((text or "").split())
+
+
+def _limit_words(text: str, max_words: int) -> str:
+    words = (text or "").split()
+    if len(words) <= max_words:
+        return (text or "").strip()
+    return " ".join(words[:max_words]).rstrip(" ,;:") + "."
+
+
+def validate_conversation_contract_response(user_message: str, assistant_message: str) -> tuple[bool, str]:
+    contract = classify_conversation_contract(user_message)
+    main, _evidence = _split_main_and_evidence(assistant_message or "")
+    lower = main.lower()
+
+    if contract.contract_type == ConversationContractType.QUICK_CHECK:
+        if contract.max_words and _word_count(main) > contract.max_words:
+            return False, "quick_check_too_long"
+        return True, "ok"
+
+    if contract.contract_type == ConversationContractType.DECISION_POINT:
+        has_decision = any(token in lower for token in ("decision:", "default:", "recommend", "i'd", "i would"))
+        has_tradeoff = any(token in lower for token in ("tradeoff", "trade-off", "cost", "risk", "because"))
+        if not (has_decision and has_tradeoff):
+            return False, "decision_point_missing_frame"
+        return True, "ok"
+
+    if contract.contract_type == ConversationContractType.CORRECTION_DISPUTE:
+        has_verification = any(
+            token in lower
+            for token in (
+                "i searched",
+                "searched",
+                "verified",
+                "could not verify",
+                "can't verify",
+                "cannot verify",
+                "athlete-stated",
+                "you are right",
+                "you're right",
+            )
+        )
+        if not has_verification:
+            return False, "correction_dispute_missing_verification"
+        return True, "ok"
+
+    if contract.contract_type == ConversationContractType.EMOTIONAL_LOAD:
+        if _PRYING_RE.search(main):
+            return False, "emotional_load_prying"
+        has_next_step = any(token in lower for token in ("next step", "eat", "meal", "snack", "drink", "do this"))
+        if not has_next_step:
+            return False, "emotional_load_missing_next_step"
+        return True, "ok"
+
+    if contract.contract_type == ConversationContractType.RACE_STRATEGY:
+        has_execution = any(
+            token in lower
+            for token in (
+                "strategy",
+                "execution",
+                "open",
+                "hold",
+                "close",
+                "surge",
+                "pace",
+                "effort",
+                "mile",
+            )
+        )
+        if not has_execution:
+            return False, "race_strategy_missing_execution"
+        return True, "ok"
+
+    return True, "ok"
+
+
+def build_conversation_contract_retry_instruction(user_message: str, reason: str) -> str:
+    contract = classify_conversation_contract(user_message)
+    base = (
+        "Your previous answer violated the conversation outcome contract. "
+        f"Reason: {reason}. "
+    )
+    if contract.contract_type == ConversationContractType.QUICK_CHECK:
+        return base + f"Answer in no more than {contract.max_words or 80} words. No broad analysis."
+    if contract.contract_type == ConversationContractType.DECISION_POINT:
+        return base + "Use this shape: Decision, Tradeoff, Default recommendation. Keep it concise."
+    if contract.contract_type == ConversationContractType.CORRECTION_DISPUTE:
+        return base + "Verify with tools if possible; otherwise label the claim athlete-stated. State what was searched."
+    if contract.contract_type == ConversationContractType.EMOTIONAL_LOAD:
+        return base + "Do not pry. Give grounded food/recovery guidance and one next step."
+    if contract.contract_type == ConversationContractType.RACE_STRATEGY:
+        return base + "Give an execution strategy: open, middle, close, cues, and risk."
+    return base + contract.required_behavior
+
+
+def enforce_conversation_contract_output(user_message: str, assistant_message: str) -> str:
+    contract = classify_conversation_contract(user_message)
+    if contract.contract_type != ConversationContractType.QUICK_CHECK or not contract.max_words:
+        return (assistant_message or "").strip()
+
+    main, evidence = _split_main_and_evidence(assistant_message or "")
+    trimmed = _limit_words(main, contract.max_words)
+    if evidence:
+        return f"{trimmed}\n\n{evidence}".strip()
+    return trimmed

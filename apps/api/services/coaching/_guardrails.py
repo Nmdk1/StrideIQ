@@ -13,6 +13,11 @@ logger = logging.getLogger(__name__)
 
 from services.coaching._constants import _strip_emojis, _check_response_quality  # noqa: E402
 from services import coach_tools  # noqa: E402
+from services.coaching._conversation_contract import (  # noqa: E402
+    build_conversation_contract_retry_instruction,
+    enforce_conversation_contract_output,
+    validate_conversation_contract_response,
+)
 
 
 class GuardrailsMixin:
@@ -307,7 +312,10 @@ class GuardrailsMixin:
         user_band = self._infer_intent_band(user_message, is_user=True)
         candidate_band = self._infer_intent_band(candidate, is_user=False)
 
-        if self._response_addresses_latest_turn(user_message, candidate):
+        addresses_latest_turn = self._response_addresses_latest_turn(user_message, candidate)
+        contract_ok, contract_reason = validate_conversation_contract_response(user_message, candidate)
+
+        if addresses_latest_turn and contract_ok:
             self._record_turn_guard_event(
                 athlete_id=athlete_id,
                 event="pass_initial",
@@ -318,18 +326,30 @@ class GuardrailsMixin:
                 is_synthetic_probe=is_synthetic_probe,
                 is_organic=is_organic,
             )
-            return candidate
+            return enforce_conversation_contract_output(user_message, candidate)
 
-        self._record_turn_guard_event(
-            athlete_id=athlete_id,
-            event="mismatch_detected",
-            user_band=user_band,
-            assistant_band=candidate_band,
-            turn_id=turn_id,
-            stage="initial",
-            is_synthetic_probe=is_synthetic_probe,
-            is_organic=is_organic,
-        )
+        if addresses_latest_turn and not contract_ok:
+            self._record_turn_guard_event(
+                athlete_id=athlete_id,
+                event=f"contract_mismatch:{contract_reason}",
+                user_band=user_band,
+                assistant_band=candidate_band,
+                turn_id=turn_id,
+                stage="initial",
+                is_synthetic_probe=is_synthetic_probe,
+                is_organic=is_organic,
+            )
+        else:
+            self._record_turn_guard_event(
+                athlete_id=athlete_id,
+                event="mismatch_detected",
+                user_band=user_band,
+                assistant_band=candidate_band,
+                turn_id=turn_id,
+                stage="initial",
+                is_synthetic_probe=is_synthetic_probe,
+                is_organic=is_organic,
+            )
         # Profile intents are deterministic; do not burn retry latency/tokens.
         if user_band == "profile":
             fallback = self._build_turn_relevance_fallback(athlete_id, user_message)
@@ -346,12 +366,23 @@ class GuardrailsMixin:
             )
             return fallback
 
-        logger.warning("Turn mismatch detected for athlete %s; retrying once", athlete_id)
-        retry_instruction = (
-            "Answer ONLY the athlete's latest message directly. "
-            "Do not continue prior topics. "
-            "If this is a profile edit question, provide route + section + field."
-        )
+        if addresses_latest_turn and not contract_ok:
+            logger.warning(
+                "Conversation contract mismatch for athlete %s (%s); retrying once",
+                athlete_id,
+                contract_reason,
+            )
+            retry_instruction = build_conversation_contract_retry_instruction(
+                user_message,
+                contract_reason,
+            )
+        else:
+            logger.warning("Turn mismatch detected for athlete %s; retrying once", athlete_id)
+            retry_instruction = (
+                "Answer ONLY the athlete's latest message directly. "
+                "Do not continue prior topics. "
+                "If this is a profile edit question, provide route + section + field."
+            )
         retry_message = f"{user_message}\n\nSYSTEM CORRECTION: {retry_instruction}"
 
         try:
@@ -377,7 +408,11 @@ class GuardrailsMixin:
                     )
                 )
                 retried_band = self._infer_intent_band(retried, is_user=False)
-                if self._response_addresses_latest_turn(user_message, retried):
+                retried_contract_ok, retried_contract_reason = validate_conversation_contract_response(
+                    user_message,
+                    retried,
+                )
+                if self._response_addresses_latest_turn(user_message, retried) and retried_contract_ok:
                     self._record_turn_guard_event(
                         athlete_id=athlete_id,
                         event="retry_success",
@@ -388,10 +423,14 @@ class GuardrailsMixin:
                         is_synthetic_probe=is_synthetic_probe,
                         is_organic=is_organic,
                     )
-                    return retried
+                    return enforce_conversation_contract_output(user_message, retried)
                 self._record_turn_guard_event(
                     athlete_id=athlete_id,
-                    event="retry_still_mismatch",
+                    event=(
+                        "retry_still_mismatch"
+                        if retried_contract_ok
+                        else f"retry_contract_mismatch:{retried_contract_reason}"
+                    ),
                     user_band=user_band,
                     assistant_band=retried_band,
                     turn_id=turn_id,

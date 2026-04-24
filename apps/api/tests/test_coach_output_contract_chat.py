@@ -195,3 +195,34 @@ def test_chat_kimi_success_saves_model_name():
     assert call_kwargs.kwargs.get("model") == "kimi-k2.6" or (
         len(call_kwargs.args) > 3 and call_kwargs.args[3] == "kimi-k2.6"
     )
+
+
+def test_turn_guard_retries_contract_failure_before_saving_response():
+    coach = _build_chat_coach()
+    coach.anthropic_client = object()
+    coach.query_opus = AsyncMock(
+        return_value={
+            "response": "Decision: postpone threshold. Tradeoff: fresher legs but one less hard stimulus. Default: move it 24 hours.",
+            "error": False,
+            "model": "claude-sonnet-4-6",
+        }
+    )
+
+    long_unframed_response = " ".join(["You have options."] * 80)
+    coach._query_kimi_with_fallback = AsyncMock(
+        return_value={
+            "response": long_unframed_response,
+            "error": False,
+            "model": "kimi-k2.6",
+        }
+    )
+
+    result = asyncio.run(
+        coach.chat(athlete_id=uuid4(), message="Should I postpone threshold tomorrow?")
+    )
+
+    assert result.get("error") is False
+    assert "Decision:" in result["response"]
+    assert "Tradeoff:" in result["response"]
+    assert "Default:" in result["response"]
+    coach.query_opus.assert_awaited_once()

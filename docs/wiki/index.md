@@ -1,6 +1,6 @@
 # StrideIQ Internal Wiki
 
-**Last updated:** April 24, 2026 (Apr 24: timezone two-model + home/effective split; nutrition autofill prevention; briefing clock time removed from LLM prompt; coach trust foundation slice)
+**Last updated:** April 24, 2026 (Apr 24: timezone two-model + home/effective split; nutrition autofill prevention; briefing clock time removed from LLM prompt; coach trust foundation slice; conversation contract enforcement)
 
 This is the single onboarding document. Read this instead of the 12-document read order.
 
