@@ -392,11 +392,16 @@ Expose evidence and correction workflows only after backend behavior earns them.
 
 `apps/web/app/coach/page.tsx` already splits trailing `## Evidence` / `## Receipts` into a collapsed evidence block.
 
+Apr 24 slice shipped: `/v1/coach/chat`, `/v1/coach/chat/stream`, and `/v1/coach/history`
+now expose lightweight trust metadata (`tools_used`, `tool_count`, `conversation_contract`).
+`/coach` renders checked-tool chips under assistant messages and adds a "That's wrong"
+button that pre-fills an athlete-authored correction prompt.
+
 ### Potential Work
 
 - Structured searched-source chips.
-- "That is wrong" correction affordance.
-- Better display of searched criteria.
+- Stable activity/source IDs for source-linked evidence chips.
+- Better display of searched criteria beyond tool names.
 - Optional source links to activities.
 
 ### Likely Files

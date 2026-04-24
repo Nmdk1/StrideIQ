@@ -13,7 +13,7 @@ Next.js 14 App Router. React 18. TanStack Query for data fetching. Tailwind CSS.
 | `/home` | Home — morning briefing, PMC, wellness, recent activity; week strip uses **`WeekChipDay`** (running-only primary distance; multi-run `+N`; other-sport icon links; `other_sport_summary` line) | Primary |
 | `/manual` | Personal Operating Manual V2 | Primary |
 | `/calendar` | Training calendar with plan, variant dropdown; API exposes **`running_*` / `other_*`** day fields plus legacy `total_*` (all-sport) | Primary |
-| `/coach` | AI coach chat | Primary |
+| `/coach` | AI coach chat with collapsed evidence, checked-tool trust chips, and athlete-led correction affordance | Primary |
 | `/activities` | Activity list (all sports, chronological) | Primary |
 | `/analytics` | Analytics (absorbed trends); week strip reuses **`WeekChipDay`** (parity with `/home`) | Primary |
 | `/training-load` | PMC chart, TSS breakdown | Primary |
@@ -130,6 +130,7 @@ Sport-specific components: `CyclingDetail`, `StrengthDetail`, `HikingDetail`, `F
 - **`DayDetailPanel.tsx`:** Unified save action — swap + edit consolidated into single button (fixed Apr 7, 2026)
 - **`usePageTracking()` hook:** Wired in `ClientShell.tsx`, fires on every authenticated route change. Posts page entry, patches exit on navigation or tab close via `sendBeacon`/`fetch` with `keepalive`. See [telemetry.md](./telemetry.md).
 - **Caddy CSP for Mapbox:** Mapbox tile/style/sprite domains are allowed in `connect-src` and `worker-src`/`child-src` (`blob:`) in the production `Caddyfile`. CSP changes require a Caddy container restart, not just `caddy reload`, due to a Docker bind-mount caching artefact on Linux.
+- **Coach trust UX:** `/coach` reads structured metadata from `lib/api/services/ai-coach.ts` (`tools_used`, `tool_count`, `conversation_contract`) and renders small "Checked" chips under assistant messages in `app/coach/page.tsx`. Prose `## Evidence` remains collapsed in-message. The "That's wrong" button pre-fills a correction prompt so the athlete can challenge an answer without the UI silently mutating coach state.
 
 ## Key Decisions
 
@@ -138,6 +139,7 @@ Sport-specific components: `CyclingDetail`, `StrengthDetail`, `HikingDetail`, `F
 - **Tailwind:** Utility-first CSS, no CSS modules
 - **No separate mobile app:** Mobile-responsive web app only (native app spec in progress)
 - **Inline entry editing:** Nutrition log entries support tap-to-edit and delete directly in the Log tab
+- **Coach evidence is visible but bounded** (Apr 24, 2026): Phase 6 exposes tool/contract metadata as trust chips and adds an athlete-led correction affordance. Source links are intentionally deferred until backend evidence carries stable activity/source IDs.
 
 ## Known Issues
 

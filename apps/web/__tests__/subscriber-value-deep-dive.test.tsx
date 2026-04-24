@@ -45,6 +45,10 @@ jest.mock('@/lib/context/AuthContext', () => ({
   useAuth: () => useAuthMock(),
 }));
 
+jest.mock('@/lib/hooks/queries/progress', () => ({
+  useProgressSummary: () => ({ data: null }),
+}));
+
 const apiGetMock = jest.fn();
 const apiPostMock = jest.fn();
 jest.mock('@/lib/api/client', () => ({
@@ -57,6 +61,7 @@ jest.mock('@/lib/api/client', () => ({
 const coachGetHistoryMock = jest.fn();
 const coachGetSuggestionsMock = jest.fn();
 const coachChatMock = jest.fn();
+const coachChatStreamMock = jest.fn();
 const coachNewConversationMock = jest.fn();
 
 jest.mock('@/lib/api/services/ai-coach', () => ({
@@ -64,6 +69,7 @@ jest.mock('@/lib/api/services/ai-coach', () => ({
     getHistory: (...args: any[]) => coachGetHistoryMock(...args),
     getSuggestions: (...args: any[]) => coachGetSuggestionsMock(...args),
     chat: (...args: any[]) => coachChatMock(...args),
+    chatStream: (...args: any[]) => coachChatStreamMock(...args),
     newConversation: (...args: any[]) => coachNewConversationMock(...args),
   },
 }));
@@ -77,6 +83,7 @@ describe('Subscriber value deep-dive (Manual redirect + PBs + Coach evidence)', 
     coachGetHistoryMock.mockReset();
     coachGetSuggestionsMock.mockReset();
     coachChatMock.mockReset();
+    coachChatStreamMock.mockReset();
     coachNewConversationMock.mockReset();
   });
 

@@ -30,6 +30,7 @@ from services.coaching._constants import (  # noqa: E402
     GEMINI_AVAILABLE,
     _build_cross_training_context,
 )
+from services.coaching._conversation_contract import classify_conversation_contract  # noqa: E402
 
 try:
     from anthropic import Anthropic
@@ -844,11 +845,10 @@ Policy:
             # Every query goes through Kimi with Sonnet as silent fallback.
             athlete_state = self._build_athlete_state_for_opus(athlete_id)
 
+            conversation_contract_type = None
             try:
-                from services.coaching._conversation_contract import (
-                    classify_conversation_contract,
-                )
                 contract = classify_conversation_contract(message)
+                conversation_contract_type = contract.contract_type.value
                 athlete_state += (
                     "\n\n=== CONVERSATION OUTCOME CONTRACT ===\n"
                     f"Type: {contract.contract_type.value}\n"
@@ -889,6 +889,7 @@ Policy:
             )
 
             if not result.get("error"):
+                tools_used = list(dict.fromkeys(result.get("tools_called") or []))
                 guarded_response = await self._finalize_response_with_turn_guard(
                     athlete_id=athlete_id,
                     user_message=message,
@@ -903,7 +904,12 @@ Policy:
                 self._save_chat_messages(
                     athlete_id, message, guarded_response,
                     model=result.get("model", "unknown"),
+                    tools_used=tools_used,
+                    conversation_contract=conversation_contract_type,
                 )
+                result["tools_used"] = tools_used
+                result["tool_count"] = len(tools_used)
+                result["conversation_contract"] = conversation_contract_type
 
             result["thread_id"] = thread_id
             return result

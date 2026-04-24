@@ -7,7 +7,7 @@ Provides chat interface to the AI running coach.
 from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional, List, AsyncIterator
 import asyncio
 import json
@@ -16,6 +16,7 @@ from core.database import get_db
 from core.auth import require_tier
 from models import Athlete, CoachChat
 from services.ai_coach import AICoach
+from services.coaching._conversation_contract import classify_conversation_contract
 
 router = APIRouter(prefix="/v1/coach", tags=["AI Coach"])
 
@@ -38,6 +39,9 @@ class ChatResponse(BaseModel):
     used_baseline: bool = False
     baseline_needed: bool = False
     rebuild_plan_prompt: bool = False
+    tools_used: List[str] = Field(default_factory=list)
+    tool_count: int = 0
+    conversation_contract: Optional[str] = None
 
 
 class ContextResponse(BaseModel):
@@ -53,6 +57,9 @@ class ThreadMessage(BaseModel):
     role: str
     content: str
     created_at: Optional[str] = None
+    tools_used: List[str] = Field(default_factory=list)
+    tool_count: int = 0
+    conversation_contract: Optional[str] = None
 
 
 class ThreadHistoryResponse(BaseModel):
@@ -80,6 +87,10 @@ async def chat_with_coach(
         is_synthetic_probe=bool(request.is_synthetic_probe),
         finding_id=request.finding_id,
     )
+    tools_used = list(result.get("tools_used") or result.get("tools_called") or [])
+    conversation_contract = result.get("conversation_contract")
+    if not conversation_contract:
+        conversation_contract = classify_conversation_contract(request.message).contract_type.value
     
     return ChatResponse(
         response=result.get("response", ""),
@@ -90,6 +101,9 @@ async def chat_with_coach(
         used_baseline=bool(result.get("used_baseline", False)),
         baseline_needed=bool(result.get("baseline_needed", False)),
         rebuild_plan_prompt=bool(result.get("rebuild_plan_prompt", False)),
+        tools_used=tools_used,
+        tool_count=int(result.get("tool_count") or len(tools_used)),
+        conversation_contract=conversation_contract,
     )
 
 
@@ -149,6 +163,10 @@ async def chat_with_coach_stream(
             result = await task
             text = (result.get("response") or "").strip()
             timed_out = bool(result.get("timed_out", False))
+            tools_used = list(result.get("tools_used") or result.get("tools_called") or [])
+            conversation_contract = result.get("conversation_contract")
+            if not conversation_contract:
+                conversation_contract = classify_conversation_contract(request.message).contract_type.value
 
             chunk_size = 220
             for i in range(0, len(text), chunk_size):
@@ -165,6 +183,9 @@ async def chat_with_coach_stream(
                     "used_baseline": bool(result.get("used_baseline", False)),
                     "baseline_needed": bool(result.get("baseline_needed", False)),
                     "rebuild_plan_prompt": bool(result.get("rebuild_plan_prompt", False)),
+                    "tools_used": tools_used,
+                    "tool_count": int(result.get("tool_count") or len(tools_used)),
+                    "conversation_contract": conversation_contract,
                 }
             ).encode("utf-8") + b"\n\n"
 

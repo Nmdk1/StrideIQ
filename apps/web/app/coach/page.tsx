@@ -28,6 +28,9 @@ interface Message {
   role: 'user' | 'assistant';
   content?: string;
   proposal?: ProposalCardProposal;
+  toolsUsed?: string[];
+  toolCount?: number;
+  conversationContract?: string | null;
   timedOut?: boolean;
   retryMessage?: string;
   timestamp: Date;
@@ -55,6 +58,72 @@ function splitReceipts(content: string): { main: string; receipts: string | null
   const receiptsRaw = content.slice(idx).trim();
   const receipts = receiptsRaw.replace(/^##\s+(Evidence|Receipts)\s*\n/i, '').trim();
   return { main, receipts: receipts || null };
+}
+
+function formatToolLabel(toolName: string): string {
+  return toolName
+    .replace(/^get_/, '')
+    .replace(/_/g, ' ')
+    .replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+function formatContractLabel(contract?: string | null): string | null {
+  if (!contract || contract === 'general') return null;
+  return contract.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+function CoachTrustControls({
+  message,
+  onCorrect,
+}: {
+  message: Message;
+  onCorrect: () => void;
+}) {
+  const tools = message.toolsUsed || [];
+  const contractLabel = formatContractLabel(message.conversationContract);
+  const hasTrustMetadata = tools.length > 0 || contractLabel;
+  const hasAnswer = Boolean((message.content || '').trim());
+
+  if (!hasTrustMetadata && !hasAnswer) return null;
+
+  return (
+    <div className="flex flex-wrap items-center gap-2 pt-1">
+      {hasTrustMetadata && (
+        <div className="flex flex-wrap items-center gap-1.5" aria-label="Coach trust metadata">
+          {tools.slice(0, 3).map((tool) => (
+            <Badge
+              key={tool}
+              variant="outline"
+              className="border-emerald-500/30 bg-emerald-500/10 text-[11px] font-medium text-emerald-200"
+            >
+              Checked: {formatToolLabel(tool)}
+            </Badge>
+          ))}
+          {tools.length > 3 && (
+            <Badge variant="outline" className="border-slate-700 text-[11px] text-slate-300">
+              +{tools.length - 3} more
+            </Badge>
+          )}
+          {contractLabel && (
+            <Badge variant="outline" className="border-slate-700 bg-slate-950/40 text-[11px] text-slate-300">
+              {contractLabel}
+            </Badge>
+          )}
+        </div>
+      )}
+      {hasAnswer && (
+        <Button
+          type="button"
+          size="sm"
+          variant="ghost"
+          onClick={onCorrect}
+          className="h-7 px-2 text-xs text-slate-400 hover:bg-slate-800 hover:text-orange-200"
+        >
+          That&apos;s wrong
+        </Button>
+      )}
+    </div>
+  );
 }
 
 function getSuggestionIcon(title: string) {
@@ -203,6 +272,9 @@ function CoachPageInner() {
             role: (m.role === 'user' ? 'user' : 'assistant') as Message['role'],
             content: m.content,
             proposal: (m as any).proposal,
+            toolsUsed: Array.isArray((m as any).tools_used) ? (m as any).tools_used : [],
+            toolCount: typeof (m as any).tool_count === 'number' ? (m as any).tool_count : 0,
+            conversationContract: (m as any).conversation_contract || null,
             timestamp: m.created_at ? new Date(m.created_at) : new Date(),
           }));
         setMessages(hist);
@@ -352,6 +424,15 @@ function CoachPageInner() {
       setError(e?.message || 'Failed to save baseline answers.');
     }
   };
+
+  const handleCorrection = (message: Message) => {
+    const excerpt = (message.content || '').replace(/\s+/g, ' ').slice(0, 180);
+    const correctionPrompt = excerpt
+      ? `That's wrong. Please verify the data and correct this answer: "${excerpt}"`
+      : "That's wrong. Please verify the data and correct this answer.";
+    setInput(correctionPrompt);
+    requestAnimationFrame(() => inputRef.current?.focus());
+  };
   
   const handleSend = async (messageText?: string) => {
     const text = messageText || input.trim();
@@ -412,6 +493,18 @@ function CoachPageInner() {
             });
           },
           onDone: (meta) => {
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === assistantId
+                  ? {
+                      ...m,
+                      toolsUsed: Array.isArray(meta?.tools_used) ? meta.tools_used : m.toolsUsed,
+                      toolCount: typeof meta?.tool_count === 'number' ? meta.tool_count : m.toolCount,
+                      conversationContract: meta?.conversation_contract || m.conversationContract || null,
+                    }
+                  : m
+              )
+            );
             if (meta?.timed_out) {
               setMessages((prev) =>
                 prev.map((m) =>
@@ -759,6 +852,10 @@ function CoachPageInner() {
                                           </div>
                                         </details>
                                       )}
+                                      <CoachTrustControls
+                                        message={message}
+                                        onCorrect={() => handleCorrection(message)}
+                                      />
                                       {message.timedOut && message.retryMessage && (
                                         <div className="flex items-center gap-2">
                                           <Button
@@ -855,6 +952,10 @@ function CoachPageInner() {
                                           </div>
                                         </details>
                                       )}
+                                      <CoachTrustControls
+                                        message={message}
+                                        onCorrect={() => handleCorrection(message)}
+                                      />
                                       {message.timedOut && message.retryMessage && (
                                         <div className="flex items-center gap-2">
                                           <Button

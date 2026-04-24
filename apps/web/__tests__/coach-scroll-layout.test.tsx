@@ -31,6 +31,10 @@ jest.mock('@/lib/api/services/ai-coach', () => ({
   },
 }));
 
+jest.mock('@/lib/hooks/queries/progress', () => ({
+  useProgressSummary: () => ({ data: null }),
+}));
+
 // Coach page now consumes useUnits() for the "This week" volume render.
 // This test is purely about scroll DOM structure, so a static stub is enough.
 jest.mock('@/lib/context/UnitsContext', () => ({
