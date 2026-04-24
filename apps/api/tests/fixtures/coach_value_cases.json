@@ -1,0 +1,156 @@
+[
+  {
+    "id": "older_activity_correction",
+    "user_message": "You are wrong, that race exists. It was April 26 2025.",
+    "contract_type": "correction_dispute",
+    "tools_called": ["search_activities"],
+    "required_tools": ["search_activities"],
+    "assistant_response": "You're right. I searched activity history for April 26 2025 and found the race. I will treat that result as verified from your activity history before making any new claims. The useful next step is to compare that race against the current anchor rather than asking you to repeat it.",
+    "bad_response": "I do not see that race, so let's move on and use your current estimate.",
+    "required_phrases": [
+      {"text": "searched activity history", "dimension": "evidence_quality"},
+      {"text": "found the race", "dimension": "correction_incorporation"},
+      {"text": "verified", "dimension": "factual_grounding"}
+    ],
+    "forbidden_phrases": [
+      {"text": "does not exist"},
+      {"text": "let's move on"}
+    ],
+    "required_dimensions": [
+      "factual_grounding",
+      "correction_incorporation",
+      "evidence_quality"
+    ],
+    "min_score": 3
+  },
+  {
+    "id": "nutrition_total_additive",
+    "user_message": "How many calories have I logged today?",
+    "contract_type": "general",
+    "tools_called": ["get_nutrition_log"],
+    "required_tools": ["get_nutrition_log"],
+    "assistant_response": "Your logged total today is about 2,200 calories. That is an additive log total, not proof the entire day is complete, so I would use it as a floor. The practical move is to add a carb-and-protein meal before judging whether intake is actually low.",
+    "bad_response": "You have about 1,190 calories today, which means your full-day intake is too low.",
+    "required_phrases": [
+      {"text": "2,200", "dimension": "factual_grounding"},
+      {"text": "additive log", "dimension": "evidence_quality"},
+      {"text": "floor", "dimension": "non_obvious_usefulness"}
+    ],
+    "forbidden_phrases": [
+      {"text": "1,190"},
+      {"text": "full-day intake"}
+    ],
+    "required_dimensions": [
+      "factual_grounding",
+      "evidence_quality",
+      "non_obvious_usefulness"
+    ],
+    "min_score": 3
+  },
+  {
+    "id": "stress_food_boundary",
+    "user_message": "I'm stressed and want food, but I don't want to talk about life stuff.",
+    "contract_type": "emotional_load",
+    "tools_called": ["get_nutrition_log"],
+    "required_tools": ["get_nutrition_log"],
+    "assistant_response": "You do not need to unpack the life stress here. Next step: eat a real meal with carbs and protein, drink something, then reassess the run in an hour. The goal is to make the run feel like release, not another task.",
+    "bad_response": "What is going on in your life that is making you stressed? Tell me more about it before you eat.",
+    "required_phrases": [
+      {"text": "do not need to unpack", "dimension": "emotional_appropriateness"},
+      {"text": "Next step", "dimension": "decision_clarity"},
+      {"text": "carbs and protein", "dimension": "non_obvious_usefulness"}
+    ],
+    "forbidden_regex": [
+      {"pattern": "what(?:'s| is) going on|tell me more about"}
+    ],
+    "required_dimensions": [
+      "emotional_appropriateness",
+      "decision_clarity",
+      "non_obvious_usefulness"
+    ],
+    "min_score": 3
+  },
+  {
+    "id": "aggressive_5k_strategy",
+    "user_message": "Give me a 5K race strategy for tomorrow.",
+    "contract_type": "race_strategy",
+    "tools_called": ["get_race_strategy_packet"],
+    "required_tools": ["get_race_strategy_packet"],
+    "assistant_response": "Objective: race for sub-19 if the first mile feels controlled. Primary limiter: continuous lactate tolerance, not general fitness. False limiter: ignore the fractured-femur 10K as a clean anchor. Pacing shape: open controlled, hold pressure through mile 2, then close. Course risk: the late rise can punish an early surge. Execution cues: relax shoulders, pass one runner at a time, keep cadence tall. Success beyond time: execute the middle mile without bargaining. Post-race learning: compare mile-2 fade against breathing and leg burn.",
+    "bad_response": "Strategy: believe in yourself and go hard from the gun. You are fit enough.",
+    "required_phrases": [
+      {"text": "Primary limiter", "dimension": "n1_specificity"},
+      {"text": "continuous lactate tolerance", "dimension": "non_obvious_usefulness"},
+      {"text": "False limiter", "dimension": "decision_clarity"},
+      {"text": "fractured-femur 10K", "dimension": "factual_grounding"},
+      {"text": "Success beyond time", "dimension": "athlete_agency"},
+      {"text": "Post-race learning", "dimension": "evidence_quality"}
+    ],
+    "forbidden_phrases": [
+      {"text": "go hard from the gun"},
+      {"text": "general fitness is the issue"}
+    ],
+    "required_dimensions": [
+      "factual_grounding",
+      "decision_clarity",
+      "athlete_agency",
+      "n1_specificity",
+      "non_obvious_usefulness",
+      "evidence_quality"
+    ],
+    "min_score": 6
+  },
+  {
+    "id": "social_run_efficiency_context",
+    "user_message": "That run was social and stop-start, so don't treat the efficiency dip as fitness loss.",
+    "contract_type": "correction_dispute",
+    "tools_called": ["search_activities", "get_efficiency_trend"],
+    "required_tools": ["search_activities", "get_efficiency_trend"],
+    "assistant_response": "You're right. I verified the activity context and will treat that social stop-start run as context-compromised, not as a clean fitness decline. The useful read is to compare your next continuous easy run before changing training, because this one is not a fair efficiency anchor.",
+    "bad_response": "Your efficiency is declining, so this run means fitness is dropping.",
+    "required_phrases": [
+      {"text": "verified", "dimension": "correction_incorporation"},
+      {"text": "social stop-start", "dimension": "factual_grounding"},
+      {"text": "not as a clean fitness decline", "dimension": "n1_specificity"},
+      {"text": "not a fair efficiency anchor", "dimension": "non_obvious_usefulness"}
+    ],
+    "forbidden_phrases": [
+      {"text": "fitness is dropping"},
+      {"text": "efficiency is declining"}
+    ],
+    "required_dimensions": [
+      "factual_grounding",
+      "correction_incorporation",
+      "n1_specificity",
+      "non_obvious_usefulness",
+      "evidence_quality"
+    ],
+    "min_score": 5
+  },
+  {
+    "id": "athlete_decides_training_choice",
+    "user_message": "Should I move tomorrow's threshold if my legs still feel dead?",
+    "contract_type": "decision_point",
+    "tools_called": ["get_training_load", "get_plan_week"],
+    "required_tools": ["get_training_load", "get_plan_week"],
+    "assistant_response": "Decision: move threshold 24 hours if the legs still feel dead after warm-up. Tradeoff: you preserve the quality of the stimulus but lose a day of spacing before the weekend. Default: start with 15 minutes easy, then you decide from the signal; if stride opens up, run it controlled, otherwise shift it.",
+    "bad_response": "Skip the workout. The system says you should not run threshold.",
+    "required_phrases": [
+      {"text": "Decision:", "dimension": "decision_clarity"},
+      {"text": "Tradeoff:", "dimension": "decision_clarity"},
+      {"text": "you decide", "dimension": "athlete_agency"},
+      {"text": "from the signal", "dimension": "n1_specificity"}
+    ],
+    "forbidden_phrases": [
+      {"text": "The system says"},
+      {"text": "you should not run"}
+    ],
+    "required_dimensions": [
+      "decision_clarity",
+      "athlete_agency",
+      "n1_specificity",
+      "factual_grounding"
+    ],
+    "min_score": 4
+  }
+]

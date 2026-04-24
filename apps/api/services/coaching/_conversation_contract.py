@@ -30,6 +30,7 @@ _CORRECTION_RE = re.compile(
     r"you(?:'re| are) wrong|that(?:'s| is) wrong|not true|"
     r"you can see it|it(?:'s| is) in (?:my )?(?:activity|training|plan|history)|"
     r"i (?:just )?checked|actually\b|today is|today\s+is"
+    r"|do(?:n't| not) treat|do(?:n't| not) use|not a fair|not a clean"
     r")\b",
     re.IGNORECASE,
 )
