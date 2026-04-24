@@ -931,16 +931,7 @@ ATHLETE BRIEF:
         try:
             _facts = self._get_fresh_athlete_facts(athlete_id=athlete_id, max_facts=15)
             if _facts:
-                _fc = "\n\nKNOWN ATHLETE FACTS (from previous conversations):\n"
-                for _f in _facts:
-                    _fc += f"- {_f.fact_key}: {_f.fact_value}\n"
-                _fc += (
-                    "\nYou already know these facts. Do not ask the athlete to repeat them. "
-                    "Do not recite them back — the athlete knows their own body. "
-                    "Use them to reason, connect patterns, and provide context the athlete "
-                    "could not produce on their own.\n"
-                )
-                system_instruction += _fc
+                system_instruction += self._format_known_athlete_facts(_facts)
         except Exception:
             pass
 

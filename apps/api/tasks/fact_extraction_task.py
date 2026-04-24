@@ -23,8 +23,11 @@ FACT_TTL_CATEGORIES = {
     "injury_history": 14,
     "current_symptoms": 14,
     "training_phase": 21,
+    "training_intent": 45,
+    "fatigue_strategy": 45,
     "equipment": 90,
     "strength_pr": 30,
+    "strength_training_context": 90,
     "upcoming_race": 7,
     "race_goal": 7,
     "race_plan": 7,
@@ -52,10 +55,14 @@ Extract any concrete, specific factual claims the athlete made about:
 - Their health (resting heart rate, blood pressure, medications, etc.)
 - Their upcoming race details (race name, date, distance, course profile like flat/hilly, goal time, goal pace)
 - Their training context when confirming or explaining a pattern the coach asked about (limiter_context)
+- Coaching memory that should change how future answers are interpreted:
+  race_psychology, injury_context, invalid_race_anchor, training_intent,
+  fatigue_strategy, sleep_baseline, stress_boundary, coaching_preference,
+  strength_training_context
 - Anything else specific and factual that would be useful coaching context
 
 For each fact, return:
-- fact_type: one of [body_composition, strength_pr, injury_history, current_symptoms, training_phase, equipment, preference, life_context, race_history, health, upcoming_race, race_goal, race_plan, limiter_context, other]
+- fact_type: one of [body_composition, strength_pr, injury_history, injury_context, current_symptoms, training_phase, training_intent, fatigue_strategy, equipment, preference, coaching_preference, life_context, race_history, race_psychology, invalid_race_anchor, health, upcoming_race, race_goal, race_plan, sleep_baseline, stress_boundary, strength_training_context, limiter_context, other]
 - fact_key: a snake_case identifier (e.g., "dexa_bone_density_t_score", "deadlift_1rm_lbs")
 - fact_value: the value as a string (e.g., "3.2", "315", "before 8am")
 - numeric_value: the numeric value if applicable, else null
@@ -90,6 +97,13 @@ Limiter type codes for fact_key:
   L-CEIL = ceiling-related (VO2max, speed development)
   L-CON = consecutive-day patterns
   L-SPEC = race-specific preparation
+
+Examples of coaching-memory facts:
+- fact_type: "stress_boundary", fact_key: "life_stress_boundary", fact_value: "Running is my escape; do not discuss the life stress", source_excerpt: "Running is my escape; do not discuss the life stress"
+- fact_type: "fatigue_strategy", fact_key: "deliberate_fatigue_build_until", fact_value: "building fatigue until the 19th", source_excerpt: "I deliberately build fatigue until the 19th"
+- fact_type: "race_psychology", fact_key: "race_style", fact_value: "controlled chaos; closes better than workouts suggest", source_excerpt: "I race controlled chaos"
+- fact_type: "invalid_race_anchor", fact_key: "coke_10k_2025_invalid_anchor", fact_value: "ran with a fractured femur; do not use as fitness anchor", source_excerpt: "I had a fractured femur during that 10K"
+- fact_type: "sleep_baseline", fact_key: "normal_sleep_baseline", fact_value: "6 to 6.5 hours is normal baseline", source_excerpt: "I usually sleep 6 to 6.5 hours"
 
 Return as a JSON array. If no facts found, return [].
 """

@@ -82,6 +82,7 @@ The coach has access to ~26 tools defined in the `services/coach_tools/` package
 - **`ConversationQualityManager`** — manages conversation flow and quality
 - **`MessageRouter`** — routes messages to appropriate handlers
 - **`CoachChat`** model — stores conversations with JSONB messages
+- **`AthleteFact` memory** — async fact extraction runs after saved coach turns and stores athlete-stated facts in `models/athlete.py`. `services/coaching/_context.py` now renders coaching-memory facts separately from generic facts: race psychology, injury context, invalid race anchors, training intent, fatigue strategy, sleep baseline, stress boundaries, coaching preference, and strength context are injected as coaching constraints rather than flat facts. This preserves the async contract: no synchronous `AthleteFact` writes during chat.
 - **Turn guard** (`services/turn_guard_monitor.py`) — prevents infinite loops
 - **Conversation outcome contract** (`services/coaching/_conversation_contract.py`) — lightweight classifier for `quick_check`, `decision_point`, `correction_dispute`, `emotional_load`, `race_strategy`, and related conversation types. The contract is injected into model context and then enforced post-response in `services/coaching/_guardrails.py`: contract failures trigger one targeted retry before the response is saved. Quick checks enforce a word cap, decision points require a tradeoff/default frame, correction/dispute turns require verification or athlete-stated labeling, emotional-load turns reject prying, and race strategy must include an execution shape.
 
@@ -99,6 +100,7 @@ The coach has access to ~26 tools defined in the `services/coach_tools/` package
 - **FIT metrics + effort resolver in coach context** (Apr 19, 2026 — `fit_run_001` Phase 3): Every recent run row now carries power, running dynamics, true moving time, and a resolved perceived-effort envelope with provenance. The new `services/effort_resolver.py` is the single source of truth — athlete-provided RPE always wins over Garmin self-eval, never blended.
 - **Coach trust foundation slice** (Apr 24, 2026): Added `search_activities`, shared activity query construction, Kimi/Sonnet athlete-state injection, Gemini gate re-scope, additive nutrition evidence, and the conversation outcome contract skeleton.
 - **Conversation contract enforcement** (Apr 24, 2026): Turn guard now validates normalized model output against the conversation outcome contract and retries once with a targeted correction when the answer violates the expected shape. Tool-use validation recognizes race, nutrition, calendar-day, split, and activity-search tools as grounding tools so grounded answers do not raise false no-data warnings.
+- **N=1 coaching memory slice** (Apr 24, 2026): Fact extraction now recognizes coaching-memory types and the coach prompt renders them as constraints so future turns can respect boundaries, invalid anchors, race psychology, fatigue strategy, sleep baseline, and strength context.
 
 ## Known Issues
 

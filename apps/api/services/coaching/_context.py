@@ -20,8 +20,66 @@ from services import coach_tools  # noqa: E402
 from services.coaching._constants import _build_cross_training_context  # noqa: E402
 
 
+_COACHING_MEMORY_LABELS = {
+    "race_psychology": "Race psychology",
+    "injury_context": "Injury context",
+    "invalid_race_anchor": "Invalid race anchor",
+    "training_intent": "Training intent",
+    "fatigue_strategy": "Fatigue strategy",
+    "sleep_baseline": "Sleep baseline",
+    "stress_boundary": "Stress boundary",
+    "coaching_preference": "Coaching preference",
+    "strength_training_context": "Strength context",
+}
+
+
 class ContextMixin:
     """Mixin extracted from AICoach - context methods."""
+
+    def _format_known_athlete_facts(self, facts: List[Any]) -> str:
+        if not facts:
+            return ""
+
+        coaching_memory: List[str] = []
+        general_facts: List[str] = []
+        for fact in facts:
+            fact_type = getattr(fact, "fact_type", "") or ""
+            fact_key = getattr(fact, "fact_key", "") or ""
+            fact_value = getattr(fact, "fact_value", "") or ""
+            if not fact_key or not fact_value:
+                continue
+
+            label = _COACHING_MEMORY_LABELS.get(fact_type)
+            if label:
+                coaching_memory.append(f"- {label} — {fact_key}: {fact_value}")
+            else:
+                general_facts.append(f"- {fact_key}: {fact_value}")
+
+        if not coaching_memory and not general_facts:
+            return ""
+
+        text = ""
+        if coaching_memory:
+            text += "\n\nCOACHING MEMORY (athlete-stated; use when relevant, do not recite by default):\n"
+            text += "\n".join(coaching_memory)
+            text += (
+                "\nUse these as coaching constraints. Respect stated boundaries, "
+                "do not treat invalid race anchors as fitness, use race psychology "
+                "when shaping strategy, and interpret fatigue/sleep/strength context "
+                "through the athlete's stated baseline.\n"
+            )
+
+        if general_facts:
+            text += "\n\nKNOWN ATHLETE FACTS (from previous conversations):\n"
+            text += "\n".join(general_facts)
+            text += (
+                "\nYou already know these facts. Do not ask the athlete to repeat them. "
+                "Do not recite them back — the athlete knows their own body. "
+                "Use them to reason, connect patterns, and provide context the athlete "
+                "could not produce on their own.\n"
+            )
+
+        return text
 
     def _build_coach_system_prompt(self, athlete_id: UUID) -> str:
         """Build shared premium-lane coach system prompt for Sonnet/Kimi."""
@@ -153,16 +211,7 @@ If you need more data to answer well, call the tools. That's why they're there."
         try:
             _facts = self._get_fresh_athlete_facts(athlete_id=athlete_id, max_facts=15)
             if _facts:
-                _fc = "\n\nKNOWN ATHLETE FACTS (from previous conversations):\n"
-                for _f in _facts:
-                    _fc += f"- {_f.fact_key}: {_f.fact_value}\n"
-                _fc += (
-                    "\nYou already know these facts. Do not ask the athlete to repeat them. "
-                    "Do not recite them back — the athlete knows their own body. "
-                    "Use them to reason, connect patterns, and provide context the athlete "
-                    "could not produce on their own.\n"
-                )
-                system_prompt += _fc
+                system_prompt += self._format_known_athlete_facts(_facts)
         except Exception:
             pass
 
