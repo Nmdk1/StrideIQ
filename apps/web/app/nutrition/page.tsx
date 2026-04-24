@@ -702,7 +702,7 @@ export default function NutritionPage() {
                 </div>
               )}
               {nlAvailable?.available && (
-                <form onSubmit={handleParse}>
+                <form onSubmit={handleParse} autoComplete="off">
                   <label className="block text-sm font-medium mb-2">Describe what you ate</label>
                   <div className="flex gap-2">
                     <input
@@ -710,6 +710,9 @@ export default function NutritionPage() {
                       onChange={(e) => setNlText(e.target.value)}
                       className="flex-1 px-3 py-2 bg-slate-900 border border-slate-700/50 rounded-lg text-white text-sm min-h-[44px]"
                       placeholder='"oatmeal and black coffee"'
+                      autoComplete="off"
+                      type="text"
+                      name="food-description"
                     />
                     <button
                       type="submit"
@@ -722,7 +725,7 @@ export default function NutritionPage() {
                 </form>
               )}
 
-              <form onSubmit={handleSubmit} className="space-y-3">
+              <form onSubmit={handleSubmit} autoComplete="off" className="space-y-3">
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="block text-xs font-medium mb-1 text-slate-400">Type</label>
@@ -776,6 +779,9 @@ export default function NutritionPage() {
                     onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
                     className="w-full px-3 py-2 bg-slate-900 border border-slate-700/50 rounded-lg text-white text-sm min-h-[44px]"
                     placeholder="e.g., Pre-run oatmeal"
+                    autoComplete="off"
+                    type="text"
+                    name="food-notes"
                   />
                 </div>
 
@@ -979,6 +985,9 @@ export default function NutritionPage() {
                     onChange={(e) => setCatalogSearch(e.target.value)}
                     className="w-full px-3 py-2 bg-slate-900 border border-slate-700/50 rounded-lg text-white text-sm min-h-[44px]"
                     placeholder="Search brands or products..."
+                    autoComplete="off"
+                    type="text"
+                    name="product-search"
                   />
 
                   <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-none">
@@ -1543,6 +1552,8 @@ export default function NutritionPage() {
                       value={mealForm.name}
                       onChange={(e) => setMealForm({ ...mealForm, name: e.target.value })}
                       className="w-full px-3 py-2 bg-slate-800 rounded text-sm"
+                      autoComplete="off"
+                      name="meal-name"
                     />
 
                     {nlAvailable?.available && (
@@ -1557,6 +1568,7 @@ export default function NutritionPage() {
                             rows={2}
                             placeholder='"2 eggs scrambled, 1 slice whole wheat toast, 1 tbsp peanut butter"'
                             className="flex-1 px-2 py-1.5 bg-slate-800 rounded text-xs resize-y"
+                            autoComplete="off"
                           />
                           <button
                             type="button"
@@ -1612,6 +1624,8 @@ export default function NutritionPage() {
                             setMealForm({ ...mealForm, items });
                           }}
                           className="col-span-5 px-2 py-1.5 bg-slate-800 rounded text-xs"
+                          autoComplete="off"
+                          name={`meal-food-${idx}`}
                         />
                         <input
                           type="number"
@@ -1966,6 +1980,9 @@ export default function NutritionPage() {
                               value={editForm.notes ?? ''}
                               onChange={(e) => setEditForm({ ...editForm, notes: e.target.value })}
                               className="w-full px-3 py-2 bg-slate-900 border border-slate-700/50 rounded-lg text-white text-sm min-h-[44px]"
+                              autoComplete="off"
+                              type="text"
+                              name="edit-notes"
                             />
                           </div>
                           <div className="grid grid-cols-4 gap-2">
