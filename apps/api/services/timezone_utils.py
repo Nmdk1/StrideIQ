@@ -208,12 +208,93 @@ def to_activity_local_date(activity, athlete_tz: ZoneInfo) -> date:
     return to_athlete_local_date(activity.start_time, tz)
 
 
+def get_athlete_effective_timezone(
+    athlete_id: UUID,
+    db: Session,
+    reference_utc: Optional[datetime] = None,
+    travel_window_hours: int = 72,
+) -> ZoneInfo:
+    """
+    Return the timezone where the athlete likely IS right now.
+
+    Two-timezone model:
+    - ``athlete.timezone``          → HOME timezone (persistent, stable)
+    - ``get_athlete_effective_timezone`` → CURRENT timezone (volatile, travel-aware)
+
+    During travel: if the most recent GPS activity within ``travel_window_hours``
+    is in a different timezone than the athlete's home, returns the travel zone.
+    Once the athlete returns home and records a GPS activity there, the travel
+    zone clears automatically — no manual intervention needed.
+
+    Use this for:
+    - Morning briefing "It's X:XX AM" (correct for wherever the athlete is)
+    - Any "what time is it for this athlete right now" context
+
+    Use ``athlete.timezone`` (home) for:
+    - Training day windows (today's run, yesterday's run)
+    - Weekly mileage / streak accounting
+    - Plan schedule dates
+
+    Read-only — never modifies ``athlete.timezone``.  Never raises.
+    """
+    from models import Athlete, Activity  # local import to avoid circular deps
+
+    now_utc = reference_utc or datetime.now(_UTC)
+    if now_utc.tzinfo is None:
+        now_utc = now_utc.replace(tzinfo=_UTC)
+
+    athlete = db.query(Athlete).filter(Athlete.id == athlete_id).first()
+    home_tz = get_athlete_timezone(athlete)
+
+    window_start = now_utc - timedelta(hours=travel_window_hours)
+    try:
+        recent = (
+            db.query(Activity)
+            .filter(
+                Activity.athlete_id == athlete_id,
+                Activity.start_lat.isnot(None),
+                Activity.start_lng.isnot(None),
+                Activity.start_time >= window_start,
+            )
+            .order_by(Activity.start_time.desc())
+            .first()
+        )
+    except Exception:
+        return home_tz
+
+    if recent is None:
+        return home_tz
+
+    try:
+        travel_tz = infer_timezone_from_coordinates(
+            float(recent.start_lat), float(recent.start_lng)
+        )
+    except (ValueError, TypeError):
+        return home_tz
+
+    if travel_tz is None:
+        return home_tz
+
+    if str(travel_tz) != str(home_tz):
+        logger.debug(
+            "Athlete %s is traveling: recent GPS in %s, home is %s",
+            athlete_id, travel_tz, home_tz,
+        )
+        return travel_tz
+
+    return home_tz
+
+
 def infer_and_persist_athlete_timezone(db: Session, athlete_id: UUID) -> Optional[ZoneInfo]:
     """
-    Infer an athlete's timezone from their most recent GPS activity and persist it.
+    Infer an athlete's HOME timezone from GPS history and persist it.
 
     - Only writes if current athlete.timezone is NULL/empty or invalid.
-    - Picks the most recent activity with valid start_lat/start_lng.
+    - Uses the MODE of GPS timezones across the last 30 activities within 90 days
+      so that a single trip to another timezone does not poison the home timezone.
+      (Historical bug: one NC trip set home = America/New_York for a Mississippi
+      athlete when the backfill ran the day after their return.)
+    - Falls back to the single most-recent GPS activity if no majority emerges.
     - Returns the resolved ZoneInfo, or None if inference failed.
 
     Safe to call repeatedly — idempotent if timezone already valid.
@@ -228,30 +309,49 @@ def infer_and_persist_athlete_timezone(db: Session, athlete_id: UUID) -> Optiona
     if athlete.timezone and is_valid_iana_timezone(athlete.timezone):
         return ZoneInfo(athlete.timezone)
 
-    # Find most recent activity with GPS coordinates
-    activity = (
+    # Sample the last 30 GPS activities within 90 days and find the modal timezone.
+    # Using the mode makes inference resistant to single-trip contamination.
+    cutoff = datetime.now(_UTC) - timedelta(days=90)
+    activities = (
         db.query(Activity)
         .filter(
             Activity.athlete_id == athlete_id,
             Activity.start_lat.isnot(None),
             Activity.start_lng.isnot(None),
+            Activity.start_time >= cutoff,
         )
         .order_by(Activity.start_time.desc())
-        .first()
+        .limit(30)
+        .all()
     )
 
-    if not activity or activity.start_lat is None or activity.start_lng is None:
-        logger.debug("No GPS activity found for athlete %s — cannot infer timezone", athlete_id)
+    if not activities:
+        logger.debug("No GPS activities in last 90 days for athlete %s — cannot infer timezone", athlete_id)
         return None
 
-    tz = infer_timezone_from_coordinates(float(activity.start_lat), float(activity.start_lng))
-    if tz is None:
-        logger.debug(
-            "Timezone inference returned no result for lat=%s lng=%s (athlete %s)",
-            activity.start_lat, activity.start_lng, athlete_id,
-        )
+    tz_counts: dict = {}
+    for act in activities:
+        try:
+            candidate = infer_timezone_from_coordinates(float(act.start_lat), float(act.start_lng))
+            if candidate:
+                tz_str = str(candidate)
+                tz_counts[tz_str] = tz_counts.get(tz_str, 0) + 1
+        except (ValueError, TypeError):
+            continue
+
+    if not tz_counts:
+        logger.debug("Timezone inference returned no results for athlete %s GPS activities", athlete_id)
         return None
 
+    # Pick the mode (most common timezone across the sample).
+    mode_tz_str, mode_count = max(tz_counts.items(), key=lambda x: x[1])
+    total = sum(tz_counts.values())
+    logger.info(
+        "Timezone inference for athlete %s: mode=%s (%d/%d activities). Full distribution: %s",
+        athlete_id, mode_tz_str, mode_count, total, tz_counts,
+    )
+
+    tz = ZoneInfo(mode_tz_str)
     athlete.timezone = str(tz)
 
     if not getattr(athlete, "preferred_units_set_explicitly", False):
@@ -267,7 +367,7 @@ def infer_and_persist_athlete_timezone(db: Session, athlete_id: UUID) -> Optiona
 
     db.commit()
     logger.info(
-        "Inferred and persisted timezone %s for athlete %s from activity %s",
-        tz, athlete_id, activity.id,
+        "Inferred and persisted home timezone %s for athlete %s (mode of %d GPS activities)",
+        tz, athlete_id, total,
     )
     return tz

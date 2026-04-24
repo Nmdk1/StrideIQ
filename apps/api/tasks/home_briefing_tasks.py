@@ -64,11 +64,15 @@ def _build_data_fingerprint(
 ) -> str:
     """Build a fingerprint of the athlete's current data state."""
     from models import Activity, ActivitySplit, Athlete, DailyCheckin, TrainingPlan
-    from services.timezone_utils import get_athlete_timezone_from_db, athlete_local_today
+    from services.timezone_utils import get_athlete_timezone_from_db, athlete_local_today, get_athlete_effective_timezone
 
     _fp_tz = get_athlete_timezone_from_db(db, UUID(athlete_id))
     today = athlete_local_today(_fp_tz)
-    parts = [athlete_id, f"schema:{BRIEFING_FINGERPRINT_VERSION}", f"date:{today.isoformat()}"]
+    # Include effective timezone in fingerprint so travel triggers fresh LLM generation.
+    # When the athlete runs in a different timezone, the briefing must say the correct
+    # local time — "fingerprint unchanged" must NOT serve a stale home-timezone briefing.
+    _fp_eff_tz = get_athlete_effective_timezone(UUID(athlete_id), db)
+    parts = [athlete_id, f"schema:{BRIEFING_FINGERPRINT_VERSION}", f"date:{today.isoformat()}", f"tz:{_fp_eff_tz}"]
 
     # Include preferred_units so a units toggle forces a fresh briefing
     # instead of serving the stale imperial-baked paragraph from cache.
@@ -176,6 +180,8 @@ def _build_briefing_prompt(athlete_id: str, db: Session) -> Optional[tuple]:
 
     from services.timezone_utils import get_athlete_timezone_from_db, athlete_local_today
     from services.coach_units import coach_units
+    # Home timezone — used for all training day/week window queries so that
+    # weekly mileage and "today's workout" are consistent regardless of travel.
     tz = get_athlete_timezone_from_db(db, UUID(athlete_id))
     today = athlete_local_today(tz)
 

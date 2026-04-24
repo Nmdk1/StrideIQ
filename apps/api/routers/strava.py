@@ -410,16 +410,32 @@ def strava_callback(
                 token_data["expires_at"], tz=timezone.utc
             )
         
-        # Store athlete timezone from Strava profile
+        # Store athlete timezone from Strava profile.
+        # Only write when the athlete has no timezone yet — Strava's account
+        # timezone field reflects the device TZ at account creation and can
+        # be stale/wrong years later.  GPS inference (infer_and_persist_athlete_timezone)
+        # and manual DB corrections are always more reliable; don't clobber them.
         strava_timezone = athlete_info.get("timezone")
         if strava_timezone:
             # Strava returns e.g. "(GMT-05:00) America/New_York" — extract IANA part
             if " " in strava_timezone:
                 strava_timezone = strava_timezone.split(" ", 1)[-1]
             from services.timezone_utils import is_valid_iana_timezone
-            # Only persist if valid IANA — never overwrite with garbage/null values
             if is_valid_iana_timezone(strava_timezone):
-                athlete.timezone = strava_timezone
+                if not athlete.timezone:
+                    # First OAuth — set timezone from Strava.
+                    athlete.timezone = strava_timezone
+                    logger.info(
+                        "Strava OAuth: set timezone=%s for athlete %s (was unset)",
+                        strava_timezone, athlete.id,
+                    )
+                elif athlete.timezone != strava_timezone:
+                    # Already has a timezone that differs from Strava — log and keep.
+                    logger.info(
+                        "Strava OAuth: athlete %s already has timezone=%s; "
+                        "Strava returned %s — keeping existing (may differ due to stale Strava account settings)",
+                        athlete.id, athlete.timezone, strava_timezone,
+                    )
 
                 # Country-aware unit default: if the athlete has not yet made
                 # an explicit choice, derive their default unit system from

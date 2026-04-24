@@ -87,7 +87,28 @@ The `splits_available` flag is computed in both the request path (`routers/home.
 - **10-day activity window** (Apr 8, 2026) — previously unbounded `.limit(5)` allowed 16-day-old runs to appear under "This Week's Training"
 - **5-gate workout structure** (Apr 7, 2026) — prevents false interval detection on easy runs with natural pace variation
 
-## Known Issues
+## Timezone: Home vs. Current (Two-Timezone Model)
+
+The briefing uses two distinct timezone concepts — **do not conflate them:**
+
+| Concept | Source | Used for |
+|---|---|---|
+| **Home timezone** (`Athlete.timezone`) | GPS mode over 30 activities/90 days, or first Strava OAuth | Training day/week windows, plan schedule, streak accounting |
+| **Effective timezone** (`get_athlete_effective_timezone()`) | Most recent GPS activity within 72 hours | `local_now` in briefing greeting ("It's 7 AM") |
+
+**How it works:** `get_athlete_effective_timezone()` queries the most recent GPS activity within the last 72 hours. If it's in a different timezone than the athlete's home, that travel timezone is returned. When the athlete runs at home again, the effective timezone automatically reverts to home. Nothing is ever written to `Athlete.timezone` — it is read-only from this function.
+
+**Fingerprint:** The briefing fingerprint includes `tz:{effective_timezone}` so that traveling to a new timezone triggers a fresh LLM generation with the correct local time, and returning home triggers another fresh generation.
+
+**Root cause fixed (Apr 24, 2026):** The NC trip bug — where a single run in Cary, NC set `home = America/New_York` for a Mississippi athlete permanently — was caused by `infer_and_persist_athlete_timezone` picking the most-recent GPS activity (which happened to be an Eastern-timezone trip) rather than the mode. Fixed by using modal GPS timezone across last 30 activities.
+
+## Timezone History Bug Fixed
+
+Previous (broken): `Athlete.timezone` was set from a single "most recent" GPS activity → one trip to Eastern time zone during a NC race poisoned home timezone permanently.
+
+Current (correct): `infer_and_persist_athlete_timezone` samples last 30 GPS activities in 90 days, uses mode → single trips don't affect home timezone.
+
+
 
 - **Briefing regressions** — this is the most fragile surface. Changes to the prompt assembly or intelligence sources have caused repeated regressions. The advisor has had to make significant fixes after builder changes. **Approach with extreme caution.**
 - **Cache invalidation:** The Lane 2A worker writes to `home_briefing:{athlete_id}` but the request path also checks the legacy `coach_home_briefing:{hash}` key. Stale legacy keys can silently block Lane 2A writes if `skip_cache=True` is not passed.
@@ -96,8 +117,8 @@ The `splits_available` flag is computed in both the request path (`routers/home.
 ## What's Next
 
 - **Briefing-to-coach response loop:** Tappable emerging patterns → coach chat with `finding_id` pre-loaded → athlete responds → fact extraction → lifecycle classifier
-- **Specificity fix:** Translate findings into athlete's training units (pace/mi, miles, hours, counts), not vague descriptions
-- **Environmental comparison fix:** Pre-filter comparisons for similar conditions or explicitly instruct LLM
+- **Specificity fix:** ✅ SHIPPED (Apr 2026). Findings translate into athlete's preferred units via `CoachUnits` helper. Backend passes unit-aware `distance_text`, `pace`, `elevation_text` in LLM context. LLM system prompt includes `preferred_units` directive.
+- **Environmental comparison fix:** Pre-filter comparisons for similar conditions or explicitly instruct LLM (SEASONAL COMPARISON DISCIPLINE shipped in the briefing prompt)
 
 ## Sources
 

@@ -2360,7 +2360,13 @@ def generate_coach_home_briefing(
 
     tz = get_athlete_timezone_from_db(db, _tz_uuid(athlete_id))
     local_today = athlete_local_today(tz)
-    local_now = datetime.now(timezone.utc).astimezone(tz)
+    # local_now uses the effective timezone — where the athlete IS right now.
+    # During a race or vacation in another timezone, the briefing correctly
+    # says "It's 7 AM ET" instead of their home timezone.  Training day windows
+    # (local_today, day bounds) stay on the home timezone for consistency.
+    from services.timezone_utils import get_athlete_effective_timezone as _get_eff_tz
+    _eff_tz = _get_eff_tz(_tz_uuid(athlete_id), db)
+    local_now = datetime.now(timezone.utc).astimezone(_eff_tz)
 
     # Resolve units. Callers from the request path may not pass the value;
     # fall back to the athlete row so the prompt always speaks the athlete's
