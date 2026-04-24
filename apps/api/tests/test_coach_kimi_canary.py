@@ -96,6 +96,42 @@ async def test_kimi_coach_tool_call_loop(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_kimi_coach_injects_athlete_state(monkeypatch):
+    coach = AICoach.__new__(AICoach)
+    coach._build_coach_system_prompt = MagicMock(return_value="system")
+    coach._kimi_tools = MagicMock(return_value=[])
+    coach._execute_opus_tool = MagicMock()
+    coach._validate_tool_usage = MagicMock(return_value=(True, "ok"))
+    coach.track_usage = MagicMock()
+    coach.query_opus = AsyncMock(return_value={"response": "fallback", "error": False, "model": "claude-sonnet-4-6"})
+    captured = []
+
+    async def _create(**kwargs):
+        captured.append(kwargs)
+        return _oai_response(content="State-aware answer.", prompt_tokens=10, completion_tokens=5)
+
+    monkeypatch.setitem(sys.modules, "openai", _make_openai_module(_create))
+    from services import ai_coach as ai_coach_module
+    monkeypatch.setattr(ai_coach_module.settings, "KIMI_API_KEY", "kimi-key", raising=False)
+    monkeypatch.setattr(ai_coach_module.settings, "KIMI_BASE_URL", "https://api.moonshot.ai/v1", raising=False)
+    monkeypatch.setattr(ai_coach_module.settings, "COACH_CANARY_MODEL", "kimi-k2.6", raising=False)
+
+    result = await coach.query_kimi_coach(
+        athlete_id=uuid4(),
+        message="Talk me through this race.",
+        athlete_state="ATHLETE STATE PACKET: Tuscaloosa prior race context",
+        conversation_context=[],
+    )
+
+    assert result["error"] is False
+    message_payload = captured[0]["messages"]
+    assert any(
+        "ATHLETE STATE PACKET" in str(message.get("content", ""))
+        for message in message_payload
+    )
+
+
+@pytest.mark.asyncio
 async def test_kimi_empty_content_falls_back_to_sonnet(monkeypatch):
     coach = AICoach.__new__(AICoach)
     coach._build_coach_system_prompt = MagicMock(return_value="system")
@@ -163,7 +199,7 @@ async def test_universal_kimi_routing(monkeypatch):
     coach = AICoach(db=MagicMock())
     coach.router = MagicMock()
     coach.router.classify = MagicMock(return_value=(None, False))
-    coach.gemini_client = object()
+    coach.gemini_client = None
     coach.anthropic_client = object()
     coach.classify_query_complexity = MagicMock(return_value="high")
     coach.get_model_for_query = MagicMock(return_value=(coach.MODEL_HIGH_STAKES, True))

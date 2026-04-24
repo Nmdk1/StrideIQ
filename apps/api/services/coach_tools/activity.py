@@ -266,6 +266,155 @@ def get_recent_runs(db: Session, athlete_id: UUID, days: int = 7) -> Dict[str, A
     }
 
 
+def search_activities(
+    db: Session,
+    athlete_id: UUID,
+    start_date: str = "",
+    end_date: str = "",
+    name_contains: str = "",
+    sport: str = "run",
+    workout_type: str = "",
+    race_only: Optional[bool] = None,
+    distance_min_m: Optional[int] = None,
+    distance_max_m: Optional[int] = None,
+    limit: int = 10,
+) -> Dict[str, Any]:
+    """Search activity history by explicit criteria for coach verification turns."""
+    from services.activity_search import ActivitySearchParams, build_activity_search_query
+    from services.timezone_utils import get_athlete_timezone_from_db, to_activity_local_date, athlete_local_today
+
+    now = datetime.utcnow()
+    try:
+        limit = max(1, min(int(limit or 10), 50))
+        units = _preferred_units(db, athlete_id)
+        ath_tz = get_athlete_timezone_from_db(db, athlete_id)
+        ref_date = athlete_local_today(ath_tz)
+
+        params = ActivitySearchParams(
+            athlete_id=athlete_id,
+            start_date=start_date or None,
+            end_date=end_date or None,
+            min_distance_m=distance_min_m,
+            max_distance_m=distance_max_m,
+            sport=sport or None,
+            is_race=race_only,
+            workout_type=workout_type or None,
+            name_contains=name_contains or None,
+            sort_by="start_time",
+            sort_order="desc",
+        )
+        activities = build_activity_search_query(db, params).limit(limit).all()
+        criteria = {
+            "start_date": start_date or None,
+            "end_date": end_date or None,
+            "name_contains": name_contains or None,
+            "sport": sport or None,
+            "workout_type": workout_type or None,
+            "race_only": race_only,
+            "distance_min_m": distance_min_m,
+            "distance_max_m": distance_max_m,
+            "limit": limit,
+        }
+
+        rows: List[Dict[str, Any]] = []
+        evidence: List[Dict[str, Any]] = []
+        for activity in activities:
+            local_date = to_activity_local_date(activity, ath_tz)
+            rel = _relative_date(local_date, ref_date) if local_date else ""
+            distance_m = int(activity.distance_m) if activity.distance_m is not None else None
+            distance_mi = _mi_from_m(activity.distance_m) if activity.distance_m is not None else None
+            distance_km = (float(activity.distance_m) / 1000.0) if activity.distance_m is not None else None
+            pace_mi = _pace_str_mi(activity.duration_s, activity.distance_m)
+            pace_km = _pace_str(activity.duration_s, activity.distance_m)
+            is_race = bool(
+                getattr(activity, "user_verified_race", False)
+                or getattr(activity, "is_race_candidate", False)
+            )
+
+            rows.append(
+                {
+                    "activity_id": str(activity.id),
+                    "start_time": _iso(activity.start_time),
+                    "date": local_date.isoformat() if local_date else None,
+                    "relative_date": rel,
+                    "name": activity.name,
+                    "sport": activity.sport,
+                    "distance_m": distance_m,
+                    "distance_mi": round(distance_mi, 2) if distance_mi is not None else None,
+                    "distance_km": round(distance_km, 2) if distance_km is not None else None,
+                    "duration_s": int(activity.duration_s) if activity.duration_s is not None else None,
+                    "pace_per_mile": pace_mi,
+                    "pace_per_km": pace_km,
+                    "avg_hr": int(activity.avg_hr) if activity.avg_hr is not None else None,
+                    "max_hr": int(activity.max_hr) if activity.max_hr is not None else None,
+                    "workout_type": activity.workout_type,
+                    "is_race": is_race,
+                    "elevation_gain_m": (
+                        round(float(activity.total_elevation_gain), 1)
+                        if activity.total_elevation_gain is not None
+                        else None
+                    ),
+                    "temperature_f": (
+                        round(float(activity.temperature_f), 1)
+                        if activity.temperature_f is not None
+                        else None
+                    ),
+                    "shape_sentence": activity.shape_sentence,
+                }
+            )
+
+            parts = [(activity.name or "Activity").strip()]
+            if units == "imperial":
+                if distance_mi is not None:
+                    parts.append(f"{distance_mi:.2f} mi")
+                if pace_mi:
+                    parts.append(f"@ {pace_mi}")
+            else:
+                if distance_km is not None:
+                    parts.append(f"{distance_km:.2f} km")
+                if pace_km:
+                    parts.append(f"@ {pace_km}")
+            if activity.avg_hr is not None:
+                parts.append(f"avg HR {int(activity.avg_hr)}")
+            if is_race:
+                parts.append("[race]")
+            evidence.append(
+                {
+                    "type": "activity",
+                    "id": str(activity.id),
+                    "ref": str(activity.id)[:8],
+                    "date": f"{local_date.isoformat() if local_date else ''} {rel}".strip(),
+                    "value": " ".join(parts),
+                    "activity_id": str(activity.id),
+                    "start_time": _iso(activity.start_time),
+                }
+            )
+
+        narrative = (
+            f"Found {len(rows)} matching activit{'y' if len(rows) == 1 else 'ies'} "
+            "for the requested search criteria."
+            if rows
+            else "No activities matched the requested search criteria."
+        )
+        return {
+            "ok": True,
+            "tool": "search_activities",
+            "generated_at": _iso(now),
+            "narrative": narrative,
+            "data": {
+                "search_criteria": criteria,
+                "match_count": len(rows),
+                "activities": rows,
+            },
+            "evidence": evidence,
+        }
+    except Exception as e:
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        return {"ok": False, "tool": "search_activities", "error": str(e)}
+
 
 def get_calendar_day_context(db: Session, athlete_id: UUID, day: str) -> Dict[str, Any]:
     """

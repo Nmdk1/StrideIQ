@@ -149,6 +149,7 @@ def get_nutrition_log(
             q = q.filter(NutritionEntry.activity_id == activity_id)
 
         entries = q.limit(50).all()
+        today_key = now.date().isoformat()
 
         if not entries:
             return {
@@ -156,7 +157,31 @@ def get_nutrition_log(
                 "tool": "get_nutrition_log",
                 "generated_at": _iso(now),
                 "narrative": f"No nutrition entries found in the last {days} days.",
-                "data": {"entries": [], "summary": {}},
+                "data": {
+                    "entries": [],
+                    "summary": {
+                        "coverage": {
+                            "window_days": days,
+                            "entries_returned": 0,
+                            "interpretation": "partial_logs_additive",
+                        },
+                        "today": {
+                            "date": today_key,
+                            "logged_calories": 0,
+                            "entry_count": 0,
+                            "is_complete_day_total": False,
+                        },
+                        "by_date": {},
+                    },
+                },
+                "evidence": [
+                    {
+                        "type": "nutrition_log",
+                        "id": f"nutrition_log:{athlete_id}:{today_key}",
+                        "date": today_key,
+                        "value": f"No nutrition entries found in the last {days} days",
+                    }
+                ],
             }
 
         entry_list = []
@@ -179,7 +204,7 @@ def get_nutrition_log(
             if e.activity_id:
                 act = db.query(Activity).filter(Activity.id == e.activity_id).first()
                 if act:
-                    dist = act.distance_meters or 0
+                    dist = act.distance_m or 0
                     if units == "imperial":
                         row["linked_activity"] = f"{act.name or 'Run'} ({dist / _M_PER_MI:.1f}mi)"
                     else:
@@ -213,6 +238,33 @@ def get_nutrition_log(
             "daily_avg_protein_g": round(avg_p),
             "daily_avg_carbs_g": round(avg_c),
             "daily_avg_fat_g": round(avg_f),
+            "coverage": {
+                "window_days": days,
+                "entries_returned": len(entries),
+                "days_with_entries": days_with_data,
+                "interpretation": "partial_logs_additive",
+            },
+            "today": {
+                "date": today_key,
+                "logged_calories": round(daily_totals.get(today_key, {}).get("cal", 0)),
+                "protein_g": round(daily_totals.get(today_key, {}).get("p", 0)),
+                "carbs_g": round(daily_totals.get(today_key, {}).get("c", 0)),
+                "fat_g": round(daily_totals.get(today_key, {}).get("f", 0)),
+                "entry_count": int(daily_totals.get(today_key, {}).get("entries", 0)),
+                "is_complete_day_total": False,
+            },
+            "by_date": {
+                day: {
+                    "calories": round(vals["cal"]),
+                    "protein_g": round(vals["p"]),
+                    "carbs_g": round(vals["c"]),
+                    "fat_g": round(vals["f"]),
+                    "caffeine_mg": round(vals["caf"]),
+                    "entry_count": int(vals["entries"]),
+                    "is_complete_day_total": False,
+                }
+                for day, vals in sorted(daily_totals.items(), reverse=True)
+            },
         }
 
         pre_run = [e for e in entries if e.entry_type == "pre_activity"]
@@ -226,6 +278,12 @@ def get_nutrition_log(
             summary["during_run_avg_carbs_g"] = round(sum(float(e.carbs_g or 0) for e in during_run) / len(during_run))
 
         narrative_parts = [f"Found {len(entries)} nutrition entries over the last {days} days ({days_with_data} days with data)."]
+        today_total = summary["today"]["logged_calories"]
+        if today_total > 0:
+            narrative_parts.append(
+                f"Today through logged entries: {today_total} cal logged so far today "
+                f"across {summary['today']['entry_count']} entries."
+            )
         if avg_cal > 0:
             narrative_parts.append(f"Daily average: {round(avg_cal)} cal, {round(avg_p)}g protein, {round(avg_c)}g carbs, {round(avg_f)}g fat.")
         if pre_run:
@@ -237,6 +295,18 @@ def get_nutrition_log(
             "generated_at": _iso(now),
             "narrative": " ".join(narrative_parts),
             "data": {"entries": entry_list, "summary": summary},
+            "evidence": [
+                {
+                    "type": "nutrition_log",
+                    "id": f"nutrition_log:{athlete_id}:{today_key}",
+                    "date": today_key,
+                    "value": (
+                        f"{summary['today']['logged_calories']} cal logged so far today "
+                        f"across {summary['today']['entry_count']} entries; "
+                        f"{len(entries)} entries returned over {days} days"
+                    ),
+                }
+            ],
         }
     except Exception as e:
         try:

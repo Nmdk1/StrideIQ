@@ -6,7 +6,7 @@ Provides endpoints for activity management with proper filtering, pagination, an
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, field_validator
 from sqlalchemy.orm import Session
-from sqlalchemy import and_, or_, desc, asc
+from sqlalchemy import func
 from typing import Optional, List
 from datetime import datetime, timedelta
 from uuid import UUID
@@ -19,6 +19,7 @@ from services.intelligence.narration_tiers import (
     tier_for as _af_tier_for,
 )
 from services.n1_insight_generator import friendly_signal_name
+from services.activity_search import ActivitySearchParams, build_activity_search_query
 from schemas import ActivityResponse
 
 router = APIRouter(prefix="/v1/activities", tags=["activities"])
@@ -129,101 +130,30 @@ def list_activities(
         NULL on that field are excluded — we never claim a value we don't
         have.
     """
-    # Build query - always filter by athlete_id
-    query = db.query(Activity).filter(Activity.athlete_id == current_user.id)
-    
-    # Date filtering
-    if start_date:
-        try:
-            start_dt = datetime.fromisoformat(start_date.replace('Z', '+00:00'))
-            query = query.filter(Activity.start_time >= start_dt)
-        except ValueError:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Invalid start_date format. Use ISO format (YYYY-MM-DDTHH:MM:SS)"
-            )
-    
-    if end_date:
-        try:
-            end_dt = datetime.fromisoformat(end_date.replace('Z', '+00:00'))
-            query = query.filter(Activity.start_time <= end_dt)
-        except ValueError:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Invalid end_date format. Use ISO format (YYYY-MM-DDTHH:MM:SS)"
-            )
-    
-    # Distance filtering
-    if min_distance_m is not None:
-        query = query.filter(Activity.distance_m >= min_distance_m)
-    
-    if max_distance_m is not None:
-        query = query.filter(Activity.distance_m <= max_distance_m)
-    
-    # Sport filtering
-    if sport:
-        query = query.filter(Activity.sport == sport)
-
-    # --- Phase 1 filters ---------------------------------------------------
-    # workout_type: comma-separated multi-select. NULL workout_type rows are
-    # excluded when this filter is active (suppression principle: don't include
-    # a row in a typed filter when its type is unknown).
-    if workout_type:
-        types = [t.strip() for t in workout_type.split(",") if t.strip()]
-        if types:
-            query = query.filter(Activity.workout_type.in_(types))
-
-    # Range filters share a helper to enforce min<=max and NULL exclusion.
-    def _apply_range(col, lo, hi, label: str):
-        if lo is not None and hi is not None and lo > hi:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"{label}: min cannot exceed max ({lo} > {hi})",
-            )
-        nonlocal query
-        if lo is not None:
-            query = query.filter(col >= lo, col.isnot(None))
-        if hi is not None:
-            query = query.filter(col <= hi, col.isnot(None))
-
-    _apply_range(Activity.temperature_f, temp_min, temp_max, "temp")
-    _apply_range(Activity.dew_point_f, dew_min, dew_max, "dew")
-    _apply_range(Activity.total_elevation_gain, elev_gain_min, elev_gain_max, "elev_gain")
-    # ----------------------------------------------------------------------
-
-    # Race filtering
-    # When filtering for races (is_race=True): include if EITHER flag is True
-    # When filtering for training (is_race=False): exclude if EITHER flag is True
-    if is_race is not None:
-        if is_race:
-            # Show races: either user verified OR candidate
-            query = query.filter(
-                or_(
-                    Activity.user_verified_race.is_(True),
-                    Activity.is_race_candidate.is_(True),
-                )
-            )
-        else:
-            # Show training only: NOT a race (both flags must be False/None)
-            query = query.filter(
-                and_(
-                    or_(Activity.user_verified_race.is_(False), Activity.user_verified_race.is_(None)),
-                    or_(Activity.is_race_candidate.is_(False), Activity.is_race_candidate.is_(None)),
-                )
-            )
-    
-    # Sorting
-    sort_field_map = {
-        "start_time": Activity.start_time,
-        "distance_m": Activity.distance_m,
-        "duration_s": Activity.duration_s,
-    }
-    
-    sort_field = sort_field_map.get(sort_by, Activity.start_time)
-    if sort_order.lower() == "asc":
-        query = query.order_by(asc(sort_field))
-    else:
-        query = query.order_by(desc(sort_field))
+    try:
+        query = build_activity_search_query(
+            db,
+            ActivitySearchParams(
+                athlete_id=current_user.id,
+                start_date=start_date,
+                end_date=end_date,
+                min_distance_m=min_distance_m,
+                max_distance_m=max_distance_m,
+                sport=sport,
+                is_race=is_race,
+                workout_type=workout_type,
+                temp_min=temp_min,
+                temp_max=temp_max,
+                dew_min=dew_min,
+                dew_max=dew_max,
+                elev_gain_min=elev_gain_min,
+                elev_gain_max=elev_gain_max,
+                sort_by=sort_by,
+                sort_order=sort_order,
+            ),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
     
     # Pagination
     activities = query.offset(offset).limit(limit).all()

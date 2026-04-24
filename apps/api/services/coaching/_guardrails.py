@@ -139,7 +139,7 @@ class GuardrailsMixin:
             return False, "no_tools_called"
         
         # Check for core data tools
-        data_tools = ["get_recent_runs", "get_training_load", "get_weekly_volume", "get_best_runs"]
+        data_tools = ["get_recent_runs", "search_activities", "get_training_load", "get_weekly_volume", "get_best_runs"]
         if not any(t in tools_called for t in data_tools):
             return False, "no_data_tools_called"
         

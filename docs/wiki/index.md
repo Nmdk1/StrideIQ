@@ -1,6 +1,6 @@
 # StrideIQ Internal Wiki
 
-**Last updated:** April 24, 2026 (Apr 24: timezone two-model + home/effective split; nutrition autofill prevention; briefing clock time removed from LLM prompt)
+**Last updated:** April 24, 2026 (Apr 24: timezone two-model + home/effective split; nutrition autofill prevention; briefing clock time removed from LLM prompt; coach trust foundation slice)
 
 This is the single onboarding document. Read this instead of the 12-document read order.
 
@@ -22,7 +22,7 @@ This is the single onboarding document. Read this instead of the 12-document rea
 | **API container** | `strideiq_api` |
 | **Worker containers** | `strideiq_worker`, `strideiq_worker_default` |
 | **Beat container** | `strideiq_beat` |
-| **Coach model** | **Kimi** primary: `COACH_CANARY_MODEL` (default `kimi-k2.6` in `apps/api/core/config.py`), OpenAI-compatible Moonshot API in `services/coaching/_llm.py` `query_kimi_coach`. **Claude Sonnet 4.6** silent fallback on Kimi errors. Coach chat does not use Gemini. |
+| **Coach model** | **Kimi** primary: `COACH_CANARY_MODEL` (default `kimi-k2.6` in `apps/api/core/config.py`), OpenAI-compatible Moonshot API in `services/coaching/_llm.py` `query_kimi_coach`. **Claude Sonnet 4.6** silent fallback on Kimi errors. Gemini is not primary, but remains a turn-guard retry fallback when Anthropic is unavailable. |
 | **Briefing model** | Default **`BRIEFING_PRIMARY_MODEL`** = `claude-sonnet-4-6`. Optional **Kimi** for athletes listed when `KIMI_CANARY_ENABLED` + `KIMI_CANARY_ATHLETE_IDS` (model `KIMI_CANARY_MODEL`, default `kimi-k2.6`). Provider routing + **Sonnet → Gemini 2.5 Flash** fallback chain in `apps/api/core/llm_client.py` (`call_llm` / `call_llm_with_json_parse`). |
 | **Plan engine (V1)** | `services/plan_framework/n1_engine.py` |
 | **Plan engine (V2)** | `services/plan_engine_v2/engine.py` — active behind `engine=v2` flag, admin/owner only |
@@ -49,7 +49,7 @@ Before writing any code, understand these five things:
 |------|---------------|
 | **[Quality & Trust Principles](./quality-trust.md)** | Five non-negotiable rules, KB registry, anti-hallucination, OutputMetricMeta, coach guardrails |
 | **[Product Vision](./product-vision.md)** | Manifesto, strategy, 16 priority-ranked concepts, design philosophy, competitive frame, founder context |
-| **[Coach Architecture](./coach-architecture.md)** | AI coach system — Kimi primary (`COACH_CANARY_MODEL`), Sonnet fallback, context builders, system prompt, tools, KB scanner, budget caps |
+| **[Coach Architecture](./coach-architecture.md)** | AI coach system — Kimi primary (`COACH_CANARY_MODEL`), Sonnet fallback, context injection, search/activity tools, conversation contracts, KB scanner, budget caps |
 | **[Briefing System](./briefing-system.md)** | Morning briefing — Lane 2A, prompt assembly, 8 intelligence sources, workout structure detection, guardrails |
 | **[Correlation Engine](./correlation-engine.md)** | N=1 intelligence pipeline — Layers 1-4, AutoDiscovery, finding lifecycle, limiter taxonomy, cross-training inputs, fingerprint bridge |
 | **[Plan Engine](./plan-engine.md)** | V1 (N1 Engine V3) + **V2 deployed** — V2 wired to production behind `engine=v2` flag, 13 coaching science KB docs, extension-based progression, rich segments, fueling |

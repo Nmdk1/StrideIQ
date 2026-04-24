@@ -35,6 +35,20 @@ except ImportError:
 class LLMMixin:
     """Mixin extracted from AICoach - llm methods."""
 
+    @staticmethod
+    def _athlete_state_context_message(athlete_state: str) -> Optional[Dict[str, str]]:
+        state = (athlete_state or "").strip()
+        if not state:
+            return None
+        return {
+            "role": "user",
+            "content": (
+                "INTERNAL COACH CONTEXT (not athlete-authored; use for reasoning, "
+                "do not quote this label):\n"
+                f"{state}"
+            ),
+        }
+
     async def query_opus(
         self,
         athlete_id: UUID,
@@ -58,6 +72,10 @@ class LLMMixin:
         
         # Build messages
         messages = []
+
+        state_message = self._athlete_state_context_message(athlete_state)
+        if state_message:
+            messages.append(state_message)
         
         # Add conversation context (last 5 exchanges)
         if conversation_context:
@@ -254,6 +272,10 @@ class LLMMixin:
         )
 
         messages: List[Dict[str, Any]] = []
+        state_message = self._athlete_state_context_message(athlete_state)
+        if state_message:
+            messages.append(state_message)
+
         if conversation_context:
             for msg in conversation_context[-10:]:
                 role = msg.get("role", "user")
@@ -264,8 +286,10 @@ class LLMMixin:
         messages.append({
             "role": "user",
             "content": (
-                "MANDATORY: You MUST call get_weekly_volume and get_recent_runs "
-                "BEFORE generating any response. Do NOT answer without tool data.\n\n"
+                "MANDATORY: Use the appropriate coach tools before making data claims. "
+                "For specific older activities or athlete corrections that something exists, "
+                "call search_activities instead of relying on recent-run summaries. "
+                "Do NOT answer analytic/data questions without tool data.\n\n"
                 f"{message}"
             ),
         })

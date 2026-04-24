@@ -2,7 +2,7 @@
 
 ## Current State
 
-The AI coach is the primary conversational interface. Every athlete query routes through the `AICoach` class in `services/coaching/core.py` (legacy import path `services/ai_coach.py` is a 5-line shim that still re-exports `AICoach`). The production path is **universal Kimi**: `AICoach.chat` calls `_query_kimi_with_fallback()` → `query_kimi_coach()` in `services/coaching/_llm.py`, which uses **`settings.COACH_CANARY_MODEL`** (default **`kimi-k2.6`** in `apps/api/core/config.py`). **Claude Sonnet 4.6** is the silent fallback (`query_opus`) on Kimi errors or missing `KIMI_API_KEY`. **Gemini is not used** on the coach chat path (a `query_gemini` implementation remains for non-chat legacy/experiment only).
+The AI coach is the primary conversational interface. Every athlete query routes through the `AICoach` class in `services/coaching/core.py` (legacy import path `services/ai_coach.py` is a 5-line shim that still re-exports `AICoach`). The production path is **universal Kimi**: `AICoach.chat` calls `_query_kimi_with_fallback()` -> `query_kimi_coach()` in `services/coaching/_llm.py`, which uses **`settings.COACH_CANARY_MODEL`** (default **`kimi-k2.6`** in `apps/api/core/config.py`). **Claude Sonnet 4.6** is the silent fallback (`query_opus`) on Kimi errors or missing `KIMI_API_KEY`. Chat availability now gates on any configured runtime route (Kimi, Sonnet, or Gemini) instead of requiring Gemini. **Gemini is not the primary chat path**, but `query_gemini()` remains a guardrail-retry fallback when a turn mismatch retry needs an LLM and Anthropic is unavailable.
 
 The `AICoach` class is composed of seven mixins living alongside `core.py` in the `coaching/` package: `_context.py`, `_llm.py`, `_thread.py`, `_tools.py`, `_budget.py`, `_guardrails.py`, `_prescriptions.py`. Shared constants and the KB violation scanner live in `_constants.py`.
 
@@ -43,7 +43,7 @@ Three context builders serve different surfaces:
 
 2. **`_build_athlete_context_for_chat()`** in `services/coaching/_context.py` — 7-day activity summary, 30-day stats, check-ins, Garmin watch data, planned workouts. All dates include `_relative_date()` labels.
 
-3. **`_build_athlete_state_for_opus()`** in `services/coaching/_context.py` — premium context with recent runs, latest check-in. Dates include relative labels.
+3. **`_build_athlete_state_for_opus()`** in `services/coaching/_context.py` — premium context with recent runs, latest check-in. Dates include relative labels. This athlete-state packet is now injected into both Kimi and Sonnet request messages by `services/coaching/_llm.py`, rather than being computed and dropped on the Kimi path.
 
 ### System Prompt
 
@@ -73,7 +73,8 @@ The coach has access to ~26 tools defined in the `services/coach_tools/` package
 - `get_pb_patterns()` — personal best analysis
 - `build_athlete_brief()` — comprehensive context (includes Nutrition Snapshot: today's totals, goal, day tier, targets)
 - `get_nutrition_correlations()` — nutrition-related findings from the correlation engine
-- `get_nutrition_log()` — recent nutrition entries for an athlete
+- `get_nutrition_log()` — recent nutrition entries for an athlete. The response includes explicit coverage, today's logged-so-far totals, per-date additive totals, entry count, and evidence. Multiple same-date `daily` entries are additive partial logs, not replacements or complete-day totals.
+- `search_activities()` — explicit activity lookup by date/name/race/distance/sport/workout type. This exists so the coach can verify older races or athlete corrections without pretending `get_recent_runs()` is full-history search. Query construction is shared with the activities API via `services/activity_search.py`.
 - Activity data queries, plan data, correlation findings
 
 ### Conversation Management
@@ -82,6 +83,7 @@ The coach has access to ~26 tools defined in the `services/coach_tools/` package
 - **`MessageRouter`** — routes messages to appropriate handlers
 - **`CoachChat`** model — stores conversations with JSONB messages
 - **Turn guard** (`services/turn_guard_monitor.py`) — prevents infinite loops
+- **Conversation outcome contract** (`services/coaching/_conversation_contract.py`) — lightweight classifier for `quick_check`, `decision_point`, `correction_dispute`, `race_strategy`, and related conversation types. Correction/dispute turns require verification with tools when possible, or explicit athlete-stated labeling when not possible; the coach must not repeat the disputed claim.
 
 ### KB Violation Scanner
 
@@ -95,6 +97,7 @@ The coach has access to ~26 tools defined in the `services/coach_tools/` package
 - **Athlete calibration** (Apr 6, 2026): Coach prompt no longer defaults to conservatism regardless of athlete experience.
 - **Nutrition context** (Apr 9, 2026): `build_athlete_brief` now includes a Nutrition Snapshot section. Two new tools (`get_nutrition_correlations`, `get_nutrition_log`) let the coach query nutrition data on demand.
 - **FIT metrics + effort resolver in coach context** (Apr 19, 2026 — `fit_run_001` Phase 3): Every recent run row now carries power, running dynamics, true moving time, and a resolved perceived-effort envelope with provenance. The new `services/effort_resolver.py` is the single source of truth — athlete-provided RPE always wins over Garmin self-eval, never blended.
+- **Coach trust foundation slice** (Apr 24, 2026): Added `search_activities`, shared activity query construction, Kimi/Sonnet athlete-state injection, Gemini gate re-scope, additive nutrition evidence, and the conversation outcome contract skeleton.
 
 ## Known Issues
 

@@ -460,10 +460,15 @@ Policy:
                 "rebuild_plan_prompt": False,
             }
 
-        # If no LLM client is available, return a helpful message
-        if not self.gemini_client:
+        # If no LLM route is available, return a helpful message.  Kimi is the
+        # primary chat path; Gemini remains only as a guardrail-retry fallback.
+        kimi_configured = bool(settings.KIMI_API_KEY or os.getenv("KIMI_API_KEY"))
+        if not (kimi_configured or self.anthropic_client or self.gemini_client):
             return {
-                "response": "AI Coach is not configured. Please set GOOGLE_AI_API_KEY in your environment.",
+                "response": (
+                    "AI Coach is not configured. Please set KIMI_API_KEY, "
+                    "ANTHROPIC_API_KEY, or GOOGLE_AI_API_KEY in your environment."
+                ),
                 "error": True
             }
 
@@ -838,6 +843,23 @@ Policy:
             # Universal Kimi K2.5 routing (Apr 2026).
             # Every query goes through Kimi with Sonnet as silent fallback.
             athlete_state = self._build_athlete_state_for_opus(athlete_id)
+
+            try:
+                from services.coaching._conversation_contract import (
+                    classify_conversation_contract,
+                )
+                contract = classify_conversation_contract(message)
+                athlete_state += (
+                    "\n\n=== CONVERSATION OUTCOME CONTRACT ===\n"
+                    f"Type: {contract.contract_type.value}\n"
+                    f"Outcome target: {contract.outcome_target}\n"
+                    f"Required behavior: {contract.required_behavior}\n"
+                )
+                if contract.max_words:
+                    athlete_state += f"Max length: {contract.max_words} words\n"
+                athlete_state += "=== END CONVERSATION OUTCOME CONTRACT ==="
+            except Exception:
+                pass
 
             if finding_id:
                 finding_context = self._build_finding_deep_link_context(

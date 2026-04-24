@@ -32,6 +32,25 @@ class ToolsMixin:
                 },
             },
             {
+                "name": "search_activities",
+                "description": "Search the athlete's activity history by date, name, race flag, distance, sport, or workout type. Use this when verifying a specific older race/activity or when the athlete says an activity exists.",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "start_date": {"type": "string", "description": "Optional start date (YYYY-MM-DD or ISO datetime)."},
+                        "end_date": {"type": "string", "description": "Optional end date (YYYY-MM-DD or ISO datetime)."},
+                        "name_contains": {"type": "string", "description": "Optional case-insensitive title/name substring."},
+                        "sport": {"type": "string", "description": "Optional sport filter, default run."},
+                        "workout_type": {"type": "string", "description": "Optional workout_type filter."},
+                        "race_only": {"type": "boolean", "description": "If true, only return race candidates or user-verified races."},
+                        "distance_min_m": {"type": "integer", "description": "Optional minimum distance in meters."},
+                        "distance_max_m": {"type": "integer", "description": "Optional maximum distance in meters."},
+                        "limit": {"type": "integer", "description": "Max results (default 10, max 50)."},
+                    },
+                    "required": [],
+                },
+            },
+            {
                 "name": "get_calendar_day_context",
                 "description": "Get plan + actual context for a specific calendar day (planned workout + completed activities with IDs).",
                 "input_schema": {
@@ -354,6 +373,8 @@ class ToolsMixin:
             if tool_name == "get_recent_runs":
                 days = tool_input.get("days", 14)
                 result = coach_tools.get_recent_runs(self.db, athlete_id, days=min(days, 730))
+            elif tool_name == "search_activities":
+                result = coach_tools.search_activities(self.db, athlete_id, **tool_input)
             elif tool_name == "get_calendar_day_context":
                 result = coach_tools.get_calendar_day_context(self.db, athlete_id, **tool_input)
             elif tool_name == "get_efficiency_trend":
