@@ -161,22 +161,43 @@ class TestAdaptActivitySummary:
             assert out["sport"] == "run", f"Expected 'run' for {garmin_type}"
 
     def test_cycling_maps_to_cycling(self):
-        out = adapt_activity_summary(self._sample_raw(activityType="CYCLING"))
-        assert out["sport"] == "cycling"
-        assert out["garmin_activity_type"] == "CYCLING"
-        assert out["cadence_unit"] == "rpm"
+        for garmin_type in ("CYCLING", "ROAD_BIKING", "GRAVEL_CYCLING"):
+            out = adapt_activity_summary(self._sample_raw(activityType=garmin_type))
+            assert out["sport"] == "cycling", f"Expected 'cycling' for {garmin_type}"
+            assert out["garmin_activity_type"] == garmin_type
+            assert out["cadence_unit"] == "rpm"
 
     def test_cross_training_types(self):
         cases = {
             "INDOOR_CYCLING": ("cycling", "rpm"),
             "MOUNTAIN_BIKING": ("cycling", "rpm"),
+            "ROAD_BIKING": ("cycling", "rpm"),
+            "GRAVEL_CYCLING": ("cycling", "rpm"),
+            "VIRTUAL_RIDE": ("cycling", "rpm"),
+            "E_BIKE_FITNESS": ("cycling", "rpm"),
+            "TRACK_CYCLING": ("cycling", "rpm"),
+            "BIKE_COMMUTING": ("cycling", "rpm"),
             "ELLIPTICAL": ("cycling", "rpm"),
             "STAIR_CLIMBING": ("cycling", "rpm"),
             "WALKING": ("walking", "spm"),
+            "CASUAL_WALKING": ("walking", "spm"),
+            "SPEED_WALKING": ("walking", "spm"),
+            "INDOOR_WALKING": ("walking", "spm"),
             "HIKING": ("hiking", "spm"),
+            "SWIMMING": ("swimming", None),
+            "LAP_SWIMMING": ("swimming", None),
+            "OPEN_WATER_SWIMMING": ("swimming", None),
             "STRENGTH_TRAINING": ("strength", None),
+            "WEIGHT_TRAINING": ("strength", None),
             "YOGA": ("flexibility", None),
             "PILATES": ("flexibility", None),
+            "BREATHWORK": ("flexibility", None),
+            "HIIT": ("cardio", None),
+            "INDOOR_ROWING": ("rowing", "spm"),
+            "CROSS_COUNTRY_SKIING": ("winter_sport", None),
+            "STAND_UP_PADDLEBOARDING": ("water_sport", None),
+            "MULTI_SPORT": ("multi_sport", None),
+            "GOLF": ("other", None),
             "TRACK_RUNNING": ("run", "spm"),
             "ULTRA_RUN": ("run", "spm"),
         }
@@ -187,9 +208,9 @@ class TestAdaptActivitySummary:
             assert out["garmin_activity_type"] == garmin_type
 
     def test_unknown_type_maps_to_none(self):
-        out = adapt_activity_summary(self._sample_raw(activityType="GOLF"))
+        out = adapt_activity_summary(self._sample_raw(activityType="ZORBING"))
         assert out["sport"] is None
-        assert out["garmin_activity_type"] == "GOLF"
+        assert out["garmin_activity_type"] == "ZORBING"
         assert out["cadence_unit"] is None
 
     def test_missing_type_maps_to_none(self):

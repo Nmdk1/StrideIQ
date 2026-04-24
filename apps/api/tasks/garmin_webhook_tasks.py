@@ -498,7 +498,7 @@ def _ingest_activity_item(
     adapted = adapt_activity_summary(raw_item)
 
     if adapted.get("sport") not in _ACCEPTED_SPORTS:
-        logger.debug(
+        logger.warning(
             "Skipping unmapped activity (sport=%s, type=%s, external_id=%s)",
             adapted.get("sport"),
             adapted.get("garmin_activity_type"),

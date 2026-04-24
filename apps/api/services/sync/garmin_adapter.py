@@ -44,7 +44,7 @@ logger = logging.getLogger(__name__)
 
 # --- Activity type → internal sport mapping ---
 _ACTIVITY_TYPE_MAP: Dict[str, Optional[str]] = {
-    # Run types
+    # --- Run ---
     "RUNNING": "run",
     "TRAIL_RUNNING": "run",
     "TREADMILL_RUNNING": "run",
@@ -54,31 +54,114 @@ _ACTIVITY_TYPE_MAP: Dict[str, Optional[str]] = {
     "STREET_RUNNING": "run",
     "ULTRA_RUN": "run",
     "OBSTACLE_RUN": "run",
-    # Cycling (aerobic cross-training, same load bucket)
+    "SPEED_RUNNING": "run",
+
+    # --- Cycling ---
     "CYCLING": "cycling",
     "INDOOR_CYCLING": "cycling",
     "MOUNTAIN_BIKING": "cycling",
+    "ROAD_BIKING": "cycling",
+    "GRAVEL_CYCLING": "cycling",
+    "CYCLOCROSS": "cycling",
+    "VIRTUAL_RIDE": "cycling",
+    "E_BIKE_FITNESS": "cycling",
+    "E_BIKE_MOUNTAIN": "cycling",
+    "RECUMBENT_CYCLING": "cycling",
+    "HAND_CYCLING": "cycling",
+    "TRACK_CYCLING": "cycling",
+    "BMX": "cycling",
+    "BIKE_COMMUTING": "cycling",
+    "DOWNHILL_BIKING": "cycling",
+    "MIXED_SURFACE_CYCLING": "cycling",
+    "SPIN": "cycling",
     "ELLIPTICAL": "cycling",
     "STAIR_CLIMBING": "cycling",
-    # Walking / hiking (distinct stimuli)
+
+    # --- Walking ---
     "WALKING": "walking",
+    "CASUAL_WALKING": "walking",
+    "SPEED_WALKING": "walking",
+    "INDOOR_WALKING": "walking",
+
+    # --- Hiking ---
     "HIKING": "hiking",
-    # Strength
+
+    # --- Swimming ---
+    "SWIMMING": "swimming",
+    "LAP_SWIMMING": "swimming",
+    "OPEN_WATER_SWIMMING": "swimming",
+    "POOL_SWIMMING": "swimming",
+
+    # --- Strength ---
     "STRENGTH_TRAINING": "strength",
-    # Flexibility (recovery modalities, not training load)
+    "WEIGHT_TRAINING": "strength",
+    "FUNCTIONAL_TRAINING": "strength",
+
+    # --- Flexibility / recovery ---
     "YOGA": "flexibility",
     "PILATES": "flexibility",
+    "BREATHWORK": "flexibility",
+
+    # --- Cardio / HIIT ---
+    "HIIT": "cardio",
+    "CARDIO_TRAINING": "cardio",
+    "JUMP_ROPE_TRAINING": "cardio",
+
+    # --- Rowing ---
+    "INDOOR_ROWING": "rowing",
+    "ROWING": "rowing",
+
+    # --- Winter sports ---
+    "RESORT_SKIING_SNOWBOARDING": "winter_sport",
+    "CROSS_COUNTRY_SKIING": "winter_sport",
+    "BACKCOUNTRY_SKIING": "winter_sport",
+    "SNOWBOARDING": "winter_sport",
+    "SNOWSHOEING": "winter_sport",
+    "SKATING": "winter_sport",
+
+    # --- Water sports ---
+    "STAND_UP_PADDLEBOARDING": "water_sport",
+    "SURFING": "water_sport",
+    "KAYAKING": "water_sport",
+    "SAILING": "water_sport",
+
+    # --- Other fitness ---
+    "MULTI_SPORT": "multi_sport",
+    "MARTIAL_ARTS": "other",
+    "BOXING": "other",
+    "ROCK_CLIMBING": "other",
+    "GOLF": "other",
+    "HORSEBACK_RIDING": "other",
+    "INLINE_SKATING": "other",
+    "TENNIS": "other",
+    "PICKLEBALL": "other",
+    "RACQUET": "other",
+    "FLOOR_CLIMBING": "other",
+    "MEDITATION": "other",
+    "DISC_GOLF": "other",
+    "DANCE": "other",
 }
 
-_ACCEPTED_SPORTS = {"run", "cycling", "walking", "hiking", "strength", "flexibility"}
+_ACCEPTED_SPORTS = {
+    "run", "cycling", "walking", "hiking", "swimming",
+    "strength", "flexibility", "cardio", "rowing",
+    "winter_sport", "water_sport", "multi_sport", "other",
+}
 
 _CADENCE_UNIT_MAP: Dict[str, Optional[str]] = {
     "run": "spm",
     "walking": "spm",
     "hiking": "spm",
     "cycling": "rpm",
+    "swimming": None,
     "strength": None,
     "flexibility": None,
+    "cardio": None,
+    "rowing": "spm",
+    "winter_sport": None,
+    "water_sport": None,
+    "multi_sport": None,
+    "other": None,
 }
 
 
