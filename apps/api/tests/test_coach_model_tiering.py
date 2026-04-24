@@ -227,6 +227,26 @@ class TestToolValidation:
         )
         assert is_valid is True
         assert reason == "ok"
+
+    def test_race_strategy_tools_count_as_data_tools(self, coach):
+        """Race strategy tools should not trigger false no-data warnings."""
+        is_valid, reason = coach._validate_tool_usage(
+            message="Give me a 5K race strategy for tomorrow.",
+            tools_called=["get_training_paces", "get_race_predictions"],
+            tool_calls_count=2,
+        )
+        assert is_valid is True
+        assert reason == "ok"
+
+    def test_nutrition_log_counts_as_data_tool(self, coach):
+        """Nutrition data questions are grounded by nutrition tools."""
+        is_valid, reason = coach._validate_tool_usage(
+            message="How many calories have I logged today?",
+            tools_called=["get_nutrition_log"],
+            tool_calls_count=1,
+        )
+        assert is_valid is True
+        assert reason == "ok"
     
     def test_definition_question_skips_validation(self, coach):
         """Definition questions don't need tool validation."""

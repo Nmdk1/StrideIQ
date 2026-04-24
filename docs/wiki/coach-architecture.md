@@ -98,7 +98,7 @@ The coach has access to ~26 tools defined in the `services/coach_tools/` package
 - **Nutrition context** (Apr 9, 2026): `build_athlete_brief` now includes a Nutrition Snapshot section. Two new tools (`get_nutrition_correlations`, `get_nutrition_log`) let the coach query nutrition data on demand.
 - **FIT metrics + effort resolver in coach context** (Apr 19, 2026 — `fit_run_001` Phase 3): Every recent run row now carries power, running dynamics, true moving time, and a resolved perceived-effort envelope with provenance. The new `services/effort_resolver.py` is the single source of truth — athlete-provided RPE always wins over Garmin self-eval, never blended.
 - **Coach trust foundation slice** (Apr 24, 2026): Added `search_activities`, shared activity query construction, Kimi/Sonnet athlete-state injection, Gemini gate re-scope, additive nutrition evidence, and the conversation outcome contract skeleton.
-- **Conversation contract enforcement** (Apr 24, 2026): Turn guard now validates normalized model output against the conversation outcome contract and retries once with a targeted correction when the answer violates the expected shape.
+- **Conversation contract enforcement** (Apr 24, 2026): Turn guard now validates normalized model output against the conversation outcome contract and retries once with a targeted correction when the answer violates the expected shape. Tool-use validation recognizes race, nutrition, calendar-day, split, and activity-search tools as grounding tools so grounded answers do not raise false no-data warnings.
 
 ## Known Issues
 
