@@ -1,6 +1,6 @@
 # StrideIQ Internal Wiki
 
-**Last updated:** April 23, 2026 (Quick Reference: coach + briefing models aligned to `apps/api/core/config.py`, `services/coaching/_llm.py`, `core/llm_client.py`; running vs other — home/calendar/analytics week UI + calendar API split fields documented in `docs/wiki/frontend.md`)
+**Last updated:** April 24, 2026 (Apr 24: timezone two-model + home/effective split; nutrition autofill prevention; briefing clock time removed from LLM prompt)
 
 This is the single onboarding document. Read this instead of the 12-document read order.
 
@@ -62,6 +62,7 @@ Before writing any code, understand these five things:
 | **[Nutrition](./nutrition.md)** | AI Nutrition Intelligence — photo/barcode/NL parsing, fueling shelf, nutrition planning, load-adaptive targets, first-class metric (#3 in hierarchy) |
 | **[Usage Telemetry](./telemetry.md)** | First-party page view tracking — PageView model, tracking hook, admin usage reports |
 | **[Unified Reports](./reports.md)** | Cross-domain reporting — health, activities, nutrition, body comp in configurable date ranges |
+| **[Units System](./units.md)** | Canonical units contract — API ships meters/seconds, `useUnits()` hook, `CoachUnits` backend helper, country-aware defaults |
 | **[Decisions](./decisions.md)** | 56 ADRs summarized — key architectural choices and their current state |
 
 ## Maintenance Contract (binding)

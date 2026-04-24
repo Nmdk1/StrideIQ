@@ -1,5 +1,60 @@
 # Wiki Log
 
+## [2026-04-24] Timezone two-model, autofill fix, briefing clock time removed
+
+**Trigger:** Three separate production issues surfaced in one session.
+
+### 1. Timezone — Two-Timezone Model (home vs. effective)
+
+The founder's briefing showed `2:31 AM` when the actual time was `1:31 AM` (Central). Root cause: `Athlete.timezone` was `America/New_York` because `infer_and_persist_athlete_timezone` used the single most-recent GPS activity (a March trip to NC) rather than the mode. Strava OAuth was also incorrectly overwriting an existing timezone on re-auth.
+
+**Fixes shipped:**
+- `infer_and_persist_athlete_timezone` now samples last 30 GPS activities in 90 days and uses the mode — a single trip no longer poisons the home timezone.
+- `get_athlete_effective_timezone()` added to `services/timezone_utils.py` — read-only, returns the most-recent GPS timezone within 72 hours (detects travel), falls back to home.
+- Briefing `local_now` now uses effective timezone. Training day windows (local_today, day bounds) keep home timezone.
+- Briefing fingerprint includes `tz:{effective_timezone}` so travel triggers cache invalidation and fresh LLM generation.
+- Strava OAuth callback only writes `Athlete.timezone` when it is currently unset; discrepancies on re-auth are logged, not applied.
+
+**Files:** `apps/api/services/timezone_utils.py`, `apps/api/routers/home.py`, `apps/api/routers/strava.py`, `apps/api/tasks/home_briefing_tasks.py`
+
+**Wiki:** `docs/wiki/briefing-system.md` — Two-Timezone Model section added/updated.
+
+### 2. Nutrition — browser/OS autofill offering credit cards
+
+A recent web container rebuild caused Android's autofill service to re-analyze the nutrition page DOM. The macro entry grid (Calories, Protein, Carbs, Fat) matched payment-form heuristics and Android offered the athlete's credit card.
+
+**Fix:** `apps/web/app/nutrition/page.tsx` — added `autoComplete="off"` + semantic `name` attributes to every unguarded `<input>` and `<textarea>` (food-description, notes, catalog search, meal name, meal-item food fields, meal NL-parse textarea, history edit notes) and `autoComplete="off"` to both surrounding `<form>` elements.
+
+**Wiki:** `docs/wiki/nutrition.md` — Frontend Notes section added; Known Gap documented for text-keyed overrides.
+
+### 3. Briefing — clock time removed from LLM prompt
+
+The LLM was told the exact clock time (`It is 2:00 AM`) via the system prompt. This text appeared verbatim in generated briefings. Two problems: (a) the athlete has a clock; (b) the briefing is pre-generated up to 40 minutes before it is read, so the stated time is always stale.
+
+**Fix:** `apps/api/routers/home.py` `_call_opus_briefing_sync` — removed `_time_str` entirely. The system prompt now passes only the time-of-day period (`morning` / `afternoon` / `evening`) with an explicit instruction never to state the clock time. Natural relative phrasing ("this morning", "tonight") is preserved.
+
+**Wiki:** `docs/wiki/briefing-system.md` — Clock Time Removed section added; Two-Timezone table updated (no longer says "It's 7 AM").
+
+
+
+**Trigger:** The canonical units migration eliminated all hardcoded imperial API fields (`distance_mi`, `pace_per_mile`, `completed_mi`, etc.) and replaced them with SI-adjacent canonical units (`distance_m`, `pace_s_per_km`, `duration_s`). Frontend converts at render via `useUnits()` hook. Backend LLM text uses `CoachUnits` helper. CSV exports respect athlete preference. Country-aware defaults from IANA timezone.
+
+**Documentation updates:**
+
+- **New:** `docs/wiki/units.md` — canonical units contract, `useUnits()` API, `CoachUnits` API, country-aware defaults, migration changelog.
+- **Updated:** `docs/wiki/index.md` — added Units System to All Pages table, bumped last-updated.
+- **Updated:** `docs/wiki/reports.md` — CSV export now respects athlete preferred units (was hardcoded imperial).
+- **Updated:** `docs/wiki/briefing-system.md` — specificity fix marked SHIPPED; findings use athlete preferred units via CoachUnits.
+- **Updated:** `docs/wiki/plan-engine.md` — `target_peak_weekly_m` (was `_miles`); V2 volume control note about API-to-engine conversion.
+- **Updated:** `docs/wiki/activity-processing.md` — shape sentence uses preferred units; distance hover card unit-aware; distance markers unit-aware.
+- **Updated:** `docs/SITE_AUDIT_LIVING.md` — §0 delta rewritten: imperial debt marked RESOLVED; field names corrected (`distance_m`, `completed_m`); §14 contract updated.
+- **Updated:** `docs/SESSION_HANDOFF_2026-04-22_AGENT_ONBOARDING.md` — imperial debt marked RESOLVED.
+- **Updated:** `docs/BUILDER_NOTE_2026-04-23_RUNNING_OTHER_SEPARATION_CLEANUP.md` — field references corrected to `_m`.
+- **Updated:** `docs/PLAN_ENGINE_V2_MASTER_PLAN.md` — pace calculator note about API boundary conversion.
+- **Updated:** 4 specs (RUNTOON_SHARE_FLOW, P4_LOAD_CONTEXT, LIVING_FINGERPRINT, PHASE2_TEST) — API response field names updated.
+- **Updated:** 6 ADRs (017, 019, 030, 032, 038, 048) — field names updated or migration notes added.
+- **Unchanged:** `docs/GARMIN_API_REFERENCE.md` (describes Garmin's raw format, not our API output); `docs/references/*` (coaching references using running terminology); `docs/archive/*` (historical); `PLAN_GENERATOR_ALGORITHM_SPEC.md` internal segment fields (V2 engine internals).
+
 ## [2026-04-23] Running vs other activity separation (home, calendar, analytics)
 
 **Trigger:** Builder note `docs/BUILDER_NOTE_2026-04-23_RUNNING_OTHER_SEPARATION_CLEANUP.md` — eliminate mixed-sport aggregation for athlete-facing running mileage and planned-run completion; surface cross-training explicitly.
@@ -227,7 +282,7 @@ Following the project reorg (models/, services/sync/, services/intelligence/, se
 
 ## [2026-04-11] plan-engine-v2-wired | V2 plan engine wired to production route
 
-- **New file:** `plan_saver.py` — Maps V2WeekPlan/V2DayPlan to TrainingPlan + PlannedWorkout DB rows. Handles distance estimation from segments (explicit distance_km, time-based duration×pace, distance_range midpoint), duration estimation, JSONB segment serialization, coach notes. Sets `generation_method = "v2"`.
+- **New file:** `plan_saver.py` — Maps V2WeekPlan/V2DayPlan to TrainingPlan + PlannedWorkout DB rows. Handles distance estimation from segments (explicit distance_m, time-based duration×pace, distance_range midpoint), duration estimation, JSONB segment serialization, coach notes. Sets `generation_method = "v2"`.
 - **New file:** `router_adapter.py` — Loads FitnessBank, FingerprintParams, LoadContext from DB; maps ConstraintAwarePlanRequest to V2 inputs (including TuneUpRace conversion); calls `generate_plan_v2()`; saves via plan_saver; stitches V1-compatible response shape (fitness_bank, model, prediction, volume_contract, weeks).
 - **New file:** `test_plan_saver.py` — 17 unit tests covering distance/duration estimation, segments JSON, coach notes, tune-up race mapping, plan start alignment.
 - **Modified:** `routers/plan_generation.py` — Added `engine: Optional[str] = None` query parameter to `POST /v2/plans/constraint-aware`. When `engine=v2` and user is admin/owner, routes through V2. V1 remains default.

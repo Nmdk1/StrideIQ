@@ -94,13 +94,22 @@ The briefing uses two distinct timezone concepts — **do not conflate them:**
 | Concept | Source | Used for |
 |---|---|---|
 | **Home timezone** (`Athlete.timezone`) | GPS mode over 30 activities/90 days, or first Strava OAuth | Training day/week windows, plan schedule, streak accounting |
-| **Effective timezone** (`get_athlete_effective_timezone()`) | Most recent GPS activity within 72 hours | `local_now` in briefing greeting ("It's 7 AM") |
+| **Effective timezone** (`get_athlete_effective_timezone()`) | Most recent GPS activity within 72 hours | `local_now` passed to prompt — determines time-of-day period ("morning" / "afternoon" / "evening") for natural-language phrasing |
 
 **How it works:** `get_athlete_effective_timezone()` queries the most recent GPS activity within the last 72 hours. If it's in a different timezone than the athlete's home, that travel timezone is returned. When the athlete runs at home again, the effective timezone automatically reverts to home. Nothing is ever written to `Athlete.timezone` — it is read-only from this function.
 
-**Fingerprint:** The briefing fingerprint includes `tz:{effective_timezone}` so that traveling to a new timezone triggers a fresh LLM generation with the correct local time, and returning home triggers another fresh generation.
+**Fingerprint:** The briefing fingerprint includes `tz:{effective_timezone}` so that traveling to a new timezone triggers a fresh LLM generation with the correct local-time period, and returning home triggers another fresh generation.
 
 **Root cause fixed (Apr 24, 2026):** The NC trip bug — where a single run in Cary, NC set `home = America/New_York` for a Mississippi athlete permanently — was caused by `infer_and_persist_athlete_timezone` picking the most-recent GPS activity (which happened to be an Eastern-timezone trip) rather than the mode. Fixed by using modal GPS timezone across last 30 activities.
+
+## Clock Time Removed from Briefing (Apr 24, 2026)
+
+The LLM system prompt previously included `The athlete's current local time is {HH:MM AM/PM}`. This caused two problems:
+
+1. **Immediately stale**: the briefing is pre-generated (Lane 2A), so by the time the athlete reads it the stated time can be 30–60 minutes old.
+2. **Zero information value**: the athlete has a clock on their device at all times.
+
+**Fix:** `_call_opus_briefing_sync` in `routers/home.py` now passes only the time-of-day *period* (`morning` / `afternoon` / `evening`) to the system prompt, with an explicit instruction: *"Do NOT state or repeat the clock time — the athlete already has a clock."* Natural relative phrasing ("this morning", "tonight") is still enabled via the period label. The `_time_str` computation is removed entirely.
 
 ## Timezone History Bug Fixed
 

@@ -23,6 +23,7 @@ Full nutrition tracking with three input modes (photo, barcode, text), a fueling
 - Prompt instructs LLM to respect explicit weights/quantities, not default to standard servings
 - USDA lookup attempted on parsed notes for verification
 - `macro_source: "llm_estimated"` or `"usda_local"` / `"usda_api"`
+- **Known gap:** NL text parse results have no UPC / FDC ID / fueling_product_id assigned. When the athlete manually corrects macros after a text parse, `_maybe_learn_override_from_entry` silently skips (hits the `else: return` branch). **Text-keyed overrides are not yet built** — only barcode scans and USDA-matched entries learn from corrections. Workaround: save the food as a named meal in the Meals tab.
 
 ## Data Model
 
@@ -202,6 +203,11 @@ When the product library is combined with workout targets, the system can comput
 - **Load-adaptive**: Daily targets scale with training load tier, not a flat number.
 - **`macro_source` tracked**: Every entry records how its macros were determined.
 - **No `pytz`**: Uses Python stdlib `zoneinfo` for timezone handling.
+- **Override scope gap (known, not yet fixed):** `_maybe_learn_override_from_entry` only learns from entries with a `source_upc`, `source_fdc_id`, or `fueling_product_id`. Plain NL text parse results never get an identifier assigned, so manual macro corrections on text-parsed entries are silently discarded. Mitigation: save the food as a named Meal template with correct macros. Fix: add `source_text_key` (normalized food name) as a 4th identifier type — not yet built.
+
+## Frontend Notes
+
+- **Autofill prevention (Apr 24, 2026):** All `<input>` and `<textarea>` fields in `apps/web/app/nutrition/page.tsx` have `autoComplete="off"` plus a semantic `name` attribute. Both surrounding `<form>` elements also carry `autoComplete="off"`. Without this, Android's system autofill service misidentified the macro entry grid as a payment form and offered credit card suggestions. The fix is deployed; existing PWA installs require force-close + reopen to clear the old autofill session.
 
 ## Sources
 
