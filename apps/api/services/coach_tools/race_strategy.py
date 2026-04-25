@@ -19,6 +19,7 @@ from models import (
     TrainingPlan,
 )
 from services.coach_tools._utils import _M_PER_MI, _iso, _mi_from_m, _pace_str_mi
+from services.coach_tools.training_block import activity_row_with_training_structure
 
 
 _RACE_MEMORY_TYPES = {
@@ -293,12 +294,26 @@ def _recent_relevant_workouts(
             and 0.8 * distance_m <= activity.distance_m <= max(distance_m * 4.0, distance_m + 5000)
         )
         keyword_ok = any(token in label for token in keywords)
-        if not (distance_ok or keyword_ok):
+        row = activity_row_with_training_structure(
+            db,
+            activity,
+            race_distance_m=distance_m,
+        )
+        quality_ok = bool((row.get("quality_rank") or 0) > 0)
+        if not (distance_ok or keyword_ok or quality_ok):
             continue
-        rows.append(_activity_row(activity))
-        if len(rows) >= 6:
-            break
-    return rows
+        if distance_ok and not quality_ok:
+            row["quality_rank"] = 10
+            row["selection_reason"] = "broad_distance_match"
+        rows.append(row)
+    rows.sort(
+        key=lambda row: (
+            row.get("quality_rank") or 0,
+            row.get("date") or "",
+        ),
+        reverse=True,
+    )
+    return rows[:15]
 
 
 def _race_history(db: Session, athlete_id: UUID) -> Dict[str, Any]:

@@ -145,6 +145,18 @@ class ToolsMixin:
                 },
             },
             {
+                "name": "get_training_block_narrative",
+                "description": "Summarize recent quality-session structure from activities and splits. Use for race readiness, workout arc, and evidence-vs-zone questions.",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "days": {"type": "integer", "description": "Lookback window in days (default 42, max 120)"},
+                        "limit": {"type": "integer", "description": "Max quality sessions to return (default 12, max 25)"},
+                    },
+                    "required": [],
+                },
+            },
+            {
                 "name": "get_recovery_status",
                 "description": "Get recovery metrics: half-life, durability index, false fitness and masked fatigue signals.",
                 "input_schema": {
@@ -408,6 +420,8 @@ class ToolsMixin:
                 result = coach_tools.get_race_predictions(self.db, athlete_id)
             elif tool_name == "get_race_strategy_packet":
                 result = coach_tools.get_race_strategy_packet(self.db, athlete_id, **tool_input)
+            elif tool_name == "get_training_block_narrative":
+                result = coach_tools.get_training_block_narrative(self.db, athlete_id, **tool_input)
             elif tool_name == "get_recovery_status":
                 result = coach_tools.get_recovery_status(self.db, athlete_id)
             elif tool_name == "get_active_insights":

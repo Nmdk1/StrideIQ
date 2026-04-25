@@ -846,21 +846,6 @@ Policy:
             athlete_state = self._build_athlete_state_for_opus(athlete_id)
 
             conversation_contract_type = None
-            try:
-                contract = classify_conversation_contract(message)
-                conversation_contract_type = contract.contract_type.value
-                athlete_state += (
-                    "\n\n=== CONVERSATION OUTCOME CONTRACT ===\n"
-                    f"Type: {contract.contract_type.value}\n"
-                    f"Outcome target: {contract.outcome_target}\n"
-                    f"Required behavior: {contract.required_behavior}\n"
-                )
-                if contract.max_words:
-                    athlete_state += f"Max length: {contract.max_words} words\n"
-                athlete_state += "=== END CONVERSATION OUTCOME CONTRACT ==="
-            except Exception:
-                pass
-
             if finding_id:
                 finding_context = self._build_finding_deep_link_context(
                     athlete_id, finding_id
@@ -880,6 +865,24 @@ Policy:
                     ]
                 except Exception:
                     pass
+
+            try:
+                contract = classify_conversation_contract(
+                    message,
+                    conversation_context=conversation_context,
+                )
+                conversation_contract_type = contract.contract_type.value
+                athlete_state += (
+                    "\n\n=== CONVERSATION OUTCOME CONTRACT ===\n"
+                    f"Type: {contract.contract_type.value}\n"
+                    f"Outcome target: {contract.outcome_target}\n"
+                    f"Required behavior: {contract.required_behavior}\n"
+                )
+                if contract.max_words:
+                    athlete_state += f"Max length: {contract.max_words} words\n"
+                athlete_state += "=== END CONVERSATION OUTCOME CONTRACT ==="
+            except Exception:
+                pass
 
             result = await self._query_kimi_with_fallback(
                 athlete_id=athlete_id,

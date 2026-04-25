@@ -8,6 +8,12 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 from sqlalchemy import func
+from services.activity_search import ActivitySearchParams, build_activity_search_query
+from services.coach_tools.training_block import (
+    parse_structured_workout_query,
+    split_summary_matches_query,
+    summarize_activity_split_structure,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -280,7 +286,6 @@ def search_activities(
     limit: int = 10,
 ) -> Dict[str, Any]:
     """Search activity history by explicit criteria for coach verification turns."""
-    from services.activity_search import ActivitySearchParams, build_activity_search_query
     from services.timezone_utils import get_athlete_timezone_from_db, to_activity_local_date, athlete_local_today
 
     now = datetime.utcnow()
@@ -304,6 +309,34 @@ def search_activities(
             sort_order="desc",
         )
         activities = build_activity_search_query(db, params).limit(limit).all()
+        split_aware_fallback_ran = False
+        structured_intent = parse_structured_workout_query(name_contains)
+        if structured_intent:
+            split_aware_fallback_ran = True
+            fallback_params = ActivitySearchParams(
+                athlete_id=athlete_id,
+                start_date=start_date or None,
+                end_date=end_date or None,
+                min_distance_m=distance_min_m,
+                max_distance_m=distance_max_m,
+                sport=sport or None,
+                is_race=race_only,
+                workout_type=workout_type or None,
+                name_contains=None,
+                sort_by="start_time",
+                sort_order="desc",
+            )
+            fallback_candidates = build_activity_search_query(db, fallback_params).limit(120).all()
+            existing_ids = {activity.id for activity in activities}
+            split_matches = []
+            for candidate in fallback_candidates:
+                if candidate.id in existing_ids:
+                    continue
+                split_summary = summarize_activity_split_structure(db, candidate)
+                if split_summary_matches_query(split_summary, structured_intent):
+                    split_matches.append(candidate)
+            if split_matches:
+                activities = (split_matches + activities)[:limit]
         criteria = {
             "start_date": start_date or None,
             "end_date": end_date or None,
@@ -314,11 +347,13 @@ def search_activities(
             "distance_min_m": distance_min_m,
             "distance_max_m": distance_max_m,
             "limit": limit,
+            "split_aware_fallback_ran": split_aware_fallback_ran,
         }
 
         rows: List[Dict[str, Any]] = []
         evidence: List[Dict[str, Any]] = []
         for activity in activities:
+            split_summary = summarize_activity_split_structure(db, activity)
             local_date = to_activity_local_date(activity, ath_tz)
             rel = _relative_date(local_date, ref_date) if local_date else ""
             distance_m = int(activity.distance_m) if activity.distance_m is not None else None
@@ -360,6 +395,7 @@ def search_activities(
                         else None
                     ),
                     "shape_sentence": activity.shape_sentence,
+                    "split_summary": split_summary,
                 }
             )
 
@@ -378,6 +414,8 @@ def search_activities(
                 parts.append(f"avg HR {int(activity.avg_hr)}")
             if is_race:
                 parts.append("[race]")
+            if split_summary and split_summary.get("signature"):
+                parts.append(f"[{split_summary['signature']}]")
             evidence.append(
                 {
                     "type": "activity",

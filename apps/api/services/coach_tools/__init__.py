@@ -9,6 +9,7 @@ from .performance import get_efficiency_trend, get_training_paces, get_race_pred
 from .plan import get_plan_week, get_training_prescription_window  # noqa: F401
 from .profile import get_athlete_profile, get_profile_edit_paths, _get_intent_snapshot, _is_snapshot_stale, get_coach_intent_snapshot, set_coach_intent_snapshot  # noqa: F401
 from .race_strategy import get_race_strategy_packet  # noqa: F401
+from .training_block import get_training_block_narrative  # noqa: F401
 from .wellness import get_nutrition_correlations, get_nutrition_log, compare_training_periods, get_wellness_trends  # noqa: F401
 from ._utils import _M_PER_MI  # noqa: F401
 
@@ -55,6 +56,7 @@ __all__ = [
     "get_training_load",
     "get_training_load_history",
     "get_training_paces",
+    "get_training_block_narrative",
     "get_training_prescription_window",
     "get_weekly_volume",
     "get_wellness_trends",

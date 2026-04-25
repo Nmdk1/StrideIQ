@@ -3,6 +3,7 @@ from uuid import uuid4
 from unittest.mock import MagicMock, patch, AsyncMock
 
 from services.ai_coach import AICoach
+from services.coaching._constants import count_hedge_phrases, _check_response_quality
 
 
 def _coach_stub() -> AICoach:
@@ -76,6 +77,65 @@ def test_pace_relation_faster_direction():
 
 def test_system_instructions_include_conversational_aia_requirement():
     assert "Conversational A->I->A requirement" in AICoach.SYSTEM_INSTRUCTIONS
+
+
+def test_phase7_prompt_distinguishes_general_knowledge_from_athlete_facts():
+    coach = _coach_stub()
+    coach.db = MagicMock()
+    prompt = AICoach._build_coach_system_prompt(coach, uuid4())
+
+    assert "Every number, distance, pace, date, and training fact ABOUT THIS ATHLETE" in prompt
+    assert "GENERAL KNOWLEDGE RULE" in prompt
+    assert "standard sports science" in prompt.lower()
+    assert "I don't have that data" not in prompt
+    assert "I don't have that in your history" in prompt
+
+
+def test_phase7_prompt_replaces_forced_weekly_volume_mandate():
+    coach = _coach_stub()
+    coach.db = MagicMock()
+    prompt = AICoach._build_coach_system_prompt(coach, uuid4())
+
+    assert "YOU HAVE TOOLS -- USE THEM WHEN RELEVANT" in prompt
+    assert "ALWAYS call get_weekly_volume first" not in prompt
+    assert "get_training_block_narrative" in prompt
+    assert "do NOT call tools for questions that don't need athlete data" in prompt
+
+
+def test_phase7_prompt_contains_direct_voice_race_day_and_zone_discrepancy_rules():
+    coach = _coach_stub()
+    coach.db = MagicMock()
+    prompt = AICoach._build_coach_system_prompt(coach, uuid4())
+
+    assert "VOICE DIRECTIVE" in prompt
+    assert "Lead with your position" in prompt
+    assert "Race day is execution mode" in prompt
+    assert "ZONE / WORKOUT EVIDENCE DISCREPANCY" in prompt
+    assert "reason from what the athlete actually ran" in prompt
+
+
+def test_hedge_phrase_counter_flags_overqualified_responses():
+    text = (
+        "That said, it's worth noting this is still aggressive. "
+        "I would suggest considering caution."
+    )
+
+    assert count_hedge_phrases(text) >= 3
+    with patch("services.coaching._constants.logger.warning") as warning:
+        _check_response_quality(text, "test-model", "athlete-1")
+
+    warning.assert_called()
+    assert "hedge_overload" in warning.call_args.args[3]
+
+
+def test_kimi_tool_choice_is_auto_for_general_knowledge_questions():
+    coach = _coach_stub()
+    helper = AICoach._requires_first_tool_call.__get__(coach, AICoach)
+
+    assert helper("What is the standard Maurten bicarb timing protocol?") is False
+    assert helper("How should I warm up for a hard 5K in general?") is False
+    assert helper("Give me a race strategy for my 5K this morning.") is True
+    assert helper("That 16 x 400 workout was on March 28th.") is True
 
 
 # ---------------------------------------------------------------------------

@@ -153,6 +153,7 @@ class GuardrailsMixin:
             "get_training_paces",
             "get_race_predictions",
             "get_race_strategy_packet",
+            "get_training_block_narrative",
             "get_nutrition_log",
             "get_nutrition_correlations",
             "get_best_runs",
@@ -327,7 +328,11 @@ class GuardrailsMixin:
         candidate_band = self._infer_intent_band(candidate, is_user=False)
 
         addresses_latest_turn = self._response_addresses_latest_turn(user_message, candidate)
-        contract_ok, contract_reason = validate_conversation_contract_response(user_message, candidate)
+        contract_ok, contract_reason = validate_conversation_contract_response(
+            user_message,
+            candidate,
+            conversation_context=conversation_context,
+        )
 
         if addresses_latest_turn and contract_ok:
             self._record_turn_guard_event(
@@ -340,7 +345,11 @@ class GuardrailsMixin:
                 is_synthetic_probe=is_synthetic_probe,
                 is_organic=is_organic,
             )
-            return enforce_conversation_contract_output(user_message, candidate)
+            return enforce_conversation_contract_output(
+                user_message,
+                candidate,
+                conversation_context=conversation_context,
+            )
 
         if addresses_latest_turn and not contract_ok:
             self._record_turn_guard_event(
@@ -389,6 +398,7 @@ class GuardrailsMixin:
             retry_instruction = build_conversation_contract_retry_instruction(
                 user_message,
                 contract_reason,
+                conversation_context=conversation_context,
             )
         else:
             logger.warning("Turn mismatch detected for athlete %s; retrying once", athlete_id)
@@ -425,6 +435,7 @@ class GuardrailsMixin:
                 retried_contract_ok, retried_contract_reason = validate_conversation_contract_response(
                     user_message,
                     retried,
+                    conversation_context=conversation_context,
                 )
                 if self._response_addresses_latest_turn(user_message, retried) and retried_contract_ok:
                     self._record_turn_guard_event(
@@ -437,7 +448,11 @@ class GuardrailsMixin:
                         is_synthetic_probe=is_synthetic_probe,
                         is_organic=is_organic,
                     )
-                    return enforce_conversation_contract_output(user_message, retried)
+                    return enforce_conversation_contract_output(
+                        user_message,
+                        retried,
+                        conversation_context=conversation_context,
+                    )
                 self._record_turn_guard_event(
                     athlete_id=athlete_id,
                     event=(

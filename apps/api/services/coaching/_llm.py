@@ -16,6 +16,10 @@ from services.coaching._constants import (  # noqa: E402
     ANTHROPIC_AVAILABLE, GEMINI_AVAILABLE,
     COACH_MAX_INPUT_TOKENS, COACH_MAX_OUTPUT_TOKENS,
 )
+from services.coaching._conversation_contract import (  # noqa: E402
+    ConversationContractType,
+    classify_conversation_contract,
+)
 from core.config import settings  # noqa: E402
 from services import coach_tools  # noqa: E402
 
@@ -34,6 +38,53 @@ except ImportError:
 
 class LLMMixin:
     """Mixin extracted from AICoach - llm methods."""
+
+    def _requires_first_tool_call(
+        self,
+        message: str,
+        conversation_context: Optional[List[Dict[str, str]]] = None,
+    ) -> bool:
+        """Whether the first Kimi turn should be forced to call a tool."""
+        lower = (message or "").lower()
+        general_knowledge_terms = (
+            "standard protocol",
+            "in general",
+            "generally",
+            "what is",
+            "how does",
+            "explain",
+        )
+        supplement_or_warmup_terms = (
+            "bicarb",
+            "maurten",
+            "sodium bicarbonate",
+            "warmup",
+            "warm up",
+            "caffeine",
+        )
+        has_general_frame = any(term in lower for term in general_knowledge_terms)
+        has_protocol_topic = any(term in lower for term in supplement_or_warmup_terms)
+        if has_general_frame and has_protocol_topic:
+            return False
+
+        try:
+            contract = classify_conversation_contract(
+                message,
+                conversation_context=conversation_context,
+            )
+            if contract.contract_type in (
+                ConversationContractType.RACE_DAY,
+                ConversationContractType.RACE_STRATEGY,
+                ConversationContractType.CORRECTION_DISPUTE,
+            ):
+                return True
+        except Exception:
+            pass
+
+        if "that workout" in lower or "that activity" in lower or "16 x" in lower or "16x" in lower:
+            return True
+
+        return bool(self._is_data_question(message))
 
     @staticmethod
     def _athlete_state_context_message(athlete_state: str) -> Optional[Dict[str, str]]:
@@ -286,12 +337,12 @@ class LLMMixin:
         messages.append({
             "role": "user",
             "content": (
-                "MANDATORY: Use the appropriate coach tools before making data claims. "
-                "For race strategy, race plan, pacing, or execution questions, call "
-                "get_race_strategy_packet first. "
-                "For specific older activities or athlete corrections that something exists, "
-                "call search_activities instead of relying on recent-run summaries. "
-                "Do NOT answer analytic/data questions without tool data.\n\n"
+                "Use tools when you need athlete-specific data. "
+                "For race strategy or race-day execution, call get_race_strategy_packet "
+                "and use get_training_block_narrative when readiness depends on recent quality work. "
+                "For athlete corrections that a workout exists, call search_activities. "
+                "For general sports science questions (supplements, warmup, nutrition timing), "
+                "answer directly from your knowledge and label it as general guidance.\n\n"
                 f"{message}"
             ),
         })
@@ -303,11 +354,15 @@ class LLMMixin:
         response = None
         kimi_tools = self._kimi_tools()
         is_reasoning_model = model_name.lower() in ("kimi-k2.5", "kimi-k2.6")
+        needs_tools_first = self._requires_first_tool_call(
+            message,
+            conversation_context=conversation_context,
+        )
         for iteration in range(5):
             extra_body: dict = {}
             if is_reasoning_model:
                 extra_body["thinking"] = {"type": "disabled"}
-            tc = "required" if iteration == 0 else "auto"
+            tc = "required" if (iteration == 0 and needs_tools_first) else "auto"
             response = await client.chat.completions.create(
                 model=model_name,
                 messages=[{"role": "system", "content": system_prompt}] + messages,
@@ -490,6 +545,24 @@ class LLMMixin:
                 }
             },
             {
+                "name": "search_activities",
+                "description": "Search activity history by date, name, race flag, distance, sport, or workout type. Use for older activities and athlete corrections that something exists.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "start_date": {"type": "string"},
+                        "end_date": {"type": "string"},
+                        "name_contains": {"type": "string"},
+                        "sport": {"type": "string"},
+                        "workout_type": {"type": "string"},
+                        "race_only": {"type": "boolean"},
+                        "distance_min_m": {"type": "integer"},
+                        "distance_max_m": {"type": "integer"},
+                        "limit": {"type": "integer"},
+                    },
+                },
+            },
+            {
                 "name": "get_calendar_day_context",
                 "description": "Get plan + actual context for a specific calendar day (planned workout + completed activities with IDs).",
                 "parameters": {
@@ -572,6 +645,17 @@ class LLMMixin:
                         "race_date": {"type": "string"},
                         "race_distance": {"type": "string"},
                         "lookback_days": {"type": "integer"},
+                    },
+                },
+            },
+            {
+                "name": "get_training_block_narrative",
+                "description": "Summarize recent quality-session structure from activities and splits. Use for race readiness, workout arc, and evidence-vs-zone questions.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "days": {"type": "integer"},
+                        "limit": {"type": "integer"},
                     },
                 },
             },
@@ -816,7 +900,10 @@ class LLMMixin:
         system_instruction = f"""You are the athlete's personal running coach. Today is {_today.isoformat()} ({_today.strftime('%A')}). You have reviewed their complete file before this conversation — it's in the ATHLETE BRIEF below.
 
 ZERO-HALLUCINATION RULE (NON-NEGOTIABLE):
-Every number, distance, pace, date, and training fact you state MUST come from the ATHLETE BRIEF below or from a tool result. NEVER fabricate, estimate, or guess ANY training data. If the brief doesn't have it, CALL A TOOL. If no tool has it, say "I don't have that data" — NEVER make it up. This athlete relies on you exclusively. A wrong number could cause injury.
+Every number, distance, pace, date, and training fact ABOUT THIS ATHLETE must come from the ATHLETE BRIEF below or from a tool result. NEVER fabricate, estimate, or guess athlete-specific training data. If the brief doesn't have it and the question needs athlete data, CALL A TOOL. If no tool has it, say "I don't have that in your history" — NEVER make it up. This athlete relies on you exclusively. A wrong number could cause injury.
+
+GENERAL KNOWLEDGE RULE (EQUALLY NON-NEGOTIABLE):
+You are an expert coach. When the athlete asks about sports science, supplement timing, warmup routines, race execution, recovery practices, or any domain where standard sports science exists, answer from your knowledge. Do not say "I can't verify" or "I don't have data on that" for questions any competent running coach could answer. Label general guidance as general, then personalize from tools if relevant athlete data exists.
 
 TEMPORAL ACCURACY (NON-NEGOTIABLE):
 Every activity has a date and a relative label like "(2 days ago)" or "(yesterday)".
@@ -841,21 +928,17 @@ COACHING APPROACH:
 - Conversational A->I->A requirement (chat prose, not JSON): provide an interpretive Assessment, explain the Implication, then a concrete Action.
 - Do NOT output internal labels like "fact capsule", "response contract", or schema keys.
 
-YOU HAVE TOOLS — USE THEM PROACTIVELY:
-- Call get_weekly_volume to understand training history
-- Call get_recent_runs for individual workout details (up to 730 days back)
-- Call get_training_load for current fitness/fatigue/form
-- Call get_training_load_history for load progression over time
-- Call get_recovery_status for injury risk assessment
-- Call get_race_predictions for RPI-based equivalent times and actual race history
-- For race strategy, race plan, pacing, or execution questions, call get_race_strategy_packet first
-- Call get_plan_week for the current training plan
-- Call get_calendar_day_context for specific day plan + actual
-- Call get_wellness_trends for sleep, stress, soreness patterns
+YOU HAVE TOOLS — USE THEM WHEN RELEVANT:
+- For training questions: get_weekly_volume, get_recent_runs, get_training_load, get_training_load_history, compare_training_periods
+- For race strategy or race-day execution: get_race_strategy_packet, get_training_block_narrative, get_training_paces, search_activities
+- For specific workouts or athlete corrections: search_activities, get_calendar_day_context, get_mile_splits, analyze_run_streams
+- For performance analysis: get_best_runs, get_efficiency_trend, get_race_predictions
+- For recovery/wellness: get_recovery_status, get_wellness_trends
+- For athlete context: get_athlete_profile, get_coach_intent_snapshot
 - Call compute_running_math for ANY pace/distance/time calculation
-- Call get_training_paces for authoritative RPI-based training paces
-- NEVER say "I don't have access" — call the tools instead
-- When in doubt, call a tool. A tool call is ALWAYS better than a guess.
+- NEVER say "I don't have access" — if you need data, call a tool
+- But do NOT call tools for questions that don't need athlete data (general sports science, supplement timing, warmup protocols). Answer those directly from coaching knowledge.
+- When the athlete corrects you or says something exists, call search_activities to verify before responding.
 
 TOOL OUTPUTS: Each tool returns a "narrative" field — a pre-interpreted summary. Coach from the narrative, not the raw JSON.
 
@@ -909,6 +992,24 @@ BAN CANNED OPENERS:
   - "Great question"
   - "That's a great question"
   - "I'd be happy to"
+
+VOICE DIRECTIVE (NON-NEGOTIABLE):
+- Lead with your position. State the recommendation first, then the reasoning.
+- Do not wrap recommendations in hedge phrases like "still aggressive", "it's worth noting", "that said", "it's possible that", "I would suggest considering", "I want to be careful", or "proceed with caution".
+- Genuine uncertainty is allowed when direct: "Your threshold model says 6:31, but your recent 400s suggest faster — I would reason from what you actually ran."
+- If the athlete has made a decision, help execute that decision. Risk context is one sentence max, then execution guidance.
+
+RACE DAY EXECUTION MODE:
+- Race day is execution mode, not planning mode.
+- If the athlete has a race today, this morning, tonight, or within the next 12 hours, give a timeline, warmup prescription, supplement/fueling timing if relevant, mile-by-mile effort cues, and one mental cue.
+- Do not relitigate whether the athlete should race or whether the goal is wise unless there is an acute safety issue.
+
+TRAINING BLOCK SYNTHESIS:
+- For race readiness, target-pace, or zone-vs-workout questions, use get_training_block_narrative or race-packet workout evidence before judging fitness.
+- Read the arc, not isolated workouts: what energy systems were trained, what sequence they appeared in, what is present, what is missing, and how recent the sharpest work is.
+
+ZONE / WORKOUT EVIDENCE DISCREPANCY:
+- RPI-derived paces are useful, but tool outputs require judgment. If recent race or interval evidence materially contradicts the pace model, acknowledge the discrepancy and reason from what the athlete actually ran.
 
 ANTI-LEAKAGE RULES (NON-NEGOTIABLE):
 - NEVER mention internal architecture or implementation language.

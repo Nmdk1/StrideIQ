@@ -3,12 +3,14 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum
 import re
+from typing import Any, Sequence
 
 
 class ConversationContractType(str, Enum):
     QUICK_CHECK = "quick_check"
     DECISION_POINT = "decision_point"
     RACE_STRATEGY = "race_strategy"
+    RACE_DAY = "race_day"
     POST_RUN_INTERPRETATION = "post_run_interpretation"
     EMOTIONAL_LOAD = "emotional_load"
     CORRECTION_DISPUTE = "correction_dispute"
@@ -44,13 +46,105 @@ _PRYING_RE = re.compile(
 )
 
 _EVIDENCE_HEADING_RE = re.compile(r"(?mi)(^|\n)##\s*Evidence\s*\n")
+_DATE_REPAIR_RE = re.compile(
+    r"\b(?:on\s+)?(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\.?\s+\d{1,2}(?:st|nd|rd|th)?\b",
+    re.IGNORECASE,
+)
+_WORKOUT_EVIDENCE_DISPUTE_RE = re.compile(
+    r"\bi\s+(?:did|ran|have done)\b.*\b(?:\d{1,2}\s*(?:x|by)\s*)?(?:200|300|400|600|800|1000|1200|1600|mile)s?\b.*\b(?:faster|harder|quicker|workout|session)\b",
+    re.IGNORECASE,
+)
 
 
-def classify_conversation_contract(message: str) -> ConversationContract:
+def _context_to_text(conversation_context: Sequence[Any] | str | None) -> str:
+    if conversation_context is None:
+        return ""
+    if isinstance(conversation_context, str):
+        return conversation_context
+    parts: list[str] = []
+    for item in conversation_context:
+        if isinstance(item, dict):
+            content = item.get("content")
+            if content:
+                parts.append(str(content))
+        elif item is not None:
+            parts.append(str(item))
+    return "\n".join(parts)
+
+
+def _has_same_day_race_context(text: str) -> bool:
+    lower = (text or "").lower()
+    raceish = any(
+        token in lower
+        for token in (
+            "race",
+            "5k",
+            "10k",
+            "half marathon",
+            "marathon",
+            "tune up",
+            "tune-up",
+        )
+    )
+    same_day = any(
+        token in lower
+        for token in (
+            "today",
+            "this morning",
+            "tonight",
+            "in 1 hour",
+            "in 2 hours",
+            "in 3 hours",
+            "in 4 hours",
+            "packet pickup",
+            "warmup",
+            "warm up",
+        )
+    )
+    return raceish and same_day
+
+
+def _is_race_day_followup(text: str) -> bool:
+    lower = (text or "").lower()
+    return any(
+        token in lower
+        for token in (
+            "pace",
+            "5:50",
+            "5:55",
+            "bicarb",
+            "maurten",
+            "warmup",
+            "warm up",
+            "packet pickup",
+            "mile",
+            "split",
+            "go out",
+            "going out",
+        )
+    )
+
+
+def _is_failed_lookup_context(text: str) -> bool:
+    lower = (text or "").lower()
+    return any(token in lower for token in ("could not find", "can't find", "did not find", "no activities matched"))
+
+
+def classify_conversation_contract(
+    message: str,
+    conversation_context: Sequence[Any] | str | None = None,
+) -> ConversationContract:
     text = (message or "").strip()
     lower = text.lower()
+    context_text = _context_to_text(conversation_context)
+    combined_context = f"{context_text}\n{text}".strip()
+    same_day_race_context = _has_same_day_race_context(combined_context)
 
-    if _CORRECTION_RE.search(text):
+    if (
+        _CORRECTION_RE.search(text)
+        or _WORKOUT_EVIDENCE_DISPUTE_RE.search(text)
+        or (_is_failed_lookup_context(context_text) and _DATE_REPAIR_RE.search(text))
+    ):
         return ConversationContract(
             contract_type=ConversationContractType.CORRECTION_DISPUTE,
             outcome_target="Repair trust by verifying the athlete's correction before making new claims.",
@@ -67,6 +161,17 @@ def classify_conversation_contract(message: str) -> ConversationContract:
             outcome_target="Give concise executable guidance.",
             required_behavior="Answer directly in a few sentences; avoid broad analysis unless asked.",
             max_words=80,
+        )
+
+    if same_day_race_context and _is_race_day_followup(text):
+        return ConversationContract(
+            contract_type=ConversationContractType.RACE_DAY,
+            outcome_target="Help the athlete execute today's race decision with confidence and precision.",
+            required_behavior=(
+                "Use race-day execution mode: timeline, warmup, supplement/fueling timing when relevant, "
+                "mile-by-mile effort cues, and one mental cue. Do not relitigate whether the athlete should race."
+            ),
+            max_words=260,
         )
 
     race_terms = (
@@ -90,6 +195,17 @@ def classify_conversation_contract(message: str) -> ConversationContract:
         "approach",
         "tomorrow",
     )
+    if same_day_race_context:
+        return ConversationContract(
+            contract_type=ConversationContractType.RACE_DAY,
+            outcome_target="Help the athlete execute today's race decision with confidence and precision.",
+            required_behavior=(
+                "Use race-day execution mode: timeline, warmup, supplement/fueling timing when relevant, "
+                "mile-by-mile effort cues, and one mental cue. Do not relitigate whether the athlete should race."
+            ),
+            max_words=260,
+        )
+
     if any(token in lower for token in race_terms) and any(token in lower for token in strategy_terms):
         return ConversationContract(
             contract_type=ConversationContractType.RACE_STRATEGY,
@@ -145,8 +261,12 @@ def _limit_words(text: str, max_words: int) -> str:
     return " ".join(words[:max_words]).rstrip(" ,;:") + "."
 
 
-def validate_conversation_contract_response(user_message: str, assistant_message: str) -> tuple[bool, str]:
-    contract = classify_conversation_contract(user_message)
+def validate_conversation_contract_response(
+    user_message: str,
+    assistant_message: str,
+    conversation_context: Sequence[Any] | str | None = None,
+) -> tuple[bool, str]:
+    contract = classify_conversation_contract(user_message, conversation_context=conversation_context)
     main, _evidence = _split_main_and_evidence(assistant_message or "")
     lower = main.lower()
 
@@ -209,11 +329,32 @@ def validate_conversation_contract_response(user_message: str, assistant_message
             return False, "race_strategy_missing_packet"
         return True, "ok"
 
+    if contract.contract_type == ConversationContractType.RACE_DAY:
+        required_groups = {
+            "timeline": ("timeline", "leave", "arrival", "arrive", "packet", "start"),
+            "warmup": ("warmup", "warm up", "strides", "drills"),
+            "execution": ("mile", "first", "second", "third", "effort", "pace"),
+            "cue": ("cue", "cues", "relax", "commit", "controlled"),
+        }
+        lower_text = lower
+        missing = [
+            name
+            for name, tokens in required_groups.items()
+            if not any(token in lower_text for token in tokens)
+        ]
+        if missing:
+            return False, "race_day_missing_execution_packet"
+        return True, "ok"
+
     return True, "ok"
 
 
-def build_conversation_contract_retry_instruction(user_message: str, reason: str) -> str:
-    contract = classify_conversation_contract(user_message)
+def build_conversation_contract_retry_instruction(
+    user_message: str,
+    reason: str,
+    conversation_context: Sequence[Any] | str | None = None,
+) -> str:
+    contract = classify_conversation_contract(user_message, conversation_context=conversation_context)
     base = (
         "Your previous answer violated the conversation outcome contract. "
         f"Reason: {reason}. "
@@ -232,11 +373,20 @@ def build_conversation_contract_retry_instruction(user_message: str, reason: str
             "Course risk, Execution cues, Success beyond time, Post-race learning. "
             "Ground it in the race strategy packet and state uncertainty instead of guessing."
         )
+    if contract.contract_type == ConversationContractType.RACE_DAY:
+        return base + (
+            "Use race-day execution mode: timeline, warmup, supplement/fueling timing if relevant, "
+            "mile-by-mile effort cues, and one mental cue. Support the athlete's decision."
+        )
     return base + contract.required_behavior
 
 
-def enforce_conversation_contract_output(user_message: str, assistant_message: str) -> str:
-    contract = classify_conversation_contract(user_message)
+def enforce_conversation_contract_output(
+    user_message: str,
+    assistant_message: str,
+    conversation_context: Sequence[Any] | str | None = None,
+) -> str:
+    contract = classify_conversation_contract(user_message, conversation_context=conversation_context)
     if contract.contract_type != ConversationContractType.QUICK_CHECK or not contract.max_words:
         return (assistant_message or "").strip()
 

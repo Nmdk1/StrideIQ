@@ -152,5 +152,86 @@
       "factual_grounding"
     ],
     "min_score": 4
+  },
+  {
+    "id": "race_morning_bicarb_protocol",
+    "user_message": "Should I take Maurten bicarb before my race?",
+    "contract_type": "decision_point",
+    "tools_called": [],
+    "required_tools": [],
+    "assistant_response": "Decision: use the standard protocol only if you are comfortable with the GI risk. Tradeoff: bicarb can help late-race buffering, but stomach upset can ruin the race. Default: for most runners, take it 60-90 minutes before the start with enough fluid, and use a half dose if you have not practiced it.",
+    "bad_response": "I can't verify your past bicarb use from the tools, so I can't answer that.",
+    "required_phrases": [
+      {"text": "Decision:", "dimension": "decision_clarity"},
+      {"text": "60-90 minutes", "dimension": "non_obvious_usefulness"},
+      {"text": "GI risk", "dimension": "factual_grounding"},
+      {"text": "half dose", "dimension": "athlete_agency"}
+    ],
+    "forbidden_phrases": [
+      {"text": "I can't verify"},
+      {"text": "can't answer"}
+    ],
+    "required_dimensions": [
+      "decision_clarity",
+      "athlete_agency",
+      "factual_grounding",
+      "non_obvious_usefulness"
+    ],
+    "min_score": 4
+  },
+  {
+    "id": "race_day_5k_execution",
+    "user_message": "I have a 5K this morning and I'm going out at 5:50 pace.",
+    "contract_type": "race_day",
+    "tools_called": ["get_race_strategy_packet", "get_training_block_narrative"],
+    "required_tools": ["get_race_strategy_packet", "get_training_block_narrative"],
+    "assistant_response": "Timeline: arrive, handle packet pickup, then start warmup 35 minutes before the gun. Warmup: 12 minutes easy, drills, then 4-6 strides with full walk-back. Mile 1: 5:50 only if it feels like 7/10 and controlled. Mile 2: press to 8-9/10. Mile 3: commit and race people. Cue: tall cadence, loose shoulders, no bargaining.",
+    "bad_response": "That pace is still aggressive. You should think carefully about whether it is realistic.",
+    "required_phrases": [
+      {"text": "Timeline:", "dimension": "decision_clarity"},
+      {"text": "Warmup:", "dimension": "non_obvious_usefulness"},
+      {"text": "Mile 1", "dimension": "athlete_agency"},
+      {"text": "Cue:", "dimension": "emotional_appropriateness"}
+    ],
+    "forbidden_phrases": [
+      {"text": "still aggressive"},
+      {"text": "whether it is realistic"}
+    ],
+    "required_dimensions": [
+      "decision_clarity",
+      "athlete_agency",
+      "non_obvious_usefulness",
+      "evidence_quality",
+      "emotional_appropriateness"
+    ],
+    "min_score": 5
+  },
+  {
+    "id": "zone_vs_workout_evidence",
+    "user_message": "My threshold says 6:31, but I did 16 x 400 and 4 x mile faster than that. What should I trust?",
+    "contract_type": "correction_dispute",
+    "tools_called": ["search_activities", "get_training_block_narrative", "get_training_paces"],
+    "required_tools": ["search_activities", "get_training_block_narrative", "get_training_paces"],
+    "assistant_response": "You're right to challenge the model. I verified the recent quality-work arc, and I would not build the race read solely from the 6:31 threshold number. Treat the model as context, then reason from what you actually ran: the 400s show speed, the mile reps show strength, and the remaining limiter is whether that converts continuously at 5K pressure.",
+    "bad_response": "The threshold model is authoritative, so 5:50 is too aggressive regardless of those workouts.",
+    "required_phrases": [
+      {"text": "verified", "dimension": "evidence_quality"},
+      {"text": "not build the race read solely", "dimension": "decision_clarity"},
+      {"text": "what you actually ran", "dimension": "n1_specificity"},
+      {"text": "remaining limiter", "dimension": "non_obvious_usefulness"}
+    ],
+    "forbidden_phrases": [
+      {"text": "model is authoritative"},
+      {"text": "too aggressive regardless"}
+    ],
+    "required_dimensions": [
+      "factual_grounding",
+      "correction_incorporation",
+      "decision_clarity",
+      "n1_specificity",
+      "non_obvious_usefulness",
+      "evidence_quality"
+    ],
+    "min_score": 6
   }
 ]

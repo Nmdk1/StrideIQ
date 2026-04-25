@@ -34,6 +34,38 @@ def test_classifies_race_strategy():
     assert "execution" in contract.outcome_target.lower()
 
 
+def test_classifies_same_day_race_as_race_day():
+    contract = classify_conversation_contract(
+        "I have a 5K this morning and need the execution plan."
+    )
+
+    assert contract.contract_type == ConversationContractType.RACE_DAY
+    assert "today" in contract.outcome_target.lower()
+
+
+def test_race_day_contract_requires_execution_packet():
+    user_message = "I have a 5K this morning and I'm taking bicarb."
+
+    invalid, reason = validate_conversation_contract_response(
+        user_message,
+        "You are fit enough. Open controlled and trust your training.",
+    )
+    valid, ok_reason = validate_conversation_contract_response(
+        user_message,
+        (
+            "Timeline: take bicarb after arrival, then packet pickup, warmup, and start. "
+            "Warmup: jog 12 minutes, drills, then 4 strides. "
+            "Mile 1: controlled 7/10 effort. Mile 2: press. Mile 3: commit. "
+            "Cue: tall cadence and relaxed shoulders."
+        ),
+    )
+
+    assert invalid is False
+    assert reason == "race_day_missing_execution_packet"
+    assert valid is True
+    assert ok_reason == "ok"
+
+
 def test_quick_check_rejects_and_trims_essay_response():
     user_message = "Quick check — keep it brief: should I run easy today?"
     contract = classify_conversation_contract(user_message)

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, time
+import re
 from typing import Optional
 from uuid import UUID
 
@@ -9,6 +10,34 @@ from sqlalchemy import and_, asc, desc, or_
 from sqlalchemy.orm import Query, Session
 
 from models import Activity
+
+
+def _name_search_needles(value: str) -> list[str]:
+    raw = (value or "").strip()
+    if not raw:
+        return []
+    needles = {raw}
+    compact = re.sub(r"\s+", "", raw).lower().replace("×", "x")
+    spaced = re.sub(r"(?i)\b(\d{1,2})\s*x\s*(\d{3,4})m?\b", r"\1 x \2", raw).strip()
+    if spaced:
+        needles.add(spaced)
+    compact_match = re.search(r"(?i)\b(\d{1,2})x(\d{3,4})m?\b", compact)
+    if compact_match:
+        count, distance = compact_match.groups()
+        needles.update(
+            {
+                f"{count}x{distance}",
+                f"{count} x {distance}",
+                f"{count} x {distance}m",
+                f"{distance}s",
+                f"{distance} repeats",
+            }
+        )
+    distance_only = re.search(r"(?i)\b(200|300|400|600|800|1000|1200|1600)s?\b", raw)
+    if distance_only:
+        distance = distance_only.group(1)
+        needles.update({distance, f"{distance}s", f"{distance} repeats"})
+    return sorted(needles)
 
 
 @dataclass(frozen=True)
@@ -83,12 +112,19 @@ def build_activity_search_query(db: Session, params: ActivitySearchParams) -> Qu
             query = query.filter(Activity.workout_type.in_(types))
 
     if params.name_contains:
-        needle = f"%{params.name_contains.strip()}%"
+        needles = [f"%{needle}%" for needle in _name_search_needles(params.name_contains)]
         query = query.filter(
             or_(
-                Activity.name.ilike(needle),
-                Activity.athlete_title.ilike(needle),
-                Activity.shape_sentence.ilike(needle),
+                *[
+                    condition
+                    for needle in needles
+                    for condition in (
+                        Activity.name.ilike(needle),
+                        Activity.athlete_title.ilike(needle),
+                        Activity.shape_sentence.ilike(needle),
+                        Activity.workout_type.ilike(needle),
+                    )
+                ]
             )
         )
 

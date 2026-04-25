@@ -155,6 +155,10 @@ def _check_contract(
     elif contract_type == "race_strategy":
         passed_dimensions.add("decision_clarity")
         passed_dimensions.add("non_obvious_usefulness")
+    elif contract_type == "race_day":
+        passed_dimensions.add("decision_clarity")
+        passed_dimensions.add("athlete_agency")
+        passed_dimensions.add("non_obvious_usefulness")
 
 
 def evaluate_coach_value_response(

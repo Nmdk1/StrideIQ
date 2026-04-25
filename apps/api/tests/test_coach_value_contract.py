@@ -33,6 +33,9 @@ def test_fixture_covers_phase5_dimensions(coach_value_cases):
         "aggressive_5k_strategy",
         "social_run_efficiency_context",
         "athlete_decides_training_choice",
+        "race_morning_bicarb_protocol",
+        "race_day_5k_execution",
+        "zone_vs_workout_evidence",
     }.issubset(case_ids)
     assert DIMENSIONS.issubset(covered)
 
@@ -44,6 +47,9 @@ def test_fixture_covers_phase5_dimensions(coach_value_cases):
     "aggressive_5k_strategy",
     "social_run_efficiency_context",
     "athlete_decides_training_choice",
+    "race_morning_bicarb_protocol",
+    "race_day_5k_execution",
+    "zone_vs_workout_evidence",
 ])
 def test_good_value_cases_pass(coach_value_cases, case_id):
     case = _case_by_id(coach_value_cases, case_id)
@@ -61,6 +67,9 @@ def test_good_value_cases_pass(coach_value_cases, case_id):
     "aggressive_5k_strategy",
     "social_run_efficiency_context",
     "athlete_decides_training_choice",
+    "race_morning_bicarb_protocol",
+    "race_day_5k_execution",
+    "zone_vs_workout_evidence",
 ])
 def test_bad_value_cases_fail(coach_value_cases, case_id):
     case = _case_by_id(coach_value_cases, case_id)

@@ -127,6 +127,32 @@ _KB_VIOLATION_PATTERNS: List[tuple[str, str]] = [
     (r"(?:max\s+hr|maximum\s+heart\s+rate)\s+(?:formula|calculation|is\s+\d{3})", "POPULATION_HR_CALC"),
 ]
 
+_HEDGE_PHRASES = [
+    "still aggressive",
+    "that's aggressive",
+    "it's worth noting",
+    "that said",
+    "it's possible that",
+    "i would suggest considering",
+    "it may be worth",
+    "just something to keep in mind",
+    "i should mention",
+    "to be fair",
+    "i want to be careful",
+    "proceed with caution",
+    "worth considering",
+    "something to think about",
+    "you might want to consider",
+    "it's important to remember",
+    "i'd recommend being cautious",
+    "on the other hand",
+]
+
+
+def count_hedge_phrases(text: str) -> int:
+    lower = (text or "").lower()
+    return sum(1 for phrase in _HEDGE_PHRASES if phrase in lower)
+
 
 def _check_kb_violations(response_text: str, model: str, athlete_id: str) -> Optional[str]:
     """
@@ -160,6 +186,9 @@ def _check_response_quality(response_text: str, model: str, athlete_id: str) -> 
     word_count = len(response_text.split())
     if word_count > 300:
         warnings.append(f"response is {word_count} words (>300)")
+    hedge_count = count_hedge_phrases(response_text)
+    if hedge_count >= 3:
+        warnings.append(f"hedge_overload:{hedge_count}")
     if warnings:
         logger.warning(
             "Coach response quality check [model=%s athlete=%s]: %s",
