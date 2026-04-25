@@ -94,6 +94,22 @@ def test_chat_normalizer_removes_markdown_section_bold_from_main_prose():
     assert "Mile by mile: Open controlled" in out
 
 
+def test_chat_normalizer_replaces_fragile_unicode_punctuation():
+    coach = _coach_stub()
+    coach._UUID_RE = AICoach._UUID_RE
+    coach._user_explicitly_requested_ids = AICoach._user_explicitly_requested_ids.__get__(coach, AICoach)
+    normalize = AICoach._normalize_response_for_ui.__get__(coach, AICoach)
+
+    raw = "Stay mechanical — cadence, posture, arms. If it’s first-use, don’t force it. Bad decode: �??"
+    out = normalize(user_message="Race plan?", assistant_message=raw)
+
+    assert "—" not in out
+    assert "’" not in out
+    assert "�" not in out
+    assert "Stay mechanical - cadence" in out
+    assert "it's first-use" in out
+
+
 def test_system_instructions_include_conversational_aia_requirement():
     assert "Conversational A->I->A requirement" in AICoach.SYSTEM_INSTRUCTIONS
 

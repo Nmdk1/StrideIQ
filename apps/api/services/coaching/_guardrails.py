@@ -499,6 +499,20 @@ class GuardrailsMixin:
         if not text:
             return text
 
+        # Normalize fragile typography before UI rendering/log copying. Some
+        # clients display UTF-8 punctuation mojibake as replacement glyphs.
+        text = (
+            text.replace("\u2014", " - ")
+            .replace("\u2013", " - ")
+            .replace("\u2011", "-")
+            .replace("\u2018", "'")
+            .replace("\u2019", "'")
+            .replace("\u201c", '"')
+            .replace("\u201d", '"')
+            .replace("\ufffd??", "-")
+            .replace("\ufffd", "")
+        )
+
         for pattern, replacement in self._INTERNAL_LEAK_REWRITES:
             text = pattern.sub(replacement, text)
         text = re.sub(
