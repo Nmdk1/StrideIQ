@@ -1,8 +1,8 @@
 # Coach Improvement Plan
 
-**Status:** Phases 1-7 shipped.  
+**Status:** Phases 1-7 shipped. Phase 5 demoted to contract smoke harness. Phase 8 open.  
 **Created:** 2026-04-24  
-**Updated:** 2026-04-25 — Phase 7 shipped after race-morning founder conversation exposed failures that survived Phases 1-6.  
+**Updated:** 2026-04-25 — Phase 7 shipped. Phase 5 demoted from "value eval" to "contract smoke." Phase 8 added: real coach standard replacing proxy eval.  
 **Owner:** StrideIQ founder + implementation agents  
 **Read first for this work:** `docs/FOUNDER_OPERATING_CONTRACT.md`, then this document
 
@@ -341,11 +341,29 @@ For a Tuscaloosa Mayor's Cup 5K style prompt, the coach should:
 - PersonalBest history may not include all races if race detection/import is incomplete; include authoritative race signals, `PerformanceEvent`, and `AthleteRaceResultAnchor` where appropriate.
 - This mode can get expensive if it calls every tool every time. Retrieval must be intent-specific.
 
-## Phase 5: Coach Value Eval Harness
+## Phase 5: Contract Smoke Harness (formerly "Coach Value Eval Harness")
+
+**Demoted:** 2026-04-25 — This harness enforces surface compliance (contract classification, required tools, required/forbidden phrases, broad dimensions). It does not measure whether the coaching advice is tactically correct or whether the athlete is better for having had the conversation. It is useful as a CI smoke gate. It is not a value eval. Phase 8 defines the real standard.
+
+### What This Harness Actually Checks
+
+- Contract classification.
+- Required tool names.
+- Required/forbidden phrases.
+- Broad dimensions: `decision_clarity`, `athlete_agency`, `non_obvious_usefulness`.
+
+### What This Harness Does Not Check
+
+- Whether the coaching advice is tactically correct.
+- Whether the answer would make a runner better today.
+- Whether a correction changes the coach's actual model, not just the wording.
+- Whether daily training/recovery/nutrition advice is excellent across normal life.
+- Whether the coach is useful between plans.
+- Whether the answer is better than a competent human coach's baseline.
 
 ### Objective
 
-Prove the coach improves athlete state, not just tool usage.
+Gate on surface contract compliance. Catch regressions in tool usage, classification, and forbidden patterns. This runs every commit.
 
 ### Eval Dimensions
 
@@ -898,4 +916,237 @@ passing.
 - Coach's threshold/zone model disagrees with recent workout evidence. Coach reasons from the evidence.
 - Retrieval pipeline surfaces a generic-name interval workout from splits, not
   just activity title text.
+
+## Phase 8: Real Coach Standard
+
+**Added:** 2026-04-25  
+**Status:** Open — defines the evaluation framework that proves the coach meets the product standard.
+
+### Why This Phase Exists
+
+The product standard has been clear since the beginning:
+
+> The coach is not successful because it answers a prompt. The coach is successful when the athlete is better for having had the conversation.
+
+But the shipped harness (Phase 5) enforces a proxy, not the standard. It checks contract classification, required tools, and required/forbidden phrases. It does not check whether the coaching advice is tactically correct, whether it would make a runner better today, or whether it beats a competent human baseline.
+
+On 2026-04-25, a live baseline comparison proved this gap: an unconstrained LLM with zero athlete data produced better coaching than the StrideIQ coach with full history, tools, and context. The StrideIQ coach passed every Phase 5 contract check during that conversation. The contracts were green. The coaching was bad.
+
+Phase 8 replaces "has the right shape" with "produces the right coaching."
+
+### Eval Domains
+
+The coach must be evaluated across all domains where athletes need coaching, not just the domain that most recently failed. Race day becomes one eval domain, not the center.
+
+1. **Daily training adjustment.** "Should I run today? How far? How hard?"
+2. **Workout execution.** "I have a tempo run today. What pace? How should I structure it?"
+3. **Nutrition/fueling.** "I logged 1,100 calories so far. Am I underfueling?"
+4. **Recovery/sleep/stress.** "I slept 5.5 hours but feel fine. Should I run?"
+5. **Between-plan maintenance.** "I'm between plans and don't know what to do this week."
+6. **Race planning.** "I have a 10K in 3 weeks. What should my next 3 weeks look like?"
+7. **Race day.** "I have a 5K this morning. I'm going out at 5:50 pace."
+8. **Post-run interpretation.** "I just did my long run. How did it go?"
+9. **Correction/dispute.** "That's not how 5Ks are raced." / "That race exists."
+10. **Emotional/frustrated athlete.** "I'm stressed and just want to run." / "I feel like I'm getting slower."
+11. **Injury/pain triage.** "My knee hurts after yesterday's run." / "Should I run through this soreness?"
+
+### Eval Case Structure
+
+Each eval case is a complete coaching scenario, not a prompt/response pair.
+Single-turn cases are allowed only when the real coaching moment is genuinely
+single-turn. Correction, dispute, race execution, nutrition clarification, and
+recovery decisions should be represented as multi-turn trajectories when the
+failure unfolds across turns.
+
+The case defines what the coach must notice, what bad coaching looks like, what
+excellent coaching produces, and what minimum competent coaching would have
+done. It is not a style snapshot.
+
+```
+situation:
+  athlete_state: <training load, recent history, sleep, goals, experience level>
+  context: <time of day, days to race, plan status, injury history, thread history>
+
+conversation_turns:
+  - role: athlete
+    content: <the athlete's actual message>
+  - role: coach
+    content: <optional prior coach response for replay/trajectory eval>
+  - role: athlete
+    content: <optional correction, clarification, or follow-up>
+
+user_message: <latest athlete message for single-turn compatibility>
+
+required_context:
+  - <what the coach must notice from the data>
+  - <what the coach must infer from the training arc>
+  - <what the coach must remember from prior conversation>
+
+expected_coaching_truths:
+  - <domain-specific truth the answer must respect>
+  - <tactical/physiological/training principle that must be applied correctly>
+  - <athlete-specific implication that follows from the evidence>
+
+retrieved_evidence_expected:
+  - tool: <tool that should surface the evidence>
+    must_include: <activity/date/nutrition/sleep/load/plan fact>
+    reason: <why this evidence matters to the coaching decision>
+
+bad_coaching_patterns:
+  - <advice that sounds plausible but is wrong for this athlete>
+  - <generic template response that ignores context>
+  - <hedge that avoids giving a position>
+  - <nanny response that overrides athlete agency>
+
+excellent_answer_traits:
+  - <what a real coach would say>
+  - <specific, actionable guidance>
+  - <evidence-grounded reasoning>
+  - <appropriate tone for the situation>
+
+baseline_answer:
+  - <what a competent human coach or unconstrained LLM would say given the same context>
+  - <if the StrideIQ coach with full data produces a worse answer than this, the eval fails regardless of contract compliance>
+
+baseline_comparison_rubric:
+  - <what the baseline got right>
+  - <where StrideIQ must be at least as useful>
+  - <where StrideIQ should exceed baseline because it has private athlete data>
+
+must_not:
+  - <harmful claims>
+  - <trust-breaking statements>
+  - <data hallucinations>
+
+tools_required_if_data_claiming:
+  - <tools that must be called if the answer references athlete-specific data>
+
+outcome_dimension: <clearer | steadier | sharper | safer | better_fueled | better_calibrated | better_execution | better_informed>
+
+failure_severity: <fatal | major | minor>
+```
+
+Severity rules:
+- `fatal`: trust-breaking, dangerous, materially wrong, or worse than baseline
+  on the central coaching decision. Blocks merge/deploy.
+- `major`: misses important context, gives generic advice where specific
+  coaching was required, or mishandles correction. Blocks deploy; may block
+  merge depending on domain.
+- `minor`: style, concision, or evidence presentation issue that does not
+  change the athlete's decision quality.
+
+The `baseline_answer` is a minimum utility bar, not a prose template. The
+StrideIQ coach should not imitate it. It must meet or beat the coaching value
+of that answer, and it should exceed it when private athlete data gives an
+advantage.
+
+### Seed Cases
+
+These are the minimum adversarial cases. Each tests a different failure mode that surface-contract compliance would miss.
+
+**Domain 1 — Daily training adjustment:**
+- Athlete has a high fatigue load and a workout scheduled tomorrow. "Should I run easy today or take off?"
+  - Must use training load + tomorrow's plan to give a decision, not "listen to your body."
+
+**Domain 2 — Workout execution:**
+- Athlete has a tempo run today. "What pace should I run?"
+  - Must use RPI paces AND cross-reference recent workout evidence. If zones are stale, must say so.
+
+**Domain 3 — Nutrition/fueling:**
+- "I logged 1,100 calories so far. Am I underfueling?"
+  - Must distinguish logged-so-far from complete day. Must give immediate fueling guidance, not wait for the day to end.
+  - Bad pattern: summing partial logs as if they are a final daily total.
+
+**Domain 4 — Recovery/sleep/stress:**
+- "I slept 5.5 hours but feel fine. Should I run?"
+  - Must use the athlete's sleep baseline. If 6-6.5 hours is their chronic baseline, 5.5 is below but not catastrophic. Must decide based on what workout is planned, not default to "rest is always safer."
+  - Bad pattern: treating any below-7-hour night as a red flag.
+
+**Domain 5 — Between-plan maintenance:**
+- "I'm between plans and don't know what to do this week."
+  - Must not invent a plan or default to generic base miles. Must ask or derive: when is the next anchor event? Maintain frequency, preserve one quality touch, manage freshness.
+  - Bad pattern: generating a 5-day plan from nothing.
+
+**Domain 6 — Race planning:**
+- Athlete has a half marathon in 4 weeks. "Am I ready?"
+  - Must synthesize the training block (7D), identify what was built and what's missing, and give an honest readiness assessment. Not just repeat the last long run distance.
+
+**Domain 7 — Race day:**
+- "I have a 5K this morning. Going out at 5:50 pace."
+  - Must produce timeline, warmup, mile-by-mile effort, mental cues. Not risk assessment.
+  - Bad pattern: "That's aggressive relative to your threshold."
+
+**Domain 8 — Post-run interpretation:**
+- Athlete just finished a long run. "How did it go?"
+  - Must read the actual data (pace, HR, splits, drift), not praise effort generically. Must identify what the run means for training — was it a breakthrough, maintenance, or a sign of fatigue?
+
+**Domain 9 — Correction/dispute:**
+- "That's not how 5Ks are raced."
+  - Must treat this as a coaching-logic correction and update the tactical model, not apologize and choose a new template.
+  - Bad pattern: "You're right, I apologize" followed by the same template with different words.
+  - This must be a multi-turn trajectory eval: initial wrong coaching answer,
+    athlete correction, coach repair. Passing requires the repaired answer to
+    change the underlying coaching model, not merely switch labels.
+
+**Domain 10 — Emotional/frustrated athlete:**
+- "I feel like I'm getting slower."
+  - Must check the data. If the athlete IS getting slower, say so honestly with context (fatigue block, sleep, volume). If they're NOT getting slower, show the evidence. Do not default to reassurance without evidence.
+  - Bad pattern: "It's normal to feel that way" without checking.
+
+**Domain 11 — Injury/pain triage:**
+- "My knee hurts after yesterday's run."
+  - Must use injury history, training load, and the specific workout context. Must distinguish acute warning from normal training soreness. Must give a decision rule (run/skip/modify), not "see a doctor."
+  - Bad pattern: defaulting to "take a rest day and see how it feels" regardless of severity signals.
+
+### Scoring
+
+"Has the right shape" is a minimum gate. It cannot score as value.
+
+Tiers:
+1. **Contract pass** (Phase 5 harness): classification, tools, forbidden patterns. This is the floor. It runs every commit.
+2. **Deterministic coaching truth checks** (Phase 8 deterministic): expected coaching truths present, required context noticed, retrieved evidence matches expectations, bad patterns absent, must-not claims absent, tools called when data-claiming. This runs every commit.
+3. **Coaching value** (Phase 8 scored): answer is tactically correct for this athlete, better than baseline, and the outcome dimension is served. This runs pre-deploy or nightly with LLM-as-judge scoring.
+
+Tier 1 green + Tier 2 green is the CI gate.  
+Tier 3 is the quality bar for shipping.  
+Founder review remains the final authority.
+
+Tier 2 may use string/regex assertions only as implementation details. It is
+not allowed to pass an eval case unless the domain-specific
+`expected_coaching_truths` are satisfied. A response that has the right labels,
+calls the right tools, and avoids forbidden phrases still fails if it gives the
+wrong coaching.
+
+### Implementation Notes
+
+- Deterministic checks (Tier 2) should use DB-backed fixtures with real athlete state, real activities with splits, real nutrition logs, and real conversation threads. Not mocked data.
+- LLM-as-judge scoring (Tier 3) uses a separate evaluator model with the eval case definition as the rubric. The evaluator sees the case structure, expected coaching truths, retrieved evidence summary, baseline answer, baseline comparison rubric, and coach response. It does not see the system prompt.
+- Each domain should have at least 3 seed cases: one straightforward, one adversarial, one edge case.
+- Eval cases are stored as structured JSON (`apps/api/tests/fixtures/coach_eval_cases.json`), not embedded in test code. Test code reads the case, sets up the DB fixture, runs the tool/contract check, and asserts.
+- When a new coaching failure is discovered in production, it becomes an eval case before it becomes a code fix. The eval must fail red first, then the fix makes it green.
+
+### Likely Files
+
+- `apps/api/tests/fixtures/coach_eval_cases.json`
+- `apps/api/tests/test_coach_real_standard.py`
+- `apps/api/tests/test_coach_value_scoring.py` (Tier 3, nightly)
+- `apps/api/services/coaching/_eval.py` (eval case runner)
+
+### Acceptance Criteria
+
+- At least 3 eval cases per domain (33 minimum): straightforward, adversarial, and edge case.
+- Every eval case has a `baseline_answer` field.
+- Every eval case has `expected_coaching_truths`, `retrieved_evidence_expected`, `baseline_comparison_rubric`, and `failure_severity`.
+- Multi-turn failures are represented as `conversation_turns`; the 2026-04-25 5K dispute must be one of the seed trajectories.
+- Tier 2 deterministic checks run in CI under 30 seconds.
+- Tier 3 scored evals run nightly and produce a per-domain score.
+- The 2026-04-25 race-morning conversation, if replayed as an eval, fails red against the pre-Phase-7 coach and passes green against the post-Phase-7+8 coach.
+- No eval case can pass by contract compliance alone. The coaching must be correct.
+
+### Relationship to Other Phases
+
+- Phase 5 (Contract Smoke Harness) becomes Tier 1. Unchanged. Runs every commit.
+- Phase 7 (Voice, Knowledge, Guardrails) fixes the behavioral failures that Phase 8 will measure.
+- Phase 8 is the evaluation framework. It does not claim to fix coach behavior by itself — it makes failures visible and prevents proxy-green regressions.
+- If Phase 8 evals fail after Phase 7 ships, that is evidence for Phase 9: the behavior changes required by the eval results.
 
