@@ -30,6 +30,7 @@ class ConversationContract:
 _CORRECTION_RE = re.compile(
     r"\b("
     r"you(?:'re| are) wrong|that(?:'s| is) wrong|not true|"
+    r"that(?:'s| is) not how|"
     r"you can see it|it(?:'s| is) in (?:my )?(?:activity|training|plan|history)|"
     r"i (?:just )?checked|actually\b|today is|today\s+is"
     r"|do(?:n't| not) treat|do(?:n't| not) use|not a fair|not a clean"
@@ -137,8 +138,8 @@ def classify_conversation_contract(
     text = (message or "").strip()
     lower = text.lower()
     context_text = _context_to_text(conversation_context)
-    combined_context = f"{context_text}\n{text}".strip()
-    same_day_race_context = _has_same_day_race_context(combined_context)
+    message_same_day_race_context = _has_same_day_race_context(text)
+    thread_same_day_race_context = _has_same_day_race_context(context_text)
 
     if (
         _CORRECTION_RE.search(text)
@@ -163,7 +164,7 @@ def classify_conversation_contract(
             max_words=80,
         )
 
-    if same_day_race_context and _is_race_day_followup(text):
+    if thread_same_day_race_context and _is_race_day_followup(text):
         return ConversationContract(
             contract_type=ConversationContractType.RACE_DAY,
             outcome_target="Help the athlete execute today's race decision with confidence and precision.",
@@ -195,7 +196,7 @@ def classify_conversation_contract(
         "approach",
         "tomorrow",
     )
-    if same_day_race_context:
+    if message_same_day_race_context:
         return ConversationContract(
             contract_type=ConversationContractType.RACE_DAY,
             outcome_target="Help the athlete execute today's race decision with confidence and precision.",
@@ -218,7 +219,7 @@ def classify_conversation_contract(
             max_words=260,
         )
 
-    if any(token in lower for token in ("should i", "do i", "move", "postpone", "shift", "choose")):
+    if any(token in lower for token in ("should i", "do i", "am i", "move", "postpone", "shift", "choose")):
         return ConversationContract(
             contract_type=ConversationContractType.DECISION_POINT,
             outcome_target="Clarify the tradeoff and give a decision frame.",

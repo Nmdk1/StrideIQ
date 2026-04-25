@@ -51,6 +51,66 @@ def test_bicarb_without_same_day_context_is_decision_not_full_race_day():
     assert contract.contract_type == ConversationContractType.DECISION_POINT
 
 
+def test_same_day_race_context_does_not_promote_unrelated_domains():
+    context = [
+        {
+            "role": "user",
+            "content": "I have a 5K this morning and I am going out at 5:50 pace.",
+        },
+        {
+            "role": "assistant",
+            "content": "Timeline: race-day execution plan. Warmup: jog and strides.",
+        },
+    ]
+
+    nutrition = classify_conversation_contract(
+        "I logged 1,100 calories so far and have a run later. Am I underfueling?",
+        conversation_context=context,
+    )
+    recovery = classify_conversation_contract(
+        "I slept 5.5 hours but feel fine. Should I run today?",
+        conversation_context=context,
+    )
+    between_plan = classify_conversation_contract(
+        "I'm between plans and don't know what to do this week. What should I do?",
+        conversation_context=context,
+    )
+
+    assert nutrition.contract_type == ConversationContractType.DECISION_POINT
+    assert recovery.contract_type == ConversationContractType.DECISION_POINT
+    assert between_plan.contract_type == ConversationContractType.DECISION_POINT
+
+
+def test_same_day_race_context_still_promotes_true_race_day_followup():
+    context = [
+        {
+            "role": "user",
+            "content": "I have a 5K this morning and I am going out at 5:50 pace.",
+        }
+    ]
+
+    contract = classify_conversation_contract(
+        "How should I handle packet pickup and warmup?",
+        conversation_context=context,
+    )
+
+    assert contract.contract_type == ConversationContractType.RACE_DAY
+
+
+def test_5k_tactical_correction_beats_race_day_followup():
+    contract = classify_conversation_contract(
+        "That's not how 5Ks are raced at the sharp end.",
+        conversation_context=[
+            {
+                "role": "user",
+                "content": "I have a 5K this morning and I am going out at 5:50 pace.",
+            }
+        ],
+    )
+
+    assert contract.contract_type == ConversationContractType.CORRECTION_DISPUTE
+
+
 def test_race_day_contract_requires_execution_packet():
     user_message = "I have a 5K this morning and I'm taking bicarb."
 
