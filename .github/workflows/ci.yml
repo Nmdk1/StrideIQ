@@ -97,6 +97,9 @@ jobs:
             tests/test_phase9_backend_smoke_golden_paths.py \
             tests/test_limiter_coach_integration.py \
             tests/test_coach_lifecycle_quality.py \
+            tests/test_coach_value_contract.py \
+            tests/test_coach_real_standard.py \
+            tests/test_coach_value_scoring.py \
             tests/test_nutrition_past_day_window.py \
             tests/test_food_override_service.py \
             tests/test_food_override_endpoints.py \

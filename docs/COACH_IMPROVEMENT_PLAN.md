@@ -920,7 +920,7 @@ passing.
 ## Phase 8: Real Coach Standard
 
 **Added:** 2026-04-25  
-**Status:** Open — defines the evaluation framework that proves the coach meets the product standard.
+**Status:** Shipped — Phase 8 case bank, deterministic truth runner, and Tier 3 scoring scaffold are implemented.
 
 ### Why This Phase Exists
 
@@ -1131,6 +1131,31 @@ wrong coaching.
 - `apps/api/tests/test_coach_real_standard.py`
 - `apps/api/tests/test_coach_value_scoring.py` (Tier 3, nightly)
 - `apps/api/services/coaching/_eval.py` (eval case runner)
+
+### Shipped Implementation
+
+The Phase 8 framework now lives in `apps/api/services/coaching/_eval.py`.
+It adds:
+
+- a structured schema validator for real-coach scenarios;
+- a deterministic Tier 2 evaluator that checks expected coaching truths,
+  required tool calls, retrieved evidence, bad coaching patterns, and
+  `must_not` claims;
+- a Tier 3 judge payload/scoring scaffold that scores tactical correctness,
+  baseline utility, outcome service, and evidence usefulness without exposing
+  the system prompt to the judge;
+- a per-domain reporting helper for both Tier 2 and Tier 3 results.
+
+The seed case bank lives in `apps/api/tests/fixtures/coach_eval_cases.json`.
+It contains 33 scenarios: three per domain, with one straightforward case, one
+adversarial case, and one edge case for every real-coach domain. The 2026-04-25
+5K positive-split dispute is represented as a multi-turn trajectory under
+`correction_5k_positive_split`.
+
+The test coverage lives in `apps/api/tests/test_coach_real_standard.py` and
+`apps/api/tests/test_coach_value_scoring.py`. Phase 8 does not replace the
+Phase 5 contract-smoke harness; it sits above it so a response cannot pass just
+because it has the right shape.
 
 ### Acceptance Criteria
 

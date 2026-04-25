@@ -76,6 +76,7 @@ This single command pulls, rebuilds ALL containers (api, worker, beat, web), and
 
 Single workflow in `.github/workflows/ci.yml`:
 - Backend: smoke tests + scheduled full suite, migration head check, lint
+- Coach quality gates in the backend smoke job include the Phase 5 contract smoke harness and Phase 8 Real Coach Standard deterministic/scoring scaffolds: `tests/test_coach_value_contract.py`, `tests/test_coach_real_standard.py`, and `tests/test_coach_value_scoring.py`
 - Frontend: Jest + build + tsc + ESLint
 - Security scan
 - P0 plan registry gate (`ci_p0_registry_gate.py`)
