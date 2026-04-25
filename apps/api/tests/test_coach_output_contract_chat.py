@@ -158,6 +158,17 @@ def test_phase7_prompt_contains_direct_voice_race_day_and_zone_discrepancy_rules
     assert "reason from what the athlete actually ran" in prompt
 
 
+def test_phase8_prompt_escalates_structured_workout_lookup_to_streams():
+    coach = _coach_stub()
+    coach.db = MagicMock()
+    prompt = AICoach._build_coach_system_prompt(coach, uuid4())
+
+    assert "search_activities" in prompt
+    assert "rep/split proof" in prompt
+    assert "analyze_run_streams or get_mile_splits" in prompt
+    assert "claim is unverified" in prompt
+
+
 def test_hedge_phrase_counter_flags_overqualified_responses():
     text = (
         "That said, it's worth noting this is still aggressive. "

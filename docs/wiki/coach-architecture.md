@@ -117,6 +117,7 @@ The coach has access to ~27 tools defined in the `services/coach_tools/` package
 - **Phase 7 cleanup** (Apr 25, 2026): Race-day contract guidance is injected before the first Kimi turn so successful output does not depend on the retry path. The UI normalizer strips markdown bold from section labels, normalizes fragile Unicode punctuation to plain ASCII, and the legacy static coach instructions no longer say to trust pace models over actual workout evidence.
 - **Phase 8 Real Coach Standard** (Apr 25, 2026): Added the real-coach eval framework above the Phase 5 smoke harness. The case bank now requires coaching truths and evidence across 11 domains so race day is one domain rather than the whole product standard, and the Tier 3 scaffold can produce nightly/pre-deploy per-domain quality scores.
 - **Phase 8 live quality repair** (Apr 25, 2026): Production probes caught race-day thread context over-promoting unrelated prompts into `race_day`. The classifier now separates explicit same-day race messages from thread-carried follow-ups and gives `correction_dispute` priority for tactical corrections such as "that's not how 5Ks are raced."
+- **Structured workout verification escalation** (Apr 25, 2026): Production probes showed the coach could find a likely generic-titled workout but stop before rep-level verification. The prompt now requires `analyze_run_streams` or `get_mile_splits` after `search_activities` finds a likely structured workout without split proof, before the coach says it cannot verify the athlete's workout claim.
 
 ## Known Issues
 
