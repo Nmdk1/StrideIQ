@@ -535,6 +535,10 @@ class GuardrailsMixin:
             text,
         )
         text = re.sub(r"(?mi)^\s*date\s*:\s*20\d{2}-\d{2}-\d{2}.*$", "", text)
+        # The chat contract asks for conversational prose, not markdown section
+        # labels. Preserve the label text while removing visual markup.
+        text = re.sub(r"\*\*([^*\n]{1,80}:)\*\*", r"\1", text)
+        text = re.sub(r"\*\*([^*\n]{1,120})\*\*", r"\1", text)
         text = re.sub(r"\n{3,}", "\n\n", text).strip()
 
         # If the model wrote a trailing "Receipts" or "Evidence" label without a markdown heading,

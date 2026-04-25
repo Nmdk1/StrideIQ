@@ -17,6 +17,7 @@ from services.coaching._constants import (  # noqa: E402
     COACH_MAX_INPUT_TOKENS, COACH_MAX_OUTPUT_TOKENS,
 )
 from services.coaching._conversation_contract import (  # noqa: E402
+    ConversationContract,
     ConversationContractType,
     classify_conversation_contract,
 )
@@ -38,6 +39,43 @@ except ImportError:
 
 class LLMMixin:
     """Mixin extracted from AICoach - llm methods."""
+
+    def _conversation_contract_for_message(
+        self,
+        message: str,
+        conversation_context: Optional[List[Dict[str, str]]] = None,
+    ) -> ConversationContract | None:
+        try:
+            return classify_conversation_contract(
+                message,
+                conversation_context=conversation_context,
+            )
+        except Exception:
+            return None
+
+    @staticmethod
+    def _coach_contract_instruction(contract: ConversationContract | None) -> str:
+        if not contract:
+            return ""
+        if contract.contract_type == ConversationContractType.RACE_DAY:
+            return (
+                "This is race-day execution mode. The first answer must include "
+                "the literal plain-text labels Timeline:, Warmup:, Mile by mile:, "
+                "and Cue:. Include supplement/fueling timing when relevant. Do not "
+                "bold the labels and do not debate whether the athlete should race."
+            )
+        if contract.contract_type == ConversationContractType.RACE_STRATEGY:
+            return (
+                "This is race-strategy mode. Ground the answer in the race strategy "
+                "packet and include objective, limiter, pacing shape, course risk, "
+                "execution cues, success beyond time, and post-race learning."
+            )
+        if contract.contract_type == ConversationContractType.CORRECTION_DISPUTE:
+            return (
+                "This is correction/verification mode. Verify with tools where "
+                "possible, state what was searched, and do not repeat the disputed claim."
+            )
+        return ""
 
     def _requires_first_tool_call(
         self,
@@ -67,19 +105,16 @@ class LLMMixin:
         if has_general_frame and has_protocol_topic:
             return False
 
-        try:
-            contract = classify_conversation_contract(
-                message,
-                conversation_context=conversation_context,
-            )
-            if contract.contract_type in (
-                ConversationContractType.RACE_DAY,
-                ConversationContractType.RACE_STRATEGY,
-                ConversationContractType.CORRECTION_DISPUTE,
-            ):
-                return True
-        except Exception:
-            pass
+        contract = self._conversation_contract_for_message(
+            message,
+            conversation_context=conversation_context,
+        )
+        if contract and contract.contract_type in (
+            ConversationContractType.RACE_DAY,
+            ConversationContractType.RACE_STRATEGY,
+            ConversationContractType.CORRECTION_DISPUTE,
+        ):
+            return True
 
         if "that workout" in lower or "that activity" in lower or "16 x" in lower or "16x" in lower:
             return True
@@ -334,6 +369,11 @@ class LLMMixin:
                     role = "user"
                 messages.append({"role": role, "content": msg.get("content", "")})
 
+        contract = self._conversation_contract_for_message(
+            message,
+            conversation_context=conversation_context,
+        )
+        contract_instruction = self._coach_contract_instruction(contract)
         messages.append({
             "role": "user",
             "content": (
@@ -343,6 +383,7 @@ class LLMMixin:
                 "For athlete corrections that a workout exists, call search_activities. "
                 "For general sports science questions (supplements, warmup, nutrition timing), "
                 "answer directly from your knowledge and label it as general guidance.\n\n"
+                f"{contract_instruction}\n\n"
                 f"{message}"
             ),
         })
@@ -1002,6 +1043,7 @@ VOICE DIRECTIVE (NON-NEGOTIABLE):
 RACE DAY EXECUTION MODE:
 - Race day is execution mode, not planning mode.
 - If the athlete has a race today, this morning, tonight, or within the next 12 hours, give a timeline, warmup prescription, supplement/fueling timing if relevant, mile-by-mile effort cues, and one mental cue.
+- Use these literal plain-text labels so the answer is complete on the first pass: "Timeline:", "Warmup:", "Mile by mile:", and "Cue:". Do not bold them.
 - Do not relitigate whether the athlete should race or whether the goal is wise unless there is an acute safety issue.
 
 TRAINING BLOCK SYNTHESIS:

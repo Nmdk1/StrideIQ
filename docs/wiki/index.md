@@ -1,6 +1,6 @@
 # StrideIQ Internal Wiki
 
-**Last updated:** April 25, 2026 (Apr 25: race-week briefing load-safety gate; coach Phase 7 split-aware retrieval, race-day contract, direct voice, and general-knowledge repair; Apr 24: timezone two-model + home/effective split; nutrition autofill prevention; briefing clock time removed from LLM prompt; coach trust foundation slice; conversation contract enforcement; N=1 coaching memory; Race Strategist Mode foundation; Coach Value Eval Harness; Frontend Trust UX foundation)
+**Last updated:** April 25, 2026 (Apr 25: race-week briefing load-safety gate; coach Phase 7 split-aware retrieval, race-day contract, direct voice, general-knowledge repair, and cleanup; Apr 24: timezone two-model + home/effective split; nutrition autofill prevention; briefing clock time removed from LLM prompt; coach trust foundation slice; conversation contract enforcement; N=1 coaching memory; Race Strategist Mode foundation; Coach Value Eval Harness; Frontend Trust UX foundation)
 
 This is the single onboarding document. Read this instead of the 12-document read order.
 

@@ -75,8 +75,32 @@ def test_pace_relation_faster_direction():
     assert "quicker than marathon rhythm" in out
 
 
+def test_chat_normalizer_removes_markdown_section_bold_from_main_prose():
+    coach = _coach_stub()
+    coach._UUID_RE = AICoach._UUID_RE
+    coach._user_explicitly_requested_ids = AICoach._user_explicitly_requested_ids.__get__(coach, AICoach)
+    normalize = AICoach._normalize_response_for_ui.__get__(coach, AICoach)
+
+    raw = (
+        "**Bicarb:** Take it 60-90 minutes before the gun.\n\n"
+        "**Warmup:** Jog 12 minutes, drills, then strides.\n\n"
+        "**Mile by mile:** Open controlled, press, then commit."
+    )
+    out = normalize(user_message="Race plan?", assistant_message=raw)
+
+    assert "**" not in out
+    assert "Bicarb: Take it 60-90 minutes" in out
+    assert "Warmup: Jog 12 minutes" in out
+    assert "Mile by mile: Open controlled" in out
+
+
 def test_system_instructions_include_conversational_aia_requirement():
     assert "Conversational A->I->A requirement" in AICoach.SYSTEM_INSTRUCTIONS
+
+
+def test_static_system_instructions_do_not_overtrust_pace_model():
+    assert "trust it over any other data" not in AICoach.SYSTEM_INSTRUCTIONS
+    assert "actual race or workout evidence contradicts" in AICoach.SYSTEM_INSTRUCTIONS
 
 
 def test_phase7_prompt_distinguishes_general_knowledge_from_athlete_facts():
@@ -110,6 +134,10 @@ def test_phase7_prompt_contains_direct_voice_race_day_and_zone_discrepancy_rules
     assert "VOICE DIRECTIVE" in prompt
     assert "Lead with your position" in prompt
     assert "Race day is execution mode" in prompt
+    assert "Timeline:" in prompt
+    assert "Warmup:" in prompt
+    assert "Mile by mile:" in prompt
+    assert "Cue:" in prompt
     assert "ZONE / WORKOUT EVIDENCE DISCREPANCY" in prompt
     assert "reason from what the athlete actually ran" in prompt
 

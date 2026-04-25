@@ -55,7 +55,7 @@ The system prompt assembled in `services/coaching/core.py` includes:
 - **N=1 principles:** No population statistics, no template narratives
 - **Anti-hallucination:** Never infer from workout titles, never guess relative dates
 - **General knowledge allowed:** The hallucination rule applies to athlete-specific facts; standard sports science, supplement timing, and warmup protocols should be answered directly and labeled as general when athlete history is absent.
-- **Direct race-day voice:** Same-day race threads use execution mode, not planning mode: timeline, warmup, supplement/fueling timing when relevant, mile-by-mile effort cues, and a mental cue. The prompt now forbids hedge voice such as "still aggressive" and directs the coach to reason from recent workout evidence when RPI pace models conflict with what the athlete actually ran.
+- **Direct race-day voice:** Same-day race threads use execution mode, not planning mode: timeline, warmup, supplement/fueling timing when relevant, mile-by-mile effort cues, and a mental cue. The prompt now asks for the literal plain-text labels `Timeline:`, `Warmup:`, `Mile by mile:`, and `Cue:` on the first pass, forbids hedge voice such as "still aggressive", and directs the coach to reason from recent workout evidence when RPI pace models conflict with what the athlete actually ran.
 
 ### Coach Tools
 
@@ -113,6 +113,7 @@ The coach has access to ~27 tools defined in the `services/coach_tools/` package
 - **Active-calorie finding suppression** (Apr 25, 2026): `services/intelligence/finding_eligibility.py` now treats `active_kcal` / daily active-calorie variants as passive load noise. The engine can retain those rows for internal audit, but athlete-facing coach and briefing surfaces must not narrate active-calorie burn as a causal limiter for efficiency.
 - **Phase 7 retrieval repair slice** (Apr 25, 2026): Coach activity retrieval now normalizes structured workout search variants, falls back to `ActivitySplit` structure when titles are generic, ranks race-packet workouts by quality/race specificity instead of raw recency, adds `get_training_block_narrative`, and makes conversation contract classification thread-aware for race-day follow-ups.
 - **Phase 7 behavior/voice slice** (Apr 25, 2026): Coach prompts now distinguish athlete-specific facts from general sports science, remove forced first-tool behavior for pure protocol questions, add direct voice/race-day execution/training-arc/zone-discrepancy directives, and expand the value harness with bicarb, race-day execution, and zone-vs-workout evidence cases.
+- **Phase 7 cleanup** (Apr 25, 2026): Race-day contract guidance is injected before the first Kimi turn so successful output does not depend on the retry path. The UI normalizer strips markdown bold from section labels, and the legacy static coach instructions no longer say to trust pace models over actual workout evidence.
 
 ## Known Issues
 

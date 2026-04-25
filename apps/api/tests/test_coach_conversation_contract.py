@@ -43,6 +43,14 @@ def test_classifies_same_day_race_as_race_day():
     assert "today" in contract.outcome_target.lower()
 
 
+def test_bicarb_without_same_day_context_is_decision_not_full_race_day():
+    contract = classify_conversation_contract(
+        "Should I take Maurten bicarb before my race?"
+    )
+
+    assert contract.contract_type == ConversationContractType.DECISION_POINT
+
+
 def test_race_day_contract_requires_execution_packet():
     user_message = "I have a 5K this morning and I'm taking bicarb."
 
