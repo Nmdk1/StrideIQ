@@ -72,6 +72,9 @@ logger = logging.getLogger(__name__)
 
 PASSIVE_NOISE_SIGNALS: frozenset = frozenset(
     {
+        "active_kcal",
+        "daily_active_kcal",
+        "garmin_active_kcal",
         "garmin_steps",
         "daily_step_count",
         "garmin_active_time_s",

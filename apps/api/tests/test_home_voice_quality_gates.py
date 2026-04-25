@@ -216,6 +216,69 @@ class TestFullBadOutputIsRejected:
         )), f"Expected one of the new gates to fire, got: {reason!r}"
 
 
+class TestRaceWeekLoadSafety:
+    """Race-week briefing must not turn normal load into readiness sabotage."""
+
+    def test_cached_race_week_active_calorie_drag_claim_is_cleared(self):
+        from routers.home import _normalize_cached_briefing_payload
+
+        payload = {
+            "coach_noticed": (
+                "Your active calorie burn negatively affects running efficiency "
+                "with a 5-day lag — I've seen this consistently across 30 of "
+                "your runs. That means the high calorie output from your "
+                "13.8-mile long run 6 days ago and your Tuesday 8-miler at "
+                "7:50/mi could still be suppressing your efficiency today."
+            ),
+            "morning_voice": (
+                "You're racing the Tuscaloosa Mayors Cup 5K this morning — "
+                "3.1 miles. Your freshness is sitting where it has been for "
+                "your best performances."
+            ),
+            "race_assessment": (
+                "Today's 5K effort fits well as a sharpener without draining you."
+            ),
+        }
+
+        sanitized = _normalize_cached_briefing_payload(
+            payload, garmin_sleep_h=None, checkin_sleep_h=None
+        )
+
+        assert sanitized["coach_noticed"] is None
+
+    def test_race_week_active_calorie_drag_claim_is_cleared_before_cache(self):
+        from routers.home import _apply_race_week_coach_noticed_safety
+
+        result = {
+            "coach_noticed": (
+                "Your active calorie burn is dragging down your running "
+                "efficiency with a 5-day lag."
+            ),
+        }
+
+        sanitized = _apply_race_week_coach_noticed_safety(
+            result, race_data={"days_remaining": 7}
+        )
+
+        assert sanitized["coach_noticed"] is None
+
+    def test_positive_race_week_observation_is_not_cleared(self):
+        from routers.home import _apply_race_week_coach_noticed_safety
+
+        result = {
+            "coach_noticed": (
+                "Your pacing control has held steady across the taper, with "
+                "yesterday's 2.2-mile shakeout staying relaxed at HR 132."
+            ),
+        }
+
+        sanitized = _apply_race_week_coach_noticed_safety(
+            result, race_data={"days_remaining": 7}
+        )
+
+        assert sanitized["coach_noticed"] == result["coach_noticed"]
+
+
 # ---------------------------------------------------------------------------
 # Regression: don't destroy the 80% of good briefings.
 # ---------------------------------------------------------------------------

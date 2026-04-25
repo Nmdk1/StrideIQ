@@ -65,6 +65,7 @@ The `splits_available` flag is computed in both the request path (`routers/home.
 - **Deterministic path:** `compute_coach_noticed` provides deterministic signals separate from LLM generation
 - **No prescriptive claims:** Briefing acknowledges cross-training load but does not predict how the athlete will feel
 - **Morning-voice content gates (Apr 18, 2026):** `validate_voice_output` enforces four content gates on the `morning_voice` and `coach_noticed` fields. Failures trigger `_strip_disallowed_sentences`, which removes only the offending sentences and re-validates the remainder; only when nothing usable remains do we publish the deterministic fallback. Preserves the ~80% of good content in a partially-bad briefing instead of nuking it.
+- **Race-week load-safety gate (Apr 25, 2026):** `active_kcal` and related daily active-calorie signals are suppressed by `services/intelligence/finding_eligibility.py` as passive load proxies, so they cannot be narrated as athlete-facing causal findings. `routers/home.py` also clears cached or newly generated `coach_noticed` text when race-week context frames recent active-calorie load as dragging, suppressing, or hurting efficiency. This prevents normal pre-race load/taper patterns from being presented as a race-morning threat.
 
   | Gate | Trigger | Why |
   |------|---------|-----|
@@ -86,6 +87,7 @@ The `splits_available` flag is computed in both the request path (`routers/home.
 - **Deterministic + LLM hybrid** — `compute_coach_noticed` provides structural signals, LLM provides natural language
 - **10-day activity window** (Apr 8, 2026) — previously unbounded `.limit(5)` allowed 16-day-old runs to appear under "This Week's Training"
 - **5-gate workout structure** (Apr 7, 2026) — prevents false interval detection on easy runs with natural pace variation
+- **Race-morning suppression over harm** (Apr 25, 2026) — destructive active-calorie/efficiency framing is cleared during race-week contexts, including stale cache reads. A missing `coach_noticed` is preferable to a psychologically harmful false limiter.
 
 ## Timezone: Home vs. Current (Two-Timezone Model)
 

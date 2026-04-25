@@ -107,6 +107,7 @@ The coach has access to ~26 tools defined in the `services/coach_tools/` package
 - **Race Strategist Mode foundation** (Apr 24, 2026): Added `get_race_strategy_packet` and stricter race-strategy contract enforcement. Kimi/Gemini prompt guidance now directs race strategy, race plan, pacing, and execution questions through the packet before answer generation.
 - **Coach Value Eval Harness** (Apr 24, 2026): Added deterministic Phase 5 value cases for older activity correction, additive nutrition totals, stress/food boundaries, aggressive 5K strategy, social-run efficiency context, and athlete-agency decision points. The harness scores behavior across the eight value dimensions and blocks regressions through required/forbidden assertions rather than exact prose snapshots.
 - **Frontend Trust UX foundation** (Apr 24, 2026): Chat API/SSE/history now expose lightweight trust metadata for tool usage and conversation contract. `/coach` renders checked-tool chips and a "That's wrong" affordance that pre-fills a verification prompt instead of creating an invisible backend correction workflow.
+- **Active-calorie finding suppression** (Apr 25, 2026): `services/intelligence/finding_eligibility.py` now treats `active_kcal` / daily active-calorie variants as passive load noise. The engine can retain those rows for internal audit, but athlete-facing coach and briefing surfaces must not narrate active-calorie burn as a causal limiter for efficiency.
 
 ## Known Issues
 

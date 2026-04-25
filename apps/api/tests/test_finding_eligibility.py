@@ -199,6 +199,28 @@ def test_globally_suppressed_input_is_dropped():
     assert "readiness_1_5" in returned
 
 
+def test_active_kcal_is_dropped_as_passive_load_noise():
+    """Active calories are an output/load proxy, not athlete-facing causality."""
+    active_kcal = _finding(
+        input_name="active_kcal",
+        output_metric="efficiency",
+        direction="negative",
+        time_lag_days=5,
+        times_confirmed=134,
+    )
+    kept = _finding(input_name="readiness_1_5", times_confirmed=8)
+
+    db = _mock_session([active_kcal, kept])
+
+    result = select_eligible_findings(
+        ATHLETE_ID, db, min_confirmations=3, sleep_invalid_override=False
+    )
+
+    returned = {f.input_name for f in result}
+    assert "active_kcal" not in returned
+    assert "readiness_1_5" in returned
+
+
 def test_environment_signal_is_dropped():
     env = _finding(input_name="dew_point_f", times_confirmed=8)
     db = _mock_session([env])
@@ -395,6 +417,7 @@ def test_limit_caps_returned_rows():
 
 
 def test_is_signal_suppressed_includes_known_passive_noise():
+    assert is_signal_suppressed("active_kcal")
     assert is_signal_suppressed("garmin_steps")
     assert is_signal_suppressed("garmin_body_battery_end")
     assert is_signal_suppressed("dew_point_f")

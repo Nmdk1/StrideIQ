@@ -1185,6 +1185,69 @@ def _strip_disallowed_sentences(text: str) -> dict:
     return {"text": sanitized, "removed": True, "reasons": reasons}
 
 
+_DESTRUCTIVE_LOAD_TERMS = (
+    "active calorie",
+    "active calories",
+    "calorie burn",
+    "calorie output",
+    "calories burned",
+    "higher-burn",
+    "high calorie",
+)
+
+_DESTRUCTIVE_EFFICIENCY_TERMS = (
+    "efficiency",
+    "responsive",
+    "sluggish",
+    "race feel",
+)
+
+_DESTRUCTIVE_THREAT_TERMS = (
+    "blunt",
+    "blunting",
+    "costing",
+    "drag",
+    "dragging",
+    "drags",
+    "hurt",
+    "hurting",
+    "less responsive",
+    "negative",
+    "suppress",
+    "suppressing",
+    "worsen",
+    "worsens",
+)
+
+
+def _is_destructive_load_efficiency_notice(text: str) -> bool:
+    """True when coach_noticed frames recent load calories as a race threat."""
+    if not text:
+        return False
+    lower = text.lower()
+    return (
+        any(term in lower for term in _DESTRUCTIVE_LOAD_TERMS)
+        and any(term in lower for term in _DESTRUCTIVE_EFFICIENCY_TERMS)
+        and any(term in lower for term in _DESTRUCTIVE_THREAT_TERMS)
+    )
+
+
+def _is_race_week_context(race_data: Optional[dict]) -> bool:
+    if not race_data or not isinstance(race_data, dict):
+        return False
+    days_remaining = race_data.get("days_remaining")
+    return isinstance(days_remaining, int) and days_remaining <= 7
+
+
+def _cached_payload_has_race_context(payload: dict) -> bool:
+    text = " ".join(
+        str(payload.get(field) or "")
+        for field in ("morning_voice", "race_assessment", "today_context")
+    ).lower()
+    race_terms = ("race", "5k", "10k", "marathon", "cup")
+    return any(term in text for term in race_terms)
+
+
 def validate_voice_output(text: str, field: str = "morning_voice") -> dict:
     """
     Post-generation validator for LLM-produced morning_voice / workout_why.
@@ -1383,6 +1446,7 @@ def _normalize_cached_briefing_payload(
       - multi-paragraph morning_voice
       - ungrounded sleep claims
       - internal metrics in coach_noticed
+      - race-week destructive load/efficiency framing
     """
     if not payload or not isinstance(payload, dict):
         return None
@@ -1439,11 +1503,37 @@ def _normalize_cached_briefing_payload(
 
     raw_noticed = out.get("coach_noticed")
     if raw_noticed:
-        noticed_check = validate_voice_output(raw_noticed, field="coach_noticed")
-        if not noticed_check.get("valid"):
+        if (
+            _cached_payload_has_race_context(out)
+            and _is_destructive_load_efficiency_notice(raw_noticed)
+        ):
             out["coach_noticed"] = None
+        else:
+            noticed_check = validate_voice_output(raw_noticed, field="coach_noticed")
+            if not noticed_check.get("valid"):
+                out["coach_noticed"] = None
 
     return out
+
+
+def _apply_race_week_coach_noticed_safety(
+    result: dict,
+    race_data: Optional[dict],
+) -> dict:
+    """Remove race-week coach_noticed text that could undermine readiness."""
+    if not result or not isinstance(result, dict):
+        return result
+    raw_noticed = result.get("coach_noticed")
+    if (
+        raw_noticed
+        and _is_race_week_context(race_data)
+        and _is_destructive_load_efficiency_notice(raw_noticed)
+    ):
+        logger.warning(
+            "coach_noticed cleared by race-week load/efficiency safety gate"
+        )
+        result["coach_noticed"] = None
+    return result
 
 
 def _sanitize_finding_text(text: str) -> str:
@@ -1924,6 +2014,7 @@ def _fetch_llm_briefing_sync(
         if not noticed_check["valid"]:
             logger.warning(f"coach_noticed failed validation ({noticed_check.get('reason')}); clearing field")
             result["coach_noticed"] = None
+    result = _apply_race_week_coach_noticed_safety(result, race_data)
 
     # --- Post-generation validator: workout_why ---
     raw_why = result.get("workout_why")
