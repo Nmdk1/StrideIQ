@@ -66,6 +66,8 @@ services:
     build:
       context: .
       dockerfile: apps/api/Dockerfile
+      args:
+        - GIT_SHA=${GIT_SHA:-unknown}
     container_name: strideiq_api
     restart: unless-stopped
     env_file:
@@ -99,6 +101,8 @@ services:
     build:
       context: .
       dockerfile: apps/api/Dockerfile
+      args:
+        - GIT_SHA=${GIT_SHA:-unknown}
     container_name: strideiq_worker
     restart: unless-stopped
     env_file:
@@ -125,6 +129,8 @@ services:
     build:
       context: .
       dockerfile: apps/api/Dockerfile
+      args:
+        - GIT_SHA=${GIT_SHA:-unknown}
     container_name: strideiq_worker_default
     restart: unless-stopped
     env_file:
@@ -151,6 +157,8 @@ services:
     build:
       context: .
       dockerfile: apps/api/Dockerfile
+      args:
+        - GIT_SHA=${GIT_SHA:-unknown}
     container_name: strideiq_beat
     restart: unless-stopped
     env_file:
@@ -172,6 +180,7 @@ services:
     build:
       context: ./apps/web
       args:
+        - GIT_SHA=${GIT_SHA:-unknown}
         - NEXT_PUBLIC_API_URL=https://strideiq.run
         - NEXT_PUBLIC_MAPBOX_TOKEN=${NEXT_PUBLIC_MAPBOX_TOKEN:-}
     container_name: strideiq_web

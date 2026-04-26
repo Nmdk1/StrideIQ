@@ -20,6 +20,9 @@ FROM node:18-alpine AS runner
 
 WORKDIR /app/web
 
+ARG GIT_SHA=unknown
+LABEL org.opencontainers.image.revision=$GIT_SHA
+
 COPY --from=builder /app/web/public ./public
 COPY --from=builder /app/web/.next ./.next
 COPY --from=builder /app/web/node_modules ./node_modules

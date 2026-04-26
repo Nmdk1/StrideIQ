@@ -3,6 +3,9 @@
 # Bundles workout fluency registry for plan_framework variant resolution in production.
 FROM python:3.11-slim
 
+ARG GIT_SHA=unknown
+LABEL org.opencontainers.image.revision=$GIT_SHA
+
 WORKDIR /app
 
 # Install system dependencies.
