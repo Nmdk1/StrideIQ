@@ -175,6 +175,10 @@ garmin_export/
 # Provider file import uploads (Phase 7)
 .uploads/
 
+# Raw external coach references for replay authoring
+docs/external-coach-references/*
+!docs/external-coach-references/.keep
+
 
 
 
