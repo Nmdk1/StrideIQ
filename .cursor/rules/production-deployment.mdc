@@ -1,0 +1,61 @@
+---
+description: Production deployment workflow, smoke-check commands, and founder credentials for StrideIQ
+alwaysApply: true
+---
+
+# Production Deployment
+
+## Founder Account
+- **Email:** mbshaf@gmail.com
+- **Server:** root@187.124.67.153 (Hostinger KVM 8 — 8 vCPU, 32GB RAM)
+- **Repo path on server:** /opt/strideiq/repo
+- **Old droplet (safety net, remove after Feb 27):** root@104.248.212.71
+
+## Deploy Commands (run on droplet after SSH)
+```bash
+cd /opt/strideiq/repo && git pull origin main && GIT_SHA=$(git rev-parse HEAD) docker compose -f docker-compose.prod.yml up -d --build
+```
+
+## Generate Auth Token (on droplet, no password needed)
+```bash
+docker exec strideiq_api python -c "
+from core.security import create_access_token
+from database import SessionLocal
+from models import Athlete
+db = SessionLocal()
+user = db.query(Athlete).filter(Athlete.email=='mbshaf@gmail.com').first()
+print(create_access_token(data={'sub': str(user.id), 'email': user.email, 'role': user.role}))
+db.close()
+"
+```
+
+## Smoke Check (one-liner, on droplet)
+```bash
+TOKEN=$(docker exec strideiq_api python -c "
+from core.security import create_access_token
+from database import SessionLocal
+from models import Athlete
+db = SessionLocal()
+user = db.query(Athlete).filter(Athlete.email=='mbshaf@gmail.com').first()
+print(create_access_token(data={'sub': str(user.id), 'email': user.email, 'role': user.role}))
+db.close()
+") && curl -s -H "Authorization: Bearer $TOKEN" https://strideiq.run/v1/home | python3 -m json.tool
+```
+
+## Container Names
+| Service  | Container          |
+|----------|--------------------|
+| API      | strideiq_api       |
+| Web      | strideiq_web       |
+| Worker   | strideiq_worker    |
+| Beat     | strideiq_beat      |
+| DB       | strideiq_postgres  |
+| Cache    | strideiq_redis     |
+| Proxy    | strideiq_caddy     |
+| Storage  | strideiq_minio     |
+
+## Logs (on droplet)
+```bash
+docker logs strideiq_api --tail=50
+docker logs strideiq_web --tail=50
+```

@@ -6,23 +6,20 @@ from uuid import uuid4
 
 from core.config import settings
 from services.coaching import runtime_v2_packet
-from services.coaching.ledger import VALID_FACT_FIELDS
 from services.coaching.runtime_v2_packet import assemble_v2_packet
 
 
-def _facts_with_coverage(field_count: int) -> dict[str, dict[str, object]]:
-    return {
-        field: {"value": index, "confidence": "athlete_stated"}
-        for index, field in enumerate(sorted(VALID_FACT_FIELDS)[:field_count], start=1)
-    }
+def _athlete_facts_payload(*args, **kwargs) -> dict[str, dict[str, object]]:
+    return {"weekly_volume_mpw": {"value": 45, "confidence": "athlete_stated"}}
 
 
 def test_legacy_shim_threshold_respects_env_override(monkeypatch):
     monkeypatch.setattr(
         runtime_v2_packet,
         "_athlete_facts_payload",
-        lambda db, athlete_id: _facts_with_coverage(9),
+        _athlete_facts_payload,
     )
+    monkeypatch.setattr(runtime_v2_packet, "_ledger_field_coverage", lambda facts: 0.64)
     monkeypatch.setattr(settings, "COACH_LEDGER_COVERAGE_SHIM_THRESHOLD", 0.9)
 
     packet = assemble_v2_packet(
@@ -43,8 +40,9 @@ def test_legacy_shim_active_emits_warning_log(monkeypatch):
     monkeypatch.setattr(
         runtime_v2_packet,
         "_athlete_facts_payload",
-        lambda db, athlete_id: _facts_with_coverage(1),
+        _athlete_facts_payload,
     )
+    monkeypatch.setattr(runtime_v2_packet, "_ledger_field_coverage", lambda facts: 0.25)
     monkeypatch.setattr(settings, "COACH_LEDGER_COVERAGE_SHIM_THRESHOLD", 0.5)
     athlete_id = uuid4()
     warning_spy = MagicMock()
@@ -74,8 +72,9 @@ def test_legacy_shim_silent_when_coverage_high(monkeypatch, caplog):
     monkeypatch.setattr(
         runtime_v2_packet,
         "_athlete_facts_payload",
-        lambda db, athlete_id: _facts_with_coverage(len(VALID_FACT_FIELDS)),
+        _athlete_facts_payload,
     )
+    monkeypatch.setattr(runtime_v2_packet, "_ledger_field_coverage", lambda facts: 1.0)
     monkeypatch.setattr(settings, "COACH_LEDGER_COVERAGE_SHIM_THRESHOLD", 0.5)
 
     with caplog.at_level(logging.WARNING):
