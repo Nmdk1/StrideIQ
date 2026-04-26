@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 from datetime import date, datetime, timedelta, timezone
 from typing import Any
@@ -8,12 +9,22 @@ from uuid import UUID, uuid4
 
 from sqlalchemy.orm import Session
 
+from core.config import settings
 from models import Activity, ActivitySplit, TrainingPlan
-from services.coaching.ledger import VALID_FACT_FIELDS, get_ledger
+from services.coaching.ledger import (
+    SENSITIVE_FACT_FIELDS,
+    VALID_FACT_FIELDS,
+    PendingConflict,
+    get_ledger,
+)
 from services.coaching.recent_activities_block import compute_recent_activities
 from services.coaching.runtime_v2 import PACKET_SCHEMA_VERSION
 from services.coaching.thread_lifecycle import recent_threads_block
-from services.coaching.unknowns_block import compute_unknowns, detect_query_class
+from services.coaching.unknowns_block import (
+    SUGGESTED_QUESTIONS,
+    compute_unknowns,
+    detect_query_class,
+)
 from services.timezone_utils import (
     athlete_local_today,
     get_athlete_timezone_from_db,
@@ -23,6 +34,8 @@ from services.timezone_utils import (
 ASSEMBLER_VERSION = "coach_runtime_v2_0_a_packet_assembler_001"
 MODE_CLASSIFIER_VERSION = "coach_mode_classifier_v2_0_a"
 LEDGER_COVERAGE_SHIM_THRESHOLD = 0.5
+
+logger = logging.getLogger(__name__)
 
 ARTIFACT5_MODES = (
     "observe_and_ask",
@@ -120,6 +133,53 @@ def _ledger_field_coverage(facts: dict[str, Any]) -> float:
         if (facts.get(field) or {}).get("value") is not None
     )
     return round(populated / len(VALID_FACT_FIELDS), 3)
+
+
+def _ledger_coverage_shim_threshold() -> float:
+    return float(
+        getattr(
+            settings,
+            "COACH_LEDGER_COVERAGE_SHIM_THRESHOLD",
+            LEDGER_COVERAGE_SHIM_THRESHOLD,
+        )
+    )
+
+
+def _conflict_suggested_question(conflict: PendingConflict) -> str:
+    if conflict.field in SUGGESTED_QUESTIONS:
+        return SUGGESTED_QUESTIONS[conflict.field]
+    if conflict.field in SENSITIVE_FACT_FIELDS:
+        return f"I have conflicting records for {conflict.field}. Which value is current?"
+    return (
+        f"Earlier you said {conflict.existing.get('value')} for {conflict.field}; "
+        f"I just heard {conflict.proposed.get('value')}. Which is current?"
+    )
+
+
+def _serialize_pending_conflicts(
+    pending_conflicts: list[PendingConflict] | None,
+) -> list[dict[str, Any]]:
+    serialized = []
+    for conflict in pending_conflicts or []:
+        sensitive = conflict.field in SENSITIVE_FACT_FIELDS
+        existing_value = conflict.existing.get("value")
+        proposed_value = conflict.proposed.get("value")
+        if sensitive:
+            existing_value = "[redacted]"
+            proposed_value = "[redacted]"
+        serialized.append(
+            {
+                "field": conflict.field,
+                "existing_value": existing_value,
+                "existing_confidence": conflict.existing.get("confidence"),
+                "existing_asserted_at": conflict.existing.get("asserted_at"),
+                "proposed_value": proposed_value,
+                "proposed_confidence": conflict.proposed.get("confidence"),
+                "proposed_source": conflict.proposed.get("source"),
+                "suggested_question": _conflict_suggested_question(conflict),
+            }
+        )
+    return serialized
 
 
 def _relative_date(target: date, today: date) -> str:
@@ -1239,6 +1299,7 @@ def assemble_v2_packet(
     legacy_athlete_state: str,
     finding_id: str | None = None,
     now_utc: datetime | None = None,
+    pending_conflicts: list[PendingConflict] | None = None,
 ) -> dict[str, Any]:
     generated_at = _utc_now_iso()
     same_turn_overrides = extract_same_turn_overrides(message)
@@ -1285,6 +1346,12 @@ def assemble_v2_packet(
         conversation_mode.get("query_class") or "general",
         now_utc=now_utc,
     )
+    serialized_pending_conflicts = _serialize_pending_conflicts(pending_conflicts)
+    conflict_fields = {conflict["field"] for conflict in serialized_pending_conflicts}
+    if conflict_fields:
+        unknowns = [
+            unknown for unknown in unknowns if unknown.get("field") not in conflict_fields
+        ]
     athlete_facts = _athlete_facts_payload(db, athlete_id)
     ledger_field_coverage = _ledger_field_coverage(athlete_facts)
     recent_activities = (
@@ -1300,8 +1367,20 @@ def assemble_v2_packet(
     legacy_context, removed_temporal_lines_count = quiet_legacy_context_bridge(
         (legacy_athlete_state or "").strip()
     )
-    if ledger_field_coverage >= LEDGER_COVERAGE_SHIM_THRESHOLD or not legacy_context:
+    shim_threshold = _ledger_coverage_shim_threshold()
+    if ledger_field_coverage >= shim_threshold or not legacy_context:
         legacy_context = ""
+    else:
+        logger.warning(
+            "coach_runtime_v2_legacy_context_shim_active",
+            extra={
+                "athlete_id": str(athlete_id),
+                "ledger_field_coverage": ledger_field_coverage,
+                "threshold": shim_threshold,
+                "legacy_context_chars": len(legacy_context),
+                "removed_temporal_lines_count": removed_temporal_lines_count,
+            },
+        )
 
     data = {
         "conversation": {
@@ -1316,13 +1395,14 @@ def assemble_v2_packet(
         "recent_activities": recent_activities["data"],
         "recent_threads": recent_threads["recent_threads"],
         "unknowns": unknowns,
+        "pending_conflicts": serialized_pending_conflicts,
         "_legacy_context_bridge_deprecated": {
             "legacy_context_bridge": legacy_context[:12000],
             "bridge_note": (
                 "Deprecated shim only. Structured athlete_facts, recent_activities, "
                 "recent_threads, unknowns, calendar_context, and current_turn are the "
                 "primary athlete state. Empty when ledger coverage is at or above "
-                f"{LEDGER_COVERAGE_SHIM_THRESHOLD:.0%}."
+                f"{shim_threshold:.0%}."
             ),
             "removed_temporal_lines_count": removed_temporal_lines_count,
             "ledger_field_coverage": ledger_field_coverage,
@@ -1340,6 +1420,7 @@ def assemble_v2_packet(
         "as_of": generated_at,
         "conversation_mode": conversation_mode,
         "athlete_stated_overrides": same_turn_overrides,
+        "pending_conflicts": data["pending_conflicts"],
         "blocks": {
             "conversation": {
                 "schema_version": "coach_runtime_v2.block.conversation.v1",
@@ -1514,7 +1595,7 @@ def assemble_v2_packet(
                         "section": "athlete_fact_ledger",
                         "status": (
                             "complete"
-                            if ledger_field_coverage >= LEDGER_COVERAGE_SHIM_THRESHOLD
+                            if ledger_field_coverage >= shim_threshold
                             else "partial"
                         ),
                         "coverage_start": None,

@@ -236,6 +236,11 @@ class Settings(BaseSettings):
     # Artifact 9 B2: deterministic ledger extraction is the live path.
     # LLM extraction remains wired but disabled until explicitly approved.
     COACH_LEDGER_LLM_EXTRACTION_ENABLED: bool = Field(default=False)
+    COACH_LEDGER_COVERAGE_SHIM_THRESHOLD: float = Field(
+        default=0.5,
+        ge=0.0,
+        le=1.0,
+    )
 
     @model_validator(mode="after")
     def _validate_production_config(self) -> "Settings":

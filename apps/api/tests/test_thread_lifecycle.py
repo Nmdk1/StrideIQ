@@ -114,6 +114,58 @@ def test_close_thread_writes_summary_and_facts_to_ledger(db_session):
     assert ledger.payload["age"]["value"] == 57
 
 
+def test_thread_summary_cascades_when_athlete_deleted(db_session):
+    athlete = Athlete(
+        email=f"thread_summary_cascade_{uuid4()}@example.com",
+        display_name="Thread Summary Cascade Athlete",
+        subscription_tier="guided",
+        ai_consent=True,
+    )
+    thread_owner = Athlete(
+        email=f"thread_summary_owner_{uuid4()}@example.com",
+        display_name="Thread Summary Owner",
+        subscription_tier="guided",
+        ai_consent=True,
+    )
+    db_session.add_all([athlete, thread_owner])
+    db_session.commit()
+    db_session.refresh(athlete)
+    db_session.refresh(thread_owner)
+
+    # Isolate the coach_thread_summary.athlete_id FK. coach_chat.athlete_id
+    # is intentionally not part of this migration and does not cascade.
+    thread = CoachChat(
+        athlete_id=thread_owner.id,
+        context_type="open",
+        messages=[{"role": "user", "content": "Thread for FK target."}],
+        is_active=False,
+    )
+    db_session.add(thread)
+    db_session.commit()
+    db_session.refresh(thread)
+
+    summary = CoachThreadSummary(
+        athlete_id=athlete.id,
+        thread_id=thread.id,
+        topic_tags=["race"],
+        decisions=[],
+        open_questions=[],
+        stated_facts=[],
+    )
+    db_session.add(summary)
+    db_session.commit()
+
+    db_session.delete(athlete)
+    db_session.commit()
+
+    assert (
+        db_session.query(CoachThreadSummary)
+        .filter(CoachThreadSummary.athlete_id == athlete.id)
+        .count()
+        == 0
+    )
+
+
 class FakeQuery:
     def __init__(self, rows):
         self.rows = rows

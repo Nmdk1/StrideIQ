@@ -1,14 +1,71 @@
 from __future__ import annotations
 
 import os
-import json
 import re
 import logging
 from time import perf_counter
-from datetime import date, datetime, timedelta, timezone
-from typing import Optional, Dict, List, Any, Tuple
+from datetime import date
+from typing import Optional, Dict, Any, Tuple
 from uuid import UUID, uuid4
 from sqlalchemy.orm import Session
+
+from services.coaching._constants import (  # noqa: E402
+    _strip_emojis,
+    is_high_stakes_query,
+    ANTHROPIC_AVAILABLE,
+    GEMINI_AVAILABLE,
+)
+from services.coaching._conversation_contract import (
+    classify_conversation_contract,
+)  # noqa: E402
+from services.coaching.runtime_v2 import (  # noqa: E402
+    RUNTIME_MODE_VISIBLE,
+    assert_runtime_metadata_consistent,
+    log_coach_runtime_v2_request,
+    resolve_coach_runtime_v2_state,
+)
+from services.coaching.runtime_v2_packet import (  # noqa: E402
+    V2PacketInvariantError,
+    assemble_v2_packet,
+)
+from services.coaching.ledger import PendingConflict  # noqa: E402
+from services.coaching.ledger_extraction import (  # noqa: E402
+    extract_facts_from_turn_with_optional_llm,
+    persist_proposed_facts,
+)
+from services.coaching.thread_lifecycle import close_idle_threads  # noqa: E402
+
+try:
+    from anthropic import Anthropic
+except ImportError:
+    pass
+
+try:
+    from google import genai
+    from google.genai import types as genai_types
+except ImportError:
+    genai = None
+    genai_types = None
+
+from models import (  # noqa: E402
+    Activity,
+)
+from services import coach_tools  # noqa: E402
+from core.config import settings  # noqa: E402
+from services.coach_modules import (  # noqa: E402
+    MessageRouter,
+    MessageType,
+    ContextBuilder,
+    ConversationQualityManager,
+)
+
+from services.coaching._budget import BudgetMixin  # noqa: E402
+from services.coaching._tools import ToolsMixin  # noqa: E402
+from services.coaching._llm import LLMMixin  # noqa: E402
+from services.coaching._context import ContextMixin  # noqa: E402
+from services.coaching._thread import ThreadMixin  # noqa: E402
+from services.coaching._guardrails import GuardrailsMixin  # noqa: E402
+from services.coaching._prescriptions import PrescriptionMixin  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
@@ -36,86 +93,6 @@ def _detect_unasked_surfacing(response_text: str) -> bool:
             flags=re.IGNORECASE,
         )
     )
-
-
-from services.coaching._constants import (  # noqa: E402
-    HighStakesSignal,
-    HIGH_STAKES_PATTERNS,
-    COACH_MAX_REQUESTS_PER_DAY,
-    COACH_MAX_OPUS_REQUESTS_PER_DAY,
-    COACH_MONTHLY_TOKEN_BUDGET,
-    COACH_MONTHLY_OPUS_TOKEN_BUDGET,
-    COACH_MAX_OPUS_REQUESTS_PER_DAY_VIP,
-    COACH_MONTHLY_OPUS_TOKEN_BUDGET_VIP,
-    COACH_MAX_INPUT_TOKENS,
-    COACH_MAX_OUTPUT_TOKENS,
-    _strip_emojis,
-    _check_kb_violations,
-    _check_response_quality,
-    is_high_stakes_query,
-    ANTHROPIC_AVAILABLE,
-    GEMINI_AVAILABLE,
-    _build_cross_training_context,
-)
-from services.coaching._conversation_contract import (
-    classify_conversation_contract,
-)  # noqa: E402
-from services.coaching.runtime_v2 import (  # noqa: E402
-    RUNTIME_MODE_VISIBLE,
-    assert_runtime_metadata_consistent,
-    log_coach_runtime_v2_request,
-    resolve_coach_runtime_v2_state,
-)
-from services.coaching.runtime_v2_packet import (  # noqa: E402
-    V2PacketInvariantError,
-    assemble_v2_packet,
-)
-from services.coaching.ledger_extraction import (  # noqa: E402
-    extract_facts_from_turn_with_optional_llm,
-    persist_proposed_facts,
-)
-from services.coaching.thread_lifecycle import close_idle_threads  # noqa: E402
-
-try:
-    from anthropic import Anthropic
-except ImportError:
-    pass
-
-try:
-    from google import genai
-    from google.genai import types as genai_types
-except ImportError:
-    genai = None
-    genai_types = None
-
-from models import (  # noqa: E402
-    Athlete,
-    Activity,
-    TrainingPlan,
-    PlannedWorkout,
-    DailyCheckin,
-    GarminDay,
-    PersonalBest,
-    IntakeQuestionnaire,
-    CoachUsage,
-    CoachChat,
-)
-from services import coach_tools  # noqa: E402
-from core.config import settings  # noqa: E402
-from services.coach_modules import (  # noqa: E402
-    MessageRouter,
-    MessageType,
-    ContextBuilder,
-    ConversationQualityManager,
-)
-
-from services.coaching._budget import BudgetMixin  # noqa: E402
-from services.coaching._tools import ToolsMixin  # noqa: E402
-from services.coaching._llm import LLMMixin  # noqa: E402
-from services.coaching._context import ContextMixin  # noqa: E402
-from services.coaching._thread import ThreadMixin  # noqa: E402
-from services.coaching._guardrails import GuardrailsMixin  # noqa: E402
-from services.coaching._prescriptions import PrescriptionMixin  # noqa: E402
 
 
 class AICoach(
@@ -1160,13 +1137,21 @@ Policy:
             served_by_v2 = False
             if runtime_state.runtime_mode == RUNTIME_MODE_VISIBLE:
                 try:
+                    pending_conflicts: list[PendingConflict] = []
                     proposed_facts = await extract_facts_from_turn_with_optional_llm(
                         athlete_id,
                         message,
                         source=f"turn_id:{turn_id}",
                     )
                     if proposed_facts:
-                        persist_proposed_facts(self.db, athlete_id, proposed_facts)
+                        persisted_results = persist_proposed_facts(
+                            self.db, athlete_id, proposed_facts
+                        )
+                        pending_conflicts = [
+                            result
+                            for result in persisted_results
+                            if isinstance(result, PendingConflict)
+                        ]
                         self.db.commit()
                     packet_started_at = perf_counter()
                     packet = assemble_v2_packet(
@@ -1176,6 +1161,7 @@ Policy:
                         conversation_context=conversation_context,
                         legacy_athlete_state=athlete_state,
                         finding_id=finding_id,
+                        pending_conflicts=pending_conflicts,
                     )
                     packet_telemetry["latency_ms_packet"] = int(
                         (perf_counter() - packet_started_at) * 1000
@@ -1210,26 +1196,28 @@ Policy:
                             result.get("fallback_reason") or "llm_provider_error"
                         )
                     else:
-                        packet_telemetry["deterministic_check_status"] = "passed"
-                        result["response"] = _strip_emojis(
-                            self._normalize_response_for_ui(
+                        guard_ok, guarded_v2_response, guard_reason = (
+                            self._finalize_v2_response_with_turn_guard(
+                                athlete_id=athlete_id,
                                 user_message=message,
-                                assistant_message=result.get("response", ""),
+                                response_text=result.get("response", ""),
+                                conversation_context=conversation_context,
+                                turn_id=turn_id,
+                                is_synthetic_probe=detected_synthetic_probe,
+                                is_organic=is_organic,
                             )
                         )
-                        self._record_turn_guard_event(
-                            athlete_id=athlete_id,
-                            event="pass_v2_packet",
-                            user_band=self._infer_intent_band(message, is_user=True),
-                            assistant_band=self._infer_intent_band(
-                                result["response"], is_user=False
-                            ),
-                            turn_id=turn_id,
-                            stage="v2_packet",
-                            is_synthetic_probe=detected_synthetic_probe,
-                            is_organic=is_organic,
-                        )
-                        served_by_v2 = True
+                        if guard_ok:
+                            packet_telemetry["deterministic_check_status"] = "passed"
+                            result["response"] = guarded_v2_response
+                            served_by_v2 = True
+                        else:
+                            packet_telemetry["deterministic_check_status"] = "failed"
+                            packet_telemetry["v2_guardrail_failure_reason"] = (
+                                guard_reason
+                            )
+                            demote_visible_to_fallback("v2_guardrail_failed")
+                            result = {}
                 except V2PacketInvariantError as exc:
                     logger.warning("coach_runtime_v2_packet_invariant_failed: %s", exc)
                     packet_telemetry.setdefault(

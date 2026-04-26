@@ -3,12 +3,10 @@ from __future__ import annotations
 import os
 import asyncio
 import json
-import re
 import logging
-from datetime import date, datetime, timedelta, timezone
-from typing import Optional, Dict, List, Any, Tuple
-from uuid import UUID, uuid4
-from sqlalchemy.orm import Session
+from datetime import date, datetime, timezone
+from typing import Optional, Dict, List, Any
+from uuid import UUID
 
 logger = logging.getLogger(__name__)
 
@@ -19,6 +17,8 @@ How you must behave:
 1. Anchor every claim about the athlete in a named atom from the packet. Cite the specific session by date or distance, the specific ledger fact, the specific prior thread. If a claim cannot be anchored, do not make it.
 
 2. When a required fact is in unknowns, ask the suggested question or hedge explicitly. Never fill an unknown with generic coaching.
+
+If pending_conflicts is non-empty, resolve those conflicts before answering substantive questions about the same field.
 
 3. Surface the unasked. On every substantive turn, name at least one pattern, risk, contradiction, or opportunity the athlete didn't ask about, drawn from recent_activities, recent_threads, or ledger trends.
 
@@ -41,9 +41,6 @@ V2_SYSTEM_PROMPT = f"{ARTIFACT9_V2_SYSTEM_PROMPT}\n\n<!-- VOICE_CORPUS -->"
 from services.coaching._constants import (  # noqa: E402
     _strip_emojis,
     _check_response_quality,
-    ANTHROPIC_AVAILABLE,
-    GEMINI_AVAILABLE,
-    COACH_MAX_INPUT_TOKENS,
     COACH_MAX_OUTPUT_TOKENS,
 )
 from services.coaching._conversation_contract import (  # noqa: E402

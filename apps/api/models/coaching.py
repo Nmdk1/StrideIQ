@@ -1,9 +1,7 @@
 from sqlalchemy import (
     Column,
     Integer,
-    BigInteger,
     Boolean,
-    CheckConstraint,
     Float,
     Date,
     DateTime,
@@ -13,15 +11,12 @@ from sqlalchemy import (
     String,
     Index,
     UniqueConstraint,
-    text,
 )
 from sqlalchemy.orm import relationship
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.sql import func
 from core.database import Base
 import uuid
-from typing import Optional
-from datetime import datetime, timezone
 
 
 class CoachActionProposal(Base):
@@ -292,7 +287,10 @@ class CoachThreadSummary(Base):
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     athlete_id = Column(
-        UUID(as_uuid=True), ForeignKey("athlete.id"), nullable=False, index=True
+        UUID(as_uuid=True),
+        ForeignKey("athlete.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
     )
     thread_id = Column(
         UUID(as_uuid=True),

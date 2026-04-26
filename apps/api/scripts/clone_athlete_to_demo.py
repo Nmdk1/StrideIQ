@@ -48,13 +48,13 @@ import os
 import sys
 import uuid
 from datetime import date, datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Set, Tuple
 
-from sqlalchemy import inspect, select, text
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from core.database import Base, SessionLocal
-from models import Activity, Athlete
+from models import Athlete
 
 
 logger = logging.getLogger("clone_athlete_to_demo")
@@ -129,6 +129,8 @@ COPY_TABLES: Dict[str, Dict[str, Any]] = {
     "athlete_learning":             {},
     "athlete_adaptation_thresholds": {},
     "athlete_fact":                 {},
+    "athlete_facts":                {},
+    "athlete_facts_audit":          {},
     "athlete_route":                {},
     "training_block":               {},
 
@@ -162,7 +164,8 @@ COPY_TABLES: Dict[str, Dict[str, Any]] = {
 
     # --- Coach state ---
     "coaching_recommendation":  {},
-    "coach_chat":               {"extra_remap": {"context_plan_id": "training_plan"}},
+    "coach_chat":               {"track_pk": True, "extra_remap": {"context_plan_id": "training_plan"}},
+    "coach_thread_summary":     {"extra_remap": {"thread_id": "coach_chat"}},
     "coach_intent_snapshot":    {},
     "coach_usage":              {},
 
@@ -400,6 +403,8 @@ def _wipe_demo_data(db: Session, demo_id: uuid.UUID) -> Dict[str, int]:
         ("athlete_learning",             f"athlete_id = '{demo_id}'"),
         ("athlete_adaptation_thresholds", f"athlete_id = '{demo_id}'"),
         ("athlete_fact",                 f"athlete_id = '{demo_id}'"),
+        ("athlete_facts",                f"athlete_id = '{demo_id}'"),
+        ("athlete_facts_audit",          f"athlete_id = '{demo_id}'"),
         ("athlete_route",                f"athlete_id = '{demo_id}'"),
         ("training_block",               f"athlete_id = '{demo_id}'"),
 
@@ -432,6 +437,7 @@ def _wipe_demo_data(db: Session, demo_id: uuid.UUID) -> Dict[str, int]:
 
         # Coach state
         ("coaching_recommendation",  f"athlete_id = '{demo_id}'"),
+        ("coach_thread_summary",     f"athlete_id = '{demo_id}'"),
         ("coach_chat",               f"athlete_id = '{demo_id}'"),
         ("coach_intent_snapshot",    f"athlete_id = '{demo_id}'"),
         ("coach_usage",              f"athlete_id = '{demo_id}'"),
@@ -755,6 +761,7 @@ def main() -> int:
             "athlete_calibrated_model", "athlete_workout_response",
             "athlete_override", "athlete_learning",
             "athlete_adaptation_thresholds", "athlete_fact",
+            "athlete_facts", "athlete_facts_audit",
             "athlete_route", "training_block",
             # Recovery
             "daily_checkin", "body_composition", "work_pattern",
@@ -770,6 +777,7 @@ def main() -> int:
             "n1_insight_suppression",
             # Coach state
             "coaching_recommendation", "coach_chat",
+            "coach_thread_summary",
             "coach_intent_snapshot", "coach_usage",
         ]
 

@@ -1,26 +1,22 @@
 from __future__ import annotations
 
-import os
-import json
 import re
 import logging
-from datetime import date, datetime, timedelta, timezone
-from typing import Optional, Dict, List, Any, Tuple
-from uuid import UUID, uuid4
-from sqlalchemy.orm import Session
-
-logger = logging.getLogger(__name__)
+from typing import Dict, List, Any
+from uuid import UUID
 
 from services.coaching._constants import (
     _strip_emojis,
-    _check_response_quality,
-)  # noqa: E402
-from services import coach_tools  # noqa: E402
-from services.coaching._conversation_contract import (  # noqa: E402
+)
+from services import coach_tools
+from services.coaching._conversation_contract import (
     build_conversation_contract_retry_instruction,
     enforce_conversation_contract_output,
     validate_conversation_contract_response,
 )
+from models import Athlete
+
+logger = logging.getLogger(__name__)
 
 
 class GuardrailsMixin:
@@ -347,6 +343,76 @@ class GuardrailsMixin:
             "You're right. I answered the wrong thing. "
             "Please repeat your last question in one line and I'll answer it directly."
         )
+
+    def _finalize_v2_response_with_turn_guard(
+        self,
+        *,
+        athlete_id: UUID,
+        user_message: str,
+        response_text: str,
+        conversation_context: List[Dict[str, str]],
+        turn_id: str,
+        is_synthetic_probe: bool,
+        is_organic: bool,
+    ) -> tuple[bool, str, str | None]:
+        """Run V1's deterministic turn guard subset without an LLM retry."""
+        try:
+            normalized = self._normalize_response_for_ui(
+                user_message=user_message,
+                assistant_message=response_text or "",
+            )
+        except Exception as e:
+            logger.warning(f"Coach V2 response normalization failed: {e}")
+            normalized = response_text or ""
+        candidate = _strip_emojis(normalized)
+        user_band = self._infer_intent_band(user_message, is_user=True)
+        candidate_band = self._infer_intent_band(candidate, is_user=False)
+
+        addresses_latest_turn = self._response_addresses_latest_turn(
+            user_message, candidate
+        )
+        contract_ok, contract_reason = validate_conversation_contract_response(
+            user_message,
+            candidate,
+            conversation_context=conversation_context,
+        )
+        if addresses_latest_turn and contract_ok:
+            self._record_turn_guard_event(
+                athlete_id=athlete_id,
+                event="pass_v2_packet",
+                user_band=user_band,
+                assistant_band=candidate_band,
+                turn_id=turn_id,
+                stage="v2_packet",
+                is_synthetic_probe=is_synthetic_probe,
+                is_organic=is_organic,
+            )
+            return (
+                True,
+                enforce_conversation_contract_output(
+                    user_message,
+                    candidate,
+                    conversation_context=conversation_context,
+                ),
+                None,
+            )
+
+        failure_reason = (
+            f"conversation_contract:{contract_reason}"
+            if addresses_latest_turn
+            else "latest_turn_mismatch"
+        )
+        self._record_turn_guard_event(
+            athlete_id=athlete_id,
+            event=f"v2_guardrail_failed:{failure_reason}",
+            user_band=user_band,
+            assistant_band=candidate_band,
+            turn_id=turn_id,
+            stage="v2_packet",
+            is_synthetic_probe=is_synthetic_probe,
+            is_organic=is_organic,
+        )
+        return False, candidate, failure_reason
 
     async def _finalize_response_with_turn_guard(
         self,
