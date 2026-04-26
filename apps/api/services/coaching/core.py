@@ -4,6 +4,7 @@ import os
 import json
 import re
 import logging
+from time import perf_counter
 from datetime import date, datetime, timedelta, timezone
 from typing import Optional, Dict, List, Any, Tuple
 from uuid import UUID, uuid4
@@ -31,6 +32,12 @@ from services.coaching._constants import (  # noqa: E402
     _build_cross_training_context,
 )
 from services.coaching._conversation_contract import classify_conversation_contract  # noqa: E402
+from services.coaching.runtime_v2 import (  # noqa: E402
+    RUNTIME_MODE_VISIBLE,
+    assert_runtime_metadata_consistent,
+    log_coach_runtime_v2_request,
+    resolve_coach_runtime_v2_state,
+)
 
 try:
     from anthropic import Anthropic
@@ -442,35 +449,99 @@ Policy:
         Returns:
             Dict with response text and metadata
         """
+        runtime_started_at = perf_counter()
+        runtime_state = resolve_coach_runtime_v2_state(athlete_id, self.db)
+
+        def demote_visible_to_fallback(reason: str) -> None:
+            nonlocal runtime_state
+            if runtime_state.runtime_mode != RUNTIME_MODE_VISIBLE:
+                return
+            logger.warning(
+                "coach_runtime_v2_visible_fallback",
+                extra={
+                    "extra_fields": {
+                        "event": "coach_runtime_v2_visible_fallback",
+                        "fallback_reason": reason,
+                    }
+                },
+            )
+            runtime_state = runtime_state.as_fallback(reason)
+
+        def emit_runtime_request_event(
+            *,
+            thread_id: Optional[str] = None,
+            llm_model: Optional[str] = None,
+            tool_count: int = 0,
+            error_class: Optional[str] = None,
+        ) -> None:
+            log_coach_runtime_v2_request(
+                athlete_id=athlete_id,
+                state=runtime_state,
+                thread_id=thread_id,
+                latency_ms_total=int((perf_counter() - runtime_started_at) * 1000),
+                llm_model=llm_model,
+                tool_count=tool_count,
+                error_class=error_class,
+            )
+
+        def with_runtime_metadata(
+            payload: Dict[str, Any],
+            *,
+            served_by_v1_reason: Optional[str] = None,
+            thread_id: Optional[str] = None,
+            llm_model: Optional[str] = None,
+            tool_count: int = 0,
+            error_class: Optional[str] = None,
+        ) -> Dict[str, Any]:
+            if served_by_v1_reason:
+                demote_visible_to_fallback(served_by_v1_reason)
+            metadata = runtime_state.as_metadata()
+            assert_runtime_metadata_consistent(metadata)
+            payload.update(metadata)
+            emit_runtime_request_event(
+                thread_id=thread_id,
+                llm_model=llm_model,
+                tool_count=tool_count,
+                error_class=error_class,
+            )
+            return payload
+
         # P1-D: Consent gate — no LLM dispatch without explicit opt-in.
         from services.consent import has_ai_consent as _has_consent
         if not _has_consent(athlete_id=athlete_id, db=self.db):
-            return {
-                "response": (
-                    "AI coaching insights are currently disabled for your account. "
-                    "To enable AI insights and unlock personalized coaching, go to "
-                    "**Settings → AI Processing** and grant consent. "
-                    "All other features remain fully available."
-                ),
-                "error": False,
-                "timed_out": False,
-                "history_thin": False,
-                "used_baseline": False,
-                "baseline_needed": False,
-                "rebuild_plan_prompt": False,
-            }
+            return with_runtime_metadata(
+                {
+                    "response": (
+                        "AI coaching insights are currently disabled for your account. "
+                        "To enable AI insights and unlock personalized coaching, go to "
+                        "**Settings → AI Processing** and grant consent. "
+                        "All other features remain fully available."
+                    ),
+                    "error": False,
+                    "timed_out": False,
+                    "history_thin": False,
+                    "used_baseline": False,
+                    "baseline_needed": False,
+                    "rebuild_plan_prompt": False,
+                },
+                served_by_v1_reason="consent_disabled",
+            )
 
         # If no LLM route is available, return a helpful message.  Kimi is the
         # primary chat path; Gemini remains only as a guardrail-retry fallback.
         kimi_configured = bool(settings.KIMI_API_KEY or os.getenv("KIMI_API_KEY"))
         if not (kimi_configured or self.anthropic_client or self.gemini_client):
-            return {
-                "response": (
-                    "AI Coach is not configured. Please set KIMI_API_KEY, "
-                    "ANTHROPIC_API_KEY, or GOOGLE_AI_API_KEY in your environment."
-                ),
-                "error": True
-            }
+            return with_runtime_metadata(
+                {
+                    "response": (
+                        "AI Coach is not configured. Please set KIMI_API_KEY, "
+                        "ANTHROPIC_API_KEY, or GOOGLE_AI_API_KEY in your environment."
+                    ),
+                    "error": True,
+                },
+                served_by_v1_reason="no_llm_configured",
+                error_class="no_llm_configured",
+            )
 
         # Persist units preference if the athlete explicitly requests it.
         self._maybe_update_units_preference(athlete_id, message)
@@ -514,17 +585,28 @@ Policy:
                 is_synthetic_probe=detected_synthetic_probe,
                 is_organic=is_organic,
             )
-            self._save_chat_messages(athlete_id, message, response, model="deterministic")
-            return {
-                "response": response,
-                "thread_id": thread_id,
-                "error": False,
-                "timed_out": False,
-                "history_thin": False,
-                "used_baseline": False,
-                "baseline_needed": False,
-                "rebuild_plan_prompt": False,
-            }
+            demote_visible_to_fallback("deterministic_short_circuit")
+            self._save_chat_messages(
+                athlete_id,
+                message,
+                response,
+                model="deterministic",
+                runtime_metadata=runtime_state.as_metadata(),
+            )
+            return with_runtime_metadata(
+                {
+                    "response": response,
+                    "thread_id": thread_id,
+                    "error": False,
+                    "timed_out": False,
+                    "history_thin": False,
+                    "used_baseline": False,
+                    "baseline_needed": False,
+                    "rebuild_plan_prompt": False,
+                },
+                thread_id=thread_id,
+                llm_model="deterministic",
+            )
 
         # Thin-history detection + baseline intake (production-beta fallback).
         history_thin = False
@@ -829,19 +911,24 @@ Policy:
             budget_ok, budget_reason = self.check_budget(athlete_id, is_opus=is_opus, is_vip=is_vip)
             if not budget_ok:
                 logger.warning(f"Budget exceeded for {athlete_id}: {budget_reason}")
-                return {
-                    "response": (
-                        "You've reached your daily coaching limit. "
-                        "Your limit resets at midnight UTC. "
-                        "For urgent questions, please consult a healthcare professional."
-                    ),
-                    "error": False,
-                    "budget_exceeded": True,
-                    "budget_reason": budget_reason,
-                }
+                return with_runtime_metadata(
+                    {
+                        "response": (
+                            "You've reached your daily coaching limit. "
+                            "Your limit resets at midnight UTC. "
+                            "For urgent questions, please consult a healthcare professional."
+                        ),
+                        "error": False,
+                        "budget_exceeded": True,
+                        "budget_reason": budget_reason,
+                    },
+                    served_by_v1_reason="budget_exceeded",
+                )
 
             # Universal Kimi K2.5 routing (Apr 2026).
             # Every query goes through Kimi with Sonnet as silent fallback.
+            demote_visible_to_fallback("packet_assembly_error")
+
             athlete_state = self._build_athlete_state_for_opus(athlete_id)
 
             conversation_contract_type = None
@@ -908,20 +995,32 @@ Policy:
                     model=result.get("model", "unknown"),
                     tools_used=tools_used,
                     conversation_contract=conversation_contract_type,
+                    runtime_metadata=runtime_state.as_metadata(),
                 )
                 result["tools_used"] = tools_used
                 result["tool_count"] = len(tools_used)
                 result["conversation_contract"] = conversation_contract_type
 
             result["thread_id"] = thread_id
+            result.update(runtime_state.as_metadata())
+            emit_runtime_request_event(
+                thread_id=thread_id,
+                llm_model=result.get("model"),
+                tool_count=int(result.get("tool_count") or 0),
+                error_class="llm_error" if result.get("error") else None,
+            )
             return result
             
         except Exception as e:
             logger.error(f"AI Coach error: {e}")
-            return {
-                "response": f"An error occurred: {str(e)}",
-                "error": True
-            }
+            return with_runtime_metadata(
+                {
+                    "response": f"An error occurred: {str(e)}",
+                    "error": True,
+                },
+                served_by_v1_reason="llm_provider_error",
+                error_class=e.__class__.__name__,
+            )
 
 
 

@@ -109,6 +109,7 @@ class ThreadMixin:
                     "tools_used": m.get("tools_used") or [],
                     "tool_count": int(m.get("tool_count") or 0),
                     "conversation_contract": m.get("conversation_contract"),
+                    "runtime_metadata": m.get("runtime_metadata"),
                 })
 
             return {"thread_id": str(chat.id), "messages": out}
@@ -126,6 +127,7 @@ class ThreadMixin:
         model: Optional[str] = None,
         tools_used: Optional[List[str]] = None,
         conversation_contract: Optional[str] = None,
+        runtime_metadata: Optional[Dict[str, Any]] = None,
     ) -> None:
         """Save user message and assistant response to PostgreSQL CoachChat."""
         try:
@@ -163,6 +165,8 @@ class ThreadMixin:
                 assistant_msg["tool_count"] = len(tools_used)
             if conversation_contract:
                 assistant_msg["conversation_contract"] = conversation_contract
+            if runtime_metadata:
+                assistant_msg["runtime_metadata"] = dict(runtime_metadata)
             msgs.append(assistant_msg)
             chat.messages = msgs
             # Force SQLAlchemy to detect the JSONB change

@@ -165,6 +165,14 @@ Allowed fallback reasons:
 - `v2_empty_response`
 - `v2_guardrail_failed`
 - `llm_provider_error`
+- `consent_disabled`
+- `no_llm_configured`
+- `deterministic_short_circuit`
+- `budget_exceeded`
+
+The last four reasons cover requests that are visible-eligible by flag but exit
+through an existing V1/system path before any V2 packet or coach-response call
+can run. They must not be recorded as `visible` / `v2` served turns.
 
 Fallback must be recorded in logs and `CoachChat` metadata.
 

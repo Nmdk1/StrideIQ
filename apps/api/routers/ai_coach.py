@@ -42,6 +42,9 @@ class ChatResponse(BaseModel):
     tools_used: List[str] = Field(default_factory=list)
     tool_count: int = 0
     conversation_contract: Optional[str] = None
+    runtime_version: str = "v1"
+    runtime_mode: str = "off"
+    fallback_reason: Optional[str] = None
 
 
 class ContextResponse(BaseModel):
@@ -60,6 +63,7 @@ class ThreadMessage(BaseModel):
     tools_used: List[str] = Field(default_factory=list)
     tool_count: int = 0
     conversation_contract: Optional[str] = None
+    runtime_metadata: Optional[dict] = None
 
 
 class ThreadHistoryResponse(BaseModel):
@@ -104,6 +108,9 @@ async def chat_with_coach(
         tools_used=tools_used,
         tool_count=int(result.get("tool_count") or len(tools_used)),
         conversation_contract=conversation_contract,
+        runtime_version=str(result.get("runtime_version") or "v1"),
+        runtime_mode=str(result.get("runtime_mode") or "off"),
+        fallback_reason=result.get("fallback_reason"),
     )
 
 
@@ -186,6 +193,9 @@ async def chat_with_coach_stream(
                     "tools_used": tools_used,
                     "tool_count": int(result.get("tool_count") or len(tools_used)),
                     "conversation_contract": conversation_contract,
+                    "runtime_version": str(result.get("runtime_version") or "v1"),
+                    "runtime_mode": str(result.get("runtime_mode") or "off"),
+                    "fallback_reason": result.get("fallback_reason"),
                 }
             ).encode("utf-8") + b"\n\n"
 
@@ -276,7 +286,15 @@ async def get_coach_history(
     coach = AICoach(db)
     hist = coach.get_thread_history(athlete.id, limit=limit)
     msgs = [
-        ThreadMessage(role=m.get("role", "assistant"), content=m.get("content", ""), created_at=m.get("created_at"))
+        ThreadMessage(
+            role=m.get("role", "assistant"),
+            content=m.get("content", ""),
+            created_at=m.get("created_at"),
+            tools_used=list(m.get("tools_used") or []),
+            tool_count=int(m.get("tool_count") or 0),
+            conversation_contract=m.get("conversation_contract"),
+            runtime_metadata=m.get("runtime_metadata"),
+        )
         for m in (hist.get("messages") or [])
         if (m.get("content") or "").strip()
     ]
