@@ -418,7 +418,7 @@ def build_tier3_judge_payload(
 ) -> dict[str, Any]:
     """Build the rubric payload for nightly/pre-deploy LLM-as-judge scoring."""
 
-    return {
+    payload = {
         "case_id": case.get("id"),
         "domain": case.get("domain"),
         "case_type": case.get("case_type"),
@@ -441,6 +441,17 @@ def build_tier3_judge_payload(
             "the outcome dimension. Do not reward contract shape by itself."
         ),
     }
+    if case.get("eval_schema_version") == "artifact7.v1":
+        payload.update(
+            {
+                "eval_schema_version": case.get("eval_schema_version"),
+                "baseline_voice": case.get("baseline_voice"),
+                "baseline_citation": case.get("baseline_citation"),
+                "artifact5_mode": case.get("artifact5_mode"),
+                "source_replay_type": case.get("source_replay_type"),
+            }
+        )
+    return payload
 
 
 def evaluate_tier3_judge_scores(

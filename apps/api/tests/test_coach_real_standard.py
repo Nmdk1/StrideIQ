@@ -265,6 +265,32 @@ def test_phase8_tier3_payload_contains_judge_rubric_not_system_prompt(coach_eval
     assert "Do not reward contract shape by itself" in payload["scoring_instruction"]
 
 
+def test_replay_case_nutrition_cheerlead_validates_and_scores(coach_eval_cases):
+    case = next(c for c in coach_eval_cases if c["id"] == "nutrition_cheerlead_sarcastic_intake")
+
+    assert case["eval_schema_version"] == "artifact7.v1"
+    assert validate_real_coach_case(case) == ()
+
+    passing = evaluate_real_coach_response(case, assistant_text=case["passing_answer"])
+    assert passing.passed, passing.failures
+
+    failing = evaluate_real_coach_response(case, assistant_text=case["failing_answer"])
+    assert not failing.passed
+    assert "bad_coaching_pattern_present:solid and practical" in failing.failures
+    assert "must_not_present:disciplined fueling" in failing.failures
+
+
+def test_artifact7_tier3_payload_includes_voice_context(coach_eval_cases):
+    case = next(c for c in coach_eval_cases if c["id"] == "nutrition_cheerlead_sarcastic_intake")
+    payload = build_tier3_judge_payload(case, assistant_text=case["passing_answer"])
+
+    assert payload["eval_schema_version"] == "artifact7.v1"
+    assert payload["baseline_voice"] == "green"
+    assert payload["baseline_citation"] == case["baseline_citation"]
+    assert payload["artifact5_mode"] == "pushback"
+    assert payload["source_replay_type"] == "founder_curated"
+
+
 def test_phase8_summary_reports_per_domain_scores(coach_eval_cases):
     results = [evaluate_real_coach_response(case) for case in coach_eval_cases]
     summary = summarize_real_coach_results(results)

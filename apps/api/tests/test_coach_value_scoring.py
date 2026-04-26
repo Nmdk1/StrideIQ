@@ -17,6 +17,18 @@ def _cases():
         return json.load(f)
 
 
+def _strong_judge_scores(case):
+    scores = {
+        "tactical_correctness": 4,
+        "baseline_utility": 4,
+        "outcome_served": 4,
+        "evidence_usefulness": 4,
+    }
+    if case.get("eval_schema_version") == "artifact7.v1":
+        scores["voice_alignment"] = 4
+    return scores
+
+
 def test_tier3_judge_payloads_are_available_for_every_phase8_case():
     for case in _cases():
         payload = build_tier3_judge_payload(case, assistant_text=case["passing_answer"])
@@ -95,21 +107,17 @@ def test_tier3_scored_eval_rejects_answers_worse_than_baseline():
 
 
 def test_tier3_domain_summary_reports_per_domain_scores():
+    cases = _cases()
     results = [
         evaluate_tier3_judge_scores(
             case,
-            {
-                "tactical_correctness": 4,
-                "baseline_utility": 4,
-                "outcome_served": 4,
-                "evidence_usefulness": 4,
-            },
+            _strong_judge_scores(case),
         )
-        for case in _cases()
+        for case in cases
     ]
     summary = summarize_tier3_domain_scores(results)
 
-    assert summary["total_cases"] == 33
+    assert summary["total_cases"] == len(cases)
     assert summary["failed_cases"] == 0
     assert set(summary["domains"]) == REAL_COACH_DOMAINS
     assert summary["domains"]["race_day"]["average_score"] == 4.0
