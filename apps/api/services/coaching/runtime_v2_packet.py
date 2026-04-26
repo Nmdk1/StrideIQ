@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from models import Activity, ActivitySplit, TrainingPlan
 from services.coaching.runtime_v2 import PACKET_SCHEMA_VERSION
+from services.coaching.unknowns_block import compute_unknowns, detect_query_class
 from services.timezone_utils import (
     athlete_local_today,
     get_athlete_timezone_from_db,
@@ -1076,6 +1077,7 @@ def classify_conversation_mode(
     return {
         "primary": primary,
         "secondary": list(dict.fromkeys(secondary)),
+        "query_class": detect_query_class(message),
         "confidence": "high" if triggers != ["default"] else "medium",
         "source": "deterministic_mode_classifier",
         "classifier_version": MODE_CLASSIFIER_VERSION,
@@ -1216,6 +1218,12 @@ def assemble_v2_packet(
         calendar_context=calendar_context,
         activity_evidence=activity_evidence,
     )
+    unknowns = compute_unknowns(
+        db,
+        athlete_id,
+        conversation_mode.get("query_class") or "general",
+        now_utc=now_utc,
+    )
     legacy_context, removed_temporal_lines_count = quiet_legacy_context_bridge(
         (legacy_athlete_state or "").strip()
     )
@@ -1234,6 +1242,7 @@ def assemble_v2_packet(
         "calendar_context": calendar_context["data"],
         "activity_evidence_state": activity_evidence["data"],
         "training_adaptation_context": training_adaptation_context["data"],
+        "unknowns": unknowns,
         "athlete_context": {
             "legacy_context_bridge": legacy_context[:12000],
             "bridge_note": (
@@ -1389,6 +1398,37 @@ def assemble_v2_packet(
                     ),
                 },
             },
+            "unknowns": {
+                "schema_version": "coach_runtime_v2.block.unknowns.v1",
+                "status": "complete",
+                "generated_at": generated_at,
+                "as_of": generated_at,
+                "selected_sections": ["required_ledger_fields"],
+                "available_sections": ["required_ledger_fields"],
+                "data": data["unknowns"],
+                "completeness": [],
+                "unknowns": data["unknowns"],
+                "provenance": [
+                    {
+                        "field_path": "blocks.unknowns.data",
+                        "source_system": "athlete_facts_ledger",
+                        "source_id": str(athlete_id),
+                        "source_timestamp": generated_at,
+                        "observed_at": generated_at,
+                        "confidence": "high",
+                        "derivation_chain": [
+                            "conversation_mode.query_class",
+                            "unknowns_block.required_field_map",
+                            "athlete_facts.confirm_after",
+                        ],
+                    }
+                ],
+                "token_budget": {
+                    "target_tokens": 250,
+                    "max_tokens": 450,
+                    "estimated_tokens": _estimated_tokens(data["unknowns"]),
+                },
+            },
             "athlete_context": {
                 "schema_version": "coach_runtime_v2.block.athlete_context.v1",
                 "status": "partial",
@@ -1432,12 +1472,13 @@ def assemble_v2_packet(
         "omitted_blocks": [],
         "telemetry": {
             "estimated_tokens": token_estimate,
-            "packet_block_count": 5,
+            "packet_block_count": 6,
             "omitted_block_count": 0,
             "unknown_count": (
                 len(calendar_context["unknowns"])
                 + len(activity_evidence["unknowns"])
                 + len(training_adaptation_context["unknowns"])
+                + len(unknowns)
             ),
             "permission_redaction_count": 0,
             "coupling_count": 1,

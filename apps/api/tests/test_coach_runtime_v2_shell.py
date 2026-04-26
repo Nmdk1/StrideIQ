@@ -595,9 +595,10 @@ def test_v2_packet_assembler_builds_packet_without_raw_tools():
 
     assert packet["schema_version"] == "coach_runtime_v2.packet.v1"
     assert packet["conversation_mode"]["primary"] == "racing_preparation_judgment"
-    assert packet["telemetry"]["packet_block_count"] == 5
+    assert packet["telemetry"]["packet_block_count"] == 6
     assert "activity_evidence_state" in packet["blocks"]
     assert "training_adaptation_context" in packet["blocks"]
+    assert "unknowns" in packet["blocks"]
     assert "tools" not in packet
 
 
