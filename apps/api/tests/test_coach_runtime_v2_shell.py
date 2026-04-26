@@ -677,6 +677,33 @@ def test_v2_packet_empties_deprecated_legacy_shim_when_ledger_coverage_high(
     assert packet["telemetry"]["ledger_field_coverage"] == 1.0
 
 
+def test_v2_packet_caps_deprecated_legacy_shim_under_packet_budget(monkeypatch):
+    monkeypatch.setattr(
+        packet_module,
+        "_athlete_facts_payload",
+        lambda db, athlete_id: {},
+    )
+    monkeypatch.setattr(packet_module.settings, "COACH_LEDGER_COVERAGE_SHIM_THRESHOLD", 0.5)
+    legacy_context = "\n".join(
+        f"Durable non-temporal legacy context line {index}."
+        for index in range(800)
+    )
+
+    packet = assemble_v2_packet(
+        athlete_id=uuid4(),
+        message="Quick check — what should my next easy run focus on? Keep it brief.",
+        conversation_context=[],
+        legacy_athlete_state=legacy_context,
+    )
+
+    shim = packet["blocks"]["_legacy_context_bridge_deprecated"]
+    assert shim["status"] == "deprecated_fallback"
+    assert len(shim["data"]["legacy_context_bridge"]) <= (
+        packet_module.LEGACY_CONTEXT_BRIDGE_MAX_CHARS
+    )
+    assert packet["telemetry"]["estimated_tokens"] <= 5000
+
+
 def test_v2_packet_calendar_context_is_authoritative_and_quiets_bridge():
     athlete_id = uuid4()
     today = date(2026, 4, 26)
