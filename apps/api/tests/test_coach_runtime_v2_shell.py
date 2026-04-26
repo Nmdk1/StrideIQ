@@ -704,6 +704,43 @@ def test_v2_packet_caps_deprecated_legacy_shim_under_packet_budget(monkeypatch):
     assert packet["telemetry"]["estimated_tokens"] <= 5000
 
 
+def test_v2_packet_omits_deprecated_legacy_shim_when_packet_still_over_budget(
+    monkeypatch,
+):
+    original_estimated_tokens = packet_module._estimated_tokens
+
+    def budget_spike(value):
+        if (
+            isinstance(value, dict)
+            and (
+                value.get("_legacy_context_bridge_deprecated") or {}
+            ).get("legacy_context_bridge")
+        ):
+            return 5001
+        return original_estimated_tokens(value)
+
+    monkeypatch.setattr(packet_module, "_estimated_tokens", budget_spike)
+    monkeypatch.setattr(
+        packet_module,
+        "_athlete_facts_payload",
+        lambda db, athlete_id: {},
+    )
+    monkeypatch.setattr(packet_module.settings, "COACH_LEDGER_COVERAGE_SHIM_THRESHOLD", 0.5)
+
+    packet = assemble_v2_packet(
+        athlete_id=uuid4(),
+        message="Should I run easy today?",
+        conversation_context=[],
+        legacy_athlete_state="Durable non-temporal legacy context.\n" * 200,
+    )
+
+    shim = packet["blocks"]["_legacy_context_bridge_deprecated"]
+    assert shim["status"] == "empty"
+    assert shim["data"]["legacy_context_bridge"] == ""
+    assert packet["telemetry"]["legacy_context_bridge_omitted_for_budget"] is True
+    assert packet["telemetry"]["estimated_tokens"] <= 5000
+
+
 def test_v2_packet_calendar_context_is_authoritative_and_quiets_bridge():
     athlete_id = uuid4()
     today = date(2026, 4, 26)

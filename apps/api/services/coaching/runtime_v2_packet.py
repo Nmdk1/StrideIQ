@@ -1383,6 +1383,7 @@ def assemble_v2_packet(
             },
         )
 
+    legacy_context_omitted_for_budget = False
     data = {
         "conversation": {
             "user_message": message,
@@ -1410,6 +1411,12 @@ def assemble_v2_packet(
         },
     }
     token_estimate = _estimated_tokens(data)
+    if token_estimate > 5000 and data["_legacy_context_bridge_deprecated"][
+        "legacy_context_bridge"
+    ]:
+        data["_legacy_context_bridge_deprecated"]["legacy_context_bridge"] = ""
+        legacy_context_omitted_for_budget = True
+        token_estimate = _estimated_tokens(data)
     packet = {
         "schema_version": PACKET_SCHEMA_VERSION,
         "packet_id": str(uuid4()),
@@ -1661,7 +1668,13 @@ def assemble_v2_packet(
             },
             "_legacy_context_bridge_deprecated": {
                 "schema_version": "coach_runtime_v2.block.legacy_context_bridge_deprecated.v1",
-                "status": "empty" if not legacy_context else "deprecated_fallback",
+                "status": (
+                    "empty"
+                    if not data["_legacy_context_bridge_deprecated"][
+                        "legacy_context_bridge"
+                    ]
+                    else "deprecated_fallback"
+                ),
                 "generated_at": generated_at,
                 "as_of": generated_at,
                 "selected_sections": ["deprecated_legacy_context_bridge"],
@@ -1684,8 +1697,20 @@ def assemble_v2_packet(
                     }
                 ],
                 "token_budget": {
-                    "target_tokens": 0 if not legacy_context else 600,
-                    "max_tokens": 0 if not legacy_context else 1200,
+                    "target_tokens": (
+                        0
+                        if not data["_legacy_context_bridge_deprecated"][
+                            "legacy_context_bridge"
+                        ]
+                        else 600
+                    ),
+                    "max_tokens": (
+                        0
+                        if not data["_legacy_context_bridge_deprecated"][
+                            "legacy_context_bridge"
+                        ]
+                        else 1200
+                    ),
                     "estimated_tokens": _estimated_tokens(
                         data["_legacy_context_bridge_deprecated"]
                     ),
@@ -1709,6 +1734,9 @@ def assemble_v2_packet(
             "coupling_count": 1,
             "multimodal_attachment_count": 0,
             "temporal_bridge_lines_removed": removed_temporal_lines_count,
+            "legacy_context_bridge_omitted_for_budget": (
+                legacy_context_omitted_for_budget
+            ),
             "ledger_field_coverage": ledger_field_coverage,
             "anchor_atoms_per_answer": None,
             "unasked_surfacing": None,
