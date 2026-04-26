@@ -29,7 +29,7 @@ def _strong_judge_scores(case):
     return scores
 
 
-def test_tier3_judge_payloads_are_available_for_every_phase8_case():
+def test_tier3_judge_payloads_are_available_for_every_case():
     for case in _cases():
         payload = build_tier3_judge_payload(case, assistant_text=case["passing_answer"])
 

@@ -194,7 +194,8 @@ Required when `eval_schema_version == "artifact7.v1"`:
     "section": "<section heading or principle name>"
   },
   "artifact5_mode": "observe_and_ask | engage_and_reason | acknowledge_and_redirect | pattern_observation | pushback | celebration | uncertainty_disclosure | asking_after_work | racing_preparation_judgment | brief_status_update | correction | mode_uncertain",
-  "source_replay_type": "production_chat | founder_curated | external_ai | manual"
+  "source_replay_type": "production_chat | founder_curated | external_ai | manual",
+  "failure_modes": ["FM-001"]
 }
 ```
 
@@ -208,6 +209,8 @@ Validator extension:
 - `artifact5_mode` is required for `artifact7.v1`.
 - `artifact5_mode` must match the locked Artifact 5 primary mode enum.
 - `source_replay_type` is required for `artifact7.v1`.
+- `failure_modes` is required for `artifact7.v1`.
+- `failure_modes` must be a non-empty list of IDs from the canonical failure-mode catalog. `FM-024` is invalid because that ID was retired during draft review.
 - Until Eyestone and McMillan reference notes exist in `docs/references/`, cases using `eyestone` or `mcmillan` fail validation. Do not stage placeholder cases ahead of reference docs.
 
 ### Fully Worked Example
@@ -220,6 +223,7 @@ Validator extension:
   "case_type": "adversarial",
   "artifact5_mode": "engage_and_reason",
   "source_replay_type": "founder_curated",
+  "failure_modes": ["FM-011"],
   "situation": {
     "athlete_state": "athlete reports legs lack pop, threshold session scheduled tomorrow, recent load is elevated",
     "context": "same-week training adjustment; athlete asks for a decision"

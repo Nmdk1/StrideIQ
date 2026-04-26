@@ -53,6 +53,11 @@ ARTIFACT5_PRIMARY_MODES = frozenset(
 )
 SOURCE_REPLAY_TYPES = frozenset({"production_chat", "founder_curated", "external_ai", "manual"})
 EVAL_SCHEMA_VERSIONS = frozenset({"phase8.v1", "artifact7.v1"})
+ARTIFACT7_FAILURE_MODES = frozenset(
+    f"FM-{idx:03d}"
+    for idx in range(1, 31)
+    if idx != 24
+)
 DEFAULT_REFERENCES_ROOT = Path(__file__).resolve().parents[4] / "docs" / "references"
 _REFERENCE_HEADINGS_CACHE: dict[Path, frozenset[str]] = {}
 
@@ -204,6 +209,16 @@ def _validate_artifact7_case(
         failures.append("missing_field:source_replay_type")
     elif str(source_replay_type) not in SOURCE_REPLAY_TYPES:
         failures.append(f"invalid_source_replay_type:{source_replay_type}")
+
+    failure_modes = case.get("failure_modes")
+    if failure_modes is None:
+        failures.append("missing_field:failure_modes")
+    elif not isinstance(failure_modes, list) or not failure_modes:
+        failures.append("invalid_list_field:failure_modes")
+    else:
+        for mode in failure_modes:
+            if str(mode) not in ARTIFACT7_FAILURE_MODES:
+                failures.append(f"invalid_failure_mode:{mode}")
 
 
 def validate_real_coach_case(
@@ -418,6 +433,19 @@ def build_tier3_judge_payload(
 ) -> dict[str, Any]:
     """Build the rubric payload for nightly/pre-deploy LLM-as-judge scoring."""
 
+    scoring_instruction = (
+        "Score whether the coach response is tactically correct for this "
+        "athlete, meets or beats the baseline answer's utility, and serves "
+        "the outcome dimension. Do not reward contract shape by itself."
+    )
+    if case.get("eval_schema_version") == "artifact7.v1":
+        scoring_instruction = (
+            scoring_instruction
+            + " Also score voice_alignment from 1-5 against baseline_voice, "
+            "baseline_citation, and the locked Artifact 6 voice rules; reward "
+            "athlete-specific coaching posture, not mimicry or catchphrases."
+        )
+
     payload = {
         "case_id": case.get("id"),
         "domain": case.get("domain"),
@@ -435,11 +463,7 @@ def build_tier3_judge_payload(
         "outcome_dimension": case.get("outcome_dimension"),
         "failure_severity": case.get("failure_severity"),
         "coach_response": assistant_text,
-        "scoring_instruction": (
-            "Score whether the coach response is tactically correct for this "
-            "athlete, meets or beats the baseline answer's utility, and serves "
-            "the outcome dimension. Do not reward contract shape by itself."
-        ),
+        "scoring_instruction": scoring_instruction,
     }
     if case.get("eval_schema_version") == "artifact7.v1":
         payload.update(

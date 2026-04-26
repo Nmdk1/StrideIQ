@@ -34,6 +34,7 @@ def _artifact7_case(coach_eval_cases):
             },
             "artifact5_mode": "engage_and_reason",
             "source_replay_type": "founder_curated",
+            "failure_modes": ["FM-009"],
         }
     )
     return case
@@ -88,6 +89,7 @@ def test_artifact7_case_validates_with_voice_citation_and_mode(coach_eval_cases)
         ("baseline_citation", "missing_field:baseline_citation"),
         ("artifact5_mode", "missing_field:artifact5_mode"),
         ("source_replay_type", "missing_field:source_replay_type"),
+        ("failure_modes", "missing_field:failure_modes"),
     ],
 )
 def test_artifact7_missing_required_fields_fail(coach_eval_cases, field, expected_failure):
@@ -196,6 +198,24 @@ def test_artifact7_invalid_source_replay_type_fails_validation(coach_eval_cases)
     assert "invalid_source_replay_type:memory" in failures
 
 
+def test_artifact7_failure_modes_must_be_non_empty_list(coach_eval_cases):
+    case = _artifact7_case(coach_eval_cases)
+    case["failure_modes"] = []
+
+    failures = validate_real_coach_case(case)
+
+    assert "invalid_list_field:failure_modes" in failures
+
+
+def test_artifact7_invalid_failure_mode_fails_validation(coach_eval_cases):
+    case = _artifact7_case(coach_eval_cases)
+    case["failure_modes"] = ["FM-024"]
+
+    failures = validate_real_coach_case(case)
+
+    assert "invalid_failure_mode:FM-024" in failures
+
+
 def test_unknown_eval_schema_version_fails_validation(coach_eval_cases):
     case = dict(coach_eval_cases[0])
     case["eval_schema_version"] = "future.v1"
@@ -289,6 +309,8 @@ def test_artifact7_tier3_payload_includes_voice_context(coach_eval_cases):
     assert payload["baseline_citation"] == case["baseline_citation"]
     assert payload["artifact5_mode"] == "pushback"
     assert payload["source_replay_type"] == "founder_curated"
+    assert "voice_alignment" in payload["scoring_instruction"]
+    assert "baseline_voice" in payload["scoring_instruction"]
 
 
 def test_phase8_summary_reports_per_domain_scores(coach_eval_cases):
