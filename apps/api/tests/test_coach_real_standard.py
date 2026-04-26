@@ -136,6 +136,36 @@ def test_artifact7_missing_reference_doc_fails_validation(coach_eval_cases):
     assert "missing_reference_doc:MISSING_COACH_REFERENCE.md" in failures
 
 
+def test_artifact7_baseline_citation_must_be_mapping(coach_eval_cases):
+    case = _artifact7_case(coach_eval_cases)
+    case["baseline_citation"] = "GREEN_COACHING_PHILOSOPHY_EXPANDED_2026-04-10.md#section"
+
+    failures = validate_real_coach_case(case)
+
+    assert "invalid_baseline_citation" in failures
+
+
+def test_artifact7_baseline_citation_doc_required(coach_eval_cases):
+    case = _artifact7_case(coach_eval_cases)
+    case["baseline_citation"] = {"doc": "", "section": "1. Plans Written in Pencil"}
+
+    failures = validate_real_coach_case(case)
+
+    assert "missing_baseline_citation_doc" in failures
+
+
+def test_artifact7_baseline_citation_section_required(coach_eval_cases):
+    case = _artifact7_case(coach_eval_cases)
+    case["baseline_citation"] = {
+        "doc": "GREEN_COACHING_PHILOSOPHY_EXPANDED_2026-04-10.md",
+        "section": "",
+    }
+
+    failures = validate_real_coach_case(case)
+
+    assert "missing_baseline_citation_section" in failures
+
+
 def test_artifact7_missing_reference_section_fails_validation(coach_eval_cases):
     case = _artifact7_case(coach_eval_cases)
     case["baseline_citation"] = {
@@ -172,7 +202,7 @@ def test_unknown_eval_schema_version_fails_validation(coach_eval_cases):
 
     failures = validate_real_coach_case(case)
 
-    assert "unknown_schema_version:future.v1" in failures
+    assert failures == ("unknown_schema_version:future.v1",)
 
 
 def test_phase8_includes_2026_04_25_5k_dispute_trajectory(coach_eval_cases):
