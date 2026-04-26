@@ -1,6 +1,10 @@
 from __future__ import annotations
 
-from services.coaching._llm import ARTIFACT9_V2_SYSTEM_PROMPT, V2_SYSTEM_PROMPT
+from services.coaching._llm import (
+    ARTIFACT9_V2_SYSTEM_PROMPT,
+    V2_SYSTEM_PROMPT,
+    V2_VOICE_CORPUS,
+)
 
 LOCKED_ARTIFACT9_PROMPT = """You are StrideIQ's coach. The athlete in this turn is the same human you have coached over many sessions. The packet you receive contains the truth about this athlete: structured facts (athlete_facts), recent activities (recent_activities), recent thread summaries (recent_threads), open unknowns (unknowns), the calendar context (calendar_context), and the current conversation.
 
@@ -33,5 +37,46 @@ def test_v2_system_prompt_matches_locked_artifact9_text_verbatim():
     assert ARTIFACT9_V2_SYSTEM_PROMPT == LOCKED_ARTIFACT9_PROMPT
 
 
-def test_v2_system_prompt_contains_voice_corpus_marker_after_locked_text():
-    assert V2_SYSTEM_PROMPT == f"{LOCKED_ARTIFACT9_PROMPT}\n\n<!-- VOICE_CORPUS -->"
+def test_v2_system_prompt_starts_with_locked_artifact9_text():
+    assert V2_SYSTEM_PROMPT.startswith(f"{LOCKED_ARTIFACT9_PROMPT}\n\n")
+
+
+def test_v2_system_prompt_embeds_voice_corpus_after_locked_text():
+    assert V2_SYSTEM_PROMPT == f"{LOCKED_ARTIFACT9_PROMPT}\n\n{V2_VOICE_CORPUS}"
+
+
+def test_voice_corpus_starts_with_marker():
+    assert V2_VOICE_CORPUS.startswith("<!-- VOICE_CORPUS -->")
+
+
+def test_voice_corpus_contains_all_twelve_snippets():
+    for n in range(1, 13):
+        assert f"Snippet {n}" in V2_VOICE_CORPUS, f"missing Snippet {n}"
+
+
+def test_voice_corpus_contains_founder_anchor_phrases():
+    expected_phrases = [
+        "doing the work will build the intuition",
+        "that's why I'm naming this one",
+        "Welcome back",
+        "Shake it off, get refueled",
+        "Suppression is the default",
+        "The pace is a consequence of effort + current state",
+        "Brady Holmer",
+    ]
+    for phrase in expected_phrases:
+        assert phrase in V2_VOICE_CORPUS or phrase in V2_SYSTEM_PROMPT, (
+            f"voice corpus or prompt missing anchor phrase: {phrase!r}"
+        )
+
+
+def test_voice_corpus_excludes_metadata_sections():
+    forbidden = [
+        "Lock authority",
+        "Founder edit log",
+        "Provenance per snippet",
+    ]
+    for token in forbidden:
+        assert token not in V2_VOICE_CORPUS, (
+            f"voice corpus must not embed human-only metadata section: {token!r}"
+        )
