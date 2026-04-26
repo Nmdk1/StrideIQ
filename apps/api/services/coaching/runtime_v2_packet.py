@@ -9,7 +9,10 @@ from uuid import UUID, uuid4
 from sqlalchemy.orm import Session
 
 from models import Activity, ActivitySplit, TrainingPlan
+from services.coaching.ledger import VALID_FACT_FIELDS, get_ledger
+from services.coaching.recent_activities_block import compute_recent_activities
 from services.coaching.runtime_v2 import PACKET_SCHEMA_VERSION
+from services.coaching.thread_lifecycle import recent_threads_block
 from services.coaching.unknowns_block import compute_unknowns, detect_query_class
 from services.timezone_utils import (
     athlete_local_today,
@@ -19,6 +22,7 @@ from services.timezone_utils import (
 
 ASSEMBLER_VERSION = "coach_runtime_v2_0_a_packet_assembler_001"
 MODE_CLASSIFIER_VERSION = "coach_mode_classifier_v2_0_a"
+LEDGER_COVERAGE_SHIM_THRESHOLD = 0.5
 
 ARTIFACT5_MODES = (
     "observe_and_ask",
@@ -59,6 +63,63 @@ def _utc_now_iso() -> str:
 def _estimated_tokens(value: Any) -> int:
     text = json.dumps(value, ensure_ascii=True, sort_keys=True, default=str)
     return max(1, len(text) // 4)
+
+
+def _empty_recent_activities(generated_at: str) -> dict[str, Any]:
+    return {
+        "schema_version": "coach_runtime_v2.recent_activities.v1",
+        "status": "unavailable",
+        "generated_at": generated_at,
+        "window_days": 14,
+        "ordered": "most_recent_first",
+        "data": {"recent_activities": [], "aggregates": {}},
+        "token_budget": {
+            "target_tokens": 1500,
+            "max_tokens": 2500,
+            "estimated_tokens": 1,
+        },
+        "provenance": [],
+        "unknowns": [
+            {
+                "field": "recent_activities",
+                "reason": "db_unavailable",
+                "suggested_question": "What recent session should I anchor this answer to?",
+            }
+        ],
+    }
+
+
+def _empty_recent_threads() -> dict[str, Any]:
+    return {
+        "schema_version": "coach_runtime_v2.recent_threads.v1",
+        "status": "unavailable",
+        "recent_threads": [],
+        "token_budget": {"max_tokens": 2000, "estimated_tokens": 1},
+    }
+
+
+def _athlete_facts_payload(db: Session | None, athlete_id: UUID) -> dict[str, Any]:
+    if db is None:
+        return {}
+    try:
+        payload = (
+            get_ledger(db, athlete_id, create=False, redact_sensitive=True).payload
+            or {}
+        )
+        return payload if isinstance(payload, dict) else {}
+    except Exception:
+        return {}
+
+
+def _ledger_field_coverage(facts: dict[str, Any]) -> float:
+    if not VALID_FACT_FIELDS:
+        return 0.0
+    populated = sum(
+        1
+        for field in VALID_FACT_FIELDS
+        if (facts.get(field) or {}).get("value") is not None
+    )
+    return round(populated / len(VALID_FACT_FIELDS), 3)
 
 
 def _relative_date(target: date, today: date) -> str:
@@ -1224,14 +1285,23 @@ def assemble_v2_packet(
         conversation_mode.get("query_class") or "general",
         now_utc=now_utc,
     )
+    athlete_facts = _athlete_facts_payload(db, athlete_id)
+    ledger_field_coverage = _ledger_field_coverage(athlete_facts)
+    recent_activities = (
+        compute_recent_activities(db, athlete_id, now_utc=now_utc)
+        if db is not None
+        else _empty_recent_activities(generated_at)
+    )
+    recent_threads = (
+        recent_threads_block(db, athlete_id)
+        if db is not None
+        else _empty_recent_threads()
+    )
     legacy_context, removed_temporal_lines_count = quiet_legacy_context_bridge(
         (legacy_athlete_state or "").strip()
     )
-    if not legacy_context:
-        legacy_context = (
-            "Legacy bridge intentionally quieted for V2.0-a because all temporal, "
-            "race, and current-day facts must come from structured packet blocks."
-        )
+    if ledger_field_coverage >= LEDGER_COVERAGE_SHIM_THRESHOLD or not legacy_context:
+        legacy_context = ""
 
     data = {
         "conversation": {
@@ -1242,18 +1312,20 @@ def assemble_v2_packet(
         "calendar_context": calendar_context["data"],
         "activity_evidence_state": activity_evidence["data"],
         "training_adaptation_context": training_adaptation_context["data"],
+        "athlete_facts": athlete_facts,
+        "recent_activities": recent_activities["data"],
+        "recent_threads": recent_threads["recent_threads"],
         "unknowns": unknowns,
-        "athlete_context": {
+        "_legacy_context_bridge_deprecated": {
             "legacy_context_bridge": legacy_context[:12000],
             "bridge_note": (
-                "Temporary V2.0-a bridge: deterministic packet carries precomputed "
-                "V1 athlete state with temporal/race/current-day prose removed. "
-                "The calendar_context block is authoritative for dates and races. "
-                "The activity_evidence_state and training_adaptation_context blocks "
-                "are authoritative for recent effort mix and taper-fitness interpretation. "
-                "LLM tools are disabled."
+                "Deprecated shim only. Structured athlete_facts, recent_activities, "
+                "recent_threads, unknowns, calendar_context, and current_turn are the "
+                "primary athlete state. Empty when ledger coverage is at or above "
+                f"{LEDGER_COVERAGE_SHIM_THRESHOLD:.0%}."
             ),
             "removed_temporal_lines_count": removed_temporal_lines_count,
+            "ledger_field_coverage": ledger_field_coverage,
         },
     }
     token_estimate = _estimated_tokens(data)
@@ -1429,61 +1501,140 @@ def assemble_v2_packet(
                     "estimated_tokens": _estimated_tokens(data["unknowns"]),
                 },
             },
-            "athlete_context": {
-                "schema_version": "coach_runtime_v2.block.athlete_context.v1",
-                "status": "partial",
+            "athlete_facts": {
+                "schema_version": "coach_runtime_v2.block.athlete_facts.v1",
+                "status": "complete" if data["athlete_facts"] else "partial",
                 "generated_at": generated_at,
                 "as_of": generated_at,
-                "selected_sections": ["legacy_context_bridge"],
-                "available_sections": ["legacy_context_bridge"],
-                "data": data["athlete_context"],
+                "selected_sections": ["athlete_fact_ledger"],
+                "available_sections": ["athlete_fact_ledger"],
+                "data": data["athlete_facts"],
                 "completeness": [
                     {
-                        "section": "tier1_native_state",
-                        "status": "partial",
+                        "section": "athlete_fact_ledger",
+                        "status": (
+                            "complete"
+                            if ledger_field_coverage >= LEDGER_COVERAGE_SHIM_THRESHOLD
+                            else "partial"
+                        ),
                         "coverage_start": None,
-                        "coverage_end": None,
-                        "expected_window": "V2.0-a first visible slice",
-                        "detail": "Native Tier 1 modules are not all cut over; packet uses deterministic legacy context bridge without exposing tools to the LLM.",
+                        "coverage_end": generated_at,
+                        "expected_window": "durable athlete-stated and derived facts",
+                        "detail": "Artifact 9 ledger facts; athlete_stated confidence wins over derived facts.",
                     }
                 ],
                 "unknowns": [],
                 "provenance": [
                     {
-                        "field_path": "blocks.athlete_context.data.legacy_context_bridge",
+                        "field_path": "blocks.athlete_facts.data",
+                        "source_system": "athlete_facts_ledger",
+                        "source_id": str(athlete_id),
+                        "source_timestamp": generated_at,
+                        "observed_at": generated_at,
+                        "confidence": "high",
+                        "derivation_chain": ["athlete_facts.payload"],
+                    }
+                ],
+                "token_budget": {
+                    "target_tokens": 900,
+                    "max_tokens": 1600,
+                    "estimated_tokens": _estimated_tokens(data["athlete_facts"]),
+                },
+            },
+            "recent_activities": {
+                "schema_version": recent_activities["schema_version"],
+                "status": recent_activities["status"],
+                "generated_at": generated_at,
+                "as_of": generated_at,
+                "selected_sections": ["recent_activity_atoms", "four_week_aggregates"],
+                "available_sections": ["recent_activity_atoms", "four_week_aggregates"],
+                "data": data["recent_activities"],
+                "completeness": [],
+                "unknowns": recent_activities["unknowns"],
+                "provenance": recent_activities["provenance"],
+                "token_budget": recent_activities["token_budget"],
+            },
+            "recent_threads": {
+                "schema_version": recent_threads["schema_version"],
+                "status": recent_threads["status"],
+                "generated_at": generated_at,
+                "as_of": generated_at,
+                "selected_sections": ["closed_thread_summaries"],
+                "available_sections": ["closed_thread_summaries"],
+                "data": data["recent_threads"],
+                "completeness": [],
+                "unknowns": [],
+                "provenance": [
+                    {
+                        "field_path": "blocks.recent_threads.data",
+                        "source_system": "coach_thread_summary",
+                        "source_id": str(athlete_id),
+                        "source_timestamp": generated_at,
+                        "observed_at": generated_at,
+                        "confidence": "high",
+                        "derivation_chain": ["coach_thread_summary"],
+                    }
+                ],
+                "token_budget": recent_threads["token_budget"],
+            },
+            "_legacy_context_bridge_deprecated": {
+                "schema_version": "coach_runtime_v2.block.legacy_context_bridge_deprecated.v1",
+                "status": "empty" if not legacy_context else "deprecated_fallback",
+                "generated_at": generated_at,
+                "as_of": generated_at,
+                "selected_sections": ["deprecated_legacy_context_bridge"],
+                "available_sections": ["deprecated_legacy_context_bridge"],
+                "data": data["_legacy_context_bridge_deprecated"],
+                "completeness": [],
+                "unknowns": [],
+                "provenance": [
+                    {
+                        "field_path": "blocks._legacy_context_bridge_deprecated.data.legacy_context_bridge",
                         "source_system": "deterministic_computation",
                         "source_id": None,
                         "source_timestamp": generated_at,
                         "observed_at": generated_at,
-                        "confidence": "medium",
+                        "confidence": "low",
                         "derivation_chain": [
                             "AICoach._build_athlete_state_for_opus",
-                            "packet_bridge",
+                            "deprecated_packet_shim",
                         ],
                     }
                 ],
                 "token_budget": {
-                    "target_tokens": 1800,
-                    "max_tokens": 3200,
-                    "estimated_tokens": _estimated_tokens(data["athlete_context"]),
+                    "target_tokens": 0 if not legacy_context else 600,
+                    "max_tokens": 0 if not legacy_context else 1200,
+                    "estimated_tokens": _estimated_tokens(
+                        data["_legacy_context_bridge_deprecated"]
+                    ),
                 },
             },
         },
         "omitted_blocks": [],
         "telemetry": {
             "estimated_tokens": token_estimate,
-            "packet_block_count": 6,
+            "packet_block_count": 9,
             "omitted_block_count": 0,
             "unknown_count": (
                 len(calendar_context["unknowns"])
                 + len(activity_evidence["unknowns"])
                 + len(training_adaptation_context["unknowns"])
+                + len(recent_activities["unknowns"])
                 + len(unknowns)
             ),
+            "unknowns_count": len(unknowns),
             "permission_redaction_count": 0,
             "coupling_count": 1,
             "multimodal_attachment_count": 0,
             "temporal_bridge_lines_removed": removed_temporal_lines_count,
+            "ledger_field_coverage": ledger_field_coverage,
+            "anchor_atoms_per_answer": None,
+            "unasked_surfacing": None,
+            "template_phrase_count": 0,
+            "generic_fallback_count": 0,
+            "model": None,
+            "thinking": "enabled_for_kimi_k2_6",
+            "voice_alignment_judge_score": None,
         },
     }
     if token_estimate > 5000:

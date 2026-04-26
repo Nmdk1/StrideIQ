@@ -30,6 +30,7 @@ from services.coaching.runtime_v2_packet import (
     extract_same_turn_overrides,
 )
 from services.coaching import runtime_v2
+from services.coaching import runtime_v2_packet as packet_module
 from routers.ai_coach import ChatResponse
 
 
@@ -308,6 +309,10 @@ async def test_visible_mode_uses_v2_packet_path_when_success(monkeypatch):
         "runtime_mode": RUNTIME_MODE_VISIBLE,
         "fallback_reason": None,
         "template_phrase_count": 0,
+        "anchor_atoms_per_answer": 0,
+        "unasked_surfacing": False,
+        "ledger_field_coverage": 0.0,
+        "unknowns_count": 0,
     }
 
 
@@ -596,11 +601,45 @@ def test_v2_packet_assembler_builds_packet_without_raw_tools():
 
     assert packet["schema_version"] == "coach_runtime_v2.packet.v1"
     assert packet["conversation_mode"]["primary"] == "racing_preparation_judgment"
-    assert packet["telemetry"]["packet_block_count"] == 6
+    assert packet["telemetry"]["packet_block_count"] == 9
     assert "activity_evidence_state" in packet["blocks"]
     assert "training_adaptation_context" in packet["blocks"]
+    assert "athlete_facts" in packet["blocks"]
+    assert "recent_activities" in packet["blocks"]
+    assert "recent_threads" in packet["blocks"]
     assert "unknowns" in packet["blocks"]
+    assert "athlete_context" not in packet["blocks"]
+    assert "_legacy_context_bridge_deprecated" in packet["blocks"]
     assert "tools" not in packet
+
+
+def test_v2_packet_empties_deprecated_legacy_shim_when_ledger_coverage_high(
+    monkeypatch,
+):
+    facts = {
+        field: {
+            "value": f"value:{field}",
+            "confidence": "athlete_stated",
+            "source": "test",
+            "asserted_at": "2026-04-26T12:00:00+00:00",
+        }
+        for field in packet_module.VALID_FACT_FIELDS
+    }
+    monkeypatch.setattr(
+        packet_module, "_athlete_facts_payload", lambda db, athlete_id: facts
+    )
+
+    packet = assemble_v2_packet(
+        athlete_id=uuid4(),
+        message="Should I race?",
+        conversation_context=[],
+        legacy_athlete_state="LEGACY STATE THAT SHOULD NOT BE PRIMARY",
+    )
+
+    shim = packet["blocks"]["_legacy_context_bridge_deprecated"]
+    assert shim["status"] == "empty"
+    assert shim["data"]["legacy_context_bridge"] == ""
+    assert packet["telemetry"]["ledger_field_coverage"] == 1.0
 
 
 def test_v2_packet_calendar_context_is_authoritative_and_quiets_bridge():
@@ -679,7 +718,9 @@ def test_v2_packet_calendar_context_is_authoritative_and_quiets_bridge():
     )
 
     calendar = packet["blocks"]["calendar_context"]["data"]
-    bridge = packet["blocks"]["athlete_context"]["data"]["legacy_context_bridge"]
+    bridge = packet["blocks"]["_legacy_context_bridge_deprecated"]["data"][
+        "legacy_context_bridge"
+    ]
     assert calendar["today_local"] == today.isoformat()
     assert calendar["today_has_completed_activity"] is False
     assert calendar["today_has_completed_race"] is False

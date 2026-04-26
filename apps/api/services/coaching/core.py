@@ -12,6 +12,32 @@ from sqlalchemy.orm import Session
 
 logger = logging.getLogger(__name__)
 
+
+def _count_anchor_atoms(response_text: str) -> int:
+    text = response_text or ""
+    patterns = (
+        r"\b(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday)'?s\b",
+        r"\b\d{4}-\d{2}-\d{2}\b",
+        r"\b\d+(?:\.\d+)?\s*(?:mpw|miles?|mi|k)\b",
+        r"\b(?:you said|last time we talked|three weeks ago|prior thread)\b",
+        r"\b(?:cut|injury|pace zones|threshold|race)\b",
+    )
+    return sum(
+        1 for pattern in patterns if re.search(pattern, text, flags=re.IGNORECASE)
+    )
+
+
+def _detect_unasked_surfacing(response_text: str) -> bool:
+    text = response_text or ""
+    return bool(
+        re.search(
+            r"\b(One thing|I'd flag|Worth noting|I notice|Pattern I see|Risk here)\b",
+            text,
+            flags=re.IGNORECASE,
+        )
+    )
+
+
 from services.coaching._constants import (  # noqa: E402
     HighStakesSignal,
     HIGH_STAKES_PATTERNS,
@@ -1167,6 +1193,8 @@ Policy:
                     packet_telemetry["template_phrase_count"] = int(
                         result.get("template_phrase_count") or 0
                     )
+                    packet_telemetry["model"] = result.get("model")
+                    packet_telemetry["thinking"] = result.get("thinking")
                     if result.get("error"):
                         packet_telemetry["deterministic_check_status"] = "skipped"
                         demote_visible_to_fallback(
@@ -1240,8 +1268,26 @@ Policy:
                 result["response"] = guarded_response
                 runtime_metadata = runtime_state.as_metadata()
                 if served_by_v2:
+                    packet_telemetry["anchor_atoms_per_answer"] = _count_anchor_atoms(
+                        guarded_response
+                    )
+                    packet_telemetry["unasked_surfacing"] = _detect_unasked_surfacing(
+                        guarded_response
+                    )
                     runtime_metadata["template_phrase_count"] = int(
                         result.get("template_phrase_count") or 0
+                    )
+                    runtime_metadata["anchor_atoms_per_answer"] = packet_telemetry[
+                        "anchor_atoms_per_answer"
+                    ]
+                    runtime_metadata["unasked_surfacing"] = packet_telemetry[
+                        "unasked_surfacing"
+                    ]
+                    runtime_metadata["ledger_field_coverage"] = packet_telemetry.get(
+                        "ledger_field_coverage"
+                    )
+                    runtime_metadata["unknowns_count"] = packet_telemetry.get(
+                        "unknowns_count"
                     )
                 self._save_chat_messages(
                     athlete_id,
