@@ -210,7 +210,13 @@ async def test_flags_off_chat_is_v1_passthrough_with_metadata(monkeypatch):
     import services.consent as consent_module
 
     coach = _coach_with_v1_path()
+    extract_spy = AsyncMock(return_value=[])
     monkeypatch.setattr(consent_module, "has_ai_consent", lambda athlete_id, db: True)
+    monkeypatch.setattr(
+        coach_core,
+        "extract_facts_from_turn_with_optional_llm",
+        extract_spy,
+    )
     monkeypatch.setattr(
         coach_core,
         "resolve_coach_runtime_v2_state",
@@ -230,6 +236,7 @@ async def test_flags_off_chat_is_v1_passthrough_with_metadata(monkeypatch):
     assert result["fallback_reason"] is None
     coach._query_kimi_with_fallback.assert_awaited_once()
     coach.query_opus.assert_not_awaited()
+    extract_spy.assert_not_awaited()
     _, kwargs = coach._save_chat_messages.call_args
     assert kwargs["runtime_metadata"] == {
         "runtime_version": RUNTIME_VERSION_V1,
@@ -267,7 +274,16 @@ async def test_visible_mode_uses_v2_packet_path_when_success(monkeypatch):
     import services.consent as consent_module
 
     coach = _coach_with_v1_path()
+    proposed_fact = SimpleNamespace(field="age", value=57)
+    extract_spy = AsyncMock(return_value=[proposed_fact])
+    persist_spy = MagicMock(return_value=[])
     monkeypatch.setattr(consent_module, "has_ai_consent", lambda athlete_id, db: True)
+    monkeypatch.setattr(
+        coach_core,
+        "extract_facts_from_turn_with_optional_llm",
+        extract_spy,
+    )
+    monkeypatch.setattr(coach_core, "persist_proposed_facts", persist_spy)
     monkeypatch.setattr(
         coach_core,
         "resolve_coach_runtime_v2_state",
@@ -283,6 +299,9 @@ async def test_visible_mode_uses_v2_packet_path_when_success(monkeypatch):
     coach.query_kimi_v2_packet.assert_awaited_once()
     coach._query_kimi_with_fallback.assert_not_awaited()
     coach._finalize_response_with_turn_guard.assert_not_awaited()
+    extract_spy.assert_awaited_once()
+    persist_spy.assert_called_once()
+    coach.db.commit.assert_called_once()
     _, kwargs = coach._save_chat_messages.call_args
     assert kwargs["runtime_metadata"] == {
         "runtime_version": RUNTIME_VERSION_V2,
@@ -536,6 +555,34 @@ def test_v2_mode_classifier_uses_locked_modes_and_precedence():
     assert mode["source"] == "deterministic_mode_classifier"
     assert mode["classifier_version"] == "coach_mode_classifier_v2_0_a"
     assert mode["screen_privacy"]["framing"] in ("direct", "adjacent", "elsewhere")
+
+
+def test_same_turn_overrides_carry_value_and_duration_not_boolean():
+    overrides = extract_same_turn_overrides(
+        "That's wrong. No population models. The 3.1 mile run was a race."
+    )
+
+    assert overrides
+    assert all(
+        not isinstance(override["override_value"], bool) for override in overrides
+    )
+    by_path = {override["field_path"]: override for override in overrides}
+    assert by_path["correction.current_turn"]["override_value"] == {
+        "value": {
+            "athlete_statement": "That's wrong. No population models. The 3.1 mile run was a race."
+        },
+        "duration": "current_turn",
+    }
+    assert (
+        by_path["standing_overrides.coaching_boundary"]["override_value"]["duration"]
+        == "standing"
+    )
+    assert (
+        by_path["activity_classification_override.recent_activity"]["override_value"][
+            "value"
+        ]["classification"]
+        == "race_effort"
+    )
 
 
 def test_v2_packet_assembler_builds_packet_without_raw_tools():

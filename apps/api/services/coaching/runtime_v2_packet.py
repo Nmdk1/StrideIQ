@@ -321,6 +321,19 @@ def _parse_execution_quality_override(message: str) -> dict[str, Any] | None:
     }
 
 
+def _override_value(value: Any, *, duration: str) -> dict[str, Any]:
+    return {
+        "value": value,
+        "duration": duration,
+    }
+
+
+def _unwrap_override_value(override_value: Any) -> Any:
+    if isinstance(override_value, dict) and "value" in override_value:
+        return override_value.get("value")
+    return override_value
+
+
 def _activity_summary(
     activity: Activity, *, today: date, athlete_tz: Any
 ) -> dict[str, Any]:
@@ -873,31 +886,52 @@ def extract_same_turn_overrides(message: str) -> list[dict[str, Any]]:
         (
             "subjective_state.fatigue",
             ("i'm tired", "im tired", "i am tired", "fatigued", "exhausted"),
+            "current_turn",
         ),
         (
             "subjective_state.pain",
             ("pain", "hurts", "sore", "niggle", "calf", "knee", "achilles"),
+            "current_turn",
         ),
         (
             "correction.current_turn",
             ("that's wrong", "that is wrong", "not true", "actually", "you missed"),
+            "current_turn",
         ),
         (
             "race_context.current_turn",
             ("race today", "race day", "racing today", "5k today", "marathon today"),
+            "current_turn",
+        ),
+        (
+            "standing_overrides.coaching_boundary",
+            (
+                "no population models",
+                "don't operate on population models",
+                "do not operate on population models",
+                "no fueling advice",
+                "don't give me fueling advice",
+                "do not give me fueling advice",
+                "only do trap bar deadlifts",
+                "my recovery is much faster",
+            ),
+            "standing",
         ),
     )
-    for field_path, triggers in patterns:
+    for field_path, triggers, duration in patterns:
         if any(trigger in lower for trigger in triggers):
             overrides.append(
                 {
                     "field_path": field_path,
-                    "override_value": True,
+                    "override_value": _override_value(
+                        {"athlete_statement": message},
+                        duration=duration,
+                    ),
                     "athlete_statement": message,
                     "extracted_at": extracted_at,
                     "extractor_version": "coach_same_turn_extractor_v2_0_a",
                     "confidence": "high",
-                    "expires": "current_turn",
+                    "expires": duration,
                     "provenance": [
                         {
                             "field_path": field_path,
@@ -916,7 +950,10 @@ def extract_same_turn_overrides(message: str) -> list[dict[str, Any]]:
         overrides.append(
             {
                 "field_path": field_path,
-                "override_value": activity_override,
+                "override_value": _override_value(
+                    activity_override,
+                    duration="current_turn",
+                ),
                 "athlete_statement": message,
                 "extracted_at": extracted_at,
                 "extractor_version": "coach_same_turn_extractor_v2_0_a",
@@ -940,7 +977,10 @@ def extract_same_turn_overrides(message: str) -> list[dict[str, Any]]:
         overrides.append(
             {
                 "field_path": field_path,
-                "override_value": execution_override,
+                "override_value": _override_value(
+                    execution_override,
+                    duration="current_turn",
+                ),
                 "athlete_statement": message,
                 "extracted_at": extracted_at,
                 "extractor_version": "coach_same_turn_extractor_v2_0_a",
@@ -1150,7 +1190,7 @@ def assemble_v2_packet(
     )
     activity_override = next(
         (
-            override["override_value"]
+            _unwrap_override_value(override["override_value"])
             for override in same_turn_overrides
             if override["field_path"]
             == "activity_classification_override.recent_activity"
@@ -1159,7 +1199,7 @@ def assemble_v2_packet(
     )
     execution_override = next(
         (
-            override["override_value"]
+            _unwrap_override_value(override["override_value"])
             for override in same_turn_overrides
             if override["field_path"] == "execution_quality_override.recent_activity"
         ),

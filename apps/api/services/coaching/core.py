@@ -44,6 +44,10 @@ from services.coaching.runtime_v2_packet import (  # noqa: E402
     V2PacketInvariantError,
     assemble_v2_packet,
 )
+from services.coaching.ledger_extraction import (  # noqa: E402
+    extract_facts_from_turn_with_optional_llm,
+    persist_proposed_facts,
+)
 
 try:
     from anthropic import Anthropic
@@ -1121,6 +1125,14 @@ Policy:
             served_by_v2 = False
             if runtime_state.runtime_mode == RUNTIME_MODE_VISIBLE:
                 try:
+                    proposed_facts = await extract_facts_from_turn_with_optional_llm(
+                        athlete_id,
+                        message,
+                        source=f"turn_id:{turn_id}",
+                    )
+                    if proposed_facts:
+                        persist_proposed_facts(self.db, athlete_id, proposed_facts)
+                        self.db.commit()
                     packet_started_at = perf_counter()
                     packet = assemble_v2_packet(
                         athlete_id=athlete_id,
