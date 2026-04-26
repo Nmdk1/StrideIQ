@@ -35,6 +35,7 @@ ASSEMBLER_VERSION = "coach_runtime_v2_0_a_packet_assembler_001"
 MODE_CLASSIFIER_VERSION = "coach_mode_classifier_v2_0_a"
 LEDGER_COVERAGE_SHIM_THRESHOLD = 0.5
 LEGACY_CONTEXT_BRIDGE_MAX_CHARS = 3000
+ACTIVITY_EVIDENCE_RECENT_ROWS_LIMIT = 4
 
 logger = logging.getLogger(__name__)
 
@@ -644,7 +645,7 @@ def build_activity_evidence_state(
         "status": "complete",
         "generated_at": generated_at,
         "data": {
-            "recent_activities": rows[:8],
+            "recent_activities": rows[:ACTIVITY_EVIDENCE_RECENT_ROWS_LIMIT],
             "activity_classification_override": activity_override,
             "execution_quality_override": execution_override,
             "yesterday": {
