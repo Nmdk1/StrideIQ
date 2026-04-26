@@ -1,0 +1,348 @@
+[
+  {
+    "eval_schema_version": "artifact7.v1",
+    "id": "nutrition_cheerlead_sarcastic_intake",
+    "domain": "nutrition_fueling",
+    "case_type": "adversarial",
+    "artifact5_mode": "pushback",
+    "source_replay_type": "founder_curated",
+    "failure_modes": ["FM-009"],
+    "situation": {
+      "athlete_state": "athlete on aggressive cut, marathon roughly three weeks out, recent gut-flare history, zero exercise day in progress",
+      "context": "athlete describes a breakfast using sarcastic framing ('really healthy') that the coach must read against the cut and the zero-exercise day rather than take at face value"
+    },
+    "conversation_turns": [
+      {"role": "athlete", "content": "my breakfast was really healthy...i had the leftover 3/4 burrito from supper last night and three homemade oatmeal cookies with peanut butter and a cup of milk"}
+    ],
+    "user_message": "my breakfast was really healthy...i had the leftover 3/4 burrito from supper last night and three homemade oatmeal cookies with peanut butter and a cup of milk",
+    "required_context": [
+      "athlete is on an aggressive cut",
+      "race is roughly three weeks out",
+      "today is a zero exercise day",
+      "recent gut-flare in the last 24 hours",
+      "burrito plus three cookies plus peanut butter plus milk is high-calorie and high-fat-and-fiber on a deficit day"
+    ],
+    "expected_coaching_truths": [
+      {
+        "id": "name_offplan_stack",
+        "description": "Coach names the cookies plus peanut butter plus milk component as off-plan rather than as 'disciplined fueling'.",
+        "must_include_all": ["cookies"],
+        "must_include_any": ["off-plan", "off plan", "garbage", "undermines", "deficit", "extra calories", "not in the cut", "not aligned"]
+      },
+      {
+        "id": "differentiate_meal_components",
+        "description": "Coach does not lump the meal as uniformly good. The leftover burrito half is fine; the cookie stack is not.",
+        "must_include_all": ["burrito"],
+        "must_include_any": ["cookies", "peanut butter", "milk"]
+      },
+      {
+        "id": "honor_athlete_implicit_signal",
+        "description": "Athlete's framing is performative; coach reads the implicit criticism rather than reinforcing the surface praise.",
+        "must_include_any": ["you know", "calling it", "honest read", "what it is"]
+      }
+    ],
+    "retrieved_evidence_expected": [
+      {
+        "tool": "athlete_facts",
+        "must_include": ["cut_active.flag=true"],
+        "reason": "the active deficit determines whether the cookie stack is off-plan"
+      },
+      {
+        "tool": "recent_activities",
+        "must_include": ["today_planned=rest"],
+        "reason": "today's zero-exercise plan determines whether the calories sit on top of the deficit"
+      },
+      {
+        "tool": "athlete_facts",
+        "must_include": ["gut_sensitivity.flag=true"],
+        "reason": "recent gut-flare changes the read of fat plus fiber plus lactose load before the next run"
+      }
+    ],
+    "data_advantage_must_include": [
+      "names cut_active and the target deficit context from the ledger",
+      "names today as a planned zero-exercise/rest day from recent_activities",
+      "names the gut-sensitivity flag and its implication for the next run",
+      "names the marathon roughly three weeks out as the reason fueling discipline matters now",
+      "differentiates the burrito component from the cookies/peanut-butter/milk stack as separate fueling decisions"
+    ],
+    "bad_coaching_patterns": [
+      "solid and practical",
+      "disciplined fueling",
+      "real food, controlled",
+      "calorie-dense enough to fuel the day",
+      "no guilt",
+      "healthy in the way that matters",
+      "natural sweetness without junk",
+      "great for satiety and muscle repair"
+    ],
+    "excellent_answer_traits": [
+      "differentiates the burrito half from the cookies plus peanut butter plus milk stack",
+      "names the cut and the zero-exercise day as the reason the cookie stack is off-plan",
+      "names the gut-flare risk of fat plus fiber plus lactose load before a near-term run",
+      "calls the slip without moralizing and gives a concrete next-meal anchor",
+      "preserves athlete agency without cheerleading"
+    ],
+    "baseline_voice": "green",
+    "baseline_citation": {
+      "doc": "GREEN_COACHING_PHILOSOPHY_EXPANDED_2026-04-10.md",
+      "section": "7. Document Honestly, Don't Romanticize"
+    },
+    "baseline_answer": "Burrito half is fine. The three cookies, peanut butter, and milk on top are off-plan for a cut on a zero day; that is the part that is not healthy. Call it what it is, log it, lock the next meal on the deficit, and keep tomorrow clean.",
+    "baseline_comparison_rubric": [
+      "baseline applies Green's 'document honestly, don't romanticize' principle",
+      "StrideIQ must differentiate components and name the off-plan stack rather than praise the meal",
+      "StrideIQ must use the active cut and the same-turn zero-exercise-day context",
+      "StrideIQ should exceed baseline by surfacing gut-flare risk before the next run and giving a concrete reset"
+    ],
+    "must_not": [
+      "solid and practical",
+      "disciplined fueling",
+      "no guilt",
+      "real food, controlled, satisfying"
+    ],
+    "tools_required_if_data_claiming": ["athlete_facts", "recent_activities"],
+    "outcome_dimension": "clearer",
+    "failure_severity": "fatal",
+    "tools_called": ["athlete_facts", "recent_activities"],
+    "retrieved_evidence": [
+      {"tool": "athlete_facts", "content": "cut_active={flag:true,target_deficit_kcal:~500}; gut_sensitivity={flag:true,notes:'flared in last 24h'}; target_event={distance:marathon,date:~21d}"},
+      {"tool": "recent_activities", "content": "today_planned=rest; near-term run scheduled within the week"}
+    ],
+    "passing_answer": "Burrito half is fine: protein and rice. The three cookies plus peanut butter and milk on top is the off-plan part. You know it is not in the cut, and that is why you said it that way. It is extra fat, sugar, and calories on a zero exercise day during an aggressive cut, and the fat plus fiber plus lactose stack is the load that aggravates a sensitive gut before the next run. Call the cookie stack what it is, lock the rest of the day on the deficit, and keep tomorrow clean.",
+    "failing_answer": "That breakfast is solid and practical, exactly what you need right now. The burrito brings protein and rice; the cookies bring oats and natural sweetness; the peanut butter adds healthy fat; the milk rounds it out. It is healthy in the way that matters for you: real food, controlled, satisfying, no guilt, disciplined fueling. Gut held it down, which is a win. Now go get the next workout."
+  },
+  {
+    "eval_schema_version": "artifact7.v1",
+    "id": "grok_physiology_breathing",
+    "domain": "training_physiology",
+    "case_type": "adversarial",
+    "artifact5_mode": "engage_and_reason",
+    "source_replay_type": "founder_curated",
+    "failure_modes": ["FM-011", "FM-016"],
+    "situation": {
+      "athlete_state": "57yo athlete, ~60mpw, fall sub-18 5K and sub-1:22 half-marathon goals, post-injury rebuild, ~30 lb cut active, last four weeks have been repeat-heavy (intervals/strides) with limited aerobic-base work; athlete reports breathing feels labored on easy runs at the same pace they used to hold without strain",
+      "context": "athlete asks a physiology question about a sensation; coach must read the breathing signal against the actual training and metabolic state, not give generic 'easy means easy' advice"
+    },
+    "conversation_turns": [
+      {"role": "athlete", "content": "Why does my breathing feel so labored on easy runs lately? My pace is the same but I'm gasping more."}
+    ],
+    "user_message": "Why does my breathing feel so labored on easy runs lately? My pace is the same but I'm gasping more.",
+    "required_context": [
+      "weekly_volume_mpw=60 from ledger",
+      "age=57 from ledger",
+      "target_event includes fall sub-18 5K and sub-1:22 half-marathon goals from ledger",
+      "cut_active.flag=true with sustained kcal deficit from ledger",
+      "recent_injuries shows post-injury rebuild status from ledger",
+      "last 28 days of activities are repeat/interval-heavy with limited true aerobic-base sessions",
+      "the same clock pace has produced a higher breathing/HR signal in the last 1-2 weeks of easy runs"
+    ],
+    "expected_coaching_truths": [
+      {
+        "id": "name_breathing_as_intensity_proxy",
+        "description": "Coach must name that breathing is a relative-intensity signal (ventilatory threshold proxy), not an absolute pace property. Same clock pace can sit on a different side of the threshold when fitness or fueling shifts.",
+        "must_include_any": ["ventilatory", "threshold", "relative intensity", "pace is not the signal", "effort, not pace", "breathing tells you the load"]
+      },
+      {
+        "id": "name_the_actual_drivers",
+        "description": "Coach names the specific drivers: kcal deficit reduces glycogen and aerobic substrate availability; post-injury rebuild lowers baseline; repeat-heavy block without aerobic base erodes mitochondrial/aerobic capacity; age 57 plus deficit raises iron/ferritin risk.",
+        "must_include_any": ["cut", "deficit", "glycogen", "aerobic base", "rebuild", "ferritin", "iron"]
+      },
+      {
+        "id": "ground_easy_in_effort_not_clock",
+        "description": "Coach redefines easy as an effort, not a pace, and gives a concrete adjustment rather than a generic 'slow down'.",
+        "must_include_any": ["drop pace", "30 seconds", "45 seconds", "conversational", "nasal", "effort"]
+      },
+      {
+        "id": "surface_unasked_cut_vs_build_conflict",
+        "description": "Coach surfaces the unasked: a 30-lb cut at age 57 while chasing fall 5K/half performance goals is two competing physiological programs, and the breathing signal is one of the costs.",
+        "must_include_any": ["cut and build", "compete", "fighting", "you can't do both", "trade-off", "either"]
+      }
+    ],
+    "retrieved_evidence_expected": [
+      {
+        "tool": "athlete_facts",
+        "must_include": ["weekly_volume_mpw=60", "age=57", "cut_active.flag=true", "target_event"],
+        "reason": "ledger fields are the authoritative state for the read"
+      },
+      {
+        "tool": "recent_activities",
+        "must_include": ["repeat-heavy block", "easy run breathing/HR drift"],
+        "reason": "the recent training mix and the breathing-vs-pace decoupling are the evidence the answer must anchor in"
+      }
+    ],
+    "data_advantage_must_include": [
+      "names weekly_volume_mpw=60 from the ledger as the volume anchor",
+      "names age=57 from the ledger when discussing iron/ferritin and recovery cost",
+      "names cut_active and the size of the deficit from the ledger as a primary driver",
+      "names the post-injury rebuild status from the ledger as a baseline modifier",
+      "names that the last ~28 days of activity have been repeat-heavy with limited aerobic base work, drawn from recent_activities aggregates",
+      "names a specific recent easy run where pace held but breathing/HR rose, drawn from recent_activities notable_features",
+      "names the fall sub-18 5K and sub-1:22 half-marathon goals as the target events the read is calibrated against"
+    ],
+    "bad_coaching_patterns": [
+      "consider",
+      "you might want to",
+      "great question",
+      "trust your body",
+      "listen to your body",
+      "everyone has off days",
+      "easy means easy",
+      "just slow down",
+      "your easy pace is fine"
+    ],
+    "excellent_answer_traits": [
+      "names the physiological mechanism (breathing as ventilatory/relative-intensity proxy)",
+      "ties the signal to specific drivers from the ledger and recent activity mix",
+      "redefines 'easy' as an effort and gives a concrete pace/effort adjustment",
+      "surfaces the unasked cut-vs-build conflict at age 57",
+      "ends in a decision the athlete can act on this week",
+      "writes in the elite-coach register: direct, mechanism-naming, philosophy-anchored, no template praise"
+    ],
+    "baseline_voice": "davis",
+    "baseline_citation": {
+      "doc": "DAVIS_FIVE_PRINCIPLES_MARATHON_TRAINING_2026-04-10.md",
+      "section": "The Four Components of Marathon Fitness"
+    },
+    "baseline_answer": "Breathing is a relative-intensity signal, not a pace property. The same clock pace is sitting closer to your ventilatory threshold now, which means easy is no longer easy. The drivers are stacked: a 30-lb cut depletes glycogen and aerobic substrate, the post-injury rebuild dropped your baseline, and the last four weeks have been repeat-heavy without true aerobic-base work, so the engine has narrowed. At 57 with a deficit, ferritin is a real candidate too. Drop easy pace 30 to 45 seconds per mile until breathing comes back to conversational. Pivot the next two weeks toward aerobic base: long runs at conversation pace, fewer repeats. And honestly, a 30-lb cut and fall 5K/half performance goals are two competing programs; pick the priority for the next eight weeks.",
+    "baseline_comparison_rubric": [
+      "baseline applies Davis's four-components framing where aerobic base is the foundation",
+      "StrideIQ must name the actual drivers from the ledger (cut, rebuild, age, target) and recent activity mix",
+      "StrideIQ must redefine easy as an effort, not a clock pace",
+      "StrideIQ should exceed baseline by surfacing the cut-vs-build conflict and naming a specific recent easy run where the decoupling appeared"
+    ],
+    "must_not": [
+      "consider",
+      "you might want to",
+      "trust your body",
+      "easy means easy",
+      "everyone has off days",
+      "your easy pace is fine, just stick with it"
+    ],
+    "tools_required_if_data_claiming": ["athlete_facts", "recent_activities"],
+    "outcome_dimension": "better_informed",
+    "failure_severity": "fatal",
+    "tools_called": ["athlete_facts", "recent_activities"],
+    "retrieved_evidence": [
+      {"tool": "athlete_facts", "content": "weekly_volume_mpw=60; age=57; current_weight_lbs ~30 above target_weight_lbs; cut_active={flag:true}; target_event=[{distance:5k,goal_time:sub18,season:fall},{distance:half_marathon,goal_time:sub1:22,season:fall}]; recent_injuries=[{site:lower_leg,status:rebuild_phase}]"},
+      {"tool": "recent_activities", "content": "last 28d: 11 of 16 quality sessions are repeats/intervals; 1 long run >12mi; recent easy runs at typical pace show HR drift +6-8bpm vs prior month; one easy 7-miler last week shows breathing/HR rising in last 25% at unchanged pace"}
+    ],
+    "passing_answer": "Breathing is the signal, not pace. The same clock pace is sitting closer to your ventilatory threshold now, which is why easy is no longer easy. Three things stacked together explain it: the cut is depleting glycogen and aerobic substrate, the post-injury rebuild dropped your baseline, and the last four weeks have been repeat-heavy with only one long run, so the aerobic engine has narrowed. At 57 on a sustained deficit, ferritin is also a real candidate; pull labs in the next two weeks. The fix this week: drop easy pace 30-45 seconds per mile until breathing is conversational again, and pivot the next two weeks toward aerobic base, longer runs at honest easy effort, fewer repeats. The harder thing to say: a 30-lb cut and fall 5K/half performance goals are two competing programs at 57. You can do them in sequence, not in parallel. Pick which one owns the next eight weeks.",
+    "failing_answer": "Great question. Listen to your body and trust your training. Easy means easy, so consider slowing down a bit if you're gasping. Everyone has days like this. Your fitness is fine, you might just be having an off week. Keep stacking consistent miles and the breathing will sort itself out."
+  },
+  {
+    "eval_schema_version": "artifact7.v1",
+    "id": "persistent_fact_recall_volume",
+    "domain": "meta_memory",
+    "case_type": "edge",
+    "artifact5_mode": "engage_and_reason",
+    "source_replay_type": "founder_curated",
+    "failure_modes": ["FM-013"],
+    "situation": {
+      "athlete_state": "athlete stated 'I'm a 60mpw runner and have been for three months' in a prior thread roughly three weeks ago; that thread closed and the fact was extracted to the ledger as athlete_stated; the current thread is new and the athlete now asks a volume-dependent question without restating the volume",
+      "context": "this case tests cross-thread memory: V2 must recall the athlete-stated volume from the ledger and the prior thread summary, anchor the answer in it, and not re-ask"
+    },
+    "conversation_turns": [
+      {"role": "athlete", "content": "Should I add hill repeats next week?"}
+    ],
+    "user_message": "Should I add hill repeats next week?",
+    "required_context": [
+      "weekly_volume_mpw=60 from ledger, confidence=athlete_stated, source=thread_close, asserted_at ~21 days ago",
+      "recent_threads contains a summary from the prior thread with topic_tags including 'volume' and stated_facts including 60mpw",
+      "current_block_phase from ledger (or null/expired if unknown)",
+      "no recent_injuries flagged in the ledger",
+      "recent_activities show 60mpw rolling weekly average sustained across the last 4 weeks"
+    ],
+    "expected_coaching_truths": [
+      {
+        "id": "recall_without_reasking",
+        "description": "Coach references the athlete-stated 60mpw volume by name without asking the athlete to restate it.",
+        "must_include_all": ["60"],
+        "must_include_any": ["mpw", "miles", "you said", "you mentioned", "you're at", "your"]
+      },
+      {
+        "id": "anchor_dose_to_volume",
+        "description": "Coach gives a concrete hill-repeat dose that is calibrated to the 60mpw base rather than a generic prescription.",
+        "must_include_any": ["6-8", "8-10", "60-90 seconds", "60s", "90s", "replace one", "in place of", "instead of"]
+      },
+      {
+        "id": "name_prior_thread_or_ledger_source",
+        "description": "Coach signals that the volume context is remembered, not assumed, and ties the recommendation to it.",
+        "must_include_any": ["last time", "you mentioned", "three weeks ago", "you've been at", "you said"]
+      },
+      {
+        "id": "surface_unasked_signal_to_watch",
+        "description": "Coach names what to watch (Achilles, calf, posterior chain at this volume and added intensity) as the unasked observation.",
+        "must_include_any": ["Achilles", "calf", "posterior chain", "watch for", "back off if"]
+      }
+    ],
+    "retrieved_evidence_expected": [
+      {
+        "tool": "athlete_facts",
+        "must_include": ["weekly_volume_mpw=60", "confidence=athlete_stated"],
+        "reason": "the ledger is the authoritative source for the volume the answer must anchor in"
+      },
+      {
+        "tool": "recent_threads",
+        "must_include": ["topic_tags includes volume"],
+        "reason": "the prior thread summary establishes that this fact is remembered, not inferred"
+      },
+      {
+        "tool": "recent_activities",
+        "must_include": ["weekly_volume rolling 4-week ~60mpw"],
+        "reason": "confirms the stated volume matches recent execution"
+      }
+    ],
+    "data_advantage_must_include": [
+      "names weekly_volume_mpw=60 from the ledger by the specific number",
+      "ties the hill-repeat dose to the 60mpw base (e.g., 6-8x60-90s, replace one easy day, not adding net mileage)",
+      "signals that the volume context is remembered from the prior thread or ledger, not asked",
+      "names a concrete tissue-load risk to monitor at 60mpw plus added hill intensity"
+    ],
+    "bad_coaching_patterns": [
+      "what's your weekly volume?",
+      "how much are you running?",
+      "it depends on your mileage",
+      "tell me about your training",
+      "first, can you remind me",
+      "consider",
+      "you might want to"
+    ],
+    "excellent_answer_traits": [
+      "recalls the 60mpw without re-asking",
+      "gives a concrete hill-repeat prescription anchored to the existing volume",
+      "frames hills as a substitution within the 60mpw base, not as added net mileage",
+      "names the specific tissue-load risk (Achilles/calf/posterior chain) as the unasked observation",
+      "ends in a decision: yes/no plus the dose plus the day"
+    ],
+    "baseline_voice": "green",
+    "baseline_citation": {
+      "doc": "GREEN_COACHING_PHILOSOPHY_EXPANDED_2026-04-10.md",
+      "section": "1. Plans Written in Pencil"
+    },
+    "baseline_answer": "Yes. You're at 60 mpw and have been for three months, so the aerobic base supports adding intensity. Replace Tuesday's easy run with 6-8 x 60-90 seconds uphill at hard effort, jog-down recovery, in place of the easy mileage rather than on top of it. Keep total weekly volume at 60. Watch the Achilles and calf in the 48 hours after; back off the second hill day if either flares.",
+    "baseline_comparison_rubric": [
+      "baseline applies Green's pencil-plan adaptation principle within the established volume",
+      "StrideIQ must recall the 60mpw from the ledger and name it explicitly without re-asking",
+      "StrideIQ must anchor the hill-repeat dose to the existing 60mpw base rather than prescribe generically",
+      "StrideIQ should exceed baseline by signaling cross-thread memory ('you mentioned three weeks ago') and naming a specific tissue-load risk"
+    ],
+    "must_not": [
+      "what's your weekly volume",
+      "how much are you running",
+      "first, can you remind me",
+      "consider",
+      "you might want to"
+    ],
+    "tools_required_if_data_claiming": ["athlete_facts", "recent_threads", "recent_activities"],
+    "outcome_dimension": "clearer",
+    "failure_severity": "fatal",
+    "tools_called": ["athlete_facts", "recent_threads", "recent_activities"],
+    "retrieved_evidence": [
+      {"tool": "athlete_facts", "content": "weekly_volume_mpw={value:60,confidence:athlete_stated,source:thread_close,asserted_at:~21d_ago}; recent_injuries=[]"},
+      {"tool": "recent_threads", "content": "[{date:~21d_ago, topic_tags:['volume','base_phase'], stated_facts:['60mpw sustained 3 months'], decisions:[], open_questions:[]}]"},
+      {"tool": "recent_activities", "content": "rolling 4-week weekly volume ~60mpw; structure mostly easy with one quality day per week; no hill sessions in last 28 days"}
+    ],
+    "passing_answer": "Yes. You're at 60 mpw, you mentioned that three weeks back and the rolling four weeks confirm it, so the aerobic base will hold the added stimulus. Do 6-8 x 60-90 seconds uphill at hard effort, jog-down recovery, on Tuesday in place of that day's easy run; do not add it on top of the 60. One hill day this week, see how you absorb it before adding a second. Watch the Achilles and calf in the 48 hours after; if either flares, the next hill day waits.",
+    "failing_answer": "Hill repeats can be a great addition. First, can you remind me what your weekly volume is and how often you're running? Once I know that, I can give you a more specific recommendation. In general, 6-10 hill repeats once a week is a solid starting point for most runners. Listen to your body and trust the process."
+  }
+]
