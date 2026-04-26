@@ -33,6 +33,28 @@ OUTCOME_DIMENSIONS = {
     "better_informed",
 }
 FAILURE_SEVERITIES = {"fatal", "major", "minor"}
+ARTIFACT7_VOICES = frozenset({"green", "davis", "roche", "eyestone", "mcmillan"})
+ARTIFACT7_BLOCKED_VOICES = frozenset({"eyestone", "mcmillan"})
+ARTIFACT5_PRIMARY_MODES = frozenset(
+    {
+        "observe_and_ask",
+        "engage_and_reason",
+        "acknowledge_and_redirect",
+        "pattern_observation",
+        "pushback",
+        "celebration",
+        "uncertainty_disclosure",
+        "asking_after_work",
+        "racing_preparation_judgment",
+        "brief_status_update",
+        "correction",
+        "mode_uncertain",
+    }
+)
+SOURCE_REPLAY_TYPES = frozenset({"production_chat", "founder_curated", "external_ai", "manual"})
+EVAL_SCHEMA_VERSIONS = frozenset({"phase8.v1", "artifact7.v1"})
+DEFAULT_REFERENCES_ROOT = Path(__file__).resolve().parents[4] / "docs" / "references"
+_REFERENCE_HEADINGS_CACHE: dict[Path, frozenset[str]] = {}
 
 REQUIRED_CASE_FIELDS = {
     "id",
@@ -110,8 +132,97 @@ def _contains_all(text: str, phrases: Sequence[str]) -> bool:
     return all(str(phrase).lower() in _lower(text) for phrase in phrases)
 
 
-def validate_real_coach_case(case: Mapping[str, Any]) -> tuple[str, ...]:
+def _normalize_reference_heading(text: str) -> str:
+    normalized = re.sub(r"^#+\s*", "", str(text or "").strip())
+    normalized = re.sub(r"^\d+\.\s*", "", normalized)
+    return normalized.strip().lower()
+
+
+def _reference_headings(path: Path) -> frozenset[str]:
+    resolved = path.resolve()
+    cached = _REFERENCE_HEADINGS_CACHE.get(resolved)
+    if cached is not None:
+        return cached
+
+    headings: set[str] = set()
+    with resolved.open("r", encoding="utf-8") as f:
+        for line in f:
+            if line.lstrip().startswith("#"):
+                headings.add(_normalize_reference_heading(line))
+    result = frozenset(heading for heading in headings if heading)
+    _REFERENCE_HEADINGS_CACHE[resolved] = result
+    return result
+
+
+def _validate_artifact7_case(
+    case: Mapping[str, Any],
+    failures: list[str],
+    references_root: Path,
+) -> None:
+    baseline_voice = case.get("baseline_voice")
+    if baseline_voice is None:
+        failures.append("missing_field:baseline_voice")
+    else:
+        voice = str(baseline_voice)
+        if voice not in ARTIFACT7_VOICES:
+            failures.append(f"invalid_voice:{voice}")
+        elif voice in ARTIFACT7_BLOCKED_VOICES:
+            failures.append(f"blocked_voice:{voice}")
+
+    citation = case.get("baseline_citation")
+    if citation is None:
+        failures.append("missing_field:baseline_citation")
+    elif not isinstance(citation, Mapping):
+        failures.append("invalid_baseline_citation")
+    else:
+        doc = str(citation.get("doc") or "").strip()
+        section = str(citation.get("section") or "").strip()
+        if not doc:
+            failures.append("missing_baseline_citation_doc")
+        if not section:
+            failures.append("missing_baseline_citation_section")
+        if doc:
+            reference_path = (references_root / doc).resolve()
+            try:
+                reference_path.relative_to(references_root.resolve())
+            except ValueError:
+                failures.append(f"missing_reference_doc:{doc}")
+            else:
+                if not reference_path.is_file():
+                    failures.append(f"missing_reference_doc:{doc}")
+                elif section and _normalize_reference_heading(section) not in _reference_headings(reference_path):
+                    failures.append(f"missing_reference_section:{section}")
+
+    artifact5_mode = case.get("artifact5_mode")
+    if artifact5_mode is None:
+        failures.append("missing_field:artifact5_mode")
+    elif str(artifact5_mode) not in ARTIFACT5_PRIMARY_MODES:
+        failures.append(f"invalid_artifact5_mode:{artifact5_mode}")
+
+    source_replay_type = case.get("source_replay_type")
+    if source_replay_type is None:
+        failures.append("missing_field:source_replay_type")
+    elif str(source_replay_type) not in SOURCE_REPLAY_TYPES:
+        failures.append(f"invalid_source_replay_type:{source_replay_type}")
+
+
+def validate_real_coach_case(
+    case: Mapping[str, Any],
+    *,
+    references_root: str | Path | None = None,
+) -> tuple[str, ...]:
+    """Validate Phase 8 and Artifact 7 replay cases.
+
+    Artifact 7 citation sections are matched against Markdown headings after
+    stripping leading heading markers, stripping a leading numeric prefix such
+    as "1.", and lowercasing both the case value and document heading.
+    """
+
     failures: list[str] = []
+    schema_version = str(case.get("eval_schema_version") or "phase8.v1")
+    if schema_version not in EVAL_SCHEMA_VERSIONS:
+        failures.append(f"unknown_schema_version:{schema_version}")
+
     missing = REQUIRED_CASE_FIELDS - set(case.keys())
     for field in sorted(missing):
         failures.append(f"missing_field:{field}")
@@ -184,6 +295,13 @@ def validate_real_coach_case(case: Mapping[str, Any]) -> tuple[str, ...]:
             failures.append(f"missing_evidence_must_include:{idx}")
         if not evidence.get("reason"):
             failures.append(f"missing_evidence_reason:{idx}")
+
+    if schema_version == "artifact7.v1":
+        _validate_artifact7_case(
+            case,
+            failures,
+            Path(references_root) if references_root is not None else DEFAULT_REFERENCES_ROOT,
+        )
 
     return tuple(failures)
 
@@ -340,6 +458,9 @@ def evaluate_tier3_judge_scores(
         "outcome_served",
         "evidence_usefulness",
     )
+    if case.get("eval_schema_version") == "artifact7.v1":
+        required_dimensions = required_dimensions + ("voice_alignment",)
+
     failures: list[str] = []
     scores: list[float] = []
     for dimension in required_dimensions:

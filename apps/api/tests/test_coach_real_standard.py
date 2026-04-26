@@ -22,6 +22,23 @@ def coach_eval_cases():
         return json.load(f)
 
 
+def _artifact7_case(coach_eval_cases):
+    case = dict(coach_eval_cases[0])
+    case.update(
+        {
+            "eval_schema_version": "artifact7.v1",
+            "baseline_voice": "green",
+            "baseline_citation": {
+                "doc": "GREEN_COACHING_PHILOSOPHY_EXPANDED_2026-04-10.md",
+                "section": "1. Plans Written in Pencil",
+            },
+            "artifact5_mode": "engage_and_reason",
+            "source_replay_type": "founder_curated",
+        }
+    )
+    return case
+
+
 def test_phase8_case_bank_covers_all_real_coach_domains(coach_eval_cases):
     assert len(coach_eval_cases) >= len(REAL_COACH_DOMAINS) * 3
 
@@ -49,6 +66,113 @@ def test_phase8_case_bank_has_required_structure(coach_eval_cases):
         assert case["retrieved_evidence_expected"]
         assert case["baseline_comparison_rubric"]
         assert case["failure_severity"] in {"fatal", "major", "minor"}
+
+
+def test_phase8_missing_schema_version_defaults_to_phase8(coach_eval_cases):
+    case = dict(coach_eval_cases[0])
+
+    assert "eval_schema_version" not in case
+    assert validate_real_coach_case(case) == ()
+
+
+def test_artifact7_case_validates_with_voice_citation_and_mode(coach_eval_cases):
+    case = _artifact7_case(coach_eval_cases)
+
+    assert validate_real_coach_case(case) == ()
+
+
+@pytest.mark.parametrize(
+    ("field", "expected_failure"),
+    [
+        ("baseline_voice", "missing_field:baseline_voice"),
+        ("baseline_citation", "missing_field:baseline_citation"),
+        ("artifact5_mode", "missing_field:artifact5_mode"),
+        ("source_replay_type", "missing_field:source_replay_type"),
+    ],
+)
+def test_artifact7_missing_required_fields_fail(coach_eval_cases, field, expected_failure):
+    case = _artifact7_case(coach_eval_cases)
+    case.pop(field)
+
+    failures = validate_real_coach_case(case)
+
+    assert expected_failure in failures
+
+
+@pytest.mark.parametrize(
+    ("voice", "expected_failure"),
+    [
+        ("eyestone", "blocked_voice:eyestone"),
+        ("mcmillan", "blocked_voice:mcmillan"),
+    ],
+)
+def test_artifact7_blocked_voices_fail_validation(coach_eval_cases, voice, expected_failure):
+    case = _artifact7_case(coach_eval_cases)
+    case["baseline_voice"] = voice
+
+    failures = validate_real_coach_case(case)
+
+    assert expected_failure in failures
+
+
+def test_artifact7_unknown_voice_fails_validation(coach_eval_cases):
+    case = _artifact7_case(coach_eval_cases)
+    case["baseline_voice"] = "anonymous"
+
+    failures = validate_real_coach_case(case)
+
+    assert "invalid_voice:anonymous" in failures
+
+
+def test_artifact7_missing_reference_doc_fails_validation(coach_eval_cases):
+    case = _artifact7_case(coach_eval_cases)
+    case["baseline_citation"] = {
+        "doc": "MISSING_COACH_REFERENCE.md",
+        "section": "Plans Written in Pencil",
+    }
+
+    failures = validate_real_coach_case(case)
+
+    assert "missing_reference_doc:MISSING_COACH_REFERENCE.md" in failures
+
+
+def test_artifact7_missing_reference_section_fails_validation(coach_eval_cases):
+    case = _artifact7_case(coach_eval_cases)
+    case["baseline_citation"] = {
+        "doc": "GREEN_COACHING_PHILOSOPHY_EXPANDED_2026-04-10.md",
+        "section": "No Such Section",
+    }
+
+    failures = validate_real_coach_case(case)
+
+    assert "missing_reference_section:No Such Section" in failures
+
+
+def test_artifact7_invalid_mode_fails_validation(coach_eval_cases):
+    case = _artifact7_case(coach_eval_cases)
+    case["artifact5_mode"] = "vibes_only"
+
+    failures = validate_real_coach_case(case)
+
+    assert "invalid_artifact5_mode:vibes_only" in failures
+
+
+def test_artifact7_invalid_source_replay_type_fails_validation(coach_eval_cases):
+    case = _artifact7_case(coach_eval_cases)
+    case["source_replay_type"] = "memory"
+
+    failures = validate_real_coach_case(case)
+
+    assert "invalid_source_replay_type:memory" in failures
+
+
+def test_unknown_eval_schema_version_fails_validation(coach_eval_cases):
+    case = dict(coach_eval_cases[0])
+    case["eval_schema_version"] = "future.v1"
+
+    failures = validate_real_coach_case(case)
+
+    assert "unknown_schema_version:future.v1" in failures
 
 
 def test_phase8_includes_2026_04_25_5k_dispute_trajectory(coach_eval_cases):
