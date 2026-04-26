@@ -956,5 +956,121 @@
     ],
     "passing_answer": "Keep today easy. The Coke 10K is six days away, and there is no completed race today in the calendar context, so the job is to arrive fresh. If you want movement, make it 20-30 minutes very easy with a few relaxed strides only if the plan calls for them.",
     "failing_answer": "Keep it easy because you raced today and your fatigue is not zero. If you did race today, rest or jog 20 minutes."
+  },
+  {
+    "eval_schema_version": "artifact7.v1",
+    "id": "v2_canary_activity_effort_flattened_fake_confidence",
+    "domain": "post_run_interpretation",
+    "case_type": "adversarial",
+    "artifact5_mode": "correction",
+    "source_replay_type": "founder_curated",
+    "failure_modes": ["FM-002", "FM-004"],
+    "situation": {
+      "athlete_state": "athlete is six days before the Coke 10K and yesterday included a mislabeled 19-minute 5K race effort, a threshold effort, and a short fast effort",
+      "context": "V2 founder canary flattened the day into easy running, then invented controlled execution and confidence without checking pacing or asking how the race went"
+    },
+    "conversation_turns": [
+      {
+        "role": "athlete",
+        "content": "did the race yesterday contribute to my fitness in this build"
+      },
+      {
+        "role": "athlete",
+        "content": "that's because the labeling has a flaw and didn't let me label the 3.1 mile run as a race - it was a race"
+      },
+      {
+        "role": "athlete",
+        "content": "i didn't have a good go yesterday - it wasn't controlled and my pacing suffered"
+      }
+    ],
+    "user_message": "i didn't have a good go yesterday - it wasn't controlled and my pacing suffered",
+    "required_context": [
+      "yesterday all_easy is false",
+      "race_effort_present is true",
+      "threshold_effort_present is true",
+      "short_fast_effort_present is true",
+      "race_execution_quality is negative or unknown",
+      "days_until_race is 6"
+    ],
+    "expected_coaching_truths": [
+      {
+        "id": "do_not_flatten_quality_day",
+        "description": "Coach must not describe the day as easy or maintenance volume when evidence says race/threshold/fast efforts were present.",
+        "must_include_any": ["not an easy day", "race effort", "threshold", "short-fast", "real stress"]
+      },
+      {
+        "id": "ask_after_work",
+        "description": "Coach does the evidence work first, then asks for the missing execution context instead of inventing a positive read.",
+        "must_include_any": ["how did it go", "how it actually went", "pacing suffered", "not controlled", "I need that before"]
+      },
+      {
+        "id": "near_race_adaptation_truth",
+        "description": "Coach distinguishes real stimulus from meaningful new fitness arriving before the near target race.",
+        "must_include_any": ["not meaningful new fitness before Saturday", "fitness won't show up in six days", "fatigue cost", "protect freshness"]
+      }
+    ],
+    "retrieved_evidence_expected": [
+      {
+        "tool": "activity_evidence_state",
+        "must_include": ["all_easy=false", "race_effort_present=true", "threshold_effort_present=true"],
+        "reason": "activity evidence is the authoritative V2 source for recent effort mix"
+      },
+      {
+        "tool": "training_adaptation_context",
+        "must_include": ["must_ask_execution_followup=true", "confidence_or_sharpness_claim_allowed=false"],
+        "reason": "adaptation context blocks fake confidence when execution quality is missing or negative"
+      }
+    ],
+    "bad_coaching_patterns": [
+      "three easy runs",
+      "maintenance volume",
+      "executed well",
+      "controlled",
+      "banked some pacing confidence",
+      "sharpest tool in the box",
+      "good go"
+    ],
+    "excellent_answer_traits": [
+      "admits the prior label was wrong without defensiveness",
+      "separates intensity stimulus from execution quality",
+      "does not praise confidence or control without evidence",
+      "asks for how the race actually went after naming verified activity evidence",
+      "anchors the adaptation read to six days before the target race"
+    ],
+    "baseline_voice": "green",
+    "baseline_citation": {
+      "doc": "GREEN_COACHING_PHILOSOPHY_EXPANDED_2026-04-10.md",
+      "section": "7. Document Honestly, Don't Romanticize"
+    },
+    "baseline_answer": "That was not an easy day. A 19-minute 5K race effort plus threshold work and short fast running is real stress, not maintenance volume. But six days before the Coke 10K, it is unlikely to create meaningful new fitness before Saturday; it mostly changes freshness, confidence, or fatigue. If pacing suffered and it was not controlled, I would not call it a confidence builder. Tell me how the splits fell apart and how your legs feel today, then we protect freshness.",
+    "baseline_comparison_rubric": [
+      "baseline refuses to flatten a hard day into easy mileage",
+      "StrideIQ must not infer controlled execution or confidence from intensity alone",
+      "StrideIQ should exceed baseline by using packet evidence for the exact effort mix and race countdown"
+    ],
+    "must_not": [
+      "three easy runs",
+      "maintenance volume",
+      "executed well",
+      "controlled",
+      "banked some pacing confidence",
+      "sharpest tool in the box"
+    ],
+    "tools_required_if_data_claiming": ["activity_evidence_state", "training_adaptation_context"],
+    "outcome_dimension": "safer",
+    "failure_severity": "fatal",
+    "tools_called": ["activity_evidence_state", "training_adaptation_context", "calendar_context"],
+    "retrieved_evidence": [
+      {
+        "tool": "activity_evidence_state",
+        "content": "yesterday all_easy=false; race_effort_present=true; threshold_effort_present=true; short_fast_effort_present=true; race_execution_quality=negative_or_unknown"
+      },
+      {
+        "tool": "training_adaptation_context",
+        "content": "days_until_race=6; confidence_or_sharpness_claim_allowed=false; must_ask_execution_followup=true"
+      }
+    ],
+    "passing_answer": "You are right to separate the two things. Yesterday was not an easy day: the packet shows a race effort, threshold work, and a short fast effort, so it was real stress. But six days before Coke 10K, it is not meaningful new fitness before Saturday, and if pacing suffered I would not call it confidence. It may leave fatigue; it may leave a lesson. Tell me where the pacing broke and how your legs feel today, then the move is freshness protection.",
+    "failing_answer": "Got it. The race contributed. Race-specific intensity is the sharpest tool in the box, and if you executed well you banked pacing confidence. This week: easy today, easy tomorrow, one light touch of quality, then shut it down."
   }
 ]

@@ -548,7 +548,9 @@ def test_v2_packet_assembler_builds_packet_without_raw_tools():
 
     assert packet["schema_version"] == "coach_runtime_v2.packet.v1"
     assert packet["conversation_mode"]["primary"] == "racing_preparation_judgment"
-    assert packet["telemetry"]["packet_block_count"] == 3
+    assert packet["telemetry"]["packet_block_count"] == 5
+    assert "activity_evidence_state" in packet["blocks"]
+    assert "training_adaptation_context" in packet["blocks"]
     assert "tools" not in packet
 
 
@@ -638,6 +640,174 @@ def test_v2_packet_calendar_context_is_authoritative_and_quiets_bridge():
     assert "race week" not in bridge
     assert "Strength preference" in bridge
     assert packet["telemetry"]["temporal_bridge_lines_removed"] == 2
+
+
+def test_v2_packet_activity_evidence_does_not_flatten_quality_day_to_easy():
+    athlete_id = uuid4()
+    today = date(2026, 4, 26)
+    race_date = today + timedelta(days=6)
+    yesterday = datetime(2026, 4, 25, 13, 0, tzinfo=timezone.utc)
+
+    class FakeQuery:
+        def __init__(self, *, first_value=None, all_values=None):
+            self.first_value = first_value
+            self.all_values = all_values or []
+
+        def filter(self, *args, **kwargs):
+            return self
+
+        def order_by(self, *args, **kwargs):
+            return self
+
+        def limit(self, *args, **kwargs):
+            return self
+
+        def first(self):
+            return self.first_value
+
+        def all(self):
+            return self.all_values
+
+    race_run_id = uuid4()
+    activity_rows = [
+        SimpleNamespace(
+            id=race_run_id,
+            start_time=yesterday,
+            sport="run",
+            name="Morning Run",
+            workout_type="easy",
+            distance_m=5000,
+            duration_s=19 * 60,
+            avg_hr=178,
+            intensity_score=None,
+            user_verified_race=False,
+            is_race_candidate=False,
+            race_confidence=None,
+            start_lat=None,
+            start_lng=None,
+        ),
+        SimpleNamespace(
+            id=uuid4(),
+            start_time=yesterday + timedelta(hours=3),
+            sport="run",
+            name="Lunch Run",
+            workout_type="easy",
+            distance_m=3300,
+            duration_s=21 * 60,
+            avg_hr=166,
+            intensity_score=61,
+            user_verified_race=False,
+            is_race_candidate=False,
+            race_confidence=None,
+            start_lat=None,
+            start_lng=None,
+        ),
+        SimpleNamespace(
+            id=uuid4(),
+            start_time=yesterday + timedelta(hours=6),
+            sport="run",
+            name="Shakeout",
+            workout_type="easy",
+            distance_m=225,
+            duration_s=50,
+            avg_hr=150,
+            intensity_score=None,
+            user_verified_race=False,
+            is_race_candidate=False,
+            race_confidence=None,
+            start_lat=None,
+            start_lng=None,
+        ),
+    ]
+    split_rows = [
+        SimpleNamespace(
+            split_number=1,
+            distance=1609.344,
+            moving_time=340,
+            elapsed_time=340,
+        ),
+        SimpleNamespace(
+            split_number=2,
+            distance=1609.344,
+            moving_time=370,
+            elapsed_time=370,
+        ),
+        SimpleNamespace(
+            split_number=3,
+            distance=1609.344,
+            moving_time=430,
+            elapsed_time=430,
+        ),
+    ]
+
+    class FakeDb:
+        def query(self, model):
+            if model.__name__ == "Athlete":
+                return FakeQuery(first_value=SimpleNamespace(timezone="UTC"))
+            if model.__name__ == "TrainingPlan":
+                return FakeQuery(
+                    first_value=SimpleNamespace(
+                        id=uuid4(),
+                        name="Coke 10K build",
+                        goal_race_name="Coke 10K",
+                        goal_race_date=race_date,
+                        goal_race_distance_m=10000,
+                    )
+                )
+            if model.__name__ == "Activity":
+                return FakeQuery(all_values=activity_rows)
+            if model.__name__ == "ActivitySplit":
+                return FakeQuery(all_values=split_rows)
+            return FakeQuery()
+
+    packet = assemble_v2_packet(
+        athlete_id=athlete_id,
+        db=FakeDb(),
+        message=(
+            "That's because the labeling has a flaw and didn't let me label "
+            "the 3.1 mile run as a race - it was a race"
+        ),
+        conversation_context=[],
+        legacy_athlete_state="Strength preference: keep instructions direct.",
+        now_utc=datetime(2026, 4, 26, 13, 0, tzinfo=timezone.utc),
+    )
+
+    overrides = packet["athlete_stated_overrides"]
+    evidence = packet["blocks"]["activity_evidence_state"]["data"]
+    adaptation = packet["blocks"]["training_adaptation_context"]["data"]
+
+    assert any(
+        override["field_path"] == "activity_classification_override.recent_activity"
+        for override in overrides
+    )
+    assert evidence["activity_classification_override"]["target_distance_m"] == 4989
+    assert evidence["yesterday"]["activity_count"] == 3
+    assert evidence["yesterday"]["all_easy"] is False
+    assert evidence["yesterday"]["race_effort_present"] is True
+    assert evidence["yesterday"]["threshold_effort_present"] is True
+    assert evidence["yesterday"]["short_fast_effort_present"] is True
+    assert evidence["yesterday"]["quality_effort_count"] == 3
+    assert evidence["yesterday"]["race_execution_quality"]["status"] == "negative"
+    assert (
+        evidence["yesterday"]["race_execution_quality"][
+            "can_claim_controlled_or_confident"
+        ]
+        is False
+    )
+    assert (
+        "controlled"
+        in evidence["yesterday"]["race_execution_quality"][
+            "forbidden_claims_without_more_evidence"
+        ]
+    )
+    assert adaptation["stimulus_event_mix"]["all_easy"] is False
+    assert (
+        adaptation["likely_effect_before_target"]
+        == "hard_stimulus_not_meaningful_new_fitness_before_target"
+    )
+    assert adaptation["recommendation_bias"] == "ask_after_work_then_protect_freshness"
+    assert adaptation["confidence_or_sharpness_claim_allowed"] is False
+    assert adaptation["must_ask_execution_followup"] is True
 
 
 def test_v2_seed_migration_creates_required_flags_safely():

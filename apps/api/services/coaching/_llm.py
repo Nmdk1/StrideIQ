@@ -636,7 +636,15 @@ class LLMMixin:
             "For dates, races, completed activities, current-day status, and "
             "race countdowns, the structured calendar_context block is the only "
             "authority. Do not infer those facts from legacy context or from the "
-            "athlete's phrasing."
+            "athlete's phrasing. For recent activity intensity and whether a day "
+            "was easy, race effort, threshold, or short-fast, activity_evidence_state "
+            "is authoritative. For whether yesterday's work can change fitness "
+            "before a near target race versus adding sharpness/confidence/fatigue, "
+            "training_adaptation_context is authoritative. If training_adaptation_context "
+            "says must_ask_execution_followup, do the work first: name the verified "
+            "activity evidence, state what is unknown or negative, and ask how it "
+            "actually went. Do not claim controlled execution, confidence gained, "
+            "or a good race unless the packet explicitly allows that claim."
         )
         messages = [
             {
