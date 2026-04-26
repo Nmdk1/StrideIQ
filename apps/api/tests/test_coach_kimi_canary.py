@@ -358,6 +358,56 @@ async def test_kimi_v2_packet_timeout_maps_to_v2_timeout(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_kimi_v2_packet_retries_without_thinking_on_empty_content(monkeypatch):
+    coach = AICoach.__new__(AICoach)
+    coach.track_usage = MagicMock()
+    captured = []
+    responses = iter(
+        [
+            _oai_response(content="", prompt_tokens=10, completion_tokens=1),
+            _oai_response(
+                content="V2 packet answer after retry.",
+                prompt_tokens=10,
+                completion_tokens=5,
+            ),
+        ]
+    )
+
+    async def _create(**kwargs):
+        captured.append(kwargs)
+        return next(responses)
+
+    monkeypatch.setitem(sys.modules, "openai", _make_openai_module(_create))
+    from services import ai_coach as ai_coach_module
+
+    monkeypatch.setattr(
+        ai_coach_module.settings, "KIMI_API_KEY", "kimi-key", raising=False
+    )
+    monkeypatch.setattr(
+        ai_coach_module.settings,
+        "KIMI_BASE_URL",
+        "https://api.moonshot.ai/v1",
+        raising=False,
+    )
+    monkeypatch.setattr(
+        ai_coach_module.settings, "COACH_CANARY_MODEL", "kimi-k2.6", raising=False
+    )
+
+    result = await coach.query_kimi_v2_packet(
+        athlete_id=uuid4(),
+        message="Should I race?",
+        packet={"schema_version": "coach_runtime_v2.packet.v1"},
+    )
+
+    assert result["error"] is False
+    assert result["response"] == "V2 packet answer after retry."
+    assert result["thinking_retry_used"] is True
+    assert captured[0]["extra_body"] == {"thinking": {"type": "enabled"}}
+    assert captured[1]["extra_body"] is None
+    coach.track_usage.assert_called_once()
+
+
+@pytest.mark.asyncio
 async def test_universal_kimi_routing(monkeypatch):
     """All queries now route to Kimi K2.5 — no canary gating."""
     coach = AICoach(db=MagicMock())

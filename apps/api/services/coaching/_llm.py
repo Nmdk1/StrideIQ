@@ -825,6 +825,35 @@ class LLMMixin:
         choice = (response.choices or [None])[0]
         assistant_message = choice.message if choice else None
         response_text = ((getattr(assistant_message, "content", "") or "")).strip()
+        thinking_retry_used = False
+        if not response_text and extra_body:
+            logger.warning(
+                "kimi_v2_packet_empty_with_thinking_retrying_without_thinking",
+                extra={
+                    "extra_fields": {
+                        "event": (
+                            "kimi_v2_packet_empty_with_thinking_retrying_without_thinking"
+                        ),
+                        "athlete_id": str(athlete_id),
+                        "model": model_name,
+                    }
+                },
+            )
+            retry_response = await client.chat.completions.create(
+                model=model_name,
+                messages=[{"role": "system", "content": system_prompt}] + messages,
+                max_tokens=COACH_MAX_OUTPUT_TOKENS,
+                extra_body=None,
+            )
+            thinking_retry_used = True
+            retry_usage = getattr(retry_response, "usage", None)
+            input_tokens += int(getattr(retry_usage, "prompt_tokens", 0) or 0)
+            output_tokens += int(getattr(retry_usage, "completion_tokens", 0) or 0)
+            retry_choice = (retry_response.choices or [None])[0]
+            retry_message = retry_choice.message if retry_choice else None
+            response_text = (
+                (getattr(retry_message, "content", "") or "")
+            ).strip()
         response_text = _strip_emojis(response_text)
         if not response_text:
             return {
@@ -905,6 +934,7 @@ class LLMMixin:
             "template_phrase_count": template_phrase_count,
             "template_phrase_hits": template_phrase_hits,
             "thinking": extra_body.get("thinking", {}).get("type"),
+            "thinking_retry_used": thinking_retry_used,
         }
 
     async def query_gemini(
