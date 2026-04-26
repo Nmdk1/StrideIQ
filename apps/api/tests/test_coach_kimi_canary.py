@@ -305,6 +305,7 @@ async def test_kimi_v2_packet_call_disables_tools_and_enables_thinking(monkeypat
     assert "tools" not in captured[0]
     assert "tool_choice" not in captured[0]
     assert captured[0]["extra_body"] == {"thinking": {"type": "enabled"}}
+    assert captured[0]["max_tokens"] >= 2500
     assert "<!-- VOICE_CORPUS -->" in captured[0]["messages"][0]["content"]
     assert (
         "You are StrideIQ's coach. The athlete in this turn is the same human"
@@ -404,6 +405,8 @@ async def test_kimi_v2_packet_retries_without_thinking_on_empty_content(monkeypa
     assert result["thinking_retry_used"] is True
     assert captured[0]["extra_body"] == {"thinking": {"type": "enabled"}}
     assert captured[1]["extra_body"] is None
+    assert captured[0]["max_tokens"] >= 2500
+    assert captured[1]["max_tokens"] >= 2500
     coach.track_usage.assert_called_once()
 
 

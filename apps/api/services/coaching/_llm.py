@@ -158,6 +158,7 @@ from services.coaching._constants import (  # noqa: E402
     _check_response_quality,
     COACH_MAX_OUTPUT_TOKENS,
 )
+V2_PACKET_MAX_OUTPUT_TOKENS = max(COACH_MAX_OUTPUT_TOKENS, 2500)
 from services.coaching._conversation_contract import (  # noqa: E402
     ConversationContract,
     ConversationContractType,
@@ -792,7 +793,7 @@ class LLMMixin:
             response = await client.chat.completions.create(
                 model=model_name,
                 messages=[{"role": "system", "content": system_prompt}] + messages,
-                max_tokens=COACH_MAX_OUTPUT_TOKENS,
+                max_tokens=V2_PACKET_MAX_OUTPUT_TOKENS,
                 extra_body=extra_body if extra_body else None,
             )
         except tuple(timeout_errors) as exc:
@@ -842,7 +843,7 @@ class LLMMixin:
             retry_response = await client.chat.completions.create(
                 model=model_name,
                 messages=[{"role": "system", "content": system_prompt}] + messages,
-                max_tokens=COACH_MAX_OUTPUT_TOKENS,
+                max_tokens=V2_PACKET_MAX_OUTPUT_TOKENS,
                 extra_body=None,
             )
             thinking_retry_used = True
@@ -874,7 +875,7 @@ class LLMMixin:
                     *messages,
                     {"role": "user", "content": rewrite_instruction},
                 ],
-                max_tokens=COACH_MAX_OUTPUT_TOKENS,
+                max_tokens=V2_PACKET_MAX_OUTPUT_TOKENS,
                 extra_body=extra_body if extra_body else None,
             )
             retry_choice = (retry_response.choices or [None])[0]
