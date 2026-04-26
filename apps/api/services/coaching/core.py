@@ -74,6 +74,7 @@ from services.coaching.ledger_extraction import (  # noqa: E402
     extract_facts_from_turn_with_optional_llm,
     persist_proposed_facts,
 )
+from services.coaching.thread_lifecycle import close_idle_threads  # noqa: E402
 
 try:
     from anthropic import Anthropic
@@ -624,6 +625,14 @@ Policy:
                 },
                 served_by_v1_reason="consent_disabled",
             )
+
+        try:
+            closed_summaries = close_idle_threads(self.db, athlete_id)
+            if closed_summaries:
+                self.db.commit()
+        except Exception:
+            self.db.rollback()
+            logger.warning("close_idle_threads_failed", exc_info=True)
 
         # If no LLM route is available, return a helpful message.  Kimi is the
         # primary chat path; Gemini remains only as a guardrail-retry fallback.
