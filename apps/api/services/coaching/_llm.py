@@ -3,12 +3,10 @@ from __future__ import annotations
 import os
 import asyncio
 import json
-import re
 import logging
-from datetime import date, datetime, timedelta, timezone
-from typing import Optional, Dict, List, Any, Tuple
-from uuid import UUID, uuid4
-from sqlalchemy.orm import Session
+from datetime import date, datetime, timezone
+from typing import Optional, Dict, List, Any
+from uuid import UUID
 
 logger = logging.getLogger(__name__)
 
@@ -43,9 +41,6 @@ V2_SYSTEM_PROMPT = f"{ARTIFACT9_V2_SYSTEM_PROMPT}\n\n<!-- VOICE_CORPUS -->"
 from services.coaching._constants import (  # noqa: E402
     _strip_emojis,
     _check_response_quality,
-    ANTHROPIC_AVAILABLE,
-    GEMINI_AVAILABLE,
-    COACH_MAX_INPUT_TOKENS,
     COACH_MAX_OUTPUT_TOKENS,
 )
 from services.coaching._conversation_contract import (  # noqa: E402

@@ -203,6 +203,11 @@ async def test_chat_threads_pending_conflicts_into_v2_packet(monkeypatch):
         }
     )
     coach._normalize_response_for_ui = lambda **kwargs: kwargs["assistant_message"]
+    coach._finalize_v2_response_with_turn_guard = lambda **kwargs: (
+        True,
+        kwargs["response_text"],
+        None,
+    )
     coach._record_turn_guard_event = MagicMock()
     coach._infer_intent_band = lambda *args, **kwargs: "low"
     coach._save_chat_messages = MagicMock()

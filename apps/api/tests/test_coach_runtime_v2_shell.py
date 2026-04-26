@@ -317,6 +317,41 @@ async def test_visible_mode_uses_v2_packet_path_when_success(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_visible_mode_demotes_to_v1_when_v2_turn_guard_fails(monkeypatch):
+    import services.consent as consent_module
+
+    coach = _coach_with_v1_path()
+    coach.query_kimi_v2_packet = AsyncMock(
+        return_value={
+            "response": "You have been training a lot lately, so think about how you feel.",
+            "error": False,
+            "model": "kimi-k2.6",
+            "tools_called": [],
+        }
+    )
+    monkeypatch.setattr(consent_module, "has_ai_consent", lambda athlete_id, db: True)
+    monkeypatch.setattr(
+        coach_core,
+        "extract_facts_from_turn_with_optional_llm",
+        AsyncMock(return_value=[]),
+    )
+    monkeypatch.setattr(
+        coach_core,
+        "resolve_coach_runtime_v2_state",
+        lambda athlete_id, db: _visible_state(),
+    )
+
+    result = await coach.chat(uuid4(), "Should I postpone threshold tomorrow?")
+
+    assert result["response"] == "kimi"
+    assert result["runtime_mode"] == RUNTIME_MODE_FALLBACK
+    assert result["runtime_version"] == RUNTIME_VERSION_V1
+    assert result["fallback_reason"] == "v2_guardrail_failed"
+    coach.query_kimi_v2_packet.assert_awaited_once()
+    coach._query_kimi_with_fallback.assert_awaited_once()
+
+
+@pytest.mark.asyncio
 async def test_visible_packet_assembly_failure_falls_back_to_v1(monkeypatch):
     import services.consent as consent_module
 

@@ -1,61 +1,19 @@
 from __future__ import annotations
 
 import os
-import json
 import re
 import logging
 from time import perf_counter
-from datetime import date, datetime, timedelta, timezone
-from typing import Optional, Dict, List, Any, Tuple
+from datetime import date
+from typing import Optional, Dict, Any, Tuple
 from uuid import UUID, uuid4
 from sqlalchemy.orm import Session
 
-logger = logging.getLogger(__name__)
-
-
-def _count_anchor_atoms(response_text: str) -> int:
-    text = response_text or ""
-    patterns = (
-        r"\b(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday)'?s\b",
-        r"\b\d{4}-\d{2}-\d{2}\b",
-        r"\b\d+(?:\.\d+)?\s*(?:mpw|miles?|mi|k)\b",
-        r"\b(?:you said|last time we talked|three weeks ago|prior thread)\b",
-        r"\b(?:cut|injury|pace zones|threshold|race)\b",
-    )
-    return sum(
-        1 for pattern in patterns if re.search(pattern, text, flags=re.IGNORECASE)
-    )
-
-
-def _detect_unasked_surfacing(response_text: str) -> bool:
-    text = response_text or ""
-    return bool(
-        re.search(
-            r"\b(One thing|I'd flag|Worth noting|I notice|Pattern I see|Risk here)\b",
-            text,
-            flags=re.IGNORECASE,
-        )
-    )
-
-
 from services.coaching._constants import (  # noqa: E402
-    HighStakesSignal,
-    HIGH_STAKES_PATTERNS,
-    COACH_MAX_REQUESTS_PER_DAY,
-    COACH_MAX_OPUS_REQUESTS_PER_DAY,
-    COACH_MONTHLY_TOKEN_BUDGET,
-    COACH_MONTHLY_OPUS_TOKEN_BUDGET,
-    COACH_MAX_OPUS_REQUESTS_PER_DAY_VIP,
-    COACH_MONTHLY_OPUS_TOKEN_BUDGET_VIP,
-    COACH_MAX_INPUT_TOKENS,
-    COACH_MAX_OUTPUT_TOKENS,
     _strip_emojis,
-    _check_kb_violations,
-    _check_response_quality,
     is_high_stakes_query,
     ANTHROPIC_AVAILABLE,
     GEMINI_AVAILABLE,
-    _build_cross_training_context,
 )
 from services.coaching._conversation_contract import (
     classify_conversation_contract,
@@ -90,16 +48,7 @@ except ImportError:
     genai_types = None
 
 from models import (  # noqa: E402
-    Athlete,
     Activity,
-    TrainingPlan,
-    PlannedWorkout,
-    DailyCheckin,
-    GarminDay,
-    PersonalBest,
-    IntakeQuestionnaire,
-    CoachUsage,
-    CoachChat,
 )
 from services import coach_tools  # noqa: E402
 from core.config import settings  # noqa: E402
@@ -117,6 +66,33 @@ from services.coaching._context import ContextMixin  # noqa: E402
 from services.coaching._thread import ThreadMixin  # noqa: E402
 from services.coaching._guardrails import GuardrailsMixin  # noqa: E402
 from services.coaching._prescriptions import PrescriptionMixin  # noqa: E402
+
+logger = logging.getLogger(__name__)
+
+
+def _count_anchor_atoms(response_text: str) -> int:
+    text = response_text or ""
+    patterns = (
+        r"\b(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday)'?s\b",
+        r"\b\d{4}-\d{2}-\d{2}\b",
+        r"\b\d+(?:\.\d+)?\s*(?:mpw|miles?|mi|k)\b",
+        r"\b(?:you said|last time we talked|three weeks ago|prior thread)\b",
+        r"\b(?:cut|injury|pace zones|threshold|race)\b",
+    )
+    return sum(
+        1 for pattern in patterns if re.search(pattern, text, flags=re.IGNORECASE)
+    )
+
+
+def _detect_unasked_surfacing(response_text: str) -> bool:
+    text = response_text or ""
+    return bool(
+        re.search(
+            r"\b(One thing|I'd flag|Worth noting|I notice|Pattern I see|Risk here)\b",
+            text,
+            flags=re.IGNORECASE,
+        )
+    )
 
 
 class AICoach(
@@ -1220,26 +1196,28 @@ Policy:
                             result.get("fallback_reason") or "llm_provider_error"
                         )
                     else:
-                        packet_telemetry["deterministic_check_status"] = "passed"
-                        result["response"] = _strip_emojis(
-                            self._normalize_response_for_ui(
+                        guard_ok, guarded_v2_response, guard_reason = (
+                            self._finalize_v2_response_with_turn_guard(
+                                athlete_id=athlete_id,
                                 user_message=message,
-                                assistant_message=result.get("response", ""),
+                                response_text=result.get("response", ""),
+                                conversation_context=conversation_context,
+                                turn_id=turn_id,
+                                is_synthetic_probe=detected_synthetic_probe,
+                                is_organic=is_organic,
                             )
                         )
-                        self._record_turn_guard_event(
-                            athlete_id=athlete_id,
-                            event="pass_v2_packet",
-                            user_band=self._infer_intent_band(message, is_user=True),
-                            assistant_band=self._infer_intent_band(
-                                result["response"], is_user=False
-                            ),
-                            turn_id=turn_id,
-                            stage="v2_packet",
-                            is_synthetic_probe=detected_synthetic_probe,
-                            is_organic=is_organic,
-                        )
-                        served_by_v2 = True
+                        if guard_ok:
+                            packet_telemetry["deterministic_check_status"] = "passed"
+                            result["response"] = guarded_v2_response
+                            served_by_v2 = True
+                        else:
+                            packet_telemetry["deterministic_check_status"] = "failed"
+                            packet_telemetry["v2_guardrail_failure_reason"] = (
+                                guard_reason
+                            )
+                            demote_visible_to_fallback("v2_guardrail_failed")
+                            result = {}
                 except V2PacketInvariantError as exc:
                     logger.warning("coach_runtime_v2_packet_invariant_failed: %s", exc)
                     packet_telemetry.setdefault(
