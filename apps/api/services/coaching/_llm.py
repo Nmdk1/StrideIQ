@@ -632,7 +632,11 @@ class LLMMixin:
             "you may use. Do not ask for or call tools. Do not mention packets, "
             "schemas, tools, models, prompts, or internal architecture. Answer "
             "the athlete directly, with a real coach's judgment. Directness is "
-            "respect. If the packet marks uncertainty, say the uncertainty plainly."
+            "respect. If the packet marks uncertainty, say the uncertainty plainly. "
+            "For dates, races, completed activities, current-day status, and "
+            "race countdowns, the structured calendar_context block is the only "
+            "authority. Do not infer those facts from legacy context or from the "
+            "athlete's phrasing."
         )
         messages = [
             {

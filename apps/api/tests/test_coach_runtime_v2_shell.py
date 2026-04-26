@@ -1,5 +1,7 @@
 import inspect
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
@@ -78,9 +80,6 @@ def _coach_with_v1_path() -> AICoach:
     )
     coach._finalize_response_with_turn_guard = AsyncMock(
         side_effect=lambda **kwargs: kwargs["response_text"]
-    )
-    coach._finalize_response_with_deterministic_guardrails = MagicMock(
-        return_value=(True, "v2 answer")
     )
     coach._normalize_response_for_ui = MagicMock(
         side_effect=lambda user_message, assistant_message: assistant_message
@@ -283,7 +282,7 @@ async def test_visible_mode_uses_v2_packet_path_when_success(monkeypatch):
     assert result["fallback_reason"] is None
     coach.query_kimi_v2_packet.assert_awaited_once()
     coach._query_kimi_with_fallback.assert_not_awaited()
-    coach._finalize_response_with_deterministic_guardrails.assert_called_once()
+    coach._finalize_response_with_turn_guard.assert_not_awaited()
     _, kwargs = coach._save_chat_messages.call_args
     assert kwargs["runtime_metadata"] == {
         "runtime_version": RUNTIME_VERSION_V2,
@@ -345,31 +344,6 @@ async def test_visible_v2_empty_response_falls_back_to_v1(monkeypatch):
     assert result["runtime_mode"] == RUNTIME_MODE_FALLBACK
     assert result["runtime_version"] == RUNTIME_VERSION_V1
     assert result["fallback_reason"] == "v2_empty_response"
-    coach.query_kimi_v2_packet.assert_awaited_once()
-    coach._query_kimi_with_fallback.assert_awaited_once()
-
-
-@pytest.mark.asyncio
-async def test_visible_v2_guardrail_failure_falls_back_to_v1(monkeypatch):
-    import services.consent as consent_module
-
-    coach = _coach_with_v1_path()
-    coach._finalize_response_with_deterministic_guardrails = MagicMock(
-        return_value=(False, "wrong-topic answer")
-    )
-    monkeypatch.setattr(consent_module, "has_ai_consent", lambda athlete_id, db: True)
-    monkeypatch.setattr(
-        coach_core,
-        "resolve_coach_runtime_v2_state",
-        lambda athlete_id, db: _visible_state(),
-    )
-
-    result = await coach.chat(uuid4(), "Talk me through race week.")
-
-    assert result["response"] == "kimi"
-    assert result["runtime_mode"] == RUNTIME_MODE_FALLBACK
-    assert result["runtime_version"] == RUNTIME_VERSION_V1
-    assert result["fallback_reason"] == "v2_guardrail_failed"
     coach.query_kimi_v2_packet.assert_awaited_once()
     coach._query_kimi_with_fallback.assert_awaited_once()
 
@@ -574,8 +548,96 @@ def test_v2_packet_assembler_builds_packet_without_raw_tools():
 
     assert packet["schema_version"] == "coach_runtime_v2.packet.v1"
     assert packet["conversation_mode"]["primary"] == "racing_preparation_judgment"
-    assert packet["telemetry"]["packet_block_count"] == 2
+    assert packet["telemetry"]["packet_block_count"] == 3
     assert "tools" not in packet
+
+
+def test_v2_packet_calendar_context_is_authoritative_and_quiets_bridge():
+    athlete_id = uuid4()
+    today = date(2026, 4, 26)
+    race_date = today + timedelta(days=6)
+
+    class FakeQuery:
+        def __init__(self, *, first_value=None, all_values=None):
+            self.first_value = first_value
+            self.all_values = all_values or []
+
+        def filter(self, *args, **kwargs):
+            return self
+
+        def order_by(self, *args, **kwargs):
+            return self
+
+        def limit(self, *args, **kwargs):
+            return self
+
+        def first(self):
+            return self.first_value
+
+        def all(self):
+            return self.all_values
+
+    class FakeDb:
+        def query(self, model):
+            if model.__name__ == "Athlete":
+                return FakeQuery(first_value=SimpleNamespace(timezone="UTC"))
+            if model.__name__ == "TrainingPlan":
+                return FakeQuery(
+                    first_value=SimpleNamespace(
+                        id=uuid4(),
+                        name="Coke 10K build",
+                        goal_race_name="Coke 10K",
+                        goal_race_date=race_date,
+                        goal_race_distance_m=10000,
+                    )
+                )
+            if model.__name__ == "Activity":
+                return FakeQuery(
+                    all_values=[
+                        SimpleNamespace(
+                            id=uuid4(),
+                            start_time=datetime(
+                                2026, 4, 25, 13, 0, tzinfo=timezone.utc
+                            ),
+                            sport="run",
+                            name="Easy Run",
+                            workout_type="easy",
+                            distance_m=8400,
+                            user_verified_race=False,
+                            is_race_candidate=False,
+                            race_confidence=None,
+                            start_lat=None,
+                            start_lng=None,
+                        )
+                    ]
+                )
+            return FakeQuery()
+
+    packet = assemble_v2_packet(
+        athlete_id=athlete_id,
+        db=FakeDb(),
+        message="I feel fine today and want a straight read: should I keep today easy?",
+        conversation_context=[],
+        legacy_athlete_state=(
+            "ATHLETE BRIEF\n"
+            "Six days to the Coke 10K.\n"
+            "Today is race week and the athlete might race soon.\n"
+            "Strength preference: keep instructions direct."
+        ),
+        now_utc=datetime(2026, 4, 26, 13, 0, tzinfo=timezone.utc),
+    )
+
+    calendar = packet["blocks"]["calendar_context"]["data"]
+    bridge = packet["blocks"]["athlete_context"]["data"]["legacy_context_bridge"]
+    assert calendar["today_local"] == today.isoformat()
+    assert calendar["today_has_completed_activity"] is False
+    assert calendar["today_has_completed_race"] is False
+    assert calendar["upcoming_race"]["name"] == "Coke 10K"
+    assert calendar["upcoming_race"]["days_until_race"] == 6
+    assert "Six days to the Coke 10K" not in bridge
+    assert "race week" not in bridge
+    assert "Strength preference" in bridge
+    assert packet["telemetry"]["temporal_bridge_lines_removed"] == 2
 
 
 def test_v2_seed_migration_creates_required_flags_safely():

@@ -174,6 +174,13 @@ The last four reasons cover requests that are visible-eligible by flag but exit
 through an existing V1/system path before any V2 packet or coach-response call
 can run. They must not be recorded as `visible` / `v2` served turns.
 
+`v2_guardrail_failed` is reserved for structural V2 invariants such as packet
+schema, permission-redaction, attachment, or runtime consistency failures. It is
+not a license to recreate V1-style post-response string scanners or
+conversation-contract validators in the V2 visible path. V2 quality failures
+belong in packet structure, prompt authority, model selection, and Artifact 7
+replay coverage.
+
 Fallback must be recorded in logs and `CoachChat` metadata.
 
 ## 4. V1 Fallback Contract
@@ -541,7 +548,7 @@ Artifact 8 implementation must include tests for:
 8. Visible flag enabled routes eligible request to V2.
 9. V2 packet assembly failure falls back to V1 once.
 10. V2 timeout falls back to V1 once.
-11. V2 guardrail failure falls back to V1 once.
+11. Structural V2 guardrail failure falls back to V1 once.
 12. Fallback metadata persists to `CoachChat.messages`.
 13. Successful V2 metadata persists to `CoachChat.messages`.
 14. Shadow mode does not call coach-response LLM twice.

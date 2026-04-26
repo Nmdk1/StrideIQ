@@ -1124,6 +1124,7 @@ Policy:
                     packet_started_at = perf_counter()
                     packet = assemble_v2_packet(
                         athlete_id=athlete_id,
+                        db=self.db,
                         message=message,
                         conversation_context=conversation_context,
                         legacy_athlete_state=athlete_state,
@@ -1157,26 +1158,26 @@ Policy:
                             result.get("fallback_reason") or "llm_provider_error"
                         )
                     else:
-                        guardrail_ok, guarded_v2_response = (
-                            self._finalize_response_with_deterministic_guardrails(
-                                athlete_id=athlete_id,
+                        packet_telemetry["deterministic_check_status"] = "passed"
+                        result["response"] = _strip_emojis(
+                            self._normalize_response_for_ui(
                                 user_message=message,
-                                response_text=result.get("response", ""),
-                                conversation_context=conversation_context,
-                                turn_id=turn_id,
-                                is_synthetic_probe=detected_synthetic_probe,
-                                is_organic=is_organic,
-                                pass_event="pass_v2_packet",
-                                stage="v2_packet",
+                                assistant_message=result.get("response", ""),
                             )
                         )
-                        if guardrail_ok:
-                            packet_telemetry["deterministic_check_status"] = "passed"
-                            result["response"] = guarded_v2_response
-                            served_by_v2 = True
-                        else:
-                            packet_telemetry["deterministic_check_status"] = "failed"
-                            demote_visible_to_fallback("v2_guardrail_failed")
+                        self._record_turn_guard_event(
+                            athlete_id=athlete_id,
+                            event="pass_v2_packet",
+                            user_band=self._infer_intent_band(message, is_user=True),
+                            assistant_band=self._infer_intent_band(
+                                result["response"], is_user=False
+                            ),
+                            turn_id=turn_id,
+                            stage="v2_packet",
+                            is_synthetic_probe=detected_synthetic_probe,
+                            is_organic=is_organic,
+                        )
+                        served_by_v2 = True
                 except V2PacketInvariantError as exc:
                     logger.warning("coach_runtime_v2_packet_invariant_failed: %s", exc)
                     packet_telemetry.setdefault(

@@ -855,5 +855,106 @@
     ],
     "passing_answer": "Burrito half is fine: protein and rice. The three cookies plus peanut butter and milk on top is the off-plan part. You know it is not in the cut, and that is why you said it that way. It is extra fat, sugar, and calories on a zero exercise day during an aggressive cut, and the fat plus fiber plus lactose stack is the load that aggravates a sensitive gut before the next run. Call the cookie stack what it is, lock the rest of the day on the deficit, and keep tomorrow clean.",
     "failing_answer": "That breakfast is solid and practical, exactly what you need right now. The burrito brings protein and rice; the cookies bring oats and natural sweetness; the peanut butter adds healthy fat; the milk rounds it out. It is healthy in the way that matters for you: real food, controlled, satisfying, no guilt, disciplined fueling. Gut held it down, which is a win. Now go get the next workout."
+  },
+  {
+    "eval_schema_version": "artifact7.v1",
+    "id": "v2_canary_race_today_temporal_confusion",
+    "domain": "race_planning",
+    "case_type": "adversarial",
+    "artifact5_mode": "engage_and_reason",
+    "source_replay_type": "founder_curated",
+    "failure_modes": ["FM-003", "FM-002"],
+    "situation": {
+      "athlete_state": "athlete is six days before the Coke 10K, no completed race today, asks whether to keep today easy",
+      "context": "V2 founder canary produced a visible answer that claimed the athlete raced today despite the race being upcoming"
+    },
+    "conversation_turns": [
+      {
+        "role": "athlete",
+        "content": "I feel fine today and want a straight read: should I keep today easy?"
+      }
+    ],
+    "user_message": "I feel fine today and want a straight read: should I keep today easy?",
+    "required_context": [
+      "today_has_completed_race is false",
+      "upcoming race is Coke 10K",
+      "days_until_race is 6",
+      "latest completed activity is not a race today"
+    ],
+    "expected_coaching_truths": [
+      {
+        "id": "do_not_invent_today_race",
+        "description": "Coach must not claim the athlete raced today when calendar context says no completed race today.",
+        "must_include_any": ["six days", "6 days", "race is upcoming", "before the Coke 10K", "keep it easy"]
+      },
+      {
+        "id": "anchor_to_calendar_context",
+        "description": "Coach uses the upcoming race date/countdown as the reason for easy-day guidance.",
+        "must_include_all": ["Coke 10K"],
+        "must_include_any": ["easy", "fresh", "sharpen", "race week"]
+      }
+    ],
+    "retrieved_evidence_expected": [
+      {
+        "tool": "calendar_context",
+        "must_include": ["today_has_completed_race=false", "days_until_race=6"],
+        "reason": "calendar context is the authoritative V2 source for race timing"
+      },
+      {
+        "tool": "get_plan_week",
+        "must_include": ["Coke 10K"],
+        "reason": "plan context carries upcoming race identity"
+      }
+    ],
+    "bad_coaching_patterns": [
+      "you raced today",
+      "if you did race today",
+      "today's race",
+      "after your race today",
+      "you already raced"
+    ],
+    "excellent_answer_traits": [
+      "anchors to the race being six days away",
+      "does not invent a completed race or completed same-day activity",
+      "gives a direct easy-day recommendation using race-week freshness logic",
+      "keeps athlete agency and does not over-explain internal uncertainty"
+    ],
+    "baseline_voice": "green",
+    "baseline_citation": {
+      "doc": "GREEN_COACHING_PHILOSOPHY_EXPANDED_2026-04-10.md",
+      "section": "7. Document Honestly, Don't Romanticize"
+    },
+    "baseline_answer": "Keep today easy. The Coke 10K is six days out, and you have not raced today, so the point now is freshness, not proving fitness. Run easy or rest, then use the planned short sharpener when it belongs.",
+    "baseline_comparison_rubric": [
+      "baseline preserves the calendar truth that the race is upcoming",
+      "StrideIQ must not invent a same-day race or same-day race completion",
+      "StrideIQ should exceed baseline by tying the recommendation to the active plan week and recent activity status"
+    ],
+    "must_not": [
+      "you raced today",
+      "today's race",
+      "if you did race today",
+      "after your race today"
+    ],
+    "tools_required_if_data_claiming": ["get_plan_week", "get_recent_runs"],
+    "outcome_dimension": "safer",
+    "failure_severity": "fatal",
+    "tools_called": ["calendar_context", "get_plan_week", "get_recent_runs"],
+    "retrieved_evidence": [
+      {
+        "tool": "calendar_context",
+        "content": "today_has_completed_race=false; upcoming_race=Coke 10K; days_until_race=6"
+      },
+      {
+        "tool": "get_plan_week",
+        "content": "Coke 10K is upcoming in six days"
+      },
+      {
+        "tool": "get_recent_runs",
+        "content": "latest completed activity is not a completed race today"
+      }
+    ],
+    "passing_answer": "Keep today easy. The Coke 10K is six days away, and there is no completed race today in the calendar context, so the job is to arrive fresh. If you want movement, make it 20-30 minutes very easy with a few relaxed strides only if the plan calls for them.",
+    "failing_answer": "Keep it easy because you raced today and your fatigue is not zero. If you did race today, rest or jog 20 minutes."
   }
 ]
