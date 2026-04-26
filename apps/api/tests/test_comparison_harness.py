@@ -7,6 +7,7 @@ import pytest
 from services.coaching.comparison_harness import (
     HARNESS_SOURCES,
     HarnessProviderMissing,
+    load_acceptance_cases,
     build_typed_context_prompt,
     data_advantage_coverage,
     render_harness_report,
@@ -124,8 +125,45 @@ async def test_report_rendering_contains_required_sections(tmp_path):
 
 
 def test_typed_context_prompt_excludes_strideiq_packet_access():
-    prompt = build_typed_context_prompt(_case())
+    forbidden = (
+        "weekly_volume_mpw",
+        "recent_threads",
+        "athlete_facts",
+        "cut_active",
+        "target_event",
+        "from ledger",
+        "recent_activities",
+        "required_context",
+        "situation",
+    )
 
-    assert "Use only the typed context" in prompt
-    assert "Do not assume access to StrideIQ ledger" in prompt
-    assert "Should I add hills?" in prompt
+    for case in load_acceptance_cases():
+        prompt = build_typed_context_prompt(case)
+        lower = prompt.lower()
+        for term in forbidden:
+            assert term not in lower
+
+
+def test_typed_context_prompt_preserves_user_turns_verbatim():
+    case = {
+        "conversation_turns": [
+            {"role": "athlete", "content": "First athlete turn."},
+            {"role": "assistant", "content": "Assistant metadata must not leak."},
+            {"role": "user", "content": "Final user turn?"},
+        ],
+        "user_message": "Different final message",
+        "situation": {"athlete_state": "weekly_volume_mpw=60"},
+        "required_context": ["cut_active.flag=true"],
+    }
+
+    prompt = build_typed_context_prompt(case)
+
+    assert (
+        "Use only the athlete's typed messages below. You do not have access to their training history, activities, or prior conversations."
+        in prompt
+    )
+    assert "- First athlete turn." in prompt
+    assert "- Final user turn?" in prompt
+    assert "Assistant metadata must not leak." not in prompt
+    assert "weekly_volume_mpw" not in prompt
+    assert "cut_active" not in prompt

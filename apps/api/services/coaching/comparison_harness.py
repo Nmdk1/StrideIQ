@@ -91,15 +91,21 @@ def build_typed_context_prompt(case: Mapping[str, Any]) -> str:
     """Competitor prompt: what a frontier model gets without StrideIQ packet data."""
 
     turns = case.get("conversation_turns") or []
-    latest = case.get("user_message") or (turns[-1].get("content") if turns else "")
+    user_turns = [
+        str(turn.get("content") or "").strip()
+        for turn in turns
+        if str(turn.get("role") or "").lower() in {"athlete", "user"}
+        and str(turn.get("content") or "").strip()
+    ]
+    if not user_turns and case.get("user_message"):
+        user_turns = [str(case["user_message"]).strip()]
     return "\n".join(
         [
             "You are evaluating a coaching question from an endurance athlete.",
-            "Use only the typed context below. Do not assume access to StrideIQ ledger, activities, or thread memory.",
+            "Use only the athlete's typed messages below. You do not have access to their training history, activities, or prior conversations.",
             "",
-            f"Situation: {json.dumps(case.get('situation') or {}, ensure_ascii=True)}",
-            f"Typed athlete context: {json.dumps(case.get('required_context') or [], ensure_ascii=True)}",
-            f"Question: {latest}",
+            "Athlete typed messages:",
+            *[f"- {message}" for message in user_turns],
         ]
     )
 
