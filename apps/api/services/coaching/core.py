@@ -1164,6 +1164,9 @@ Policy:
                     packet_telemetry["latency_ms_llm"] = int(
                         result.get("kimi_latency_ms") or 0
                     )
+                    packet_telemetry["template_phrase_count"] = int(
+                        result.get("template_phrase_count") or 0
+                    )
                     if result.get("error"):
                         packet_telemetry["deterministic_check_status"] = "skipped"
                         demote_visible_to_fallback(
@@ -1235,6 +1238,11 @@ Policy:
                         is_organic=is_organic,
                     )
                 result["response"] = guarded_response
+                runtime_metadata = runtime_state.as_metadata()
+                if served_by_v2:
+                    runtime_metadata["template_phrase_count"] = int(
+                        result.get("template_phrase_count") or 0
+                    )
                 self._save_chat_messages(
                     athlete_id,
                     message,
@@ -1242,7 +1250,7 @@ Policy:
                     model=result.get("model", "unknown"),
                     tools_used=tools_used,
                     conversation_contract=conversation_contract_type,
-                    runtime_metadata=runtime_state.as_metadata(),
+                    runtime_metadata=runtime_metadata,
                 )
                 result["tools_used"] = tools_used
                 result["tool_count"] = len(tools_used)

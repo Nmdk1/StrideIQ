@@ -307,6 +307,7 @@ async def test_visible_mode_uses_v2_packet_path_when_success(monkeypatch):
         "runtime_version": RUNTIME_VERSION_V2,
         "runtime_mode": RUNTIME_MODE_VISIBLE,
         "fallback_reason": None,
+        "template_phrase_count": 0,
     }
 
 

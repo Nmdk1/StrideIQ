@@ -26,6 +26,10 @@ from services.coaching._conversation_contract import (  # noqa: E402
     classify_conversation_contract,
 )
 from services.coaching.runtime_v2_packet import packet_to_prompt  # noqa: E402
+from services.coaching.voice_enforcement import (  # noqa: E402
+    VoiceContractViolation,
+    enforce_voice,
+)
 from core.config import settings  # noqa: E402
 from services import coach_tools  # noqa: E402
 
@@ -714,6 +718,52 @@ class LLMMixin:
                 "output_tokens": output_tokens,
             }
 
+        async def _retry_voice(rewrite_instruction: str) -> str:
+            retry_response = await client.chat.completions.create(
+                model=model_name,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    *messages,
+                    {"role": "user", "content": rewrite_instruction},
+                ],
+                max_tokens=COACH_MAX_OUTPUT_TOKENS,
+                extra_body=extra_body if extra_body else None,
+            )
+            retry_choice = (retry_response.choices or [None])[0]
+            retry_message = retry_choice.message if retry_choice else None
+            return _strip_emojis(
+                ((getattr(retry_message, "content", "") or "")).strip()
+            )
+
+        try:
+            voice_result = await enforce_voice(response_text, _retry_voice)
+            response_text = voice_result["response"]
+            template_phrase_count = int(voice_result["template_phrase_count"])
+            template_phrase_hits = list(voice_result["template_phrase_hits"])
+        except VoiceContractViolation as exc:
+            logger.warning(
+                "coach_runtime_v2_voice_contract_violation",
+                extra={
+                    "extra_fields": {
+                        "event": "coach_runtime_v2_voice_contract_violation",
+                        "athlete_id": str(athlete_id),
+                        "template_phrase_count": len(exc.hits),
+                        "template_phrase_hits": exc.hits,
+                    }
+                },
+            )
+            return {
+                "response": "",
+                "error": True,
+                "model": model_name,
+                "fallback_reason": "v2_guardrail_failed",
+                "error_class": "VoiceContractViolation",
+                "input_tokens": input_tokens,
+                "output_tokens": output_tokens,
+                "template_phrase_count": len(exc.hits),
+                "template_phrase_hits": exc.hits,
+            }
+
         self.track_usage(
             athlete_id=athlete_id,
             input_tokens=input_tokens,
@@ -733,6 +783,8 @@ class LLMMixin:
             "tools_called": [],
             "kimi_latency_ms": latency_ms,
             "kimi_tool_calls_count": 0,
+            "template_phrase_count": template_phrase_count,
+            "template_phrase_hits": template_phrase_hits,
         }
 
     async def query_gemini(

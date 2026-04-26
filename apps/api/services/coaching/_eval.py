@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
+from services.coaching.voice_enforcement import check_response
 
 REAL_COACH_DOMAINS = {
     "daily_training_adjustment",
@@ -51,12 +52,12 @@ ARTIFACT5_PRIMARY_MODES = frozenset(
         "mode_uncertain",
     }
 )
-SOURCE_REPLAY_TYPES = frozenset({"production_chat", "founder_curated", "external_ai", "manual"})
+SOURCE_REPLAY_TYPES = frozenset(
+    {"production_chat", "founder_curated", "external_ai", "manual"}
+)
 EVAL_SCHEMA_VERSIONS = frozenset({"phase8.v1", "artifact7.v1"})
 ARTIFACT7_FAILURE_MODES = frozenset(
-    f"FM-{idx:03d}"
-    for idx in range(1, 31)
-    if idx != 24
+    f"FM-{idx:03d}" for idx in range(1, 31) if idx != 24
 )
 DEFAULT_REFERENCES_ROOT = Path(__file__).resolve().parents[4] / "docs" / "references"
 _REFERENCE_HEADINGS_CACHE: dict[Path, frozenset[str]] = {}
@@ -125,7 +126,10 @@ def _spec_present(text: str, spec: Any) -> bool:
         return str(phrase).lower() in _lower(text)
     pattern = spec.get("pattern")
     if pattern:
-        return re.search(str(pattern), text or "", flags=re.IGNORECASE | re.MULTILINE) is not None
+        return (
+            re.search(str(pattern), text or "", flags=re.IGNORECASE | re.MULTILINE)
+            is not None
+        )
     return False
 
 
@@ -195,7 +199,9 @@ def _validate_artifact7_case(
             else:
                 if not reference_path.is_file():
                     failures.append(f"missing_reference_doc:{doc}")
-                elif section and _normalize_reference_heading(section) not in _reference_headings(reference_path):
+                elif section and _normalize_reference_heading(
+                    section
+                ) not in _reference_headings(reference_path):
                     failures.append(f"missing_reference_section:{section}")
 
     artifact5_mode = case.get("artifact5_mode")
@@ -315,13 +321,19 @@ def validate_real_coach_case(
         _validate_artifact7_case(
             case,
             failures,
-            Path(references_root) if references_root is not None else DEFAULT_REFERENCES_ROOT,
+            (
+                Path(references_root)
+                if references_root is not None
+                else DEFAULT_REFERENCES_ROOT
+            ),
         )
 
     return tuple(failures)
 
 
-def _check_truths(case: Mapping[str, Any], assistant_text: str, failures: list[str]) -> None:
+def _check_truths(
+    case: Mapping[str, Any], assistant_text: str, failures: list[str]
+) -> None:
     for truth in case.get("expected_coaching_truths") or []:
         truth_id = str(truth.get("id") or "unknown_truth")
         include_any = list(truth.get("must_include_any") or [])
@@ -332,21 +344,35 @@ def _check_truths(case: Mapping[str, Any], assistant_text: str, failures: list[s
             failures.append(f"missing_expected_truth_all:{truth_id}")
 
 
-def _check_bad_patterns(case: Mapping[str, Any], assistant_text: str, failures: list[str]) -> None:
+def _check_bad_patterns(
+    case: Mapping[str, Any], assistant_text: str, failures: list[str]
+) -> None:
     for spec in case.get("bad_coaching_patterns") or []:
         if _spec_present(assistant_text, spec):
-            label = spec if isinstance(spec, str) else spec.get("id") or spec.get("phrase") or spec.get("pattern")
+            label = (
+                spec
+                if isinstance(spec, str)
+                else spec.get("id") or spec.get("phrase") or spec.get("pattern")
+            )
             failures.append(f"bad_coaching_pattern_present:{label}")
 
 
-def _check_must_not(case: Mapping[str, Any], assistant_text: str, failures: list[str]) -> None:
+def _check_must_not(
+    case: Mapping[str, Any], assistant_text: str, failures: list[str]
+) -> None:
     for spec in case.get("must_not") or []:
         if _spec_present(assistant_text, spec):
-            label = spec if isinstance(spec, str) else spec.get("id") or spec.get("phrase") or spec.get("pattern")
+            label = (
+                spec
+                if isinstance(spec, str)
+                else spec.get("id") or spec.get("phrase") or spec.get("pattern")
+            )
             failures.append(f"must_not_present:{label}")
 
 
-def _check_tools(case: Mapping[str, Any], tools_called: Sequence[str], failures: list[str]) -> None:
+def _check_tools(
+    case: Mapping[str, Any], tools_called: Sequence[str], failures: list[str]
+) -> None:
     called = set(tools_called or [])
     for tool in case.get("tools_required_if_data_claiming") or []:
         if tool not in called:
@@ -358,7 +384,9 @@ def _evidence_blob(evidence: Mapping[str, Any]) -> str:
     for value in evidence.values():
         if isinstance(value, (str, int, float, bool)):
             parts.append(str(value))
-        elif isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
+        elif isinstance(value, Sequence) and not isinstance(
+            value, (str, bytes, bytearray)
+        ):
             parts.extend(str(item) for item in value)
         elif isinstance(value, Mapping):
             parts.append(_evidence_blob(value))
@@ -382,7 +410,9 @@ def _check_retrieved_evidence(
             failures.append(f"missing_retrieved_evidence_tool:{tool}")
             continue
         combined = " ".join(_evidence_blob(evidence) for evidence in matching)
-        missing = [needle for needle in needles if needle.lower() not in _lower(combined)]
+        missing = [
+            needle for needle in needles if needle.lower() not in _lower(combined)
+        ]
         if missing:
             failures.append(f"missing_retrieved_evidence:{tool}:{','.join(missing)}")
 
@@ -397,8 +427,14 @@ def evaluate_real_coach_response(
     """Evaluate a response against Phase 8 deterministic coaching truth checks."""
 
     schema_failures = list(validate_real_coach_case(case))
-    text = assistant_text if assistant_text is not None else str(case.get("passing_answer") or "")
-    called = list(tools_called if tools_called is not None else case.get("tools_called") or [])
+    text = (
+        assistant_text
+        if assistant_text is not None
+        else str(case.get("passing_answer") or "")
+    )
+    called = list(
+        tools_called if tools_called is not None else case.get("tools_called") or []
+    )
     evidence = list(
         retrieved_evidence
         if retrieved_evidence is not None
@@ -466,6 +502,7 @@ def build_tier3_judge_payload(
         "scoring_instruction": scoring_instruction,
     }
     if case.get("eval_schema_version") == "artifact7.v1":
+        voice_check = check_response(assistant_text)
         payload.update(
             {
                 "eval_schema_version": case.get("eval_schema_version"),
@@ -473,6 +510,7 @@ def build_tier3_judge_payload(
                 "baseline_citation": case.get("baseline_citation"),
                 "artifact5_mode": case.get("artifact5_mode"),
                 "source_replay_type": case.get("source_replay_type"),
+                "template_phrase_hits": voice_check["hits"],
             }
         )
     return payload
@@ -497,6 +535,11 @@ def evaluate_tier3_judge_scores(
         required_dimensions = required_dimensions + ("voice_alignment",)
 
     failures: list[str] = []
+    template_phrase_hits = list(judge_scores.get("template_phrase_hits") or [])
+    if template_phrase_hits:
+        failures.append(
+            "voice_alignment_blocklist_hit:" + ",".join(map(str, template_phrase_hits))
+        )
     scores: list[float] = []
     for dimension in required_dimensions:
         raw = judge_scores.get(dimension)
@@ -506,7 +549,9 @@ def evaluate_tier3_judge_scores(
             failures.append(f"missing_judge_score:{dimension}")
             continue
         if score < min_dimension:
-            failures.append(f"judge_dimension_below_min:{dimension}:{score:g}<{min_dimension:g}")
+            failures.append(
+                f"judge_dimension_below_min:{dimension}:{score:g}<{min_dimension:g}"
+            )
         scores.append(score)
 
     average = sum(scores) / len(scores) if scores else 0.0
@@ -522,7 +567,9 @@ def evaluate_tier3_judge_scores(
     )
 
 
-def summarize_tier3_domain_scores(results: Sequence[Tier3JudgeResult]) -> dict[str, Any]:
+def summarize_tier3_domain_scores(
+    results: Sequence[Tier3JudgeResult],
+) -> dict[str, Any]:
     domain_scores: dict[str, list[float]] = {}
     domain_failures: dict[str, int] = {}
     for result in results:
@@ -546,7 +593,9 @@ def summarize_tier3_domain_scores(results: Sequence[Tier3JudgeResult]) -> dict[s
     }
 
 
-def summarize_real_coach_results(results: Sequence[RealCoachEvalResult]) -> dict[str, Any]:
+def summarize_real_coach_results(
+    results: Sequence[RealCoachEvalResult],
+) -> dict[str, Any]:
     domain_summary: dict[str, dict[str, int]] = {}
     for result in results:
         bucket = domain_summary.setdefault(result.domain, {"passed": 0, "failed": 0})
