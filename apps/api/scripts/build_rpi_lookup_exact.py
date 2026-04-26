@@ -233,7 +233,7 @@ def store_exact_lookup_tables(pace_table: Dict, equivalent_table: Dict):
             print("✅ Created new RPI lookup tables entry")
         
         db.commit()
-        print(f"✅ Stored exact RPI lookup tables")
+        print("✅ Stored exact RPI lookup tables")
         
     except Exception as e:
         print(f"❌ Error storing RPI tables: {e}")
@@ -256,7 +256,7 @@ def main():
     
     # Verify RPI 50 (exact reference)
     rpi_50 = pace_table[50.0]
-    print(f"\n   RPI 50 verification:")
+    print("\n   RPI 50 verification:")
     print(f"     E pace: {rpi_50['e_pace']} (expected 8:15) {'✅' if rpi_50['e_pace'] == '8:15' else '❌'}")
     print(f"     M pace: {rpi_50['m_pace']} (expected 7:00) {'✅' if rpi_50['m_pace'] == '7:00' else '❌'}")
     print(f"     T pace: {rpi_50['t_pace']} (expected 6:35) {'✅' if rpi_50['t_pace'] == '6:35' else '❌'}")
@@ -267,7 +267,7 @@ def main():
     print(f"   Generated {len(equivalent_table)} RPI entries")
     
     rpi_50_equiv = equivalent_table[50.0]
-    print(f"\n   RPI 50 equivalent times:")
+    print("\n   RPI 50 equivalent times:")
     print(f"     5K: {rpi_50_equiv['race_times_formatted']['5K']} (expected 19:31)")
     print(f"     10K: {rpi_50_equiv['race_times_formatted']['10K']} (expected 40:27)")
     print(f"     Half: {rpi_50_equiv['race_times_formatted']['half_marathon']} (expected 1:29:04)")

@@ -116,62 +116,26 @@ class TestQueryComplexityClassifier:
 
 
 class TestModelRouting:
-    """Test get_model_for_query() method - returns (model_name, is_opus) tuple."""
-    
-    def test_low_complexity_uses_default(self, coach):
-        """LOW complexity should use MODEL_DEFAULT."""
-        model, is_opus = coach.get_model_for_query("low")
-        assert model == coach.MODEL_DEFAULT
-        assert is_opus is False
-    
-    def test_medium_complexity_uses_default(self, coach):
-        """MEDIUM complexity should use MODEL_DEFAULT (for non-high-stakes)."""
-        model, is_opus = coach.get_model_for_query("medium")
-        assert model == coach.MODEL_DEFAULT
-        assert is_opus is False
-    
-    def test_high_complexity_non_vip_uses_default(self, coach):
-        """HIGH complexity for non-VIP uses MODEL_DEFAULT (no Opus without subscription)."""
-        athlete_id = uuid4()
-        model, is_opus = coach.get_model_for_query("high", athlete_id=athlete_id)
-        # Without subscription/Anthropic client, falls back to default
-        assert model == coach.MODEL_DEFAULT
-        assert is_opus is False
-    
-    def test_vip_without_anthropic_falls_back(self, mock_db):
-        """VIP without Anthropic client falls back to default."""
-        vip_id = uuid4()
+    """Test get_model_for_query() — universal Kimi K2.5 routing (Apr 2026)."""
+
+    def test_all_queries_route_to_premium(self, coach):
+        """Every query routes to MODEL_HIGH_STAKES (Kimi K2.5 path)."""
+        for qt in ("low", "medium", "high", "simple", "standard"):
+            model, is_premium = coach.get_model_for_query(qt)
+            assert model == coach.MODEL_HIGH_STAKES, f"query_type={qt}"
+            assert is_premium is True, f"query_type={qt}"
+
+    def test_founder_routes_to_premium(self, mock_db):
+        """Founder always routes to premium."""
+        owner_id = uuid4()
         with patch.dict('os.environ', {
-            'COACH_VIP_ATHLETE_IDS': str(vip_id),
+            'OWNER_ATHLETE_ID': str(owner_id),
             'COACH_MODEL_ROUTING': 'on',
-            'OWNER_ATHLETE_ID': '',
-            'ANTHROPIC_API_KEY': '',
         }):
             coach = AICoach(mock_db)
-            coach.anthropic_client = None
-
-            model, is_opus = coach.get_model_for_query("high", athlete_id=vip_id)
-            assert model == coach.MODEL_DEFAULT
-            assert is_opus is False
-    
-    def test_legacy_simple_maps_to_low(self, coach):
-        """Legacy 'simple' query type should use MODEL_DEFAULT."""
-        model, is_opus = coach.get_model_for_query("simple")
-        assert model == coach.MODEL_DEFAULT
-        assert is_opus is False
-    
-    def test_legacy_standard_reclassifies(self, coach):
-        """Legacy 'standard' should use MODEL_DEFAULT (non-high-stakes default)."""
-        # Without message, defaults to MODEL_DEFAULT
-        model, is_opus = coach.get_model_for_query("standard")
-        assert model == coach.MODEL_DEFAULT
-        
-        # With high-complexity message but no Anthropic client, still MODEL_DEFAULT
-        model, is_opus = coach.get_model_for_query(
-            "standard", 
-            message="Why am I getting slower despite running more?"
-        )
-        assert model == coach.MODEL_DEFAULT
+            model, is_premium = coach.get_model_for_query("low", athlete_id=owner_id)
+            assert model == coach.MODEL_HIGH_STAKES
+            assert is_premium is True
 
 
 class TestVIPLoading:
@@ -213,52 +177,32 @@ class TestVIPLoading:
 
 class TestEndToEndClassification:
     """Integration tests for the full classification + routing flow."""
-    
-    def test_lookup_query_gets_default(self, coach):
-        """A lookup query should route to MODEL_DEFAULT."""
-        message = "What was my long run last week?"
-        complexity = coach.classify_query_complexity(message)
-        model, is_opus = coach.get_model_for_query(complexity)
-        
-        assert complexity == "low"
-        assert model == coach.MODEL_DEFAULT
-    
-    def test_coaching_query_gets_default(self, coach):
-        """A standard coaching query should route to MODEL_DEFAULT."""
-        message = "What pace for my tempo run?"  # Simple pace lookup, no causal/decision
-        complexity = coach.classify_query_complexity(message)
-        model, is_opus = coach.get_model_for_query(complexity)
-        
-        assert complexity == "medium"
-        assert model == coach.MODEL_DEFAULT
-    
-    def test_complex_query_gets_default_without_anthropic(self, coach):
-        """A complex query without Anthropic client routes to MODEL_DEFAULT."""
-        message = "Why am I getting slower despite increasing my mileage?"
-        complexity = coach.classify_query_complexity(message)
-        model, is_opus = coach.get_model_for_query(complexity, athlete_id=uuid4())
-        
-        assert complexity == "high"
-        assert model == coach.MODEL_DEFAULT  # No Anthropic client = default
-    
-    def test_complex_query_vip_without_anthropic_falls_back(self, mock_db):
-        """A complex query from VIP without Anthropic falls back to MODEL_DEFAULT."""
+
+    def test_all_complexities_route_to_kimi(self, coach):
+        """Every complexity level now routes to premium (Kimi K2.5)."""
+        for msg, expected_complexity in [
+            ("What was my long run last week?", "low"),
+            ("What pace for my tempo run?", "medium"),
+            ("Why am I getting slower despite increasing my mileage?", "high"),
+        ]:
+            complexity = coach.classify_query_complexity(msg)
+            model, is_premium = coach.get_model_for_query(complexity, athlete_id=uuid4())
+            assert complexity == expected_complexity
+            assert model == coach.MODEL_HIGH_STAKES
+            assert is_premium is True
+
+    def test_vip_routes_to_premium(self, mock_db):
+        """VIP always routes to premium (Kimi K2.5)."""
         vip_id = uuid4()
         with patch.dict('os.environ', {
             'COACH_VIP_ATHLETE_IDS': str(vip_id),
             'COACH_MODEL_ROUTING': 'on',
             'OWNER_ATHLETE_ID': '',
-            'ANTHROPIC_API_KEY': '',
         }):
             coach = AICoach(mock_db)
-            coach.anthropic_client = None
-
-            message = "Why am I getting slower despite increasing my mileage?"
-            complexity = coach.classify_query_complexity(message)
-            model, is_opus = coach.get_model_for_query(complexity, athlete_id=vip_id)
-
-            assert complexity == "high"
-            assert model == coach.MODEL_DEFAULT
+            model, is_premium = coach.get_model_for_query("high", athlete_id=vip_id)
+            assert model == coach.MODEL_HIGH_STAKES
+            assert is_premium is True
 
 
 class TestToolValidation:
@@ -280,6 +224,26 @@ class TestToolValidation:
             message="How many miles did I run this week?",
             tools_called=["get_recent_runs", "get_training_load"],
             tool_calls_count=2,
+        )
+        assert is_valid is True
+        assert reason == "ok"
+
+    def test_race_strategy_tools_count_as_data_tools(self, coach):
+        """Race strategy tools should not trigger false no-data warnings."""
+        is_valid, reason = coach._validate_tool_usage(
+            message="Give me a 5K race strategy for tomorrow.",
+            tools_called=["get_training_paces", "get_race_predictions"],
+            tool_calls_count=2,
+        )
+        assert is_valid is True
+        assert reason == "ok"
+
+    def test_nutrition_log_counts_as_data_tool(self, coach):
+        """Nutrition data questions are grounded by nutrition tools."""
+        is_valid, reason = coach._validate_tool_usage(
+            message="How many calories have I logged today?",
+            tools_called=["get_nutrition_log"],
+            tool_calls_count=1,
         )
         assert is_valid is True
         assert reason == "ok"
@@ -389,27 +353,21 @@ class TestEdgeCases:
             'COACH_VIP_ATHLETE_IDS': str(vip_id),
             'COACH_MODEL_ROUTING': 'on',
             'OWNER_ATHLETE_ID': '',
-            'ANTHROPIC_API_KEY': '',
         }):
             coach = AICoach(mock_db)
-            coach.anthropic_client = None
-
-            model, is_opus = coach.get_model_for_query("high", athlete_id=vip_id)
-            assert model == coach.MODEL_DEFAULT
+            model, is_premium = coach.get_model_for_query("high", athlete_id=vip_id)
+            assert model == coach.MODEL_HIGH_STAKES
     
-    def test_non_vip_does_not_get_opus(self, coach):
-        """Non-VIP should never get Opus, falls back to default."""
-        vip_id = uuid4()
+    def test_non_vip_still_routes_to_kimi(self, coach):
+        """Non-VIP routes to Kimi (universal routing)."""
         non_vip_id = uuid4()
-        coach.VIP_ATHLETE_IDS = {str(vip_id)}
-        
-        model, is_opus = coach.get_model_for_query("high", athlete_id=non_vip_id)
-        assert model == coach.MODEL_DEFAULT  # No Anthropic client = default
-    
-    def test_none_athlete_id_for_high_complexity(self, coach):
-        """None athlete_id should default to MODEL_DEFAULT."""
-        model, is_opus = coach.get_model_for_query("high", athlete_id=None)
-        assert model == coach.MODEL_DEFAULT  # No athlete_id triggers no-subscription path
+        model, is_premium = coach.get_model_for_query("high", athlete_id=non_vip_id)
+        assert model == coach.MODEL_HIGH_STAKES
+
+    def test_none_athlete_id_routes_to_kimi(self, coach):
+        """None athlete_id routes to Kimi (universal routing)."""
+        model, is_premium = coach.get_model_for_query("high", athlete_id=None)
+        assert model == coach.MODEL_HIGH_STAKES
     
     def test_vip_always_routes_opus_regardless_of_complexity(self, mock_db):
         """VIP athletes get Opus for ALL queries, not just high-stakes."""
@@ -440,8 +398,8 @@ class TestEdgeCases:
             assert is_opus is True
             assert model == coach.MODEL_HIGH_STAKES
 
-    def test_standard_user_still_keyword_gated(self, mock_db):
-        """Non-founder, non-VIP users still require keyword routing."""
+    def test_standard_user_routes_to_kimi(self, mock_db):
+        """Non-founder, non-VIP users also route to Kimi (universal routing)."""
         random_id = uuid4()
         with patch.dict('os.environ', {
             'OWNER_ATHLETE_ID': '',
@@ -449,7 +407,6 @@ class TestEdgeCases:
             'COACH_MODEL_ROUTING': 'on',
         }):
             coach = AICoach(mock_db)
-            coach.anthropic_client = MagicMock()
-
-            model, is_opus = coach.get_model_for_query("low", athlete_id=random_id, message="how was my week?")
-            assert is_opus is False
+            model, is_premium = coach.get_model_for_query("low", athlete_id=random_id, message="how was my week?")
+            assert is_premium is True
+            assert model == coach.MODEL_HIGH_STAKES

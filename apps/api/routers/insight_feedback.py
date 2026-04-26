@@ -4,11 +4,9 @@ Insight Feedback API Router
 Handles user feedback on insights to refine correlation engine thresholds.
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 from typing import List, Optional
-from uuid import UUID
-
 from core.database import get_db
 from core.auth import get_current_user
 from models import Athlete, InsightFeedback
@@ -87,12 +85,12 @@ def get_feedback_stats(
     
     helpful_count = db.query(InsightFeedback).filter(
         InsightFeedback.athlete_id == current_user.id,
-        InsightFeedback.helpful == True
+        InsightFeedback.helpful.is_(True)
     ).count()
     
     not_helpful_count = db.query(InsightFeedback).filter(
         InsightFeedback.athlete_id == current_user.id,
-        InsightFeedback.helpful == False
+        InsightFeedback.helpful.is_(False)
     ).count()
     
     return {

@@ -12,7 +12,7 @@ if __name__ == "__main__":
     print("=" * 70)
     print("TOKEN ENCRYPTION KEY")
     print("=" * 70)
-    print(f"\nAdd this to your .env file:")
+    print("\nAdd this to your .env file:")
     print(f"\nTOKEN_ENCRYPTION_KEY={key.decode()}\n")
     print("=" * 70)
     print("\n⚠️  IMPORTANT:")

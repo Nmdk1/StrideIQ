@@ -1,4 +1,4 @@
-pro# Training Plan & Daily Adaptation — Phased Build Plan
+# Training Plan & Daily Adaptation — Phased Build Plan
 
 **Date:** February 12, 2026
 **Status:** APPROVED — Ready to build
@@ -38,6 +38,100 @@ pro# Training Plan & Daily Adaptation — Phased Build Plan
 > - Feature flag `lane_2a_cache_briefing` live for founder only. 24-48h stability soak before wider rollout.
 > - 42 tests covering cache states, triggers (runtime integration), admin auth, provider timeouts, schema contract.
 > - Lane 2B (non-LLM compute optimization) scoped but not started — needed if p95 margin stays tight.
+>
+> **Operational Update — March 22, 2026 (Plan generation stabilization)**
+> - Phases 0-5 of the plan-generation completion loop executed and validated locally.
+> - Constraint-aware generation now consumes LoadContext (L30 easy-long seed + D4 history bridge).
+> - Strict validation matrix (`PlanValidator(strict=True)`) is now a dedicated CI workflow job:
+>   `Plan Validation Strict`.
+> - Current strict matrix result: 15 pass, 6 explicit policy-waiver xfails (marathon low-volume MP/LR percentage cases), 0 unexpected failures.
+> - Monetization baseline note: legacy "Monetization CONTRACT ONLY" snapshot is historical and superseded by the 2-tier model decision in this document.
+>
+> **Operational Update — March 29, 2026 (N=1 Engine V3 Rebuild)**
+> - All legacy plan generators deleted (-16,920 lines). New `n1_engine.py` (1,078 lines)
+>   rebuilt from scratch with diagnosis-first architecture per `docs/specs/N1_ENGINE_ADR_V2.md`.
+> - Adaptation needs drive workout selection; phases are labels, not drivers.
+> - Original evaluator `scripts/eval_plan_quality.py` (852 lines) checks 12 Blocking
+>   Criteria across 14 archetypes: **143 PASS, 0 FAIL, 11 WAIVED**.
+> - KB Rule Evaluator `scripts/eval_kb_rules.py` replaces BC system as primary gate.
+>   Checks 33 HARD rules from `docs/specs/KB_RULE_REGISTRY_ANNOTATED.md` across all
+>   14 archetypes: **445 PASS, 0 FAIL, 0 WARN, 17 WAIVED**. Three engine bugs caught
+>   and fixed (beginner days_per_week, taper strides, MLR ceiling). Both evaluators agree.
+> - Limiter Engine Phases 1-4 complete (Mar 29-31). Fingerprint bridge, temporal
+>   weighting, lifecycle classifier, and coach layer integration all shipped. Coach
+>   now surfaces `emerging` findings as natural language questions to athletes. Athlete
+>   confirmation creates `limiter_context` facts (90-day TTL) that promote findings
+>   through the lifecycle (`emerging` → `active` → `resolving` → `closed`). Tier 2
+>   quality validation passed on production data (founder account, 110 findings).
+> - Legacy `plan_generator_v2.py`, `kb_driven_generator.py`, `test_plan_validation_matrix.py`,
+>   and all template-based generators are permanently removed.
+> - CI reorganized: push commits run fast gate (smoke + lint + migration); full backend suite
+>   runs nightly + manual trigger. Nightly failures auto-open GitHub issues.
+> - Intake context now wired into plan generation (onboarding questionnaire → FitnessBank seeds).
+> - Phase 1 status updated from "COMPLETE (template-based)" to "V3 REBUILT (diagnosis-first)".
+>
+> **Operational Update — April 1, 2026 (Plan volume regression + goal-time derivation)**
+> - Plan generation regression fixed for athletes without race history (e.g., Larry Shaffer).
+> - `_find_best_race` default changed from 45.0 RPI to 0.0 — no fabricated fitness data.
+>   `_estimate_rpi_from_training` method removed entirely from fitness_bank.py.
+> - When `best_rpi` is 0 and athlete provides a goal time, RPI is derived from
+>   `calculate_rpi_from_race_time`. Paces then come from real goal-anchored data.
+> - Frontend "Goal Time (optional)" input added to constraint-aware plan form.
+> - Removed arbitrary 10K volume cap in `_build_volume_contract` (was crushing
+>   `applied_peak` to `band_max`). No distance should override an athlete's proven mileage.
+> - Abbreviated plan peak now guarantees `starting_vol + days_per_week` (1 mi/session build room),
+>   capped at historical peak for safety.
+> - Volume undershoot handler added to `assemble_plan` — distributes shortfall to easy runs
+>   when assembled days fall below target volume.
+> - Race prediction (`_predict_race`) fixed: `best_rpi=0.0` was treated as valid, producing
+>   5-hour 10K base predictions. Now correctly falls back to goal-time-derived or
+>   volume-estimated RPI.
+> - **Technical debt noted:** Recovery-modulated ramp ceiling — use athlete's actual
+>   tau1/tau2/HRV signature for volume ramp ceiling (N=1), not blanket 1mi/session.
+>   The 1mi/session is a floor; the ceiling should be individualized.
+> - CI #804 and #805: GREEN. Commits: `f258cd4`, `6aa149e`, `f0cbb21`.
+>
+> **Operational Update — April 11, 2026 (Plan Engine V2 sandbox + production migration)**
+> - **Plan Engine V2 sandbox complete.** New plan generator (`services/plan_engine_v2/`) built from
+>   ground up with modern coaching science KB (13 documents: Davis, Green, Roche, Coe).
+>   Phase model: general → supportive → specific → taper. Rich segments JSONB output.
+>   Fueling on all runs ≥90 min. Three rotating long run types. Extension-based progression.
+>   Distance ranges for athlete self-selection. Medium-long runs with optimal spacing.
+>   Tune-up race handling preserving midweek quality.
+> - **Founder coaching review passed:** Long run staircase (14→16→18→cutback→20→21→cutback→
+>   18→tune-up→21→cutback→taper), tune-up week quality preservation, fueling coverage
+>   all validated by founder's coaching eye.
+> - **V2 wired to production route:** `POST /v2/plans/constraint-aware?engine=v2` available
+>   for admin/owner roles. `router_adapter.py` loads FitnessBank, FingerprintParams,
+>   LoadContext from DB and maps to V2 inputs. `plan_saver.py` maps V2 output to existing
+>   `TrainingPlan` + `PlannedWorkout` tables with `generation_method = "v2"`.
+>   V1 default path unaffected.
+> - **Production smoke verified:** V2 dry-run generates 23-week marathon plan (1208mi total,
+>   62.6 peak weekly miles). V1 default generates 24-week marathon plan (1161mi total).
+>   Both passing. All containers healthy.
+> - **Migration:** `plan_engine_v2_001` (plan_preview table). CI expected heads updated.
+> - **Next:** Founder live testing with real plan generation, 7-day monitoring, beta rollout.
+>
+> **Operational Update — April 4, 2026 (Wellness surfaces + Manual V2 + nav consolidation)**
+> - **Pre-Activity Wellness Stamps:** Five new columns on Activity (`pre_sleep_h`,
+>   `pre_sleep_score`, `pre_resting_hr`, `pre_recovery_hrv`, `pre_overnight_hrv`).
+>   Migration `wellness_stamp_001`. Stamped at all ingestion paths (Strava sync/index/ingest,
+>   Garmin webhook). Retro-stamp on health data arrival. Admin backfill endpoint.
+>   Service: `services/wellness_stamp.py`. Enables wellness-vs-performance correlation
+>   research alongside HR, cadence, and pace — directly feeds correlation engine quality.
+> - **Personal Operating Manual V2:** `/manual` promoted to primary nav (left of Progress).
+>   Race Character (pace-gap analysis + counterevidence), Cascade Stories (confound-suppressed),
+>   Highlighted Findings (interestingness-scored), Full Record. Human-language headlines.
+>   `localStorage` delta tracking. Race character is the single most important finding type.
+> - **HRV Labeling Standardized:** `garmin_hrv_5min_high` → "Recovery HRV" system-wide
+>   (`operating_manual.py`, `n1_insight_generator.py`, home, activity detail). Prevents
+>   confusion with Garmin's "Avg Overnight HRV."
+> - **Home Page Wellness Row:** Recovery HRV + Overnight Avg HRV + RHR + Sleep with
+>   personal 30-day ranges and HRV explanation tooltip. Raw numbers always shown.
+> - **Navigation Consolidation:** `/insights` and `/discovery` redirect to `/manual`.
+>   `/checkin` redirects to `/home` (mindset fields on home page). Three fewer standalone pages.
+> - **Repository Cleanup:** ~145 scratch files deleted, `.gitignore` rules added,
+>   `docs/CLEANUP_POLICY.md` created. CI migration integrity updated for `wellness_stamp_001`.
 
 ---
 
@@ -57,7 +151,7 @@ pro# Training Plan & Daily Adaptation — Phased Build Plan
 
 7. **Self-regulation is a signal, not a problem.** When the athlete modifies a workout (planned 15 easy, did 10 at MP), that is first-class data. Log the delta, log the outcome, study the pattern. An experienced athlete who overrides "rest" and gets a breakthrough is not non-compliant — they are self-regulating. The system learns from these overrides to refine its model of the individual.
 
-8. **Paid tier = N=1 intelligence + daily insight.** Free/one-time plans give you the "what." Subscription gives you the "why this works for YOU" — your supercompensation patterns, your recovery timelines, your load-response relationship.
+8. **Paid tier = N=1 intelligence + daily insight.** Free plans give you the calendar and structure. StrideIQ Subscriber ($24.99/mo or $199/yr) gives you the "why this works for YOU" — the coach, your supercompensation patterns, your recovery timelines, your load-response relationship.
 
 9. **The system doesn't coach you on running. It coaches you on YOU.** The value is being the data analyst of your body — surfacing patterns, correlations, and insights from your own data that you can't hold in your head across 2+ years of training. 150+ tools and growing.
 
@@ -67,8 +161,8 @@ pro# Training Plan & Daily Adaptation — Phased Build Plan
 
 These are decided. No revisiting during the build.
 
-1. **Standard tier pace injection:** ~~YES — show paces on free plans if the athlete has RPI from signup or Strava. Paces are expected, not a differentiator. N=1 intelligence and daily adaptation are the paid differentiators.~~
-   **SUPERSEDED by Monetization Decision (2026-02-26):** Paces are gated behind the $5 one-time purchase (or Guided/Premium subscription). Free plans return full plan structure (phases, weeks, workout types, distances, effort descriptions) with pace target fields set to `null`. The "$5 to unlock" CTA on blurred paces is the primary free→paid conversion moment. See Monetization Mapping below.
+1. **Standard tier pace injection:** ~~YES — show paces on free plans if the athlete has RPI from signup or Strava.~~ ~~SUPERSEDED by 4-tier model (2026-02-26).~~
+   **CURRENT (Monetization Reset, 2026-03-19):** Two tiers only — Free and StrideIQ Subscriber ($24.99/mo or $199/yr). Paces are included in all plans. Coach access is gated behind paid subscription. Free users get a 30-day auto-trial with full coach access on signup. See Monetization Mapping below.
 
 2. **50K timeline:** Deferred until after 5K is complete (Phase 1 scope ends at 5K). 50K requires new primitives (back-to-back long runs, time-on-feet, RPE, nutrition, strength) that shouldn't block the core distances.
 
@@ -561,9 +655,10 @@ Flags — NOT overrides. Fires only on sustained trajectories, not single-day si
 - [ ] Founder review of first 50 narratives before general rollout
 - [ ] Kill switch: if quality degrades, narratives are suppressed (silence > bad narrative)
 
-### 3C. N=1 Personalized Insights — CONTRACT TESTS ONLY (26 xfail)
+### 3C. N=1 Personalized Insights — ✅ GRADUATED (2026-03-28)
 
 **Gate:** Intelligence Bank has 3+ months of data for the athlete AND correlation engine has statistically significant findings.
+**Gate cleared:** 611 days synced history, 109 confirmed findings, 2 surviving Bonferroni correction. 26 contract tests graduated from xfail to passing. Tier gate updated to include canonical "subscriber" tier.
 
 **What:** Insights derived from the athlete's own data patterns.
 
@@ -604,35 +699,39 @@ Flags — NOT overrides. Fires only on sustained trajectories, not single-day si
 
 | Phase | What | Gate to Start | Status |
 |-------|------|---------------|--------|
-| **1** | World-class plans: marathon → half → 10K → 5K. N=1 overrides. Paces everywhere. Taper democratization. | None | ✅ COMPLETE |
+| **1** | World-class plans: marathon → half → 10K → 5K. N=1 overrides. Paces everywhere. Taper democratization. | None | ✅ V3 REBUILT → **V2 ENGINE deployed** (coaching science KB, rich segments, fueling, extension progression) |
 | **2** | Daily adaptation engine: readiness score, rules engine, workout state machine, nightly replan, no-race modes. | Phase 1 substantially complete | ✅ COMPLETE |
 | **3A** | Adaptation narration: coach explains intelligence decisions. | Phase 2 running | ✅ COMPLETE |
-| **3B** | Contextual workout narratives. | Narration accuracy > 90% for 4 weeks | ✅ CODE COMPLETE — gate accruing |
-| **3C** | N=1 personalized insights. | 3+ months data + significant correlations | ✅ CODE COMPLETE — gate accruing |
+| **3B** | Contextual workout narratives. | Narration accuracy > 90% for 4 weeks | ✅ CODE COMPLETE — pipeline wired to Celery, gate accruing |
+| **3C** | N=1 personalized insights. | 3+ months data + significant correlations | ✅ GRADUATED (2026-03-28) — 26 contract tests passing, eligible for founder |
 | **4** | 50K ultra: new primitives. | Phases 1-2 complete | 📋 CONTRACT ONLY — ready to build |
-| **Monetization** | Tier mapping: Free / One-time / Guided / Premium. | Phases 1-2 complete | ✅ v1 COMPLETE — tier gating + frontend 4-tier UI + PDF export + register intent carry-through (2026-02-26) |
+| **Monetization** | Tier mapping: Free (30-day trial) / StrideIQ Subscriber ($24.99/mo or $199/yr). | Phases 1-2 complete | ✅ v2 COMPLETE — 2-tier model, coach gated by subscription, 30-day auto-trial (2026-03-19) |
 | **Parallel** | Coach trust: test harness, HRV study, narration scoring, advisory mode, autonomy. | Starts Day 1 | ✅ COMPLETE (ongoing accrual) |
 
 ---
 
-## Monetization Mapping — CONTRACT TESTS ONLY (29 xfail)
+## Monetization Mapping — ✅ v2 COMPLETE (2026-03-19)
 
-**Gating architecture (decided 2026-02-26):** Hybrid model.
-- **Plan endpoints** (`/v2/plans`): Always return plan structure. If athlete is free with no `PlanPurchase` record for this plan, set pace target fields to `null` in the response. Frontend blurs and shows "$5 to unlock" CTA.
-- **Adaptation/intelligence endpoints**: Endpoint gate — 403 for below-guided tier.
-- **Narratives/advisory/premium-only**: Endpoint gate — 403 for below-premium tier.
+**Architecture (Monetization Reset, 2026-03-19):** Simplified 2-tier model.
+- **Free tier:** Full plan structure with paces. 30-day auto-trial grants full coach access on signup. After trial expiry, coach is gated — all other features remain accessible.
+- **StrideIQ Subscriber ($24.99/mo or $199/yr):** Full access to everything including AI coach.
+- **Trial fields:** `trial_started_at`, `trial_ends_at`, `trial_source` on `Athlete` model. Auto-populated on signup.
 
-| Tier | What They Get | Plan Paces | Adaptation | Intelligence |
-|------|--------------|------------|------------|--------------|
-| **Free** | RPI calculator, plan structure (phases, weeks, workout types, distances, effort descriptions) | **null** — blurred in UI, "$5 to unlock" CTA | None — 403 on all adaptation endpoints | None — 403 on intelligence endpoints |
-| **One-time ($5)** | Complete race plan with calculated paces | **Full paces** — unlocked per `PlanPurchase` record tied to `plan_snapshot_id` | None (static plan, no daily adaptation) | None |
-| **Guided Self-Coaching ($15/mo)** | The coached experience | **Full paces** — tier satisfies | Full daily adaptation (readiness, intelligence bank, replan) | Intelligence bank (`/v1/insights/intelligence`) |
-| **Premium ($25/mo)** | Everything + conversational coach | **Full paces** — tier satisfies | All above + coach proposals | All above + contextual narratives, advisory mode, workout narratives, dashboard |
+| Tier | What They Get | Plan Paces | Coach | Adaptation / Intelligence |
+|------|--------------|------------|-------|--------------------------|
+| **Free** (with 30-day trial) | Plans, paces, calendar, activity detail, progress page, all data surfaces | **Full paces** — always included | **30-day trial** — full access during trial, gated after expiry | Available during trial, gated after |
+| **StrideIQ Subscriber** ($24.99/mo or $199/yr) | Everything | **Full paces** | **Full access** | **Full access** |
 
-**Pace fields nulled for unauthorized tiers:**
-- `target_pace_per_km_seconds` (integer)
-- `target_pace_per_km_seconds_max` (integer)
-- `pace_description` (string)
+**Stripe products:**
+- Monthly: `STRIPE_PRICE_SUBSCRIBER_MONTHLY` ($24.99/mo)
+- Annual: `STRIPE_PRICE_SUBSCRIBER_ANNUAL` ($199/yr)
+
+**Superseded concepts (no longer in production):**
+- ~~$5 one-time plan unlock / PlanPurchase records~~
+- ~~Pace blurring / null pace fields for free tier~~
+- ~~Guided ($15/mo) / Premium ($25/mo) distinction~~
+- ~~4-tier pricing page~~
+- ~~Endpoint-level 403 by tier (guided vs premium)~~
 
 **`PlanTier` enum (standard/semi_custom/custom/model_driven) is a generation-quality axis — NOT a monetization tier. Do not conflate.**
 
@@ -644,12 +743,14 @@ Flags — NOT overrides. Fires only on sustained trajectories, not single-day si
 
 ---
 
-## Build Priority (from baseline snapshot)
+## Build Priority (updated 2026-04-11)
 
-1. **Monetization tier mapping** — direct revenue unlock, smaller surface area
-2. **Phase 4 (50K Ultra)** — new user segment + differentiation
-3. **Phase 3B** — when 4-week narration quality gate clears (monitor `/v1/intelligence/narration/quality`)
-4. **Phase 3C** — when 3+ month data/stat gates clear
+1. ~~**Monetization tier mapping**~~ — ✅ COMPLETE (2-tier model shipped 2026-03-19)
+2. ~~**Coached plan output quality (P1-P5)**~~ — ✅ V3 ENGINE REBUILT (2026-03-29) → **V2 ENGINE deployed** (2026-04-11). Coaching science KB, rich segments, fueling, extension progression. Founder-validated. Wired to production behind `engine=v2` flag, cutover in progress.
+3. **V2 cutover** — founder live testing → 7-day monitoring → beta rollout → global default
+4. **Phase 4 (50K Ultra)** — new user segment + differentiation
+5. **Phase 3B** — when 4-week narration quality gate clears (monitor `/v1/intelligence/narration/quality`)
+6. **Phase 3C** — when 3+ month data/stat gates clear
 
 ---
 
@@ -703,3 +804,84 @@ All custom p-value approximations replaced with exact `scipy.stats.t.sf`:
 `activity_analysis` still have local efficiency comments (non-athlete-facing).
 These are low-priority — they produce coach-internal or debug data, not
 athlete-facing directional claims.
+
+---
+
+### Intake Context Wiring — SHIPPED March 26, 2026
+
+**Problem:** The onboarding questionnaire collected birthdate, sex, pain flags,
+policy stance, days per week, time available, and more — but NONE of it flowed
+into plan generation. The `FitnessBank`, `AthleteProfile`, and
+`ConstraintAwarePlanner` never queried the `intake_questionnaire` table.
+For beginners with no synced history, this meant the system was generating
+plans with zero knowledge of the athlete.
+
+**What shipped:**
+1. `services/intake_context.py` — `IntakeContext` dataclass and `get_intake_context()`
+   DB reader. Structured representation of all intake data.
+2. Onboarding questionnaire expanded (basic_profile stage): running experience,
+   current runs per week, longest recent run, sport/athletic background.
+3. `ConstraintAwarePlanner.generate_plan()` now reads `IntakeContext` and:
+   - Seeds cold-start FitnessBank fields from self-reported data (current long
+     run, estimated weekly volume from runs × distance).
+   - Overrides constraint detection when athlete self-reports pain.
+   - Uses intake `days_per_week` as authority over inferred rest patterns.
+4. Safety gate in `/v2/plans/constraint-aware`: athletes with <10 synced runs
+   AND incomplete intake (basic_profile + goals) are blocked with a clear
+   `intake_required` error and list of missing stages.
+
+**What remains:** `policy_stance` and `time_available_min` are read but not yet
+consumed by the volume progression or workout scaler. Next step.
+
+---
+
+### N=1 Gap: Cross-Training & Injury-Return Context
+
+**Status:** Workstream 1 (data infrastructure) COMPLETE Apr 1, 2026. Workstream 2 (plan engine integration) not yet started.
+**Date noted:** March 26, 2026
+
+**The problem:** The Fitness Bank cannot produce N=1 prescriptions for
+injury-return athletes. The `constraint_type = INJURY` flag triggers
+conservative population-norm ramps, but a real coaching decision requires
+individual data the system does not yet capture:
+
+1. **Pre-injury training profile (12 weeks before the break):**
+   Were they stable, building, or overreaching? The answer changes whether
+   the plan targets their prior peak or a sustainable subset of it.
+
+2. **Duration of complete running absence:**
+   `weeks_since_peak` is a blunt proxy. It does not distinguish "14 weeks
+   of zero running" from "14 weeks since peak with 6 weeks of gradual
+   return already completed."
+
+3. **Cross-training activity during absence:**
+   An athlete who cycled 5 hours/week for 12 weeks has preserved their
+   aerobic engine — musculoskeletal loading capacity is the bottleneck,
+   not cardiovascular fitness. An athlete who was sedentary for 12 weeks
+   has lost both. The ramp rate is fundamentally different.
+
+4. **Type of cross-training:**
+   Swimming (zero impact), cycling (leg strength, different pattern),
+   elliptical (closest to running mechanics) — each implies a different
+   safe ramp rate for return to running.
+
+5. **Return-to-run trajectory:**
+   Has the athlete been building back for 4 weeks at 30 mpw with no
+   setbacks? Or did they just start this week?
+
+**What this means today:** The Comeback archetype in the coaching
+expectation tests uses a general/conservative expectation contract that
+does NOT meet the N=1 standard. This is an acknowledged deviation from
+product ethos, not an oversight.
+
+**Remediation plan:**
+- ~~Expand Garmin activity streams to ingest cross-training activities
+  (cycling, swimming, elliptical, strength) into the fingerprint.~~ ✅ DONE (Apr 1, 2026). Garmin adapter now accepts 6 sports (run, cycling, walking, hiking, strength, flexibility) across 21 Garmin activity types. 76 downstream consumers have sport filters. Training load includes cross-training TSS.
+- Backfill cross-training history for existing athletes.
+- Add fields to FitnessBank: `pre_injury_12w_avg_miles`,
+  `weeks_fully_off`, `cross_training_hours_during_break`,
+  `cross_training_modalities`, `weeks_since_return_to_running`.
+- Replace population-norm injury ramp with individual ramp derived from
+  cross-training preservation and return trajectory.
+- Update Comeback fake athlete(s) to include cross-training variants
+  and write true N=1 coaching expectations for each.

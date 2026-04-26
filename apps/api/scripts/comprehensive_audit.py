@@ -8,7 +8,6 @@ sys.path.insert(0, '/app')
 
 import pandas as pd
 from typing import Dict, List, Tuple
-import json
 
 # Our implementation
 from services.wma_age_factors import (
@@ -16,8 +15,7 @@ from services.wma_age_factors import (
     WMA_10_MILE_MALE, WMA_HALF_MARATHON_MALE, WMA_MARATHON_MALE,
     WMA_1_MILE_FEMALE, WMA_5K_FEMALE, WMA_8K_FEMALE, WMA_10K_FEMALE,
     WMA_10_MILE_FEMALE, WMA_HALF_MARATHON_FEMALE, WMA_MARATHON_FEMALE,
-    WMA_OPEN_STANDARDS_SECONDS,
-    get_wma_age_factor, get_wma_open_standard_seconds
+    WMA_OPEN_STANDARDS_SECONDS
 )
 
 MALE_FILE = '/app/data/MaleRoadStd2025.xlsx'
@@ -189,8 +187,6 @@ def audit_factors() -> Tuple[List[Dict], List[Dict]]:
     total_errors = 0
     
     for sex in ['M', 'F']:
-        sex_name = 'Male' if sex == 'M' else 'Female'
-        
         for dist_name in excel_factors[sex].keys():
             our_table = OUR_FACTOR_TABLES.get((sex, dist_name), {})
             excel_table = excel_factors[sex][dist_name]

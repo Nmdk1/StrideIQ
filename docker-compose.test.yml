@@ -35,8 +35,8 @@ services:
 
   api_test:
     build:
-      context: ./apps/api
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: apps/api/Dockerfile
     container_name: strideiq_test_api
     environment:
       # Test database connection

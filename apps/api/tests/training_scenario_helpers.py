@@ -39,7 +39,7 @@ class MockActivity:
     workout_type: Optional[str] = None      # 'easy_run', 'tempo_run', 'long_run', 'race', etc.
     avg_pace_per_mile: Optional[float] = None  # Minutes per mile
     name: Optional[str] = None
-    sport: str = "Run"
+    sport: str = "run"
 
 
 @dataclass

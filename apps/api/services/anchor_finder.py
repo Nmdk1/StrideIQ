@@ -15,14 +15,14 @@ Anchors come from:
 
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
-from typing import List, Dict, Optional, Tuple
+from typing import Optional
 from uuid import UUID
 import logging
 
 from sqlalchemy.orm import Session
-from sqlalchemy import func, and_, or_
+from sqlalchemy import or_
 
-from models import Activity, Athlete
+from models import Activity
 
 logger = logging.getLogger(__name__)
 
@@ -135,6 +135,7 @@ class AnchorFinder:
         start_date = today - timedelta(days=lookback_days)
         
         # Get weekly volumes
+        # Running-only weekly series for injury/rebound detection.
         activities = self.db.query(Activity).filter(
             Activity.athlete_id == self.athlete_id,
             Activity.start_time >= datetime.combine(start_date, datetime.min.time()),
@@ -223,11 +224,13 @@ class AnchorFinder:
         start_date = today - timedelta(days=lookback_days)
         
         # Query similar workouts
+        # Running-only structured workout match.
         query = self.db.query(Activity).filter(
             Activity.athlete_id == self.athlete_id,
             Activity.start_time >= datetime.combine(start_date, datetime.min.time()),
             Activity.start_time < datetime.combine(today - timedelta(days=7), datetime.min.time()),  # Not too recent
-            Activity.workout_type == workout_type
+            Activity.workout_type == workout_type,
+            Activity.sport.ilike("run"),
         ).order_by(Activity.start_time.desc())
         
         activities = query.limit(20).all()
@@ -242,13 +245,15 @@ class AnchorFinder:
             race_window_start = a.start_time.date()
             race_window_end = race_window_start + timedelta(days=21)
             
+            # Running-only race following similar workout.
             following_race = self.db.query(Activity).filter(
                 Activity.athlete_id == self.athlete_id,
                 Activity.start_time >= datetime.combine(race_window_start, datetime.min.time()),
                 Activity.start_time <= datetime.combine(race_window_end, datetime.min.time()),
+                Activity.sport.ilike("run"),
                 or_(
                     Activity.workout_type == "race",
-                    Activity.is_race_candidate == True
+                    Activity.is_race_candidate
                 )
             ).first()
             
@@ -301,6 +306,7 @@ class AnchorFinder:
         start_date = today - timedelta(days=lookback_days)
         
         # Get activities with HR data
+        # Running-only pool for cardiac-speed / efficiency outlier anchor.
         activities = self.db.query(Activity).filter(
             Activity.athlete_id == self.athlete_id,
             Activity.start_time >= datetime.combine(start_date, datetime.min.time()),
@@ -373,6 +379,7 @@ class AnchorFinder:
                 load = load_calc.calculate_training_load(self.athlete_id, check_date)
                 if abs(load.current_tsb - target_tsb) <= tolerance:
                     # Find what workout followed this day
+                    # Running-only following workout after comparable TSB day.
                     following = self.db.query(Activity).filter(
                         Activity.athlete_id == self.athlete_id,
                         Activity.start_time >= datetime.combine(check_date, datetime.min.time()),
@@ -413,12 +420,13 @@ class AnchorFinder:
         """
         from services.training_load import TrainingLoadCalculator
         
-        # Get race candidates
+        # Get race candidates (running-only) for CTL/TSB match.
         races = self.db.query(Activity).filter(
             Activity.athlete_id == self.athlete_id,
+            Activity.sport.ilike("run"),
             or_(
                 Activity.workout_type == "race",
-                Activity.is_race_candidate == True
+                Activity.is_race_candidate
             )
         ).order_by(Activity.start_time.desc()).limit(20).all()
         
@@ -485,6 +493,7 @@ class AnchorFinder:
         today = date.today()
         
         # Get weekly volumes for past year
+        # Running-only historical weeks for milestone volume match.
         activities = self.db.query(Activity).filter(
             Activity.athlete_id == self.athlete_id,
             Activity.start_time >= datetime.combine(today - timedelta(days=365), datetime.min.time()),
@@ -512,13 +521,15 @@ class AnchorFinder:
             if lower <= volume <= upper:
                 # Look for race within 8 weeks after
                 race_window_end = week + timedelta(days=56)
+                # Running-only race after a similar-mileage week.
                 following_race = self.db.query(Activity).filter(
                     Activity.athlete_id == self.athlete_id,
                     Activity.start_time >= datetime.combine(week, datetime.min.time()),
                     Activity.start_time <= datetime.combine(race_window_end, datetime.min.time()),
+                    Activity.sport.ilike("run"),
                     or_(
                         Activity.workout_type == "race",
-                        Activity.is_race_candidate == True
+                        Activity.is_race_candidate
                     )
                 ).first()
                 

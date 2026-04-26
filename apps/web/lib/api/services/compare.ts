@@ -97,7 +97,7 @@ export interface SplitData {
   average_heartrate: number | null;
   max_heartrate: number | null;
   average_cadence: number | null;
-  gap_seconds_per_mile: number | null;
+  gap_s_per_km: number | null;
 }
 
 export interface ClassifyResult {

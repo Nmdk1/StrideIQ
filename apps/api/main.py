@@ -7,7 +7,7 @@ routers, and configuration for production use.
 from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from routers import v1, strava, strava_webhook, feedback, body_composition, nutrition, work_pattern, auth, activity_analysis, activity_feedback, activity_reflection, training_availability, run_delivery, activities, analytics, correlations, insight_feedback, recovery_metrics, daily_checkin, admin, run_analysis, training_load, population_insights, athlete_profile, training_plans, ai_coach, coach_actions, preferences, compare, activity_workout_type, athlete_insights, contextual_compare, attribution, causal, data_export, calendar, insights, diagnostics, plan_generation, home, plan_export, onboarding, billing, progress, daily_intelligence, stream_analysis, consent, fingerprint
+from routers import v1, strava, strava_webhook, feedback, body_composition, nutrition, work_pattern, auth, activity_analysis, activity_feedback, activity_reflection, training_availability, run_delivery, activities, analytics, correlations, insight_feedback, recovery_metrics, daily_checkin, admin, run_analysis, training_load, population_insights, athlete_profile, training_plans, ai_coach, coach_actions, preferences, compare, activity_workout_type, athlete_insights, contextual_compare, attribution, causal, data_export, calendar, insights, diagnostics, plan_generation, home, plan_export, onboarding, billing, progress, daily_intelligence, stream_analysis, consent, fingerprint, auto_discovery_admin, reports, telemetry, routes, blocks
 from routers import imports as provider_imports
 try:
     from routers import garmin
@@ -18,7 +18,6 @@ from core.config import settings
 from core.database import check_db_connection
 from core.database import engine
 from core.logging import setup_logging
-from core.exceptions import APIException
 from core.rate_limit import RateLimitMiddleware
 from core.security_headers import SecurityHeadersMiddleware
 import logging
@@ -382,6 +381,8 @@ app.include_router(activity_reflection.router)
 app.include_router(training_availability.router)
 app.include_router(run_delivery.router)
 app.include_router(activities.router)
+app.include_router(routes.router)
+app.include_router(blocks.router)
 app.include_router(analytics.router)
 app.include_router(correlations.router)
 app.include_router(insight_feedback.router)
@@ -412,10 +413,40 @@ app.include_router(onboarding.router)
 app.include_router(coach_actions.router)
 app.include_router(billing.router)
 app.include_router(progress.router)
+app.include_router(reports.router)
+app.include_router(telemetry.router)
 app.include_router(daily_intelligence.router)
 app.include_router(consent.router)
 app.include_router(fingerprint.router)
 app.include_router(provider_imports.router)
+app.include_router(auto_discovery_admin.router)
+
+# Strength v1 — manual logging (sandbox; gated per-athlete by the
+# strength.v1 feature flag, returns 404 when off so the surface is
+# invisible). See docs/specs/STRENGTH_V1_SCOPE.md.
+try:
+    from routers import strength_v1 as strength_v1_router
+    app.include_router(strength_v1_router.router)
+except ImportError as e:
+    logger.warning(f"Could not include Strength v1 router: {e}")
+
+# Body-area symptom log — niggles/aches/pains/injury, gated behind the
+# same strength.v1 flag (see docs/specs/STRENGTH_V1_SCOPE.md §6.5).
+try:
+    from routers import symptoms_v1 as symptoms_v1_router
+    app.include_router(symptoms_v1_router.router)
+except ImportError as e:
+    logger.warning(f"Could not include symptoms v1 router: {e}")
+
+# Strength v1 — routines + goals CRUD, gated behind the same
+# strength.v1 flag (see docs/specs/STRENGTH_V1_SCOPE.md §6.2 / §6.3).
+# Athlete-saved patterns only; the system never seeds, suggests, or
+# recommends a routine or goal — strength_narration_purity test enforces.
+try:
+    from routers import routines_goals_v1 as routines_goals_v1_router
+    app.include_router(routines_goals_v1_router.router)
+except ImportError as e:
+    logger.warning(f"Could not include routines/goals v1 router: {e}")
 
 # Runtoon — AI-generated personalized run images (feature-flagged)
 try:

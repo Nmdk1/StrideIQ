@@ -1,7 +1,8 @@
 "use client";
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { API_CONFIG } from '@/lib/api/config';
+import { sendToolTelemetry } from '@/lib/hooks/useToolTelemetry';
 import TimeInput from '@/components/ui/TimeInput';
 import { isFeatureEnabled, FEATURE_FLAGS } from '@/lib/featureFlags';
 
@@ -30,7 +31,12 @@ export default function TrainingPaceCalculator() {
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<TabType>('training');
   const [showMethodology, setShowMethodology] = useState(false);
-  
+
+  useEffect(() => {
+    if (!results) return;
+    void sendToolTelemetry('tool_result_view', { tool: 'training_pace' });
+  }, [results]);
+
   // Distance options in meters
   const distanceOptions = distanceUnit === 'km' 
     ? [

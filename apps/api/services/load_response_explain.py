@@ -49,7 +49,7 @@ ACTIVITY_FACTOR_DEFS: Dict[str, Dict[str, Any]] = {
     "intensity_score": {"label": "Intensity score", "direction": "higher_more_strain"},
     "decoupling_percent": {"label": "Decoupling (%)", "direction": "lower_better"},
     "avg_hr": {"label": "Avg HR", "direction": "lower_better"},
-    "pace_per_mile": {"label": "Pace (min/mi)", "direction": "lower_better"},
+    "pace_s_per_km": {"label": "Pace (s/km)", "direction": "lower_better"},
     "temperature_f": {"label": "Temperature (°F)", "direction": "lower_better"},
     "humidity_pct": {"label": "Humidity (%)", "direction": "lower_better"},
 }
@@ -266,7 +266,7 @@ def explain_load_response_week(athlete_id: str, week_start: date, db: Session) -
             if a.avg_hr is not None:
                 out["avg_hr"].append(float(a.avg_hr))
             if a.pace_per_mile is not None:
-                out["pace_per_mile"].append(float(a.pace_per_mile))
+                out["pace_s_per_km"].append(round(float(a.pace_per_mile) * 60 * 1000 / 1609.34, 2))
             if a.temperature_f is not None:
                 out["temperature_f"].append(float(a.temperature_f))
             if a.humidity_pct is not None:
@@ -390,15 +390,13 @@ def explain_load_response_week(athlete_id: str, week_start: date, db: Session) -
         "rule": rule,
         "metrics": {
             "current": {
-                "total_distance_miles": round(curr_dist_m / 1609.34, 2),
-                "total_distance_km": round(curr_dist_m / 1000.0, 2),
+                "total_distance_m": round(curr_dist_m, 1),
                 "total_duration_hours": round(curr_dur_s / 3600.0, 2),
                 "activity_count": curr_n,
                 "avg_efficiency": round(curr_avg_eff, 2) if curr_avg_eff is not None else None,
             },
             "previous": {
-                "total_distance_miles": round(prev_dist_m / 1609.34, 2),
-                "total_distance_km": round(prev_dist_m / 1000.0, 2),
+                "total_distance_m": round(prev_dist_m, 1),
                 "total_duration_hours": round(prev_dur_s / 3600.0, 2),
                 "activity_count": prev_n,
                 "avg_efficiency": round(prev_avg_eff, 2) if prev_avg_eff is not None else None,

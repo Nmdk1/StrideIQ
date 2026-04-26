@@ -28,6 +28,7 @@ export interface UnitsContextValue {
   // Raw conversions (for charts, calculations)
   convertDistance: (meters: number) => number;
   convertPace: (secondsPerKm: number) => number;
+  convertElevation: (meters: number) => number;
   
   // Labels
   distanceUnit: string;
@@ -103,8 +104,11 @@ export function UnitsProvider({ children }: { children: ReactNode }) {
   }, [units]);
 
   const convertPace = useCallback((secondsPerKm: number): number => {
-    // Convert seconds/km to seconds/mile for imperial
     return units === 'imperial' ? secondsPerKm * MILES_TO_KM : secondsPerKm;
+  }, [units]);
+
+  const convertElevation = useCallback((meters: number): number => {
+    return units === 'imperial' ? meters * METERS_TO_FEET : meters;
   }, [units]);
 
   const formatDistance = useCallback((meters: number | null | undefined, decimals: number = 1): string => {
@@ -142,6 +146,7 @@ export function UnitsProvider({ children }: { children: ReactNode }) {
     formatElevation,
     convertDistance,
     convertPace,
+    convertElevation,
     distanceUnit: units === 'imperial' ? 'miles' : 'kilometers',
     distanceUnitShort: units === 'imperial' ? 'mi' : 'km',
     paceUnit: units === 'imperial' ? 'min/mi' : 'min/km',

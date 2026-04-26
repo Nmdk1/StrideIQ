@@ -13,18 +13,17 @@ This provides the "self-query" functionality discussed in requirements:
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
-from typing import Optional, List
-from uuid import UUID
+from typing import List
 from datetime import datetime, timedelta
 from pydantic import BaseModel
 
 from core.database import get_db
-from core.auth import get_current_athlete, require_query_access
+from core.auth import get_current_athlete
 from core.tier_utils import tier_satisfies
 from models import Athlete, Activity
 from services.query_engine import (
     QueryEngine, QuerySpec, QueryFilter, QueryScope,
-    QueryTemplates, AggregationType, SortOrder
+    AggregationType, SortOrder
 )
 import logging
 
@@ -394,8 +393,6 @@ def _get_weather_impact(engine: QueryEngine, athlete: Athlete, days: int) -> dic
 
 def _get_weekly_volume(db: Session, athlete: Athlete, weeks: int) -> dict:
     """Get weekly training volume"""
-    from sqlalchemy import func, extract
-    
     cutoff = datetime.now() - timedelta(weeks=weeks)
     
     # Query activities grouped by week
@@ -530,7 +527,7 @@ def _get_personal_records(db: Session, athlete: Athlete) -> dict:
             "distance_meters": pb.distance_meters,
             "time_seconds": pb.time_seconds,
             "time_formatted": _format_duration(pb.time_seconds),
-            "pace_per_mile": pb.pace_per_mile,
+            "pace_s_per_km": round(pb.pace_per_mile * 60 * 1000 / 1609.344, 2) if pb.pace_per_mile else None,
             "date": pb.achieved_at.isoformat() if pb.achieved_at else None,
             "activity_id": str(pb.activity_id) if pb.activity_id else None,
             "is_race": pb.is_race,

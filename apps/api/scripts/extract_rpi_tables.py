@@ -9,7 +9,7 @@ import sys
 import json
 import re
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
@@ -216,7 +216,7 @@ def convert_pace_to_seconds(pace_str: str) -> Optional[float]:
             seconds = int(parts[1])
             return minutes * 60 + seconds
         return None
-    except:
+    except Exception:
         return None
 
 
@@ -290,7 +290,7 @@ def store_rpi_tables(rpi_tables: Dict):
             print("✅ Created new RPI tables entry")
         
         db.commit()
-        print(f"✅ Stored RPI lookup tables")
+        print("✅ Stored RPI lookup tables")
         
     except Exception as e:
         print(f"❌ Error storing RPI tables: {e}")

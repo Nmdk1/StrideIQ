@@ -14,7 +14,7 @@ Endpoints:
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
-from sqlalchemy import and_, func
+from sqlalchemy import func
 from datetime import date, datetime, timedelta
 from typing import Optional, List
 from uuid import UUID
@@ -26,11 +26,18 @@ from core.database import get_db
 from core.auth import get_current_user
 from core.feature_flags import is_feature_enabled
 from models import (
-    Athlete, Activity, TrainingPlan, PlannedWorkout,
-    CalendarNote, CoachChat, CalendarInsight, ActivityFeedback
+    Athlete, Activity, PlannedWorkout,
+    CalendarNote, CoachChat, CalendarInsight
 )
 from services.ai_coach import AICoach
 from services import coach_tools
+from services.plan_lifecycle import get_active_plan_for_athlete
+from services.timezone_utils import (
+    get_athlete_timezone,
+    to_activity_local_date,
+    athlete_local_today,
+    local_day_bounds_utc,
+)
 
 router = APIRouter(prefix="/v1/calendar", tags=["Calendar"])
 
@@ -71,6 +78,7 @@ class PlannedWorkoutResponse(BaseModel):
     target_distance_km: Optional[float] = None
     target_duration_minutes: Optional[int] = None
     segments: Optional[list] = None  # List of workout segments
+    workout_variant_id: Optional[str] = None
     completed: bool
     skipped: bool
     coach_notes: Optional[str] = None  # Pace description or guidance
@@ -150,8 +158,14 @@ class CalendarDayResponse(BaseModel):
     inline_insight: Optional[InlineInsight] = None
     
     # Summary metrics for the day
+    # ``total_*`` = all sports (cross-training inclusive). Do not use as
+    # "running mileage" — use ``running_distance_m`` / ``running_duration_s``.
     total_distance_m: int = 0
     total_duration_s: int = 0
+    running_distance_m: int = 0
+    running_duration_s: int = 0
+    other_distance_m: int = 0
+    other_duration_s: int = 0
 
 
 class WeekSummaryResponse(BaseModel):
@@ -159,15 +173,13 @@ class WeekSummaryResponse(BaseModel):
     phase: Optional[str] = None
     phase_week: Optional[int] = None
     
-    # Volume
-    planned_miles: float
-    completed_miles: float
+    planned_m: int = 0
+    completed_m: int = 0
     
-    # Sessions
     quality_sessions_planned: int
     quality_sessions_completed: int
-    long_run_planned_miles: Optional[float] = None
-    long_run_completed_miles: Optional[float] = None
+    long_run_planned_m: Optional[int] = None
+    long_run_completed_m: Optional[int] = None
     
     # Focus text
     focus: Optional[str] = None
@@ -190,6 +202,19 @@ class CalendarRangeResponse(BaseModel):
     
     # Week summaries
     week_summaries: List[WeekSummaryResponse] = []
+
+
+class VariantOptionResponse(BaseModel):
+    id: str
+    display_name: str
+    stem: str
+    when_to_avoid: str
+    pairs_poorly_with: str
+    is_current: bool = False
+
+
+class VariantSelectRequest(BaseModel):
+    variant_id: str
 
 
 class CoachMessageRequest(BaseModel):
@@ -352,9 +377,36 @@ def _sanitize_day_coach_text(text: str) -> str:
     out = re.sub(r"\n{3,}", "\n\n", out).strip()
     return out
 
-def get_day_status(planned: Optional[PlannedWorkout], activities: List[Activity], day_date: date) -> str:
+def split_day_distance_duration_by_sport(activities: List[Activity]) -> tuple[int, int, int, int, int, int]:
+    """Split a day's activities into running vs other sports.
+
+    Returns:
+        (running_distance_m, running_duration_s,
+         other_distance_m, other_duration_s,
+         total_distance_m, total_duration_s)
+
+    ``total_*`` is the cross-sport sum (legacy / training-load style).
+    For *planned run* completion and *running mileage* UI, use the running
+    components only — cross-training must not satisfy a running target
+    (Dejan-class bug: walk + planned long run same day).
+    """
+    rd = rs = od = os_ = 0
+    for a in activities:
+        d = int(a.distance_m or 0)
+        t = int(a.duration_s or 0)
+        if (a.sport or "").lower() == "run":
+            rd += d
+            rs += t
+        else:
+            od += d
+            os_ += t
+    return rd, rs, od, os_, rd + od, rs + os_
+
+
+def get_day_status(planned: Optional[PlannedWorkout], activities: List[Activity], day_date: date, today: Optional[date] = None) -> str:
     """Determine the status of a calendar day."""
-    today = date.today()
+    if today is None:
+        today = date.today()
     
     if day_date > today:
         return "future"
@@ -374,11 +426,19 @@ def get_day_status(planned: Optional[PlannedWorkout], activities: List[Activity]
         return "missed"
     
     if activities:
-        # Check if activity matches plan (rough match)
-        total_distance = sum(a.distance_m or 0 for a in activities)
+        # ``target_distance_km`` on planned rows is a *running* distance target.
+        # Compare running mileage only — a walk or strength session must not
+        # move a missed planned run to completed/modified (see split_day_*).
+        running_activities = [a for a in activities if (a.sport or "").lower() == "run"]
+        total_distance = sum(int(a.distance_m or 0) for a in running_activities)
         planned_distance = (planned.target_distance_km or 0) * 1000
         
         if planned_distance > 0:
+            if total_distance == 0:
+                # Cross-training only — does not satisfy the planned run.
+                if day_date < today:
+                    return "missed"
+                return "future"
             ratio = total_distance / planned_distance
             if 0.8 <= ratio <= 1.2:
                 return "completed"
@@ -503,7 +563,7 @@ def get_primary_activity(activities: List[Activity]) -> Optional[Activity]:
     return max(activities, key=lambda a: a.distance_m or 0)
 
 
-def generate_inline_insight(activities: List[Activity], planned: Optional[PlannedWorkout]) -> Optional[InlineInsight]:
+def generate_inline_insight(activities: List[Activity], planned: Optional[PlannedWorkout], preferred_units: Optional[str] = None) -> Optional[InlineInsight]:
     """
     Generate a single inline insight for a calendar day.
     
@@ -543,37 +603,39 @@ def generate_inline_insight(activities: List[Activity], planned: Optional[Planne
     
     # Pace-based insight
     if activity.distance_m and activity.duration_s and activity.distance_m > 0:
-        pace_per_mile = activity.duration_s / (activity.distance_m / 1609.344)
-        mins = int(pace_per_mile // 60)
-        secs = int(pace_per_mile % 60)
+        _is_met = (preferred_units or "imperial").lower() == "metric"
+        _pu = "km" if _is_met else "mi"
+        _div = 1000 if _is_met else 1609.344
+        _pace_s = activity.duration_s / (activity.distance_m / _div)
+        mins = int(_pace_s // 60)
+        secs = int(_pace_s % 60)
         pace_str = f'{mins}:{secs:02d}'
         
-        # Compare to planned pace if available
         if planned and planned.workout_type:
             wt = planned.workout_type
+            pace_s_per_km = activity.duration_s / (activity.distance_m / 1000)
             if 'easy' in wt or 'recovery' in wt:
-                # Easy pace check - should be slower than 8:00 for most
-                if pace_per_mile > 480:  # > 8:00/mi
+                if pace_s_per_km > 298:  # ~4:58/km ≈ 8:00/mi
                     return InlineInsight(
                         metric='pace',
-                        value=f'{pace_str}/mi',
+                        value=f'{pace_str}/{_pu}',
                         sentiment='positive'
                     )
             elif 'threshold' in wt or 'tempo' in wt:
                 return InlineInsight(
                     metric='pace',
-                    value=f'{pace_str}/mi',
+                    value=f'{pace_str}/{_pu}',
                     sentiment='neutral'
                 )
     
-    # Default: just show distance completed
     if activity.distance_m:
-        miles = round(activity.distance_m / 1609.344, 1)
-        return InlineInsight(
-            metric='distance',
-            value=f'{miles}mi',
-            sentiment='neutral'
-        )
+        _is_met = (preferred_units or "imperial").lower() == "metric"
+        if _is_met:
+            _val = round(activity.distance_m / 1000, 1)
+            return InlineInsight(metric='distance', value=f'{_val}km', sentiment='neutral')
+        else:
+            _val = round(activity.distance_m / 1609.344, 1)
+            return InlineInsight(metric='distance', value=f'{_val}mi', sentiment='neutral')
     
     return None
 
@@ -669,20 +731,19 @@ def get_calendar(
     - Notes
     - Insights
     """
-    # Default to current month
+    # Resolve athlete timezone for correct calendar-day bucketing
+    tz = get_athlete_timezone(current_user)
+    local_today = athlete_local_today(tz)
+
+    # Default to current month in athlete's local timezone
     if not start_date:
-        today = date.today()
-        start_date = today.replace(day=1)
+        start_date = local_today.replace(day=1)
     if not end_date:
-        # End of month
         next_month = start_date.replace(day=28) + timedelta(days=4)
         end_date = next_month.replace(day=1) - timedelta(days=1)
     
     # Get active training plan
-    active_plan = db.query(TrainingPlan).filter(
-        TrainingPlan.athlete_id == current_user.id,
-        TrainingPlan.status == "active"
-    ).first()
+    active_plan = get_active_plan_for_athlete(db, current_user.id)
     
     # Get planned workouts in range
     planned_workouts = {}
@@ -699,28 +760,21 @@ def get_calendar(
         for w in workouts:
             planned_workouts[w.scheduled_date] = w
             
-            # Determine current week/phase based on today
-            if w.scheduled_date == date.today():
+            if w.scheduled_date == local_today:
                 current_week = w.week_number
                 current_phase = w.phase
         
-        # If current_week not set (no workout today), calculate from plan dates
         if current_week is None and active_plan.plan_start_date:
-            today = date.today()
-            if today < active_plan.plan_start_date:
-                # Plan hasn't started yet - show week 1
+            if local_today < active_plan.plan_start_date:
                 current_week = 1
-                # Get phase from first workout
                 first_workout = db.query(PlannedWorkout).filter(
                     PlannedWorkout.plan_id == active_plan.id
                 ).order_by(PlannedWorkout.scheduled_date).first()
                 if first_workout:
                     current_phase = first_workout.phase
-            elif today <= (active_plan.plan_end_date or today):
-                # Plan is in progress - calculate week from start date
-                days_from_start = (today - active_plan.plan_start_date).days
+            elif local_today <= (active_plan.plan_end_date or local_today):
+                days_from_start = (local_today - active_plan.plan_start_date).days
                 current_week = (days_from_start // 7) + 1
-                # Get phase from nearest workout in this week
                 nearest = db.query(PlannedWorkout).filter(
                     PlannedWorkout.plan_id == active_plan.id,
                     PlannedWorkout.week_number == current_week
@@ -728,16 +782,20 @@ def get_calendar(
                 if nearest:
                     current_phase = nearest.phase
     
-    # Get activities in range
+    # Query activities using UTC bounds for the athlete-local date range
+    range_start_utc = local_day_bounds_utc(start_date, tz)[0]
+    range_end_utc = local_day_bounds_utc(end_date, tz)[1]
+
     activities_by_date = {}
     activities = db.query(Activity).filter(
         Activity.athlete_id == current_user.id,
-        func.date(Activity.start_time) >= start_date,
-        func.date(Activity.start_time) <= end_date
+        Activity.is_duplicate == False,  # noqa: E712
+        Activity.start_time >= range_start_utc,
+        Activity.start_time < range_end_utc,
     ).order_by(Activity.start_time).all()
     
     for a in activities:
-        activity_date = a.start_time.date()
+        activity_date = to_activity_local_date(a, tz)
         if activity_date not in activities_by_date:
             activities_by_date[activity_date] = []
         activities_by_date[activity_date].append(a)
@@ -761,7 +819,7 @@ def get_calendar(
         CalendarInsight.athlete_id == current_user.id,
         CalendarInsight.insight_date >= start_date,
         CalendarInsight.insight_date <= end_date,
-        CalendarInsight.is_dismissed == False
+        CalendarInsight.is_dismissed.is_(False)
     ).order_by(CalendarInsight.priority.desc()).all()
     
     for i in insights:
@@ -778,15 +836,14 @@ def get_calendar(
         day_notes = notes_by_date.get(current, [])
         day_insights = insights_by_date.get(current, [])
         
-        status = get_day_status(planned, day_activities, current)
+        status = get_day_status(planned, day_activities, current, today=local_today)
         
-        total_distance = sum(a.distance_m or 0 for a in day_activities)
-        total_duration = sum(a.duration_s or 0 for a in day_activities)
+        rd, rs, od, os_, td, ts = split_day_distance_duration_by_sport(day_activities)
         
         # Generate inline insight for completed days
         inline_insight = None
         if day_activities and status in ('completed', 'modified'):
-            inline_insight = generate_inline_insight(day_activities, planned)
+            inline_insight = generate_inline_insight(day_activities, planned, getattr(current_user, "preferred_units", None))
         
         day_response = CalendarDayResponse(
             date=current,
@@ -798,8 +855,12 @@ def get_calendar(
             notes=[CalendarNoteResponse.model_validate(n) for n in day_notes],
             insights=[InsightResponse.model_validate(i) for i in day_insights],
             inline_insight=inline_insight,
-            total_distance_m=total_distance,
-            total_duration_s=total_duration
+            total_distance_m=td,
+            total_duration_s=ts,
+            running_distance_m=rd,
+            running_duration_s=rs,
+            other_distance_m=od,
+            other_duration_s=os_,
         )
         days.append(day_response)
         current += timedelta(days=1)
@@ -820,13 +881,12 @@ def get_calendar(
         for week_num, week_data in sorted(weeks.items()):
             week_days = week_data["days"]
             
-            planned_miles = sum(
-                (d.planned_workout.target_distance_km or 0) * 0.621371
+            planned_m = sum(
+                int((d.planned_workout.target_distance_km or 0) * 1000)
                 for d in week_days if d.planned_workout
             )
-            completed_miles = sum(
-                meters_to_miles(d.total_distance_m)
-                for d in week_days
+            completed_m = sum(
+                d.running_distance_m for d in week_days
             )
             
             quality_planned = sum(
@@ -841,8 +901,8 @@ def get_calendar(
             week_summaries.append(WeekSummaryResponse(
                 week_number=week_num,
                 phase=week_data["phase"],
-                planned_miles=round(planned_miles, 1),
-                completed_miles=round(completed_miles, 1),
+                planned_m=planned_m,
+                completed_m=completed_m,
                 quality_sessions_planned=quality_planned,
                 quality_sessions_completed=quality_completed,
                 days=week_days
@@ -880,11 +940,11 @@ def get_calendar_day(
     - All notes
     - All insights
     """
+    tz = get_athlete_timezone(current_user)
+    local_today = athlete_local_today(tz)
+
     # Get active plan and planned workout
-    active_plan = db.query(TrainingPlan).filter(
-        TrainingPlan.athlete_id == current_user.id,
-        TrainingPlan.status == "active"
-    ).first()
+    active_plan = get_active_plan_for_athlete(db, current_user.id)
     
     planned = None
     if active_plan:
@@ -893,10 +953,13 @@ def get_calendar_day(
             PlannedWorkout.scheduled_date == calendar_date
         ).first()
     
-    # Get activities for this day
+    # Query activities using athlete-local day bounds in UTC
+    day_start_utc, day_end_utc = local_day_bounds_utc(calendar_date, tz)
     activities = db.query(Activity).filter(
         Activity.athlete_id == current_user.id,
-        func.date(Activity.start_time) == calendar_date
+        Activity.is_duplicate == False,  # noqa: E712
+        Activity.start_time >= day_start_utc,
+        Activity.start_time < day_end_utc,
     ).order_by(Activity.start_time).all()
     activities = dedupe_activities_for_calendar_display(activities)
     
@@ -910,12 +973,11 @@ def get_calendar_day(
     insights = db.query(CalendarInsight).filter(
         CalendarInsight.athlete_id == current_user.id,
         CalendarInsight.insight_date == calendar_date,
-        CalendarInsight.is_dismissed == False
+        CalendarInsight.is_dismissed.is_(False)
     ).order_by(CalendarInsight.priority.desc()).all()
     
-    status = get_day_status(planned, activities, calendar_date)
-    total_distance = sum(a.distance_m or 0 for a in activities)
-    total_duration = sum(a.duration_s or 0 for a in activities)
+    status = get_day_status(planned, activities, calendar_date, today=local_today)
+    rd, rs, od, os_, td, ts = split_day_distance_duration_by_sport(activities)
     
     return CalendarDayResponse(
         date=calendar_date,
@@ -926,8 +988,12 @@ def get_calendar_day(
         status=status,
         notes=[CalendarNoteResponse.model_validate(n) for n in notes],
         insights=[InsightResponse.model_validate(i) for i in insights],
-        total_distance_m=total_distance,
-        total_duration_s=total_duration
+        total_distance_m=td,
+        total_duration_s=ts,
+        running_distance_m=rd,
+        running_duration_s=rs,
+        other_distance_m=od,
+        other_duration_s=os_,
     )
 
 
@@ -983,6 +1049,129 @@ def delete_calendar_note(
     db.commit()
     
     return {"status": "deleted"}
+
+
+@router.get("/workouts/{workout_id}/variants", response_model=List[VariantOptionResponse])
+def get_workout_variant_options(
+    workout_id: UUID,
+    current_user: Athlete = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Return the filtered list of valid variant alternatives for a planned workout.
+
+    Filtering rules:
+    1. Same stem as the workout's current type (threshold variants for threshold workouts, etc.)
+    2. Must include the workout's build_context_tag (derived from phase)
+    3. Contraindication text (when_to_avoid, pairs_poorly_with) surfaced to athlete for informed choice
+    """
+    workout = db.query(PlannedWorkout).filter(
+        PlannedWorkout.id == workout_id,
+        PlannedWorkout.athlete_id == current_user.id,
+    ).first()
+    if not workout:
+        raise HTTPException(status_code=404, detail="Workout not found")
+
+    from services.plan_framework.variant_selector import _load_registry, _STEM_MAP
+
+    stem = _STEM_MAP.get(workout.workout_type or "", "")
+    if not stem:
+        return []
+
+    phase_to_tag = {
+        "rebuild": "durability_rebuild",
+        "base": "base_building",
+        "build": "full_featured_healthy",
+        "peak": "peak_fitness",
+        "race": "race_specific",
+        "taper": "minimal_sharpen",
+        "recovery": "durability_rebuild",
+    }
+    build_tag = phase_to_tag.get(workout.phase or "", "full_featured_healthy")
+
+    registry = _load_registry()
+    options: List[VariantOptionResponse] = []
+    for v in registry:
+        if v.get("stem") != stem:
+            continue
+        if build_tag not in (v.get("build_context_tags") or []):
+            continue
+        options.append(VariantOptionResponse(
+            id=v["id"],
+            display_name=v.get("display_name", v["id"].replace("_", " ").title()),
+            stem=v["stem"],
+            when_to_avoid=v.get("when_to_avoid", ""),
+            pairs_poorly_with=v.get("pairs_poorly_with", ""),
+            is_current=(v["id"] == workout.workout_variant_id),
+        ))
+
+    return options
+
+
+@router.patch("/workouts/{workout_id}/variant")
+def select_workout_variant(
+    workout_id: UUID,
+    request: VariantSelectRequest,
+    current_user: Athlete = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Athlete selects a workout variant. Persists the choice and logs it.
+    """
+    workout = db.query(PlannedWorkout).filter(
+        PlannedWorkout.id == workout_id,
+        PlannedWorkout.athlete_id == current_user.id,
+    ).first()
+    if not workout:
+        raise HTTPException(status_code=404, detail="Workout not found")
+
+    if workout.completed or workout.skipped:
+        raise HTTPException(status_code=400, detail="Cannot change variant on a completed or skipped workout")
+
+    from services.plan_framework.variant_selector import _load_registry, _STEM_MAP
+
+    stem = _STEM_MAP.get(workout.workout_type or "", "")
+    phase_to_tag = {
+        "rebuild": "durability_rebuild",
+        "base": "base_building",
+        "build": "full_featured_healthy",
+        "peak": "peak_fitness",
+        "race": "race_specific",
+        "taper": "minimal_sharpen",
+        "recovery": "durability_rebuild",
+    }
+    build_tag = phase_to_tag.get(workout.phase or "", "full_featured_healthy")
+
+    registry = _load_registry()
+    valid_ids = {
+        v["id"] for v in registry
+        if v.get("stem") == stem and build_tag in (v.get("build_context_tags") or [])
+    }
+    if request.variant_id not in valid_ids:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Variant '{request.variant_id}' is not eligible for workout type '{workout.workout_type}' in {workout.phase} phase",
+        )
+
+    old_variant = workout.workout_variant_id
+    workout.workout_variant_id = request.variant_id
+    db.commit()
+
+    import logging
+    logging.getLogger(__name__).info(
+        "variant_selection: athlete=%s workout=%s old=%s new=%s",
+        current_user.id, workout_id, old_variant, request.variant_id,
+    )
+
+    variant_entry = next((v for v in registry if v["id"] == request.variant_id), None)
+    display_name = variant_entry.get("display_name", request.variant_id) if variant_entry else request.variant_id
+
+    return {
+        "status": "updated",
+        "workout_id": str(workout_id),
+        "variant_id": request.variant_id,
+        "display_name": display_name,
+    }
 
 
 @router.post("/coach", response_model=CoachMessageResponse)
@@ -1182,10 +1371,7 @@ def _build_coach_context(
     }
     
     # Get active plan
-    active_plan = db.query(TrainingPlan).filter(
-        TrainingPlan.athlete_id == athlete.id,
-        TrainingPlan.status == "active"
-    ).first()
+    active_plan = get_active_plan_for_athlete(db, athlete.id)
     
     if active_plan:
         context["active_plan"] = {
@@ -1196,8 +1382,9 @@ def _build_coach_context(
             "total_weeks": active_plan.total_weeks
         }
     
+    tz = get_athlete_timezone(athlete)
+
     if context_type == "day" and context_date:
-        # Get specific day context
         planned = None
         if active_plan:
             planned = db.query(PlannedWorkout).filter(
@@ -1205,9 +1392,12 @@ def _build_coach_context(
                 PlannedWorkout.scheduled_date == context_date
             ).first()
         
+        day_start_utc, day_end_utc = local_day_bounds_utc(context_date, tz)
         activities = db.query(Activity).filter(
             Activity.athlete_id == athlete.id,
-            func.date(Activity.start_time) == context_date
+            Activity.is_duplicate == False,  # noqa: E712
+            Activity.start_time >= day_start_utc,
+            Activity.start_time < day_end_utc,
         ).all()
         
         context["day"] = {
@@ -1217,7 +1407,8 @@ def _build_coach_context(
                 "title": planned.title,
                 "description": planned.description,
                 "target_distance_km": planned.target_distance_km,
-                "segments": planned.segments
+                "segments": planned.segments,
+                "workout_variant_id": planned.workout_variant_id,
             } if planned else None,
             "activities": [
                 {
@@ -1231,12 +1422,13 @@ def _build_coach_context(
     
     # Get recent workouts for context
     recent = db.query(Activity).filter(
-        Activity.athlete_id == athlete.id
+        Activity.athlete_id == athlete.id,
+        Activity.is_duplicate == False,  # noqa: E712
     ).order_by(Activity.start_time.desc()).limit(7).all()
     
     context["recent_workouts"] = [
         {
-            "date": a.start_time.date().isoformat(),
+            "date": to_activity_local_date(a, tz).isoformat(),
             "distance_m": a.distance_m,
             "workout_type": a.workout_type,
             "avg_hr": a.avg_hr
@@ -1254,18 +1446,16 @@ def _generate_coach_response(message: str, context: dict, history: list) -> str:
     For now, returns a placeholder response.
     """
     # Placeholder - will be replaced with actual GPT integration
-    athlete_name = context.get("athlete", {}).get("display_name", "there")
-    
     if "ready" in message.lower():
-        return f"Based on your recent training, you're tracking well. Your consistency is building the foundation for a strong performance. Trust the work you've put in."
+        return "Based on your recent training, you're tracking well. Your consistency is building the foundation for a strong performance. Trust the work you've put in."
     
     if "pace" in message.lower():
-        return f"For your current fitness level, focus on effort over pace. Easy runs should feel conversational - if you can't talk, you're too fast. Save the speed for the quality sessions."
+        return "For your current fitness level, focus on effort over pace. Easy runs should feel conversational - if you can't talk, you're too fast. Save the speed for the quality sessions."
     
     if "tired" in message.lower() or "fatigue" in message.lower():
-        return f"Fatigue is expected during a build phase. The key question: is it productive fatigue (from training) or accumulated fatigue (needs attention)? How's your sleep been? Any unusual soreness?"
+        return "Fatigue is expected during a build phase. The key question: is it productive fatigue (from training) or accumulated fatigue (needs attention)? How's your sleep been? Any unusual soreness?"
     
-    return f"I see your question about your training. Based on your recent workouts and current phase, let me help you think through this. What specific aspect would you like to explore further?"
+    return "I see your question about your training. Based on your recent workouts and current phase, let me help you think through this. What specific aspect would you like to explore further?"
 
 
 @router.get("/week/{week_number}", response_model=WeekSummaryResponse)
@@ -1276,10 +1466,7 @@ def get_calendar_week(
 ):
     """Get detailed view of a specific training week."""
     # Get active plan
-    active_plan = db.query(TrainingPlan).filter(
-        TrainingPlan.athlete_id == current_user.id,
-        TrainingPlan.status == "active"
-    ).first()
+    active_plan = get_active_plan_for_athlete(db, current_user.id)
     
     if not active_plan:
         raise HTTPException(status_code=404, detail="No active training plan")
@@ -1293,20 +1480,27 @@ def get_calendar_week(
     if not planned_workouts:
         raise HTTPException(status_code=404, detail=f"Week {week_number} not found in plan")
     
+    tz = get_athlete_timezone(current_user)
+    local_today = athlete_local_today(tz)
+
     # Get date range for the week
     start_date = min(w.scheduled_date for w in planned_workouts)
     end_date = max(w.scheduled_date for w in planned_workouts)
     
-    # Get activities for the week
+    # Query activities using athlete-local UTC bounds
+    range_start_utc = local_day_bounds_utc(start_date, tz)[0]
+    range_end_utc = local_day_bounds_utc(end_date, tz)[1]
+
     activities = db.query(Activity).filter(
         Activity.athlete_id == current_user.id,
-        func.date(Activity.start_time) >= start_date,
-        func.date(Activity.start_time) <= end_date
+        Activity.is_duplicate == False,  # noqa: E712
+        Activity.start_time >= range_start_utc,
+        Activity.start_time < range_end_utc,
     ).all()
     
     activities_by_date = {}
     for a in activities:
-        d = a.start_time.date()
+        d = to_activity_local_date(a, tz)
         if d not in activities_by_date:
             activities_by_date[d] = []
         activities_by_date[d].append(a)
@@ -1314,11 +1508,12 @@ def get_calendar_week(
     # Build day responses
     days = []
     for planned in planned_workouts:
-        day_activities = activities_by_date.get(planned.scheduled_date, [])
-        status = get_day_status(planned, day_activities, planned.scheduled_date)
+        day_activities = dedupe_activities_for_calendar_display(
+            activities_by_date.get(planned.scheduled_date, [])
+        )
+        status = get_day_status(planned, day_activities, planned.scheduled_date, today=local_today)
         
-        total_distance = sum(a.distance_m or 0 for a in day_activities)
-        total_duration = sum(a.duration_s or 0 for a in day_activities)
+        rd, rs, od, os_, td, ts = split_day_distance_duration_by_sport(day_activities)
         
         days.append(CalendarDayResponse(
             date=planned.scheduled_date,
@@ -1329,18 +1524,20 @@ def get_calendar_week(
             status=status,
             notes=[],
             insights=[],
-            total_distance_m=total_distance,
-            total_duration_s=total_duration
+            total_distance_m=td,
+            total_duration_s=ts,
+            running_distance_m=rd,
+            running_duration_s=rs,
+            other_distance_m=od,
+            other_duration_s=os_,
         ))
     
-    # Calculate week summary
-    planned_miles = sum(
-        (w.target_distance_km or 0) * 0.621371
+    planned_m = sum(
+        int((w.target_distance_km or 0) * 1000)
         for w in planned_workouts
     )
-    completed_miles = sum(
-        meters_to_miles(d.total_distance_m)
-        for d in days
+    completed_m = sum(
+        d.running_distance_m for d in days
     )
     
     quality_types = ['threshold', 'intervals', 'tempo', 'long_mp', 'progression']
@@ -1355,8 +1552,8 @@ def get_calendar_week(
     return WeekSummaryResponse(
         week_number=week_number,
         phase=phase,
-        planned_miles=round(planned_miles, 1),
-        completed_miles=round(completed_miles, 1),
+        planned_m=planned_m,
+        completed_m=completed_m,
         quality_sessions_planned=quality_planned,
         quality_sessions_completed=quality_completed,
         days=days

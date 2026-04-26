@@ -1,6 +1,7 @@
 # Run Shape Intelligence — Canvas Proposal (RSI Phase 3)
 
 **Status:** SPEC HARDENING — advisor review complete, pre-build gates in progress
+**Monetization note:** This spec references the old $15/mo Guided and $25/mo Premium tiers. Production now uses 2-tier: Free (30-day trial) + StrideIQ Subscriber ($24.99/mo). All tier-gated features below map to StrideIQ Subscriber.
 **Date:** February 14, 2026
 **Context:** RSI Phase 1 (stream storage, ADR-063) and RSI Phase 2 (analyze_run_streams coach tool with N=1 tiered classification) are complete. CI is 8/8 green on `main`. This proposal covers the frontend visualization and interaction layer.
 

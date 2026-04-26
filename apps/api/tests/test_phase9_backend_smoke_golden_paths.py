@@ -6,6 +6,7 @@ import json
 from datetime import date, datetime, timedelta, timezone
 from uuid import uuid4
 
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import or_
 
@@ -71,6 +72,8 @@ class _DummyStripeConfig:
         self.price_premium_annual_id = None
         self.price_legacy_pro_monthly_id = None
         self.price_plan_onetime_id = None
+        self.price_strideiq_monthly_id = None
+        self.price_strideiq_annual_id = None
 
 
 def _stripe_sig_header(*, secret: str, payload: bytes, timestamp: int) -> str:
@@ -154,7 +157,7 @@ def test_stripe_webhook_accepts_valid_signature_and_records_event(monkeypatch):
 def test_admin_comp_transitions_paid_to_free():
     """
     Phase 9 backend smoke: entitlement transitions remain deterministic.
-    Owner can comp a user to pro and back to free.
+    Owner can comp a user to subscriber and back to free.
     """
     db = SessionLocal()
     owner = None
@@ -166,12 +169,12 @@ def test_admin_comp_transitions_paid_to_free():
         r1 = client.post(
             f"/v1/admin/users/{target.id}/comp",
             headers=_headers(owner),
-            json={"tier": "pro", "reason": "phase9 entitlement pro"},
+            json={"tier": "subscriber", "reason": "phase9 entitlement subscriber"},
         )
         assert r1.status_code == 200, r1.text
 
         db.refresh(target)
-        assert target.subscription_tier == "pro"
+        assert target.subscription_tier == "subscriber"
         assert bool(getattr(target, "has_active_subscription", False)) is True
 
         r2 = client.post(
@@ -240,6 +243,7 @@ def test_ingestion_pause_blocks_admin_retry():
             db.close()
 
 
+@pytest.mark.xfail(reason="Standard plan endpoint returns 501 — old generators removed, N=1 pending")
 def test_v2_standard_plan_preview_shape_is_stable():
     """
     Phase 9 backend smoke: plan generation preview returns a stable, bounded shape.
@@ -303,6 +307,7 @@ def test_v2_standard_plan_create_requires_auth():
     assert resp.status_code == 401, resp.text
 
 
+@pytest.mark.xfail(reason="Standard plan endpoint returns 501 — old generators removed, N=1 pending")
 def test_v2_standard_plan_create_succeeds_for_authenticated_athlete():
     """
     Positive control: authenticated athlete can create/save a standard plan.
@@ -335,12 +340,12 @@ def test_v2_standard_plan_create_succeeds_for_authenticated_athlete():
             db.close()
 
 
-def test_v2_model_driven_plan_requires_elite_tier(monkeypatch):
+def test_v2_model_driven_plan_requires_paid_subscription(monkeypatch):
     """
     Phase 9 backend smoke: tier gating for model-driven plan generation.
 
     We force the feature flag ON to ensure we’re testing the *tier gate* (not flag gate),
-    and then assert non-elite athletes are denied with stable 403 semantics.
+    and then assert free-tier athletes are denied with stable 403 semantics.
     """
     import routers.plan_generation as pg
 
@@ -361,7 +366,7 @@ def test_v2_model_driven_plan_requires_elite_tier(monkeypatch):
         assert resp.status_code == 403, resp.text
         detail = resp.json().get("detail")
         assert isinstance(detail, dict)
-        assert "Elite" in (detail.get("reason") or "")
+        assert "active paid subscription" in (detail.get("reason") or "")
         assert detail.get("upgrade_path")
     finally:
         try:

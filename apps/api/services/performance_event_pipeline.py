@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import logging
 from datetime import date, timedelta
-from typing import Dict, List, Optional
+from typing import Dict, List
 from uuid import UUID
 
 from sqlalchemy.orm import Session
@@ -17,7 +17,6 @@ from sqlalchemy.orm import Session
 from models import Activity, Athlete, PerformanceEvent
 from services.effort_classification import classify_effort_bulk
 from services.performance_engine import (
-    RACE_DISTANCES,
     detect_race_candidate,
     calculate_age_graded_performance,
     calculate_age_at_date,

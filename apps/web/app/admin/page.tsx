@@ -17,7 +17,7 @@
 import { useEffect, useState } from 'react';
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
 import { useAuth } from '@/lib/hooks/useAuth';
-import { useAdminUsers, useSystemHealth, useSiteMetrics, useImpersonateUser, useAdminFeatureFlags, useSet3dQualitySelectionMode, useAdminUser, useCompAccess, useGrantTrial, useRevokeTrial, useResetOnboarding, useResetPassword, useRetryIngestion, useRegenerateStarterPlan, useSetBlocked, useSetCoachVip, useDeleteUser, useOpsQueue, useOpsStuckIngestion, useOpsIngestionErrors, useOpsIngestionPause, useSetOpsIngestionPause, useOpsDeferredIngestion, useAdminInvites, useCreateInvite, useRevokeInvite, useAdminRaceCodes, useCreateRaceCode, useDeactivateRaceCode, getRaceCodeQrUrl } from '@/lib/hooks/queries/admin';
+import { useAdminUsers, useSystemHealth, useSiteMetrics, useImpersonateUser, useAdminFeatureFlags, useSet3dQualitySelectionMode, useAdminUser, useCompAccess, useGrantTrial, useRevokeTrial, useResetOnboarding, useResetPassword, useRetryIngestion, useRegenerateStarterPlan, useSetBlocked, useSetCoachVip, useDeleteUser, useOpsQueue, useOpsStuckIngestion, useOpsIngestionErrors, useOpsIngestionPause, useSetOpsIngestionPause, useOpsDeferredIngestion, useAdminInvites, useCreateInvite, useRevokeInvite, useAdminRaceCodes, useCreateRaceCode, useDeactivateRaceCode, getRaceCodeQrUrl, useClearCompOverride } from '@/lib/hooks/queries/admin';
 import { useQueryTemplates, useQueryEntities, useExecuteTemplate, useExecuteCustomQuery } from '@/lib/hooks/queries/query-engine';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { ErrorMessage } from '@/components/ui/ErrorMessage';
@@ -48,6 +48,7 @@ export default function AdminPage() {
   const regenerateStarterPlan = useRegenerateStarterPlan();
   const setBlocked = useSetBlocked();
   const setCoachVip = useSetCoachVip();
+  const clearCompOverride = useClearCompOverride();
   const deleteUser = useDeleteUser();
   const [deleteConfirmEmail, setDeleteConfirmEmail] = useState('');
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -444,6 +445,39 @@ export default function AdminPage() {
                               {compAccess.isPending ? 'Saving…' : 'Apply'}
                             </button>
                           </div>
+                          {compAccess.isSuccess && (
+                            <div className="text-xs text-green-400 mt-1">Tier updated successfully.</div>
+                          )}
+                          {compAccess.isError && (
+                            <div className="text-xs text-red-400 mt-1">
+                              Failed to update tier: {(compAccess.error as Error)?.message || 'Unknown error'}
+                            </div>
+                          )}
+                          {selectedUser.admin_tier_override && (
+                            <div className="flex items-center gap-2 mt-1">
+                              <span className="text-xs text-yellow-400">
+                                Comp override active: <strong>{selectedUser.admin_tier_override}</strong>
+                                {selectedUser.admin_tier_override_set_at
+                                  ? ` (set ${new Date(selectedUser.admin_tier_override_set_at).toLocaleDateString()})`
+                                  : ''}
+                                {selectedUser.admin_tier_override_reason
+                                  ? ` — ${selectedUser.admin_tier_override_reason}`
+                                  : ''}
+                              </span>
+                              <button
+                                onClick={() => clearCompOverride.mutate({ userId: selectedUser.id })}
+                                disabled={clearCompOverride.isPending}
+                                className="px-2 py-1 bg-slate-700 hover:bg-slate-600 disabled:bg-slate-800 rounded text-xs"
+                              >
+                                {clearCompOverride.isPending ? 'Clearing…' : 'Clear override'}
+                              </button>
+                              {clearCompOverride.isError && (
+                                <span className="text-xs text-red-400">
+                                  {(clearCompOverride.error as Error)?.message || 'Failed to clear'}
+                                </span>
+                              )}
+                            </div>
+                          )}
                           <div className="text-xs text-slate-400">
                             Stripe:{' '}
                             {selectedUser.stripe_customer_id ? (
@@ -551,6 +585,14 @@ export default function AdminPage() {
                             >
                               {setCoachVip.isPending ? 'Saving…' : selectedUser.is_coach_vip ? 'Remove VIP' : 'Make VIP'}
                             </button>
+                            {setCoachVip.isSuccess && (
+                              <div className="text-xs text-green-400">VIP status updated.</div>
+                            )}
+                            {setCoachVip.isError && (
+                              <div className="text-xs text-red-400">
+                                Failed: {(setCoachVip.error as Error)?.message || 'Unknown error'}
+                              </div>
+                            )}
                             {isOwner && selectedUser.role !== 'owner' && (
                               <button
                                 onClick={() => setShowDeleteConfirm(true)}

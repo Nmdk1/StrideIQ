@@ -1,0 +1,73 @@
+/**
+ * Scoped overrides for Mapbox GL controls inside Canvas v2.
+ *
+ * The default Mapbox controls are white-on-white, which disappears against
+ * the satellite/outdoor basemap. We give them a slate backdrop with light
+ * icons so they read against any terrain at the same time as the route line.
+ *
+ * All selectors are scoped under `.canvas-v2-mapbox-pane` so we don't bleed
+ * into other Mapbox surfaces elsewhere in the app.
+ */
+
+.canvas-v2-mapbox-pane .mapboxgl-ctrl-group {
+  background: rgba(15, 23, 42, 0.78);
+  border: 1px solid rgba(51, 65, 85, 0.6);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.canvas-v2-mapbox-pane .mapboxgl-ctrl-group:not(:empty) {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+}
+
+.canvas-v2-mapbox-pane .mapboxgl-ctrl-group button {
+  background: transparent;
+  border-color: rgba(51, 65, 85, 0.6);
+}
+
+.canvas-v2-mapbox-pane .mapboxgl-ctrl-group button:not(:disabled):hover {
+  background: rgba(30, 41, 59, 0.9);
+}
+
+.canvas-v2-mapbox-pane .mapboxgl-ctrl-group button + button {
+  border-top-color: rgba(51, 65, 85, 0.6);
+}
+
+.canvas-v2-mapbox-pane .mapboxgl-ctrl-icon {
+  filter: invert(1) brightness(2);
+}
+
+/* Compass needle keeps its color; only the bezel inverts. */
+.canvas-v2-mapbox-pane .mapboxgl-ctrl-compass .mapboxgl-ctrl-icon {
+  filter: invert(1) brightness(1.6);
+}
+
+/* Attribution stays subtle but legible. */
+.canvas-v2-mapbox-pane .mapboxgl-ctrl-attrib {
+  background: rgba(15, 23, 42, 0.6);
+  color: #cbd5e1;
+}
+
+.canvas-v2-mapbox-pane .mapboxgl-ctrl-attrib a {
+  color: #cbd5e1;
+}
+
+/* When the wrapper enters fullscreen, the inner container is locked to
+ * 480px by Tailwind. Override so the canvas fills the screen and the
+ * route gets the full viewport instead of a 480px letterbox.
+ *
+ * :fullscreen is the spec selector; -webkit:-webkit-full-screen is for
+ * older WebKit. Keep both. */
+.canvas-v2-mapbox-pane:fullscreen,
+.canvas-v2-mapbox-pane:-webkit-full-screen {
+  border-radius: 0;
+  border: 0;
+}
+
+.canvas-v2-mapbox-pane:fullscreen > div,
+.canvas-v2-mapbox-pane:-webkit-full-screen > div {
+  height: 100vh !important;
+}

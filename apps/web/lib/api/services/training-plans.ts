@@ -40,9 +40,9 @@ export interface WorkoutSummary {
   title: string;
   description: string | null;
   phase: string;
-  target_duration_minutes: number | null;
-  target_distance_km: number | null;
-  target_pace_per_km_seconds: number | null;
+  target_duration_s: number | null;
+  target_distance_m: number | null;
+  target_pace_s_per_km: number | null;
   completed: boolean;
   skipped: boolean;
   completed_activity_id: string | null;
@@ -54,9 +54,9 @@ export interface CalendarDay {
   actual_activities: Array<{
     id: string;
     sport: string;
-    distance_km: number | null;
-    duration_minutes: number | null;
-    pace_per_km: number | null;
+    distance_m: number | null;
+    duration_s: number | null;
+    pace_s_per_km: number | null;
   }>;
   day_of_week: number;
   is_today: boolean;
@@ -67,8 +67,8 @@ export interface CalendarWeek {
   week_number: number;
   phase: string | null;
   days: CalendarDay[];
-  planned_volume_km: number;
-  actual_volume_km: number;
+  planned_volume_m: number;
+  actual_volume_m: number;
 }
 
 export interface CalendarResponse {
@@ -83,8 +83,8 @@ export interface WeeklyPlanResponse {
   phase: string;
   phase_week: number;
   workouts: WorkoutSummary[];
-  total_planned_duration: number;
-  total_planned_distance: number;
+  total_planned_duration_s: number;
+  total_planned_distance_m: number;
   completed_workouts: number;
   skipped_workouts: number;
 }

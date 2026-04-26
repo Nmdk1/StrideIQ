@@ -7,7 +7,6 @@ age-graded metrics that allow fair comparison across all ages.
 """
 from datetime import date, datetime, timedelta, timezone
 from typing import Optional, Tuple, List, Dict
-from decimal import Decimal
 import math
 import re
 
@@ -415,14 +414,14 @@ def calculate_consistency_index(
 # ============================================================================
 
 RACE_DISTANCES = {
-    'mile': (1570, 1660),
-    '5k': (4957, 5311),
-    '10k': (9914, 10622),
-    '15k': (14850, 15150),
-    '25k': (24750, 25250),
-    'half_marathon': (21000, 21300),
-    'marathon': (42000, 42400),
-    '50k': (49500, 50500),
+    'mile': (1500, 1700),
+    '5k': (4900, 5400),
+    '10k': (9800, 10700),
+    '15k': (14700, 15400),
+    '25k': (24500, 25500),
+    'half_marathon': (20800, 21600),
+    'marathon': (41500, 43500),
+    '50k': (49000, 51000),
 }
 
 RACE_NAME_PATTERNS = [
@@ -505,6 +504,7 @@ def detect_race_candidate(
         confidence_score += hr_score * 0.35
 
     # Signal 2: Pace Consistency (25%)
+    # Filter out short trailing fragments (< 400m) that skew CV with nonsense paces.
     pace_score = 0.0
     if len(splits) >= 3:
         split_paces = []
@@ -512,7 +512,7 @@ def detect_race_candidate(
             if split.get('distance') and split.get('moving_time'):
                 dist_m = float(split['distance'])
                 time_s = split['moving_time'] or split.get('elapsed_time', 0)
-                if dist_m > 0 and time_s > 0:
+                if dist_m >= 400 and time_s > 0:
                     miles = dist_m / 1609.34
                     minutes = time_s / 60.0
                     if miles > 0:
@@ -544,12 +544,14 @@ def detect_race_candidate(
     confidence_score += name_score * 0.15
 
     # Signal 5: Effort Profile (10%)
-    if len(splits) >= 4:
+    # Use only substantial splits (>= 400m) to avoid cooldown fragments
+    substantial_splits = [s for s in splits if float(s.get('distance') or 0) >= 400]
+    if len(substantial_splits) >= 4:
         first_half_hr = []
         second_half_hr = []
-        midpoint = len(splits) // 2
+        midpoint = len(substantial_splits) // 2
 
-        for i, split in enumerate(splits):
+        for i, split in enumerate(substantial_splits):
             hr = split.get('average_heartrate') or split.get('avg_hr')
             if hr:
                 if i < midpoint:

@@ -7,11 +7,10 @@ This is the core product differentiator.
 
 from fastapi import APIRouter, Depends, Query, HTTPException, status
 from sqlalchemy.orm import Session
-from typing import Optional
-from datetime import date, timedelta
+from datetime import date
 from core.database import get_db
 from core.auth import get_current_user
-from core.cache import cached, cache_key, get_cache, set_cache
+from core.cache import cache_key, get_cache, set_cache
 from core.feature_flags import is_feature_enabled
 from models import Athlete
 from services.efficiency_analytics import get_efficiency_trends
@@ -290,10 +289,10 @@ def get_diagnostic_report_endpoint(
             except Exception as e:
                 import logging
                 logger = logging.getLogger(__name__)
-                logger.warning(f"Diagnostic narrative generation failed for {athlete.id}: {type(e).__name__}: {e}")
+                logger.warning(f"Diagnostic narrative generation failed for {current_user.id}: {type(e).__name__}: {e}")
                 try:
                     from services.audit_logger import log_narrative_error
-                    log_narrative_error(athlete.id, "diagnostic", str(e))
+                    log_narrative_error(current_user.id, "diagnostic", str(e))
                 except Exception:
                     pass
                 response["narratives"] = []

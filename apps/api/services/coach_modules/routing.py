@@ -15,8 +15,7 @@ from __future__ import annotations
 
 import re
 from enum import Enum
-from typing import Tuple, Optional
-from uuid import UUID
+from typing import Tuple
 
 
 class MessageType(Enum):

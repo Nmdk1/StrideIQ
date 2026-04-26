@@ -21,7 +21,6 @@ from uuid import UUID
 import logging
 
 from sqlalchemy.orm import Session
-from sqlalchemy import and_
 
 from models import Activity, DailyCheckin, PersonalBest
 
@@ -177,7 +176,6 @@ def get_pace_decay_badge(
     Check for pace decay patterns in long runs or races.
     """
     try:
-        from services.pace_decay import get_athlete_decay_profile
         from models import ActivitySplit
         
         # Get activities for this day
@@ -235,7 +233,7 @@ def get_pace_decay_badge(
                     color="green",
                     icon="check",
                     confidence=SignalConfidence.HIGH.value,
-                    tooltip=f"Negative split — strong finish",
+                    tooltip="Negative split — strong finish",
                     priority=3
                 )
             elif decay_pct <= 3:
@@ -245,7 +243,7 @@ def get_pace_decay_badge(
                     color="green",
                     icon="check",
                     confidence=SignalConfidence.MODERATE.value,
-                    tooltip=f"Even pacing — controlled execution",
+                    tooltip="Even pacing — controlled execution",
                     priority=4
                 )
         
@@ -575,7 +573,10 @@ def get_week_trajectory(
             details['quality_sessions'] = quality_count
         
         # Check consistency
-        days_with_runs = len(set(a.start_time.date() for a in activities))
+        from services.timezone_utils import get_athlete_timezone_from_db, to_activity_local_date
+        from uuid import UUID as _UUID
+        _tz = get_athlete_timezone_from_db(db, _UUID(athlete_id) if isinstance(athlete_id, str) else athlete_id)
+        days_with_runs = len(set(to_activity_local_date(a, _tz) for a in activities))
         if days_with_runs >= 5:
             signals.append("consistency strong")
             if trend == TrajectoryTrend.NEUTRAL:

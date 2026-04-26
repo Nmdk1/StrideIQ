@@ -11,8 +11,10 @@ import React, { useState, useRef, useEffect, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
 import { aiCoachService, type Suggestion } from '@/lib/api/services/ai-coach';
+import { apiClient, ApiClientError } from '@/lib/api/client';
 import { onboardingService } from '@/lib/api/services/onboarding';
 import { useProgressSummary } from '@/lib/hooks/queries/progress';
+import { useUnits } from '@/lib/context/UnitsContext';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -26,9 +28,21 @@ interface Message {
   role: 'user' | 'assistant';
   content?: string;
   proposal?: ProposalCardProposal;
+  toolsUsed?: string[];
+  toolCount?: number;
+  conversationContract?: string | null;
   timedOut?: boolean;
   retryMessage?: string;
   timestamp: Date;
+}
+
+interface TrialStatus {
+  has_trial: boolean;
+  trial_days_remaining: number;
+  trial_ends_at?: string | null;
+  facts_learned: number;
+  findings_discovered: number;
+  activities_analyzed: number;
 }
 
 function splitReceipts(content: string): { main: string; receipts: string | null } {
@@ -44,6 +58,72 @@ function splitReceipts(content: string): { main: string; receipts: string | null
   const receiptsRaw = content.slice(idx).trim();
   const receipts = receiptsRaw.replace(/^##\s+(Evidence|Receipts)\s*\n/i, '').trim();
   return { main, receipts: receipts || null };
+}
+
+function formatToolLabel(toolName: string): string {
+  return toolName
+    .replace(/^get_/, '')
+    .replace(/_/g, ' ')
+    .replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+function formatContractLabel(contract?: string | null): string | null {
+  if (!contract || contract === 'general') return null;
+  return contract.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+function CoachTrustControls({
+  message,
+  onCorrect,
+}: {
+  message: Message;
+  onCorrect: () => void;
+}) {
+  const tools = message.toolsUsed || [];
+  const contractLabel = formatContractLabel(message.conversationContract);
+  const hasTrustMetadata = tools.length > 0 || contractLabel;
+  const hasAnswer = Boolean((message.content || '').trim());
+
+  if (!hasTrustMetadata && !hasAnswer) return null;
+
+  return (
+    <div className="flex flex-wrap items-center gap-2 pt-1">
+      {hasTrustMetadata && (
+        <div className="flex flex-wrap items-center gap-1.5" aria-label="Coach trust metadata">
+          {tools.slice(0, 3).map((tool) => (
+            <Badge
+              key={tool}
+              variant="outline"
+              className="border-emerald-500/30 bg-emerald-500/10 text-[11px] font-medium text-emerald-200"
+            >
+              Checked: {formatToolLabel(tool)}
+            </Badge>
+          ))}
+          {tools.length > 3 && (
+            <Badge variant="outline" className="border-slate-700 text-[11px] text-slate-300">
+              +{tools.length - 3} more
+            </Badge>
+          )}
+          {contractLabel && (
+            <Badge variant="outline" className="border-slate-700 bg-slate-950/40 text-[11px] text-slate-300">
+              {contractLabel}
+            </Badge>
+          )}
+        </div>
+      )}
+      {hasAnswer && (
+        <Button
+          type="button"
+          size="sm"
+          variant="ghost"
+          onClick={onCorrect}
+          className="h-7 px-2 text-xs text-slate-400 hover:bg-slate-800 hover:text-orange-200"
+        >
+          That&apos;s wrong
+        </Button>
+      )}
+    </div>
+  );
 }
 
 function getSuggestionIcon(title: string) {
@@ -105,9 +185,22 @@ function CoachPageInner() {
   const [baselineOpen, setBaselineOpen] = useState(false);
   const [usedBaselineBanner, setUsedBaselineBanner] = useState(false);
   const [rebuildPlanPrompt, setRebuildPlanPrompt] = useState(false);
+  const [coachLocked, setCoachLocked] = useState(false);
+  const [trialStatus, setTrialStatus] = useState<TrialStatus | null>(null);
+  const [lockoutLoading, setLockoutLoading] = useState(false);
   
   // Progress summary for empty state brief + context panel
   const { data: progressData } = useProgressSummary(28);
+
+  // Athlete unit preference. The progress API returns weekly volume in
+  // canonical meters (`current_week_m`), formatted via useUnits().
+  const { formatDistance, distanceUnitShort } = useUnits();
+  const formatWeeklyVolume = (m: number, decimals = 1) =>
+    formatDistance(m, decimals);
+  const formatWeeklyVolumeNoUnit = (m: number, decimals = 0) => {
+    const v = formatDistance(m, decimals);
+    return v.replace(/\s*(mi|km)\s*$/, '');
+  };
   const [baselineDraft, setBaselineDraft] = useState({
     runs_per_week_4w: 3,
     weekly_volume_value: 15,
@@ -121,6 +214,33 @@ function CoachPageInner() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const isEmptyConversation = messages.length <= 1;
+
+  const isCoachForbiddenError = (err: unknown): boolean => {
+    if (err instanceof ApiClientError) return err.status === 403;
+    if (err instanceof Error) return err.message.toLowerCase().includes('access denied');
+    return false;
+  };
+
+  const loadTrialStatus = async () => {
+    setLockoutLoading(true);
+    try {
+      const data = await apiClient.get<TrialStatus>('/v1/billing/trial/status');
+      setTrialStatus(data);
+    } catch {
+      setTrialStatus(null);
+    } finally {
+      setLockoutLoading(false);
+    }
+  };
+
+  const startSubscriptionCheckout = async (period: 'monthly' | 'annual') => {
+    try {
+      const data = await apiClient.post<{ url: string }>('/v1/billing/checkout', { billing_period: period });
+      if (data?.url) window.location.href = data.url;
+    } catch {
+      // Surface stays on page; athlete can retry.
+    }
+  };
   
   // Only auto-scroll if the user is already near the bottom.
   useEffect(() => {
@@ -152,12 +272,18 @@ function CoachPageInner() {
             role: (m.role === 'user' ? 'user' : 'assistant') as Message['role'],
             content: m.content,
             proposal: (m as any).proposal,
+            toolsUsed: Array.isArray((m as any).tools_used) ? (m as any).tools_used : [],
+            toolCount: typeof (m as any).tool_count === 'number' ? (m as any).tool_count : 0,
+            conversationContract: (m as any).conversation_contract || null,
             timestamp: m.created_at ? new Date(m.created_at) : new Date(),
           }));
         setMessages(hist);
       })
-      .catch(() => {
-        // If history fetch fails, fall back to new session UX.
+      .catch((err) => {
+        if (isCoachForbiddenError(err)) {
+          setCoachLocked(true);
+          loadTrialStatus();
+        }
       })
       .finally(() => {
         if (!cancelled) setHistoryLoaded(true);
@@ -183,9 +309,11 @@ function CoachPageInner() {
     }
     if (progressData.volume_trajectory) {
       const vol = progressData.volume_trajectory;
-      if (vol.current_week_mi != null) {
-        const target = vol.peak_week_mi ? ' (peak ' + vol.peak_week_mi.toFixed(0) + 'mi)' : '';
-        lines.push('**This week:** ' + vol.current_week_mi.toFixed(1) + 'mi' + target);
+      if (vol.current_week_m != null) {
+        const target = vol.peak_week_m
+          ? ' (peak ' + formatWeeklyVolumeNoUnit(vol.peak_week_m) + distanceUnitShort + ')'
+          : '';
+        lines.push('**This week:** ' + formatWeeklyVolume(vol.current_week_m) + target);
       }
     }
     if (progressData.recovery) {
@@ -203,7 +331,8 @@ function CoachPageInner() {
       if (pred.predicted_time) lines.push('**Projection:** ' + pred.distance + ' - ' + pred.predicted_time);
     }
     return lines.length > 0 ? lines.join('\n\n') : null;
-  }, [progressData]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [progressData, distanceUnitShort]);
 
   // Add initial greeting (only after we attempted to load history)
   useEffect(() => {
@@ -236,7 +365,12 @@ function CoachPageInner() {
           setSuggestions(normalized);
         }
       })
-      .catch(() => {
+      .catch((err) => {
+        if (!cancelled && isCoachForbiddenError(err)) {
+          setCoachLocked(true);
+          loadTrialStatus();
+          return;
+        }
         if (!cancelled) setSuggestions([]);
       });
     return () => {
@@ -244,12 +378,19 @@ function CoachPageInner() {
     };
   }, []);
 
-  // Deep link: read ?q= parameter and pre-fill input
+  // Deep link: read ?q= and ?finding_id= parameters.
+  // When finding_id is present (briefing tap), auto-send the message.
+  // When only ?q= is present, prefill the input.
+  const deepLinkHandled = useRef(false);
   useEffect(() => {
+    if (deepLinkHandled.current) return;
     const q = searchParams?.get('q');
-    if (q && !input) {
+    const findingId = searchParams?.get('finding_id');
+    if (q && findingId && !isLoading && messages.length === 0) {
+      deepLinkHandled.current = true;
+      handleSend(q);
+    } else if (q && !input) {
       setInput(q);
-      // Focus the input so user can just hit send
       requestAnimationFrame(() => inputRef.current?.focus());
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -282,6 +423,15 @@ function CoachPageInner() {
     } catch (e: any) {
       setError(e?.message || 'Failed to save baseline answers.');
     }
+  };
+
+  const handleCorrection = (message: Message) => {
+    const excerpt = (message.content || '').replace(/\s+/g, ' ').slice(0, 180);
+    const correctionPrompt = excerpt
+      ? `That's wrong. Please verify the data and correct this answer: "${excerpt}"`
+      : "That's wrong. Please verify the data and correct this answer.";
+    setInput(correctionPrompt);
+    requestAnimationFrame(() => inputRef.current?.focus());
   };
   
   const handleSend = async (messageText?: string) => {
@@ -322,8 +472,9 @@ function CoachPageInner() {
 
       const controller = new AbortController();
 
+      const findingId = searchParams?.get('finding_id') || undefined;
       await aiCoachService.chatStream(
-        { message: text },
+        { message: text, ...(findingId && messages.length <= 1 ? { finding_id: findingId } : {}) },
         {
           signal: controller.signal,
           onDelta: (delta) => {
@@ -342,6 +493,18 @@ function CoachPageInner() {
             });
           },
           onDone: (meta) => {
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === assistantId
+                  ? {
+                      ...m,
+                      toolsUsed: Array.isArray(meta?.tools_used) ? meta.tools_used : m.toolsUsed,
+                      toolCount: typeof meta?.tool_count === 'number' ? meta.tool_count : m.toolCount,
+                      conversationContract: meta?.conversation_contract || m.conversationContract || null,
+                    }
+                  : m
+              )
+            );
             if (meta?.timed_out) {
               setMessages((prev) =>
                 prev.map((m) =>
@@ -369,6 +532,10 @@ function CoachPageInner() {
         }
       );
     } catch (err) {
+      if (isCoachForbiddenError(err)) {
+        setCoachLocked(true);
+        await loadTrialStatus();
+      }
       setError(err instanceof Error ? err.message : 'Failed to get response from coach');
     } finally {
       setIsLoading(false);
@@ -383,6 +550,10 @@ function CoachPageInner() {
       await aiCoachService.newConversation();
       setMessages([]);
     } catch (err) {
+      if (isCoachForbiddenError(err)) {
+        setCoachLocked(true);
+        await loadTrialStatus();
+      }
       setError(err instanceof Error ? err.message : 'Failed to start a new conversation');
     } finally {
       setIsLoading(false);
@@ -398,6 +569,57 @@ function CoachPageInner() {
   
   return (
     <ProtectedRoute>
+      {coachLocked ? (
+        <div className="min-h-screen bg-slate-900 text-slate-100 py-10">
+          <div className="max-w-2xl mx-auto px-4">
+            <Card className="bg-slate-800 border-slate-700">
+              <CardContent className="py-8 px-6 space-y-5">
+                <div className="flex items-center gap-3">
+                  <div className="p-2.5 rounded-xl bg-orange-500/20 ring-1 ring-orange-500/30">
+                    <MessageSquare className="w-6 h-6 text-orange-500" />
+                  </div>
+                  <div>
+                    <h1 className="text-2xl font-bold">Your personal coach is waiting</h1>
+                    <p className="text-sm text-slate-400">
+                      Subscribe to unlock your coach and continue where you left off.
+                    </p>
+                  </div>
+                </div>
+
+                {lockoutLoading ? (
+                  <div className="flex items-center gap-2 text-slate-300">
+                    <LoadingSpinner size="sm" />
+                    Loading your trial progress...
+                  </div>
+                ) : (
+                  <div className="rounded-lg border border-slate-700/70 bg-slate-900/40 p-4 text-sm text-slate-300">
+                    <p>
+                      During trial, StrideIQ learned <strong>{trialStatus?.facts_learned ?? 0}</strong> facts,
+                      discovered <strong>{trialStatus?.findings_discovered ?? 0}</strong> findings, and analyzed
+                      <strong> {trialStatus?.activities_analyzed ?? 0}</strong> activities.
+                    </p>
+                    {trialStatus && (
+                      <p className="mt-2 text-slate-400">
+                        Trial days remaining: {trialStatus.trial_days_remaining}
+                      </p>
+                    )}
+                  </div>
+                )}
+
+                <div className="flex flex-col sm:flex-row gap-3">
+                  <Button className="bg-orange-600 hover:bg-orange-500" onClick={() => startSubscriptionCheckout('monthly')}>
+                    Subscribe - $24.99/mo
+                  </Button>
+                  <Button variant="outline" className="border-slate-600" onClick={() => startSubscriptionCheckout('annual')}>
+                    View annual - $199/yr
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        </div>
+      ) : (
+      <>
       {/* IMPORTANT: Navigation is a sticky h-16 (4rem). Fit coach *under* it. */}
       {/* The page should NOT scroll; only the transcript (and sidebar) should. */}
       <div
@@ -630,6 +852,10 @@ function CoachPageInner() {
                                           </div>
                                         </details>
                                       )}
+                                      <CoachTrustControls
+                                        message={message}
+                                        onCorrect={() => handleCorrection(message)}
+                                      />
                                       {message.timedOut && message.retryMessage && (
                                         <div className="flex items-center gap-2">
                                           <Button
@@ -726,6 +952,10 @@ function CoachPageInner() {
                                           </div>
                                         </details>
                                       )}
+                                      <CoachTrustControls
+                                        message={message}
+                                        onCorrect={() => handleCorrection(message)}
+                                      />
                                       {message.timedOut && message.retryMessage && (
                                         <div className="flex items-center gap-2">
                                           <Button
@@ -879,10 +1109,10 @@ function CoachPageInner() {
                           <span className="text-slate-100 font-medium">{progressData.goal_race_days_remaining} days</span>
                         </div>
                       )}
-                      {progressData.volume_trajectory?.current_week_mi != null && (
+                      {progressData.volume_trajectory?.current_week_m != null && (
                         <div className="flex justify-between">
                           <span className="text-slate-400">This week</span>
-                          <span className="text-slate-100 font-medium">{progressData.volume_trajectory.current_week_mi.toFixed(1)}mi</span>
+                          <span className="text-slate-100 font-medium">{formatWeeklyVolume(progressData.volume_trajectory.current_week_m)}</span>
                         </div>
                       )}
                     </div>
@@ -914,6 +1144,8 @@ function CoachPageInner() {
           </div>
         </div>
       </div>
+      </>
+      )}
     </ProtectedRoute>
   );
 }

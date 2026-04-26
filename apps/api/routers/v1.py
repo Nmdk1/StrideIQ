@@ -7,7 +7,7 @@ from pydantic import BaseModel
 
 from core.database import get_db
 from core.auth import get_current_user, require_admin
-from models import Athlete, Activity, ActivityStream, DailyCheckin, ActivitySplit, AthleteTrainingPaceProfile, AthleteRaceResultAnchor
+from models import Athlete, Activity, ActivityStream, DailyCheckin, ActivitySplit, AthleteTrainingPaceProfile
 from schemas import (
     AthleteCreate,
     AthleteUpdate,
@@ -17,6 +17,8 @@ from schemas import (
     DailyCheckinCreate,
     DailyCheckinResponse,
     ActivitySplitResponse,
+    IntervalSummaryResponse,
+    SplitsWithIntervalsResponse,
     PersonalBestResponse,
 )
 
@@ -272,15 +274,6 @@ def get_my_training_pace_profile(
     )
 
 
-def format_pace(pace_per_mile: Optional[float]) -> Optional[str]:
-    """Format pace as MM:SS/mi"""
-    if pace_per_mile is None:
-        return None
-    
-    minutes = int(pace_per_mile)
-    seconds = int(round((pace_per_mile - minutes) * 60))
-    return f"{minutes}:{seconds:02d}/mi"
-
 
 def format_duration(seconds: Optional[int]) -> Optional[str]:
     """Format duration as HH:MM:SS or MM:SS"""
@@ -330,7 +323,7 @@ def create_activity(
         "average_heartrate": db_activity.avg_hr,
         "average_cadence": None,
         "total_elevation_gain": float(db_activity.total_elevation_gain) if db_activity.total_elevation_gain else None,
-        "pace_per_mile": None,
+        "pace_s_per_km": None,
         "duration_formatted": None,
         "splits": None,
         "performance_percentage": db_activity.performance_percentage,
@@ -339,24 +332,20 @@ def create_activity(
         "race_confidence": db_activity.race_confidence,
     }
     if db_activity.average_speed and float(db_activity.average_speed) > 0:
-        pace_per_mile = 26.8224 / float(db_activity.average_speed)
-        minutes = int(pace_per_mile)
-        seconds = int(round((pace_per_mile - minutes) * 60))
-        activity_dict["pace_per_mile"] = f"{minutes}:{seconds:02d}/mi"
+        activity_dict["pace_s_per_km"] = round(1000 / float(db_activity.average_speed), 2)
     if db_activity.duration_s:
         h, m, s = db_activity.duration_s // 3600, (db_activity.duration_s % 3600) // 60, db_activity.duration_s % 60
         activity_dict["duration_formatted"] = f"{h}:{m:02d}:{s:02d}" if h > 0 else f"{m}:{s:02d}"
     return ActivityResponse(**activity_dict)
 
 
-@router.get("/activities/{activity_id}/splits", response_model=List[ActivitySplitResponse])
+@router.get("/activities/{activity_id}/splits", response_model=SplitsWithIntervalsResponse)
 def get_activity_splits(
     activity_id: UUID,
     current_user: Athlete = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Get splits for a specific activity (auth + ownership enforced)."""
-    # Verify activity exists AND belongs to the authenticated user
+    """Get splits for a specific activity with interval structure detection."""
     activity = (
         db.query(Activity)
         .filter(Activity.id == activity_id, Activity.athlete_id == current_user.id)
@@ -364,12 +353,86 @@ def get_activity_splits(
     )
     if not activity:
         raise HTTPException(status_code=404, detail="Activity not found")
-    
+
     splits = db.query(ActivitySplit).filter(
         ActivitySplit.activity_id == activity_id
     ).order_by(ActivitySplit.split_number).all()
-    
-    return splits
+
+    has_persisted_labels = any(s.lap_type is not None for s in splits)
+
+    if has_persisted_labels:
+        split_responses = [ActivitySplitResponse.model_validate(s) for s in splits]
+        work = [s for s in splits if s.lap_type == "work"]
+        if len(work) >= 1:
+            from services.interval_detector import detect_interval_structure
+            analysis = detect_interval_structure(splits)
+            return SplitsWithIntervalsResponse(
+                splits=split_responses,
+                interval_summary=IntervalSummaryResponse(**{
+                    "is_structured": analysis.summary.is_structured,
+                    "workout_description": analysis.summary.workout_description,
+                    "num_work_intervals": analysis.summary.num_work_intervals,
+                    "avg_work_pace_sec_per_km": analysis.summary.avg_work_pace_sec_per_km,
+                    "avg_work_hr": analysis.summary.avg_work_hr,
+                    "avg_rest_duration_s": analysis.summary.avg_rest_duration_s,
+                    "avg_rest_hr": analysis.summary.avg_rest_hr,
+                    "fastest_interval": analysis.summary.fastest_interval,
+                    "slowest_interval": analysis.summary.slowest_interval,
+                }),
+            )
+        return SplitsWithIntervalsResponse(splits=split_responses, interval_summary=None)
+
+    from services.interval_detector import detect_interval_structure
+    analysis = detect_interval_structure(splits)
+
+    # Index FIT-derived fields by split_number so we can pass them through
+    # the inferred-labels path. The interval detector returns LabeledSplit
+    # dataclasses that don't carry the new running-dynamics columns.
+    fit_extras_by_num = {s.split_number: s for s in splits}
+
+    split_responses = []
+    for ls in analysis.labeled_splits:
+        src = fit_extras_by_num.get(ls.split_number)
+        split_responses.append(ActivitySplitResponse(
+            split_number=ls.split_number,
+            distance=ls.distance,
+            elapsed_time=ls.elapsed_time,
+            moving_time=ls.moving_time,
+            average_heartrate=ls.average_heartrate,
+            max_heartrate=ls.max_heartrate,
+            average_cadence=float(ls.average_cadence) if ls.average_cadence is not None else None,
+            gap_s_per_km=round(float(ls.gap_seconds_per_mile) * 1000 / 1609.34, 2) if ls.gap_seconds_per_mile is not None else None,
+            lap_type=ls.lap_type,
+            interval_number=ls.interval_number,
+            total_ascent_m=getattr(src, "total_ascent_m", None),
+            total_descent_m=getattr(src, "total_descent_m", None),
+            avg_power_w=getattr(src, "avg_power_w", None),
+            max_power_w=getattr(src, "max_power_w", None),
+            avg_stride_length_m=getattr(src, "avg_stride_length_m", None),
+            avg_ground_contact_ms=getattr(src, "avg_ground_contact_ms", None),
+            avg_vertical_oscillation_cm=getattr(src, "avg_vertical_oscillation_cm", None),
+            avg_vertical_ratio_pct=getattr(src, "avg_vertical_ratio_pct", None),
+            extras=getattr(src, "extras", None),
+        ))
+
+    interval_summary = None
+    if analysis.summary.is_structured:
+        interval_summary = IntervalSummaryResponse(
+            is_structured=True,
+            workout_description=analysis.summary.workout_description,
+            num_work_intervals=analysis.summary.num_work_intervals,
+            avg_work_pace_sec_per_km=analysis.summary.avg_work_pace_sec_per_km,
+            avg_work_hr=analysis.summary.avg_work_hr,
+            avg_rest_duration_s=analysis.summary.avg_rest_duration_s,
+            avg_rest_hr=analysis.summary.avg_rest_hr,
+            fastest_interval=analysis.summary.fastest_interval,
+            slowest_interval=analysis.summary.slowest_interval,
+        )
+
+    return SplitsWithIntervalsResponse(
+        splits=split_responses,
+        interval_summary=interval_summary,
+    )
 
 
 @router.get("/activities/{activity_id}/streams")
@@ -994,3 +1057,70 @@ def create_checkin(
         pass
 
     return db_checkin
+
+
+# ---------------------------------------------------------------------------
+# Athlete overrides — athlete-specified corrections to fitness bank values
+# ---------------------------------------------------------------------------
+
+class AthleteOverridePayload(BaseModel):
+    peak_weekly_miles: Optional[float] = None
+    peak_long_run_miles: Optional[float] = None
+    rpi: Optional[float] = None
+    reason: Optional[str] = None
+
+
+@router.get("/athlete/overrides")
+def get_athlete_overrides(
+    current_user: Athlete = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    from models import AthleteOverride
+    row = db.query(AthleteOverride).filter(AthleteOverride.athlete_id == current_user.id).first()
+    if not row:
+        return {"peak_weekly_miles": None, "peak_long_run_miles": None, "rpi": None, "reason": None}
+    return {
+        "peak_weekly_miles": row.peak_weekly_miles,
+        "peak_long_run_miles": row.peak_long_run_miles,
+        "rpi": row.rpi,
+        "reason": row.reason,
+        "updated_at": row.updated_at.isoformat() if row.updated_at else None,
+    }
+
+
+@router.put("/athlete/overrides")
+def set_athlete_overrides(
+    payload: AthleteOverridePayload,
+    current_user: Athlete = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    from models import AthleteOverride
+    row = db.query(AthleteOverride).filter(AthleteOverride.athlete_id == current_user.id).first()
+    if not row:
+        row = AthleteOverride(athlete_id=current_user.id)
+        db.add(row)
+    if payload.peak_weekly_miles is not None:
+        row.peak_weekly_miles = payload.peak_weekly_miles
+    if payload.peak_long_run_miles is not None:
+        row.peak_long_run_miles = payload.peak_long_run_miles
+    if payload.rpi is not None:
+        row.rpi = payload.rpi
+    if payload.reason is not None:
+        row.reason = payload.reason
+    db.commit()
+    db.refresh(row)
+
+    # Invalidate fitness bank cache so next plan generation uses overrides.
+    try:
+        from core.cache import delete_cache
+        delete_cache(f"fitness_bank:{current_user.id}")
+    except Exception:
+        pass
+
+    return {
+        "status": "updated",
+        "peak_weekly_miles": row.peak_weekly_miles,
+        "peak_long_run_miles": row.peak_long_run_miles,
+        "rpi": row.rpi,
+        "reason": row.reason,
+    }

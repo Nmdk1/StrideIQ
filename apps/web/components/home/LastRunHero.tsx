@@ -148,6 +148,8 @@ export function LastRunHero({ lastRun }: LastRunHeroProps) {
             paceStream={lastRun.pace_stream!}
             effortIntensity={lastRun.effort_intensity!}
             elevationStream={lastRun.elevation_stream}
+            workoutClassification={lastRun.workout_classification}
+            heatAdjustmentPct={lastRun.heat_adjustment_pct}
             height={140}
           />
         ) : (
@@ -178,7 +180,7 @@ export function LastRunHero({ lastRun }: LastRunHeroProps) {
         {lastRun.heat_adjustment_pct != null && lastRun.heat_adjustment_pct > 3 && (
           <div className="px-4 pb-1">
             <p className="text-xs text-amber-400/80">
-              🌡️ Heat slowed this run ~{lastRun.heat_adjustment_pct.toFixed(1)}% — your effort was better than the pace shows
+              Heat slowed this run ~{lastRun.heat_adjustment_pct.toFixed(1)}% - your effort was better than the pace shows
             </p>
           </div>
         )}
@@ -218,7 +220,7 @@ export function LastRunHero({ lastRun }: LastRunHeroProps) {
 
         {lastRun.heat_adjustment_pct != null && lastRun.heat_adjustment_pct > 3 && (
           <p className="text-xs text-amber-400/80">
-            🌡️ Heat slowed this run ~{lastRun.heat_adjustment_pct.toFixed(1)}% — your effort was better than the pace shows
+            Heat slowed this run ~{lastRun.heat_adjustment_pct.toFixed(1)}% - your effort was better than the pace shows
           </p>
         )}
 

@@ -18,16 +18,15 @@ Design Principles:
 """
 
 from datetime import datetime, timedelta, date, timezone
-from typing import List, Dict, Optional, Tuple, Any
+from typing import List, Dict, Optional, Tuple
 from uuid import UUID
 from enum import Enum
 from dataclasses import dataclass, field
 from sqlalchemy.orm import Session
-from sqlalchemy import func, and_, or_
 import statistics
 import logging
 
-from models import Activity, Athlete, DailyCheckin, GarminDay, NutritionEntry, ActivitySplit
+from models import Activity, Athlete, DailyCheckin, GarminDay, ActivitySplit
 
 from services.efficiency_calculation import calculate_activity_efficiency_with_decoupling
 from services.efficiency_trending import analyze_efficiency_trend, TrendDirection as EfTrendDirection, TrendConfidence as EfTrendConfidence
@@ -46,6 +45,71 @@ class WorkoutType(Enum):
     RACE = "race"
     RECOVERY = "recovery"
     UNKNOWN = "unknown"
+
+
+# Purpose categories — determines which EVALUATION METRIC applies.
+# Orthogonal to effort (how hard it was). A pacing run at 7:00/mi and 9:30/mi
+# both get evaluated on consistency/decoupling, but the 7:00 effort is "hard"
+# and the 9:30 is "easy."
+CONTROLLED_STEADY_TYPES = frozenset({
+    "easy_run", "recovery_run", "aerobic_run", "shakeout", "pacing",
+    "marathon_pace", "half_marathon_pace", "long_run", "medium_long_run",
+})
+STRUCTURED_QUALITY_TYPES = frozenset({
+    "tempo_run", "tempo_intervals", "cruise_intervals", "threshold_run",
+    "vo2max_intervals", "fartlek", "track_workout", "hill_repetitions",
+    "repetitions", "strides", "hill_sprints",
+})
+RACE_TYPES = frozenset({
+    "race", "tune_up_race", "race_simulation",
+})
+LONG_RUN_TYPES = frozenset({
+    "long_run", "medium_long_run", "fast_finish_long_run",
+})
+PROGRESSION_TYPES = frozenset({
+    "progression_run", "negative_split_run", "fast_finish_long_run",
+})
+
+
+# Maps stored workout_type string → RunAnalysisEngine WorkoutType bucket.
+# If a stored type isn't here, fall back to HR-based classification.
+_STORED_TYPE_TO_BUCKET: Dict[str, "WorkoutType"] = {
+    # Controlled steady
+    "easy_run": WorkoutType.EASY,
+    "recovery_run": WorkoutType.RECOVERY,
+    "aerobic_run": WorkoutType.EASY,
+    "shakeout": WorkoutType.RECOVERY,
+    "pacing": WorkoutType.EASY,  # bucket only — effort comes from HR
+    # Endurance
+    "long_run": WorkoutType.LONG_RUN,
+    "medium_long_run": WorkoutType.LONG_RUN,
+    # Threshold / tempo
+    "tempo_run": WorkoutType.TEMPO,
+    "tempo_intervals": WorkoutType.TEMPO,
+    "cruise_intervals": WorkoutType.TEMPO,
+    "threshold_run": WorkoutType.TEMPO,
+    # Speed / intervals
+    "vo2max_intervals": WorkoutType.INTERVAL,
+    "track_workout": WorkoutType.INTERVAL,
+    "fartlek": WorkoutType.INTERVAL,
+    "hill_repetitions": WorkoutType.INTERVAL,
+    "repetitions": WorkoutType.INTERVAL,
+    "strides": WorkoutType.INTERVAL,
+    "hill_sprints": WorkoutType.INTERVAL,
+    # Race-specific
+    "marathon_pace": WorkoutType.TEMPO,
+    "half_marathon_pace": WorkoutType.TEMPO,
+    "goal_pace_run": WorkoutType.TEMPO,
+    "race_simulation": WorkoutType.RACE,
+    "tune_up_race": WorkoutType.RACE,
+    "race": WorkoutType.RACE,
+    # Progression / mixed
+    "progression_run": WorkoutType.MODERATE,
+    "fast_finish_long_run": WorkoutType.LONG_RUN_WITH_QUALITY,
+    "negative_split_run": WorkoutType.MODERATE,
+    # Unknown
+    "unclassified": WorkoutType.UNKNOWN,
+}
 
 
 class TimeScale(Enum):
@@ -238,6 +302,7 @@ class RunAnalysisEngine:
         ninety_days_ago = datetime.now(timezone.utc) - timedelta(days=90)
         recent_runs = self.db.query(Activity).filter(
             Activity.athlete_id == athlete_id,
+            Activity.sport == "run",
             Activity.start_time >= ninety_days_ago,
             Activity.distance_m.isnot(None),
             Activity.distance_m > 1000,  # At least 1km
@@ -303,37 +368,44 @@ class RunAnalysisEngine:
     
     def classify_workout(self, activity: Activity) -> Tuple[WorkoutType, float]:
         """
-        Classify a workout based on pace, HR, duration, and effort distribution.
+        Classify a workout based on stored type, HR effort, and duration.
         Returns (WorkoutType, confidence).
-        
-        Classification philosophy:
-        - HR data is the PRIMARY signal when available - it tells us effort level
-        - Duration determines if an easy effort is a "long run" vs regular "easy run"
-        - Only fall back to duration-based guessing when HR data is unavailable
+
+        Priority chain:
+          1. Stored workout_type (from WorkoutClassifier or user override)
+          2. HR-based effort classification (N=1 percentile/HRR/TPP)
+          3. Duration-based guess (lowest confidence)
+
+        Purpose (what kind of run) is orthogonal to effort (how hard it was).
+        The stored type tells us purpose; HR tells us effort. Both matter
+        but for different downstream decisions.
         """
         if not activity.distance_m or not activity.duration_s:
             return WorkoutType.UNKNOWN, 0.0
-        
-        # Get athlete's baseline paces and thresholds
-        athlete = self.db.query(Athlete).filter(Athlete.id == activity.athlete_id).first()
+
         thresholds = self._get_athlete_run_thresholds(activity.athlete_id)
-        
-        pace_per_km = activity.duration_s / (activity.distance_m / 1000) if activity.distance_m > 0 else None
         duration_minutes = activity.duration_s / 60
-        distance_km = activity.distance_m / 1000
         avg_hr = activity.avg_hr
-        max_hr = activity.max_hr
-        
-        # Race detection (explicit flag or keyword in name)
-        if activity.workout_type and 'race' in activity.workout_type.lower():
-            return WorkoutType.RACE, 0.95
-        
-        # Get duration thresholds
-        long_run_threshold = thresholds['long_run_duration_min']
-        
-        # =====================================================================
-        # HR-BASED CLASSIFICATION (PRIMARY - using N=1 percentile)
-        # =====================================================================
+
+        # =================================================================
+        # STORED TYPE (PRIMARY — from WorkoutClassifier or user override)
+        # =================================================================
+        stored_type = getattr(activity, "workout_type", None)
+        if stored_type:
+            stored_lower = stored_type.lower()
+            bucket = _STORED_TYPE_TO_BUCKET.get(stored_lower)
+            if bucket is not None:
+                confidence = 0.90 if getattr(activity, "workout_confidence", 0) == 1.0 else 0.85
+                long_run_threshold = thresholds["long_run_duration_min"]
+                if bucket == WorkoutType.EASY and duration_minutes >= long_run_threshold:
+                    bucket = WorkoutType.LONG_RUN
+                return bucket, confidence
+
+        # =================================================================
+        # HR-BASED CLASSIFICATION (FALLBACK)
+        # =================================================================
+        long_run_threshold = thresholds["long_run_duration_min"]
+
         if avg_hr:
             from services.effort_classification import classify_effort
             effort = classify_effort(activity, str(activity.athlete_id), self.db)
@@ -352,30 +424,21 @@ class RunAnalysisEngine:
 
             else:  # hard
                 return WorkoutType.TEMPO, 0.80
-        
-        # =====================================================================
-        # FALLBACK: No HR data - use duration only (lower confidence)
-        # =====================================================================
-        # Without HR, we're guessing based on duration patterns
-        
+
+        # =================================================================
+        # DURATION-ONLY GUESS (lowest confidence, no HR data)
+        # =================================================================
         if duration_minutes >= long_run_threshold:
-            # Top 10% duration without HR data - probably a long run
             return WorkoutType.LONG_RUN, 0.70
-        
-        typical_duration = thresholds['typical_duration_min']
-        
+
+        typical_duration = thresholds["typical_duration_min"]
+
         if duration_minutes < 30:
-            # Short run - likely recovery or shakeout
             return WorkoutType.EASY, 0.65
         elif duration_minutes <= typical_duration * 1.2:
-            # Near typical duration - regular training run
             return WorkoutType.EASY, 0.65
         else:
-            # Above typical but below long run threshold
-            # Could be moderate effort or structured workout
             return WorkoutType.MODERATE, 0.60
-        
-        return WorkoutType.UNKNOWN, 0.0
     
     # =========================================================================
     # INPUT SNAPSHOT
@@ -513,6 +576,7 @@ class RunAnalysisEngine:
         # Training load (simplified - would need proper TSS calculation)
         activities_7d = self.db.query(Activity).filter(
             Activity.athlete_id == athlete_id,
+            Activity.sport == "run",
             Activity.start_time >= datetime.combine(week_ago, datetime.min.time()),
             Activity.start_time < datetime.combine(run_date, datetime.min.time())
         ).all()
@@ -605,6 +669,7 @@ class RunAnalysisEngine:
         # Get recent activities within the time window
         activities = self.db.query(Activity).filter(
             Activity.athlete_id == athlete_id,
+            Activity.sport == "run",
             Activity.start_time >= datetime.combine(earliest_date, datetime.min.time()),
             Activity.start_time < datetime.combine(before_date, datetime.min.time())
         ).order_by(Activity.start_time.desc()).limit(100).all()
@@ -626,6 +691,7 @@ class RunAnalysisEngine:
         
         activities = self.db.query(Activity).filter(
             Activity.athlete_id == athlete_id,
+            Activity.sport == "run",
             Activity.start_time >= datetime.combine(week_start, datetime.min.time()),
             Activity.start_time < datetime.combine(run_date + timedelta(days=1), datetime.min.time())
         ).all()
@@ -642,6 +708,7 @@ class RunAnalysisEngine:
         
         activities = self.db.query(Activity).filter(
             Activity.athlete_id == athlete_id,
+            Activity.sport == "run",
             Activity.start_time >= datetime.combine(month_start, datetime.min.time()),
             Activity.start_time < datetime.combine(run_date + timedelta(days=1), datetime.min.time())
         ).all()
@@ -658,6 +725,7 @@ class RunAnalysisEngine:
         
         activities = self.db.query(Activity).filter(
             Activity.athlete_id == athlete_id,
+            Activity.sport == "run",
             Activity.start_time >= datetime.combine(year_start, datetime.min.time()),
             Activity.start_time < datetime.combine(run_date + timedelta(days=1), datetime.min.time())
         ).all()
@@ -810,6 +878,7 @@ class RunAnalysisEngine:
             self.db.query(Activity)
             .filter(
                 Activity.athlete_id == athlete_id,
+                Activity.sport == "run",
                 Activity.start_time >= start_date,
                 Activity.distance_m.isnot(None),
                 Activity.distance_m > 1609,
@@ -868,6 +937,7 @@ class RunAnalysisEngine:
         """Get efficiency data points for trend analysis"""
         activities = self.db.query(Activity).filter(
             Activity.athlete_id == athlete_id,
+            Activity.sport == "run",
             Activity.start_time >= start_date,
             Activity.avg_hr.isnot(None),
             Activity.distance_m > 0,
@@ -891,6 +961,7 @@ class RunAnalysisEngine:
         """Get weekly volume data points"""
         activities = self.db.query(Activity).filter(
             Activity.athlete_id == athlete_id,
+            Activity.sport == "run",
             Activity.start_time >= start_date,
             Activity.distance_m > 0
         ).order_by(Activity.start_time).all()
@@ -966,13 +1037,13 @@ class RunAnalysisEngine:
                 
                 # Generate explanation
                 if cause_name == "sleep" and correlation < 0:
-                    explanation = f"Decreased sleep correlates with declining efficiency"
+                    explanation = "Decreased sleep correlates with declining efficiency"
                 elif cause_name == "stress" and correlation > 0:
-                    explanation = f"Increased stress correlates with declining efficiency"
+                    explanation = "Increased stress correlates with declining efficiency"
                 elif cause_name == "soreness" and correlation > 0:
-                    explanation = f"Increased soreness correlates with declining efficiency"
+                    explanation = "Increased soreness correlates with declining efficiency"
                 elif cause_name == "volume" and correlation > 0:
-                    explanation = f"Volume increase may be exceeding adaptation capacity"
+                    explanation = "Volume increase may be exceeding adaptation capacity"
                 else:
                     explanation = f"{cause_name.title()} shows correlation with efficiency changes"
                 

@@ -14,7 +14,7 @@ No LLM/AI dependency - pure calculation.
 ADR-022: Individual Performance Model for Plan Generation
 """
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timedelta, date
 from typing import List, Dict, Optional, Tuple
 from uuid import UUID
@@ -23,7 +23,6 @@ import statistics
 import logging
 
 from sqlalchemy.orm import Session
-from sqlalchemy import func, or_, and_
 
 from models import Activity
 from services.individual_performance_model import (
@@ -35,6 +34,7 @@ from services.rpi_calculator import (
     calculate_rpi_from_race_time,
     calculate_race_time_from_rpi
 )
+from services.race_signal_contract import authoritative_race_filter
 
 logger = logging.getLogger(__name__)
 
@@ -239,11 +239,8 @@ class RacePredictor:
         # Use race detection fields (is_race_candidate, user_verified_race, workout_type)
         races = self.db.query(Activity).filter(
             Activity.athlete_id == athlete_id,
-            or_(
-                Activity.user_verified_race == True,
-                Activity.workout_type == 'race',
-                and_(Activity.is_race_candidate == True, Activity.race_confidence >= 0.7)
-            ),
+            Activity.sport == "run",
+            authoritative_race_filter(Activity),
             Activity.distance_m >= distance_m - tolerance,
             Activity.distance_m <= distance_m + tolerance,
             Activity.duration_s.isnot(None)
@@ -300,11 +297,8 @@ class RacePredictor:
         # Use race detection fields
         races = self.db.query(Activity).filter(
             Activity.athlete_id == athlete_id,
-            or_(
-                Activity.user_verified_race == True,
-                Activity.workout_type == 'race',
-                and_(Activity.is_race_candidate == True, Activity.race_confidence >= 0.7)
-            ),
+            Activity.sport == "run",
+            authoritative_race_filter(Activity),
             Activity.start_time >= cutoff,
             Activity.duration_s.isnot(None),
             Activity.distance_m.isnot(None)
@@ -338,6 +332,7 @@ class RacePredictor:
         
         threshold_workouts = self.db.query(Activity).filter(
             Activity.athlete_id == athlete_id,
+            Activity.sport == "run",
             Activity.start_time >= cutoff,
             Activity.workout_type.in_(['tempo', 'threshold']),
             Activity.duration_s.isnot(None),

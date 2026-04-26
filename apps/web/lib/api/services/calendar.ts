@@ -52,20 +52,29 @@ export interface PlannedWorkout {
   title: string;
   description?: string;
   phase: string;
-  week_number: number;  // Required for week summary grouping
+  week_number: number;
   target_distance_km?: number;
   target_duration_minutes?: number;
   segments?: any;
+  workout_variant_id?: string;
   completed: boolean;
   skipped: boolean;
   coach_notes?: string;
   
-  // Option A/B support
   has_option_b?: boolean;
   option_b_title?: string;
   option_b_description?: string;
   option_b_segments?: any;
   selected_option?: 'A' | 'B';
+}
+
+export interface VariantOption {
+  id: string;
+  display_name: string;
+  stem: string;
+  when_to_avoid: string;
+  pairs_poorly_with: string;
+  is_current: boolean;
 }
 
 export interface ActivitySummary {
@@ -99,20 +108,25 @@ export interface CalendarDay {
   notes: CalendarNote[];
   insights: CalendarInsight[];
   inline_insight?: InlineInsight;  // Single key metric for calendar cell display
+  /** All sports — legacy. Prefer ``running_distance_m`` for running mileage UI. */
   total_distance_m: number;
   total_duration_s: number;
+  running_distance_m?: number;
+  running_duration_s?: number;
+  other_distance_m?: number;
+  other_duration_s?: number;
 }
 
 export interface WeekSummary {
   week_number: number;
   phase?: string;
   phase_week?: number;
-  planned_miles: number;
-  completed_miles: number;
+  planned_m: number;
+  completed_m: number;
   quality_sessions_planned: number;
   quality_sessions_completed: number;
-  long_run_planned_miles?: number;
-  long_run_completed_miles?: number;
+  long_run_planned_m?: number;
+  long_run_completed_m?: number;
   focus?: string;
   days: CalendarDay[];
 }
@@ -210,12 +224,24 @@ export const calendarService = {
     request: CoachMessageRequest,
     options?: { signal?: AbortSignal; timeoutMs?: number }
   ): Promise<CoachMessageResponse> {
-    // Coach can legitimately take longer (tool calls + run)
     return apiClient.post('/v1/calendar/coach', request, {
       signal: options?.signal,
       timeoutMs: options?.timeoutMs ?? 120000,
-      // Never retry chat POSTs: retries can multiply perceived latency and can duplicate messages.
       retries: 0,
     });
+  },
+
+  /**
+   * Get valid variant alternatives for a planned workout
+   */
+  async getWorkoutVariants(workoutId: string): Promise<VariantOption[]> {
+    return apiClient.get(`/v1/calendar/workouts/${workoutId}/variants`);
+  },
+
+  /**
+   * Select a workout variant (athlete choice)
+   */
+  async selectWorkoutVariant(workoutId: string, variantId: string): Promise<{ status: string; variant_id: string; display_name: string }> {
+    return apiClient.patch(`/v1/calendar/workouts/${workoutId}/variant`, { variant_id: variantId });
   },
 };

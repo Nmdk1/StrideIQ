@@ -1,0 +1,136 @@
+{
+  "schema_version": 2,
+  "phase": "0B",
+  "athlete_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+  "partial": false,
+  "stable_findings": [
+    {"metric": "efficiency", "input": "sleep_hours", "windows": "all"},
+    {"metric": "efficiency", "input": "hrv_rmssd", "windows": "all"},
+    {"metric": "pace_easy", "input": "sleep_hours", "windows": "all"}
+  ],
+  "strengthened_findings": [
+    {"metric": "efficiency", "input": "weekly_volume_km", "windows": [3, 4, 5]},
+    {"metric": "pace_threshold", "input": "long_run_distance_km", "windows": [3, 4, 5]}
+  ],
+  "candidate_interactions": {
+    "cleared_threshold": true,
+    "candidates": [
+      {
+        "output_metric": "efficiency",
+        "factors": ["sleep_hours", "work_stress"],
+        "effect_size": 0.91,
+        "interaction_score": 0.62,
+        "score_components": {
+          "effect_size_norm": 0.607,
+          "sample_support": 0.587
+        },
+        "n_high": 24,
+        "n_low": 22,
+        "direction_label": "lower efficiency when both sleep_hours and work_stress are high"
+      },
+      {
+        "output_metric": "efficiency",
+        "factors": ["daily_protein_g", "hrv_rmssd"],
+        "effect_size": 0.74,
+        "interaction_score": 0.51,
+        "score_components": {
+          "effect_size_norm": 0.493,
+          "sample_support": 0.531
+        },
+        "n_high": 18,
+        "n_low": 19,
+        "direction_label": "lower efficiency when both daily_protein_g and hrv_rmssd are high"
+      },
+      {
+        "output_metric": "pace_easy",
+        "factors": ["sleep_hours", "resting_hr"],
+        "effect_size": -0.68,
+        "interaction_score": 0.47,
+        "score_components": {
+          "effect_size_norm": 0.453,
+          "sample_support": 0.487
+        },
+        "n_high": 20,
+        "n_low": 17,
+        "direction_label": "lower pace_easy when both sleep_hours and resting_hr are high"
+      }
+    ]
+  },
+  "registry_tuning_candidates": {
+    "cleared_threshold": true,
+    "candidates": [
+      {
+        "investigation": "investigate_pace_at_hr_adaptation",
+        "parameter_change": {"min_activities": 16},
+        "baseline_score": 0.3812,
+        "candidate_score": 0.4201,
+        "score_delta": 0.0389,
+        "kept": true,
+        "rationale": "kept: score_delta 0.0389 > 0.03 and finding count stable (2 -> 3)"
+      },
+      {
+        "investigation": "investigate_long_run_durability",
+        "parameter_change": {"min_activities": 16},
+        "baseline_score": 0.3542,
+        "candidate_score": 0.3881,
+        "score_delta": 0.0339,
+        "kept": true,
+        "rationale": "kept: score_delta 0.0339 > 0.03 and finding count stable (1 -> 2)"
+      }
+    ]
+  },
+  "discarded_experiments": [],
+  "score_summary": {
+    "correlation_rescan": {
+      "experiments_run": 6,
+      "kept": 6,
+      "aggregate_baseline_score": 0.3247,
+      "aggregate_candidate_score": null,
+      "aggregate_score_delta": null,
+      "stable_finding_count": 3,
+      "strengthening_finding_count": 2,
+      "recent_only_count": 1,
+      "unstable_count": 0
+    },
+    "interaction_scan": {
+      "experiments_run": 4,
+      "kept": 3,
+      "aggregate_baseline_score": 0.5875,
+      "aggregate_all_score": 0.4812,
+      "aggregate_candidate_score": null,
+      "aggregate_delta": null,
+      "loop_design": "single_arm_discovery"
+    },
+    "registry_tuning": {
+      "experiments_run": 8,
+      "kept": 2,
+      "aggregate_baseline_score": 0.3677,
+      "aggregate_candidate_score": 0.4041,
+      "aggregate_score_delta": 0.0364
+    }
+  },
+  "no_surface_guarantee": {
+    "athlete_facing_surfaces_mutated": false,
+    "production_registry_values_mutated": false,
+    "production_cache_polluted": false,
+    "live_mutation_enabled": false,
+    "phase": "0B",
+    "guarantee_schema_version": 2,
+    "timestamp": "2026-03-11T04:00:12.531Z"
+  },
+  "window_stability_detail": {
+    "stable": [
+      {"metric": "efficiency", "input": "sleep_hours", "windows": "all"},
+      {"metric": "efficiency", "input": "hrv_rmssd", "windows": "all"},
+      {"metric": "pace_easy", "input": "sleep_hours", "windows": "all"}
+    ],
+    "recent_only": [
+      {"metric": "efficiency", "input": "work_hours", "windows": [0, 1, 2]}
+    ],
+    "strengthening": [
+      {"metric": "efficiency", "input": "weekly_volume_km", "windows": [3, 4, 5]},
+      {"metric": "pace_threshold", "input": "long_run_distance_km", "windows": [3, 4, 5]}
+    ],
+    "unstable": []
+  }
+}

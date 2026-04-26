@@ -15,7 +15,7 @@
  * Interaction:
  * - "Download (1:1)" → signed URL for square image
  * - "Download (Stories)" → server-side 9:16 Pillow recompose
- * - "Regenerate" → POST to trigger a new generation (guided+ only, ≤3 total)
+ * - "Regenerate" → POST to trigger a new generation (guided+; server enforces caps)
  */
 
 import React, { useEffect, useRef, useState } from 'react';
@@ -65,6 +65,8 @@ export function RuntoonCard({ activityId }: RuntoonCardProps) {
   const [timedOut, setTimedOut] = useState(false);
   const [shareViewOpen, setShareViewOpen] = useState(false);
   const [regenCount, setRegenCount] = useState(0);
+  const [regenerating, setRegenerating] = useState(false);
+  const regenTargetAttemptRef = useRef<number>(0);
 
   // Self-contained photo check — avoids prop-drilling from parent
   // Uses the same query key as RuntoonPhotoUpload so responses are cached
@@ -98,8 +100,25 @@ export function RuntoonCard({ activityId }: RuntoonCardProps) {
     },
     enabled: !!token && !photosLoading && hasPhotos && !timedOut,
     refetchInterval: (query) => {
-      if (query.state.data) return false;
-      // Track poll start time
+      const data = query.state.data as RuntoonData | null;
+
+      if (regenTargetAttemptRef.current > 0) {
+        if (data && data.attempt_number >= regenTargetAttemptRef.current) {
+          regenTargetAttemptRef.current = 0;
+          setRegenerating(false);
+          return false;
+        }
+        const elapsed = Date.now() - (pollStartRef.current ?? Date.now());
+        if (elapsed > POLL_TIMEOUT_MS) {
+          regenTargetAttemptRef.current = 0;
+          setRegenerating(false);
+          setTimedOut(true);
+          return false;
+        }
+        return POLL_INTERVAL_MS;
+      }
+
+      if (data) return false;
       if (pollStartRef.current === null) pollStartRef.current = Date.now();
       const elapsed = Date.now() - (pollStartRef.current ?? Date.now());
       if (elapsed > POLL_TIMEOUT_MS) {
@@ -131,11 +150,11 @@ export function RuntoonCard({ activityId }: RuntoonCardProps) {
       return res.json();
     },
     onSuccess: () => {
-      // Reset polling to wait for new generation
+      regenTargetAttemptRef.current = (runtoon?.attempt_number ?? 0) + 1;
+      setRegenerating(true);
       pollStartRef.current = Date.now();
       setTimedOut(false);
       setRegenCount((c) => c + 1);
-      // Invalidate so we start polling again
       queryClient.invalidateQueries({ queryKey: ['runtoon', activityId] });
     },
   });
@@ -255,9 +274,25 @@ export function RuntoonCard({ activityId }: RuntoonCardProps) {
   if (!runtoon) return null;
 
   // ------------------------------------------------------------------
+  // Render: regenerating — waiting for new image
+  // ------------------------------------------------------------------
+  if (regenerating) {
+    return (
+      <div className="rounded-lg border border-slate-700/50 bg-slate-800/30 p-5">
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 rounded-full border-2 border-orange-500/40 border-t-orange-500 animate-spin flex-shrink-0" />
+          <div>
+            <p className="text-sm font-medium text-slate-200">Generating new look…</p>
+            <p className="text-xs text-slate-400 mt-0.5">Usually ready in 15–30 seconds</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ------------------------------------------------------------------
   // Render: Runtoon ready
   // ------------------------------------------------------------------
-  const canRegenerate = regenCount < 2; // 1 auto + 2 manual = 3 max; user sees 0 to 2
 
   return (
     <div className="rounded-lg border border-slate-700/50 bg-slate-800/30 overflow-hidden">
@@ -295,20 +330,16 @@ export function RuntoonCard({ activityId }: RuntoonCardProps) {
           Share Your Run
         </button>
 
-        {/* Secondary: Try another look (if attempts remain) */}
-        {canRegenerate ? (
-          <button
-            type="button"
-            onClick={() => regenMutation.mutate()}
-            disabled={regenMutation.isPending}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-700/60 hover:bg-slate-700 rounded-md text-xs font-medium text-slate-300 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            <RefreshCw className={`w-3.5 h-3.5 ${regenMutation.isPending ? 'animate-spin' : ''}`} />
-            {regenMutation.isPending ? 'Queued…' : 'Try another look'}
-          </button>
-        ) : (
-          <span className="text-xs text-slate-500 px-2">3/3 used</span>
-        )}
+        {/* Secondary: Try another look (server enforces caps; founder exempt) */}
+        <button
+          type="button"
+          onClick={() => regenMutation.mutate()}
+          disabled={regenMutation.isPending}
+          className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-700/60 hover:bg-slate-700 rounded-md text-xs font-medium text-slate-300 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          <RefreshCw className={`w-3.5 h-3.5 ${regenMutation.isPending ? 'animate-spin' : ''}`} />
+          {regenMutation.isPending ? 'Queued…' : 'Try another look'}
+        </button>
       </div>
 
       {regenMutation.isError && (

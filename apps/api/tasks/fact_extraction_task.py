@@ -7,6 +7,7 @@ Processes only NEW messages since the last extraction checkpoint.
 import json
 import logging
 import os
+import re
 from uuid import UUID
 
 from sqlalchemy.exc import IntegrityError
@@ -18,6 +19,30 @@ from models import AthleteFact, CoachChat
 
 logger = logging.getLogger(__name__)
 
+FACT_TTL_CATEGORIES = {
+    "injury_history": 14,
+    "current_symptoms": 14,
+    "training_phase": 21,
+    "training_intent": 45,
+    "fatigue_strategy": 45,
+    "equipment": 90,
+    "strength_pr": 30,
+    "strength_training_context": 90,
+    "upcoming_race": 7,
+    "race_goal": 7,
+    "race_plan": 7,
+    "limiter_context": 90,
+}
+
+_RELATIVE_TIME_PATTERN = re.compile(
+    r"\b("
+    r"tomorrow|today|yesterday|next\s+week|this\s+week|this\s+weekend|next\s+month|"
+    r"in\s+\d+\s+(day|days|week|weeks|month|months)|"
+    r"\d+\s+(day|days|week|weeks|month|months)\s+out"
+    r")\b",
+    re.IGNORECASE,
+)
+
 EXTRACTION_PROMPT = """You are extracting structured facts from an athlete's messages to their running coach.
 
 Extract any concrete, specific factual claims the athlete made about:
@@ -28,10 +53,16 @@ Extract any concrete, specific factual claims the athlete made about:
 - Their life context (age, occupation, years running, other sports)
 - Their race history (PRs, recent race results, upcoming goals)
 - Their health (resting heart rate, blood pressure, medications, etc.)
+- Their upcoming race details (race name, date, distance, course profile like flat/hilly, goal time, goal pace)
+- Their training context when confirming or explaining a pattern the coach asked about (limiter_context)
+- Coaching memory that should change how future answers are interpreted:
+  race_psychology, injury_context, invalid_race_anchor, training_intent,
+  fatigue_strategy, sleep_baseline, stress_boundary, coaching_preference,
+  strength_training_context
 - Anything else specific and factual that would be useful coaching context
 
 For each fact, return:
-- fact_type: one of [body_composition, strength_pr, injury_history, preference, life_context, race_history, health, other]
+- fact_type: one of [body_composition, strength_pr, injury_history, injury_context, current_symptoms, training_phase, training_intent, fatigue_strategy, equipment, preference, coaching_preference, life_context, race_history, race_psychology, invalid_race_anchor, health, upcoming_race, race_goal, race_plan, sleep_baseline, stress_boundary, strength_training_context, limiter_context, other]
 - fact_key: a snake_case identifier (e.g., "dexa_bone_density_t_score", "deadlift_1rm_lbs")
 - fact_value: the value as a string (e.g., "3.2", "315", "before 8am")
 - numeric_value: the numeric value if applicable, else null
@@ -44,6 +75,36 @@ Rules:
 - Use consistent fact_key naming: lowercase snake_case, include units where relevant (e.g., _lbs, _in, _pct).
 - If the same fact appears multiple times with different values, extract only the most recent/specific version.
 
+Examples of upcoming_race facts:
+- fact_key: "upcoming_race_name", fact_value: "Eastern States 20 Miler"
+- fact_key: "upcoming_race_date", fact_value: "2026-03-22"
+- fact_key: "upcoming_race_course_profile", fact_value: "flat"
+- fact_key: "upcoming_race_distance_miles", fact_value: "20"
+- fact_key: "upcoming_race_goal_pace", fact_value: "8:20/mi"
+
+Examples of limiter_context facts (when the athlete confirms or explains a pattern):
+- When asked about long runs and threshold pace:
+  fact_type: "limiter_context", fact_key: "limiter_type:L-VOL", fact_value: "Yes, I've been building mileage and my long runs are getting longer", source_excerpt: "..."
+- When the athlete explains a pattern as historical/resolved:
+  fact_type: "limiter_context", fact_key: "limiter_type:L-VOL", fact_value: "historical", source_excerpt: "That was from my base building phase last year, I've moved past that"
+- When asked about recovery patterns:
+  fact_type: "limiter_context", fact_key: "limiter_type:L-REC", fact_value: "I've been sleeping poorly and doing doubles", source_excerpt: "..."
+
+Limiter type codes for fact_key:
+  L-VOL = volume-related (long runs, weekly mileage, chronic load)
+  L-REC = recovery-related (freshness, session stress, fatigue, sleep, body battery)
+  L-THRESH = threshold-related (days since quality sessions)
+  L-CEIL = ceiling-related (VO2max, speed development)
+  L-CON = consecutive-day patterns
+  L-SPEC = race-specific preparation
+
+Examples of coaching-memory facts:
+- fact_type: "stress_boundary", fact_key: "life_stress_boundary", fact_value: "Running is my escape; do not discuss the life stress", source_excerpt: "Running is my escape; do not discuss the life stress"
+- fact_type: "fatigue_strategy", fact_key: "deliberate_fatigue_build_until", fact_value: "building fatigue until the 19th", source_excerpt: "I deliberately build fatigue until the 19th"
+- fact_type: "race_psychology", fact_key: "race_style", fact_value: "controlled chaos; closes better than workouts suggest", source_excerpt: "I race controlled chaos"
+- fact_type: "invalid_race_anchor", fact_key: "coke_10k_2025_invalid_anchor", fact_value: "ran with a fractured femur; do not use as fitness anchor", source_excerpt: "I had a fractured femur during that 10K"
+- fact_type: "sleep_baseline", fact_key: "normal_sleep_baseline", fact_value: "6 to 6.5 hours is normal baseline", source_excerpt: "I usually sleep 6 to 6.5 hours"
+
 Return as a JSON array. If no facts found, return [].
 """
 
@@ -54,47 +115,58 @@ class ExtractionError(Exception):
 
 def _run_extraction(user_text: str) -> list:
     """
-    Call Gemini to extract structured facts from athlete messages.
+    Call the knowledge LLM (kimi-k2.6 by default) to extract structured facts
+    from athlete messages.
 
     Returns [] when the LLM finds no facts (legitimate empty).
     Raises ExtractionError on provider/parse failures so the caller
     can distinguish "nothing found" from "couldn't reach the model".
     """
-    try:
-        from google import genai
-        from google.genai import types as genai_types
-    except ImportError:
-        raise ExtractionError("google-genai not installed")
+    from core.config import settings
+    from core.llm_client import call_llm
 
-    api_key = os.getenv("GOOGLE_AI_API_KEY")
-    if not api_key:
-        raise ExtractionError("GOOGLE_AI_API_KEY not set")
-
-    client = genai.Client(api_key=api_key)
-    config = genai_types.GenerateContentConfig(
-        temperature=0.1,
-        response_mime_type="application/json",
+    user_prompt = f"{EXTRACTION_PROMPT}\n\nATHLETE MESSAGES:\n{user_text}"
+    system = (
+        'Respond with ONLY a JSON object of the form {"facts": [...]} where '
+        '"facts" is the array of fact objects described below. If no facts are '
+        'found, return {"facts": []}. No markdown, no prose, no code fences.'
     )
     try:
-        response = client.models.generate_content(
-            model="gemini-3-flash-preview",
-            contents=[
-                genai_types.Content(
-                    role="user",
-                    parts=[genai_types.Part(text=f"{EXTRACTION_PROMPT}\n\nATHLETE MESSAGES:\n{user_text}")],
-                ),
-            ],
-            config=config,
+        result = call_llm(
+            model=settings.KNOWLEDGE_PRIMARY_MODEL,
+            system=system,
+            messages=[{"role": "user", "content": user_prompt}],
+            max_tokens=4000,
+            temperature=0.1,
+            response_mode="json",
+            timeout_s=60,
         )
-        raw = response.text.strip()
-        facts = json.loads(raw)
-        if not isinstance(facts, list):
-            raise ExtractionError(f"Extraction returned non-list: {type(facts)}")
-        return facts
-    except ExtractionError:
-        raise
     except Exception as e:
         raise ExtractionError(f"LLM call failed: {e}") from e
+
+    raw = (result.get("text") or "").strip()
+    if raw.startswith("```"):
+        raw = raw.split("\n", 1)[1] if "\n" in raw else raw[3:]
+    if raw.endswith("```"):
+        raw = raw[:-3]
+    raw = raw.strip()
+    try:
+        facts = json.loads(raw)
+    except json.JSONDecodeError as e:
+        if raw.startswith("{"):
+            try:
+                obj = json.loads(raw)
+                if isinstance(obj, dict) and isinstance(obj.get("facts"), list):
+                    return obj["facts"]
+            except Exception:
+                pass
+        raise ExtractionError(f"LLM returned non-JSON: {e}") from e
+
+    if isinstance(facts, dict) and isinstance(facts.get("facts"), list):
+        return facts["facts"]
+    if not isinstance(facts, list):
+        raise ExtractionError(f"Extraction returned non-list: {type(facts)}")
+    return facts
 
 
 def _upsert_fact(db, athlete_id: UUID, chat_id: UUID, extracted: dict):
@@ -125,15 +197,26 @@ def _upsert_fact(db, athlete_id: UUID, chat_id: UUID, extracted: dict):
             extracted["fact_key"], existing.fact_value, extracted["fact_value"],
         )
 
+    fact_type = extracted["fact_type"]
+    fact_value = extracted["fact_value"]
+    temporal = FACT_TTL_CATEGORIES.get(fact_type) is not None
+    ttl_days = FACT_TTL_CATEGORIES.get(fact_type)
+
+    if (not temporal) and _contains_relative_time_phrase(fact_value):
+        temporal = True
+        ttl_days = 3
+
     new_fact = AthleteFact(
         athlete_id=athlete_id,
-        fact_type=extracted["fact_type"],
+        fact_type=fact_type,
         fact_key=extracted["fact_key"],
-        fact_value=extracted["fact_value"],
+        fact_value=fact_value,
         numeric_value=extracted.get("numeric_value"),
         confidence="athlete_stated",
         source_chat_id=chat_id,
         source_excerpt=extracted["source_excerpt"],
+        temporal=temporal,
+        ttl_days=ttl_days,
     )
 
     try:
@@ -158,6 +241,12 @@ def _upsert_fact(db, athlete_id: UUID, chat_id: UUID, extracted: dict):
                 "Concurrent insert conflict for %s: winner=%s, ours=%s — keeping winner",
                 extracted["fact_key"], winner.fact_value, extracted["fact_value"],
             )
+
+
+def _contains_relative_time_phrase(text: str) -> bool:
+    if not text:
+        return False
+    return bool(_RELATIVE_TIME_PATTERN.search(str(text)))
 
 
 @celery_app.task(name="tasks.extract_athlete_facts", bind=True, max_retries=2)
@@ -197,6 +286,29 @@ def extract_athlete_facts(self, athlete_id: str, chat_id: str):
 
         chat.last_extracted_msg_count = len(all_messages)
         db.commit()
+
+        has_limiter_facts = any(
+            f.get("fact_type") == "limiter_context" for f in extracted
+        )
+        if has_limiter_facts:
+            try:
+                from services.plan_framework.limiter_classifier import (
+                    classify_lifecycle_states,
+                )
+                classify_lifecycle_states(UUID(athlete_id), db)
+                db.commit()
+                logger.info(
+                    "Lifecycle reclassification triggered by limiter_context "
+                    "fact for athlete %s",
+                    athlete_id,
+                )
+            except Exception as lc_err:
+                db.rollback()
+                logger.warning(
+                    "Post-extraction lifecycle classify failed for %s: %s",
+                    athlete_id,
+                    lc_err,
+                )
 
     except ExtractionError:
         db.rollback()

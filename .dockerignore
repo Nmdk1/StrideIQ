@@ -1,0 +1,11 @@
+# API image build (docker build -f apps/api/Dockerfile .)
+.git
+.github
+apps/web
+**/node_modules
+**/__pycache__
+*.pyc
+.env
+.env.*
+*.md
+docs

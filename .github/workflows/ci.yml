@@ -5,6 +5,13 @@ on:
     branches: [main, develop]
   pull_request:
     branches: [main, develop]
+  workflow_dispatch:
+  schedule:
+    - cron: "15 11 * * *" # Daily ~6:15am ET (UTC-based)
+
+permissions:
+  contents: read
+  issues: write
 
 env:
   PYTHON_VERSION: "3.11"
@@ -87,11 +94,28 @@ jobs:
             tests/test_phase8_security_golden_paths.py \
             tests/test_phase8_impersonation_high_risk_blocks.py \
             tests/test_phase8_token_jwt_invariants.py \
-            tests/test_phase9_backend_smoke_golden_paths.py
+            tests/test_phase9_backend_smoke_golden_paths.py \
+            tests/test_limiter_coach_integration.py \
+            tests/test_coach_lifecycle_quality.py \
+            tests/test_coach_value_contract.py \
+            tests/test_coach_real_standard.py \
+            tests/test_coach_value_scoring.py \
+            tests/test_nutrition_past_day_window.py \
+            tests/test_food_override_service.py \
+            tests/test_food_override_endpoints.py \
+            tests/test_meal_template_service.py \
+            tests/test_meal_template_endpoints.py \
+            tests/test_nutrition_meal_parser.py \
+            tests/test_nutrition_parse_api.py \
+            tests/test_home_api.py \
+            tests/test_home_week_running_separation.py \
+            tests/test_calendar_running_separation.py \
+            tests/test_activities_summary_sport_buckets.py
 
   backend-test:
     name: Backend Tests
     runs-on: ubuntu-latest
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     
     services:
       postgres:
@@ -134,10 +158,11 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          pip install pytest pytest-cov
+          pip install pytest pytest-cov pytest-timeout
       
       - name: Run tests with coverage
         working-directory: apps/api
+        timeout-minutes: 20
         env:
           POSTGRES_HOST: localhost
           POSTGRES_PORT: "5432"
@@ -154,15 +179,21 @@ jobs:
           STRAVA_REDIRECT_URI: "http://localhost:3000/connect/strava/callback"
           SENTRY_DSN: ""
         run: |
-          pytest -v --cov=. --cov-report=xml --cov-report=term-missing
+          pytest -v --timeout=120 --cov=. --cov-report=xml --cov-report=term-missing
       
       - name: Upload coverage to Codecov
+        if: env.CODECOV_TOKEN != ''
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
         uses: codecov/codecov-action@v4
         with:
-          token: ${{ secrets.CODECOV_TOKEN }}
+          token: ${{ env.CODECOV_TOKEN }}
           files: apps/api/coverage.xml
           flags: backend
           fail_ci_if_error: false
+
+  # plan-validation-strict: REMOVED — test_plan_validation_matrix.py deleted
+  # with old plan generators. Will be replaced by N=1 engine validation tests.
 
   # ============================================================
   # Migration Integrity
@@ -245,6 +276,7 @@ jobs:
           CI: "true"
         run: |
           npm test --silent -- \
+            prepareBoundsForFit.test.ts \
             admin-access-guard.test.tsx \
             admin-ops-visibility.test.tsx \
             home-latency-bridge.test.tsx \
@@ -476,6 +508,30 @@ jobs:
         continue-on-error: true  # Report but don't block
 
   # ============================================================
+  # P0 plan / workout registry execution gate (PR or push attestation)
+  # ============================================================
+  p0-plan-registry-gate:
+    name: P0 plan registry gate
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request' || github.event_name == 'push'
+
+    steps:
+      - name: Checkout (full history for diff)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Require P0-GATE attestation when gated paths change
+        env:
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
+          PR_BODY: ${{ github.event_name == 'pull_request' && github.event.pull_request.body || '' }}
+          PR_BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || '' }}
+          PR_HEAD_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || '' }}
+          PUSH_BEFORE: ${{ github.event_name == 'push' && github.event.before || '' }}
+          PUSH_AFTER: ${{ github.event_name == 'push' && github.event.after || '' }}
+        run: python .github/scripts/ci_p0_registry_gate.py
+
+  # ============================================================
   # Docker Build Test
   # ============================================================
   docker-build:
@@ -492,7 +548,8 @@ jobs:
       - name: Build API image
         uses: docker/build-push-action@v5
         with:
-          context: apps/api
+          context: .
+          file: apps/api/Dockerfile
           push: false
           cache-from: type=gha
           cache-to: type=gha,mode=max
@@ -504,3 +561,111 @@ jobs:
           push: false
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  # ============================================================
+  # Nightly visibility + fail-loud reporting
+  # ============================================================
+  nightly-report:
+    name: Nightly Report
+    runs-on: ubuntu-latest
+    if: always() && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+    needs:
+      - backend-smoke
+      - backend-test
+      - migration-check
+      - backend-lint
+      - frontend-test
+      - frontend-build
+      - security-scan
+      - p0-plan-registry-gate
+      - docker-build
+
+    steps:
+      - name: Build nightly summary + open/update issue on failure
+        uses: actions/github-script@v7
+        env:
+          NEEDS_JSON: ${{ toJson(needs) }}
+        with:
+          script: |
+            const needs = JSON.parse(process.env.NEEDS_JSON || "{}");
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const runStamp = new Date().toISOString();
+            const rows = Object.entries(needs).map(([job, meta]) => {
+              const result = meta.result || "unknown";
+              const icon = result === "success" ? "✅" : (result === "failure" ? "❌" : (result === "cancelled" ? "⚠️" : "➖"));
+              return `| ${job} | ${icon} ${result} |`;
+            });
+
+            const hasFailure = Object.values(needs).some((m) => ["failure", "cancelled", "timed_out", "action_required"].includes(m.result));
+            const summaryHeader = hasFailure
+              ? "## Nightly CI: FAILED ❌"
+              : "## Nightly CI: PASSED ✅";
+
+            const summary = [
+              summaryHeader,
+              "",
+              `- Repository: \`${context.repo.owner}/${context.repo.repo}\``,
+              `- Branch: \`${context.ref.replace("refs/heads/", "")}\``,
+              `- Run: [View workflow run](${runUrl})`,
+              `- Generated: ${runStamp}`,
+              "",
+              "| Job | Result |",
+              "|---|---|",
+              ...rows
+            ].join("\n");
+
+            core.summary.addRaw(summary).write();
+
+            const issueTitle = "Nightly CI Failure";
+            const issueBody = [
+              "Nightly CI failed.",
+              "",
+              `- Run: ${runUrl}`,
+              `- Generated: ${runStamp}`,
+              "",
+              "| Job | Result |",
+              "|---|---|",
+              ...rows
+            ].join("\n");
+
+            const existing = await github.paginate(github.rest.issues.listForRepo, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: "open",
+              labels: "nightly-ci",
+              per_page: 100
+            });
+            const openNightly = existing.find((i) => i.title === issueTitle);
+
+            if (hasFailure) {
+              if (openNightly) {
+                await github.rest.issues.createComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: openNightly.number,
+                  body: issueBody
+                });
+              } else {
+                await github.rest.issues.create({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  title: issueTitle,
+                  body: issueBody,
+                  labels: ["nightly-ci", "ci-failure"]
+                });
+              }
+              core.setFailed("Nightly run failed. Issue opened/updated.");
+            } else if (openNightly) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: openNightly.number,
+                body: `Nightly CI recovered ✅\n\n- Run: ${runUrl}\n- Generated: ${runStamp}`
+              });
+              await github.rest.issues.update({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: openNightly.number,
+                state: "closed"
+              });
+            }

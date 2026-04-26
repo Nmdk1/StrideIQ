@@ -1,24 +1,24 @@
 /**
  * Splits Chart Component
  * 
- * Visualizes mile splits with pace and heart rate.
- * Pace displayed in standard running format: MM:SS/mi
+ * Visualizes splits with pace and heart rate.
  * Tone: Sparse, data-driven.
  */
 
 'use client';
 
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
+import { useUnits } from '@/lib/context/UnitsContext';
 
 interface Split {
   split_number: number;
-  distance: number | null;  // distance in meters
+  distance: number | null;
   elapsed_time: number | null;
   moving_time: number | null;
   average_heartrate: number | null;
   max_heartrate: number | null;
   average_cadence: number | null;
-  gap_seconds_per_mile: number | null;
+  gap_s_per_km: number | null;
 }
 
 interface SplitsChartProps {
@@ -35,17 +35,17 @@ function formatPaceToMinSec(seconds: number | null): string {
 }
 
 // Custom tooltip for the chart
-function CustomTooltip({ active, payload, label }: any) {
+function CustomTooltip({ active, payload, label, paceUnit }: any) {
   if (!active || !payload || !payload.length) return null;
   
   return (
     <div className="bg-slate-800 border border-slate-600 rounded-lg p-3 shadow-lg">
-      <p className="text-slate-300 text-sm font-medium mb-2">Mile {label}</p>
+      <p className="text-slate-300 text-sm font-medium mb-2">Split {label}</p>
       {payload.map((entry: any, index: number) => {
         if (entry.dataKey === 'paceSeconds') {
           return (
             <p key={index} className="text-sm" style={{ color: entry.color }}>
-              Pace: {formatPaceToMinSec(entry.value)}/mi
+              Pace: {formatPaceToMinSec(entry.value)} {paceUnit}
             </p>
           );
         }
@@ -63,22 +63,23 @@ function CustomTooltip({ active, payload, label }: any) {
 }
 
 export function SplitsChart({ splits, className = '' }: SplitsChartProps) {
+  const { convertPace, paceUnit } = useUnits();
+
   if (!splits || splits.length === 0) {
     return null;
   }
 
   const chartData = splits.map((split) => {
-    // Calculate pace in seconds per mile from distance and moving_time
     const distance = split.distance || 0;
     const time = split.moving_time || split.elapsed_time || 0;
     
-    const paceSecondsPerMile = distance > 0 
-      ? (time / distance) * 1609.34 
+    const paceSecondsPerKm = distance > 0 
+      ? (time / distance) * 1000 
       : null;
     
     return {
       split: split.split_number,
-      paceSeconds: paceSecondsPerMile,
+      paceSeconds: paceSecondsPerKm !== null ? convertPace(paceSecondsPerKm) : null,
       hr: split.average_heartrate || null,
       distance: distance,
     };
@@ -107,7 +108,7 @@ export function SplitsChart({ splits, className = '' }: SplitsChartProps) {
             yAxisId="pace"
             domain={[minPace, maxPace]}
             tickFormatter={(value) => formatPaceToMinSec(value)}
-            label={{ value: 'Pace (min/mi)', angle: -90, position: 'insideLeft', style: { textAnchor: 'middle' } }}
+            label={{ value: `Pace (${paceUnit})`, angle: -90, position: 'insideLeft', style: { textAnchor: 'middle' } }}
             stroke="#9CA3AF"
             width={55}
           />
@@ -117,7 +118,7 @@ export function SplitsChart({ splits, className = '' }: SplitsChartProps) {
             label={{ value: 'HR (bpm)', angle: 90, position: 'insideRight' }}
             stroke="#9CA3AF"
           />
-          <Tooltip content={<CustomTooltip />} />
+          <Tooltip content={<CustomTooltip paceUnit={paceUnit} />} />
           <Legend 
             formatter={(value) => {
               if (value === 'paceSeconds') return 'Pace';

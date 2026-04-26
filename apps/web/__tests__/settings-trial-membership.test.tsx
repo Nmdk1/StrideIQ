@@ -53,7 +53,7 @@ describe('Settings membership trial UI', () => {
     });
   });
 
-  it('shows Start 7-day trial + Upgrade toggle when free and trial not used', () => {
+  it('shows Start 30-day trial + Upgrade toggle when free and trial not used', () => {
     useAuthMock.mockReturnValue({
       user: {
         subscription_tier: 'free',
@@ -67,7 +67,7 @@ describe('Settings membership trial UI', () => {
 
     renderWithProviders(<SettingsPage />);
 
-    expect(screen.getByText('Start 7-day trial')).toBeInTheDocument();
+    expect(screen.getByText('Start 30-day trial')).toBeInTheDocument();
     // Upgrade panel toggle button (replaces the old single "Upgrade to Pro" button).
     expect(screen.getByRole('button', { name: /Upgrade/i })).toBeInTheDocument();
   });
@@ -92,7 +92,7 @@ describe('Settings membership trial UI', () => {
     expect(screen.getByText(/Upgrade to keep full access/i)).toBeInTheDocument();
     // Upgrade panel toggle button is present (trial user is still 'free' tier — upgrade path shown).
     expect(screen.getByRole('button', { name: /Upgrade/i })).toBeInTheDocument();
-    // Start 7-day trial button must NOT appear — trial already used.
-    expect(screen.queryByText('Start 7-day trial')).not.toBeInTheDocument();
+    // Start 30-day trial button must NOT appear — trial already used.
+    expect(screen.queryByText('Start 30-day trial')).not.toBeInTheDocument();
   });
 });

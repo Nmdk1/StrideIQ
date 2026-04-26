@@ -12,6 +12,7 @@ ADR-020: Home Experience Phase 1 Enhancement
 """
 
 from datetime import date, timedelta, datetime, timezone
+from statistics import mean, median, pstdev
 from typing import Optional, List
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
@@ -19,12 +20,21 @@ from sqlalchemy import desc
 from pydantic import BaseModel, ConfigDict
 import asyncio
 import logging
-import redis
+import redis  # noqa: F401 — imported for test patching via 'routers.home.redis'
 
 from core.database import get_db
 from core.auth import get_current_user
 from core.feature_flags import is_feature_enabled
-from models import Athlete, Activity, ActivityStream, PlannedWorkout, TrainingPlan, CalendarInsight, DailyCheckin
+from models import Athlete, Activity, ActivitySplit, ActivityStream, PlannedWorkout, TrainingPlan, CalendarInsight, DailyCheckin
+from services.n1_insight_generator import friendly_signal_name
+from services.plan_lifecycle import get_active_plan_for_athlete
+from services.timezone_utils import (
+    get_athlete_timezone,
+    get_athlete_timezone_from_db,
+    athlete_local_today,
+    to_activity_local_date,
+    local_day_bounds_utc,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +48,7 @@ class TodayWorkout(BaseModel):
     has_workout: bool
     workout_type: Optional[str] = None
     title: Optional[str] = None
-    distance_mi: Optional[float] = None
+    distance_m: Optional[int] = None
     pace_guidance: Optional[str] = None
     why_context: Optional[str] = None  # "Why this workout" explanation
     why_source: Optional[str] = None  # "correlation" | "load" | "plan"
@@ -53,8 +63,8 @@ class YesterdayInsight(BaseModel):
     has_activity: bool
     activity_name: Optional[str] = None
     activity_id: Optional[str] = None
-    distance_mi: Optional[float] = None
-    pace_per_mi: Optional[str] = None
+    distance_m: Optional[int] = None
+    pace_s_per_km: Optional[float] = None
     insight: Optional[str] = None  # One sparse insight
     # Fallback: most recent activity if no yesterday activity
     last_activity_date: Optional[str] = None  # ISO date of most recent activity
@@ -65,32 +75,71 @@ class YesterdayInsight(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class OtherActivityRef(BaseModel):
+    """Non-running activity logged on a given day. Surfaced as a small,
+    selectable icon next to the running total so the athlete can reach it
+    in one tap without it polluting running mileage."""
+    activity_id: str
+    sport: str  # 'walking' | 'strength' | 'cycling' | 'hiking' | 'flexibility' | ...
+    distance_m: Optional[int] = None  # None for sports without a distance (e.g. strength)
+    duration_s: Optional[int] = None
+    name: Optional[str] = None
+
+
 class WeekDay(BaseModel):
-    """Single day in week view."""
+    """Single day in week view.
+
+    Running-only invariants:
+      - `distance_m` = SUM of all runs on this day in meters (never a walk/strength/cycle)
+      - `completed` = True iff at least one run happened
+      - `activity_id` = the LONGEST run that day (primary tap target)
+      - `run_count` = total runs that day (drives "+N" affordance)
+
+    Other-sport activity is surfaced separately via `other_activities` so the
+    athlete can reach walks/strength/cycling without us silently counting them
+    as running.
+    """
     date: str
     day_abbrev: str  # M, T, W, etc.
     workout_type: Optional[str] = None
-    distance_mi: Optional[float] = None
-    planned_distance_mi: Optional[float] = None  # Show both for comparison
+    sport: Optional[str] = None  # legacy: sport of the primary run (kept for compat)
+    distance_m: Optional[int] = None  # day's running total (meters)
+    planned_distance_m: Optional[int] = None
     completed: bool
     is_today: bool
-    activity_id: Optional[str] = None  # For linking to activity
-    workout_id: Optional[str] = None  # For linking to planned workout
+    activity_id: Optional[str] = None  # longest run that day
+    workout_id: Optional[str] = None
+    run_count: int = 0
+    other_activities: List[OtherActivityRef] = []
+
+
+class OtherSportSummary(BaseModel):
+    """Weekly aggregate for one non-running sport."""
+    sport: str
+    count: int
+    distance_m: int = 0
+    duration_s: int = 0
 
 
 class WeekProgress(BaseModel):
-    """This week's progress."""
+    """This week's progress.
+
+    `completed_m` and `planned_m` are RUNNING-ONLY by contract (meters).
+    Non-running activity is surfaced via `other_sport_summary` so views can
+    show it on its own or grouped — never silently mixed into running totals.
+    """
     week_number: Optional[int] = None
     total_weeks: Optional[int] = None
     phase: Optional[str] = None
-    completed_mi: float
-    planned_mi: float
+    completed_m: int  # running only (meters)
+    planned_m: int  # running only (meters)
     progress_pct: float
     days: List[WeekDay]
     status: str  # "on_track", "ahead", "behind", "no_plan"
-    trajectory_sentence: Optional[str] = None  # One sparse sentence about trajectory
-    tsb_context: Optional[str] = None  # "Fresh" | "Building" | "Fatigued"
-    load_trend: Optional[str] = None  # "up" | "stable" | "down"
+    trajectory_sentence: Optional[str] = None
+    tsb_context: Optional[str] = None
+    load_trend: Optional[str] = None
+    other_sport_summary: List[OtherSportSummary] = []
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -100,6 +149,7 @@ class CoachNoticed(BaseModel):
     text: str
     source: str  # "correlation" | "signal" | "insight_feed" | "narrative"
     ask_coach_query: str  # pre-filled query for /coach?q=...
+    finding_id: Optional[str] = None  # CorrelationFinding UUID for briefing→coach deep link
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -175,6 +225,7 @@ class LastRun(BaseModel):
     athlete_title: Optional[str] = None
     resolved_title: Optional[str] = None
     heat_adjustment_pct: Optional[float] = None
+    workout_classification: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -187,6 +238,20 @@ class HomeFinding(BaseModel):
     times_confirmed: int
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class RecentCrossTraining(BaseModel):
+    """Most recent non-run activity in the last 24h for home page acknowledgment."""
+    id: str
+    sport: str
+    name: Optional[str] = None
+    distance_m: Optional[float] = None
+    duration_s: Optional[int] = None
+    avg_hr: Optional[int] = None
+    steps: Optional[int] = None
+    active_kcal: Optional[int] = None
+    start_time: str
+    additional_count: int = 0
 
 
 class HomeResponse(BaseModel):
@@ -210,11 +275,18 @@ class HomeResponse(BaseModel):
     strava_status: Optional[StravaStatusDetail] = None
     coach_briefing: Optional[dict] = None  # LLM-generated coaching narratives for all cards
     briefing_state: Optional[str] = None  # ADR-065: fresh | stale | missing | refreshing
+    briefing_is_interim: bool = False
+    briefing_last_updated_at: Optional[str] = None
+    briefing_source: Optional[str] = None  # llm | deterministic_fallback
     # --- RSI Layer 1 ---
     last_run: Optional[LastRun] = None  # Most recent run within 96h for hero canvas
     # --- Path A surfaces ---
     finding: Optional[HomeFinding] = None
     has_correlations: bool = False
+    # --- Daily wellness ---
+    garmin_wellness: Optional[dict] = None
+    # --- Cross-training acknowledgment ---
+    recent_cross_training: Optional[RecentCrossTraining] = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -281,7 +353,7 @@ def get_correlation_context(
         if not finding:
             return None, None
 
-        inp = finding.input_name.replace("_", " ")
+        inp = friendly_signal_name(finding.input_name)
         direction = "better" if finding.direction == "positive" else "harder"
         lag = finding.time_lag_days
 
@@ -419,47 +491,50 @@ def generate_why_context(
 
 def generate_trajectory_sentence(
     status: str,
-    completed_mi: float,
-    planned_mi: float,
-    remaining_mi: float = 0.0,
+    completed_m: int,
+    planned_m: int,
+    remaining_m: int = 0,
     quality_completed: int = 0,
     quality_planned: int = 0,
     activities_this_week: int = 0,
-    tsb_context: Optional[str] = None
+    tsb_context: Optional[str] = None,
+    preferred_units: Optional[str] = None,
 ) -> Optional[str]:
     """
     Generate a sparse trajectory sentence.
     Tone: Data speaks. No praise, no prescription.
 
-    Includes TSB context when available.
-
-    remaining_mi: Only counts today + future planned miles (excludes missed past days)
+    All distance inputs are in meters. Formatted to athlete's preferred_units.
     """
-    # Use remaining_mi (today + future) not (planned - completed) to avoid confusion
-    remaining = remaining_mi if remaining_mi > 0 else max(0, planned_mi - completed_mi)
+    is_metric = (preferred_units or "imperial").lower() == "metric"
+    unit = "km" if is_metric else "mi"
+
+    def _fmt(meters: int) -> str:
+        v = meters / 1000 if is_metric else meters / 1609.344
+        return f"{v:.0f} {unit}"
+
+    remaining = remaining_m if remaining_m > 0 else max(0, planned_m - completed_m)
 
     if status == "no_plan":
-        # Still provide insight for users without a plan
-        if completed_mi > 0:
+        if completed_m > 0:
             if activities_this_week == 1:
-                return f"{completed_mi:.0f} mi logged this week. Consistency compounds."
+                return f"{_fmt(completed_m)} logged this week. Consistency compounds."
             elif activities_this_week > 1:
-                base = f"{completed_mi:.0f} mi across {activities_this_week} runs this week."
+                base = f"{_fmt(completed_m)} across {activities_this_week} runs this week."
                 if tsb_context:
                     return f"{base} {tsb_context}"
                 return base
         return None
 
     if status == "ahead":
-        base = f"Ahead of schedule. {completed_mi:.0f} mi done of {planned_mi:.0f} mi planned."
+        base = f"Ahead of schedule. {_fmt(completed_m)} done of {_fmt(planned_m)} planned."
     elif status == "on_track":
-        base = f"On track. {remaining:.0f} mi remaining this week."
+        base = f"On track. {_fmt(remaining)} remaining this week."
     elif status == "behind":
-        base = f"Behind schedule. {remaining:.0f} mi to go."
+        base = f"Behind schedule. {_fmt(remaining)} to go."
     else:
         return None
 
-    # Append TSB context if available (but keep it short)
     if tsb_context and len(base) < 60:
         return f"{base}"
 
@@ -498,11 +573,10 @@ def generate_yesterday_insight(activity: Activity) -> str:
             insights.append("Variable pacing.")
 
     if not insights:
-        if activity.distance_m and activity.duration_s:
-            pace_per_mile = (activity.duration_s / (activity.distance_m / 1609.344))
-            pace_str = format_pace(pace_per_mile)
-            distance_mi = activity.distance_m / 1609.344
-            insights.append(f"{distance_mi:.1f} mi at {pace_str}.")
+        if activity.distance_m and activity.duration_s and activity.avg_hr:
+            insights.append(f"Avg HR {int(activity.avg_hr)}.")
+        elif activity.distance_m:
+            pass  # distance/pace displayed via structured fields, not insight text
 
     return " ".join(insights[:2]) if insights else None
 
@@ -515,6 +589,7 @@ _VOICE_BAN_LIST = (
     "incredible", "amazing", "phenomenal", "extraordinary", "fantastic",
     "wonderful", "awesome", "brilliant", "magnificent", "outstanding",
     "superb", "stellar", "remarkable", "spectacular",
+    "home briefing", "synced activity", "refreshed from", "briefing is",
 )
 
 _VOICE_CAUSAL_PHRASES = (
@@ -540,6 +615,49 @@ _VOICE_INTERNAL_METRICS = (
 _VOICE_FALLBACK = (
     "Your training data is ready. Check your workout below for today's plan."
 )
+
+# 2026-04-18 — content-quality gates added after the founder showed a
+# specific bad briefing. The skeleton is good in ~80% of generations;
+# these gates catch the remaining ~20% where the LLM:
+#   - asks the athlete a literal question instead of coaching,
+#   - stitches two unrelated findings together with "Separately, ...",
+#   - prefaces with "Your data shows a pattern worth discussing" filler,
+#   - exceeds the 2-3 sentence morning_voice contract.
+# All gates support strip-and-recover via _strip_disallowed_sentences:
+# remove only the offending sentence and re-validate the remainder.
+# Blanket fallback is the last resort, never the first.
+
+# Multi-topic transitions — the LLM's tell that it is smuggling a second
+# finding past the ONE-NEW-THING rule. Match at sentence start (after
+# capital-letter normalisation) to avoid catching "see also" in valid
+# coaching prose.
+_VOICE_MULTI_TOPIC_TRANSITIONS = (
+    "separately,",
+    "additionally,",
+    "also,",
+    "meanwhile,",
+    "on another note,",
+    "beyond that,",
+)
+
+# Meta-preamble phrases — talking *about* having an observation rather
+# than stating it. These are the LLM's hedge when the underlying signal
+# is weak; better to say nothing than to preface emptiness.
+_VOICE_META_PREAMBLE = (
+    "your data shows",
+    "worth discussing",
+    "worth noting",
+    "i've noticed a pattern",
+    "looking at your data",
+    "the data suggests",
+    "there's a pattern worth",
+)
+
+# Hard cap on morning_voice sentences. The prompt asks for 2-3; we allow
+# 3 and truncate above that. The cap is enforced after strip-and-recover
+# so we don't punish a clean three-sentence rewrite of a bad five-line
+# original.
+_VOICE_SENTENCE_CAP = 3
 
 # ---------------------------------------------------------------------------
 # Sleep source contract helpers
@@ -585,7 +703,7 @@ def _set_finding_cooldowns(
         for finding in injected_findings:
             input_name = finding.get("input_name", "")
             output_metric = finding.get("output_metric", "")
-            readable = input_name.replace("_1_5", "").replace("_", " ")
+            readable = friendly_signal_name(input_name)
             if readable and readable in combined:
                 key = f"finding_surfaced:{athlete_id}:{input_name}:{output_metric}"
                 client.setex(key, _FINDING_COOLDOWN_TTL, "1")
@@ -690,6 +808,185 @@ def _get_garmin_sleep_h_for_last_night(
         return None, "unknown", False
 
 
+def _build_garmin_wellness(athlete_id: str, db) -> Optional[dict]:
+    """Build today's Garmin wellness snapshot with personal baseline ranges."""
+    from datetime import datetime, timedelta, timezone as _tz
+    from models import Athlete, GarminDay
+    from sqlalchemy import func
+
+    try:
+        try:
+            import zoneinfo
+        except ImportError:
+            import backports.zoneinfo as zoneinfo  # type: ignore
+
+        athlete = db.query(Athlete).filter(Athlete.id == athlete_id).first()
+        if not athlete or not getattr(athlete, "garmin_connected", False):
+            return None
+
+        tz_name = getattr(athlete, "timezone", None)
+        if tz_name:
+            try:
+                tz = zoneinfo.ZoneInfo(tz_name)
+                local_today = datetime.now(_tz.utc).astimezone(tz).date()
+            except Exception:
+                local_today = datetime.now(_tz.utc).date()
+        else:
+            local_today = datetime.now(_tz.utc).date()
+
+        today_row = None
+        for candidate in [local_today, local_today - timedelta(days=1)]:
+            row = (
+                db.query(GarminDay)
+                .filter(GarminDay.athlete_id == athlete_id, GarminDay.calendar_date == candidate)
+                .first()
+            )
+            if row and (row.sleep_total_s or row.hrv_5min_high or row.resting_hr):
+                today_row = row
+                break
+
+        if not today_row:
+            return None
+
+        range_start = local_today - timedelta(days=30)
+        history = (
+            db.query(GarminDay)
+            .filter(
+                GarminDay.athlete_id == athlete_id,
+                GarminDay.calendar_date >= range_start,
+                GarminDay.calendar_date <= local_today,
+            )
+            .all()
+        )
+
+        def _range_for(values):
+            if len(values) < 7:
+                return None
+            return {"low": round(min(values)), "high": round(max(values))}
+
+        def _status(val, range_dict):
+            if not range_dict or val is None:
+                return None
+            spread = range_dict["high"] - range_dict["low"]
+            if spread == 0:
+                return "normal"
+            low_third = range_dict["low"] + spread * 0.25
+            high_third = range_dict["high"] - spread * 0.25
+            if val <= low_third:
+                return "low"
+            if val >= high_third:
+                return "high"
+            return "normal"
+
+        hrv_peak_vals = [r.hrv_5min_high for r in history if r.hrv_5min_high]
+        hrv_avg_vals = [r.hrv_overnight_avg for r in history if r.hrv_overnight_avg]
+        rhr_vals = [r.resting_hr for r in history if r.resting_hr]
+
+        hrv_peak_range = _range_for(hrv_peak_vals)
+        rhr_range = _range_for(rhr_vals)
+
+        result: dict = {"date": str(today_row.calendar_date)}
+
+        if today_row.sleep_total_s:
+            result["sleep_h"] = round(today_row.sleep_total_s / 3600, 1)
+        if today_row.sleep_score:
+            result["sleep_score"] = today_row.sleep_score
+            result["sleep_score_qualifier"] = today_row.sleep_score_qualifier
+
+        if today_row.hrv_5min_high:
+            result["recovery_hrv"] = today_row.hrv_5min_high
+            result["recovery_hrv_status"] = _status(today_row.hrv_5min_high, hrv_peak_range)
+            if hrv_peak_range:
+                result["recovery_hrv_range"] = hrv_peak_range
+        if today_row.hrv_overnight_avg:
+            result["overnight_hrv"] = today_row.hrv_overnight_avg
+
+        if today_row.resting_hr:
+            result["resting_hr"] = today_row.resting_hr
+            result["resting_hr_status"] = _status(today_row.resting_hr, rhr_range)
+            if rhr_range:
+                result["resting_hr_range"] = rhr_range
+
+        if today_row.avg_stress and today_row.avg_stress >= 0:
+            result["avg_stress"] = today_row.avg_stress
+
+        return result
+
+    except Exception as e:
+        logger.warning("_build_garmin_wellness failed (non-blocking): %s", e)
+        return None
+
+
+def _build_sleep_baseline_guidance(
+    athlete_id: str,
+    db: Session,
+    *,
+    last_night_sleep_h: Optional[float],
+) -> Optional[str]:
+    """
+    Build sleep-baseline prompt guidance from GarminDay history.
+
+    Contract:
+    - Use 90-day GarminDay.sleep_total_s history (Python stats, not DB percentile/stddev).
+    - Require n >= 14 to inject any baseline guidance.
+    - noteworthy threshold = max(1.0h, pstdev).
+    """
+    if last_night_sleep_h is None:
+        return None
+
+    try:
+        from models import Athlete as _Athlete, GarminDay as _GarminDay
+        from services.timezone_utils import get_athlete_timezone, athlete_local_today
+
+        athlete = db.query(_Athlete).filter(_Athlete.id == athlete_id).first()
+        athlete_tz = get_athlete_timezone(athlete)
+        local_today = athlete_local_today(athlete_tz)
+        start_date = local_today - timedelta(days=89)
+
+        rows = (
+            db.query(_GarminDay)
+            .filter(
+                _GarminDay.athlete_id == athlete_id,
+                _GarminDay.calendar_date >= start_date,
+                _GarminDay.calendar_date <= local_today,
+                _GarminDay.sleep_total_s.isnot(None),
+            )
+            .order_by(_GarminDay.calendar_date.desc())
+            .all()
+        )
+        sleep_hours = [
+            round(float(r.sleep_total_s) / 3600.0, 2)
+            for r in rows
+            if r.sleep_total_s is not None
+        ]
+        n = len(sleep_hours)
+        if n < 14:
+            return None
+
+        baseline_median = median(sleep_hours)
+        baseline_avg = mean(sleep_hours)
+        baseline_std = pstdev(sleep_hours) if n > 1 else 0.0
+        threshold = max(1.0, baseline_std)
+        deviation = abs(last_night_sleep_h - baseline_median)
+
+        guidance_lines = [
+            "=== SLEEP BASELINE CONTEXT (90 days) ===",
+            (
+                "SLEEP_BASELINE_STATS: "
+                f"n={n}, median={baseline_median:.2f}h, avg={baseline_avg:.2f}h, std={baseline_std:.2f}h, "
+                f"last_night={last_night_sleep_h:.2f}h, deviation={deviation:.2f}h, threshold={threshold:.2f}h"
+            ),
+        ]
+        if deviation < threshold:
+            guidance_lines.append("Sleep is NOT newsworthy today. Lead with something else.")
+        else:
+            guidance_lines.append("This IS noteworthy; frame as deviation from personal norm.")
+        return "\n".join(guidance_lines)
+    except Exception as e:
+        logger.debug("Sleep baseline context skipped (non-blocking): %s", e)
+        return None
+
+
 def validate_sleep_claims(
     text: str,
     garmin_sleep_h: Optional[float],
@@ -738,6 +1035,217 @@ def validate_sleep_claims(
                 }
 
     return {"valid": True}
+
+
+def _strip_ungrounded_sleep_sentences(
+    text: str,
+    garmin_sleep_h: Optional[float],
+    checkin_sleep_h: Optional[float],
+) -> dict:
+    """
+    Remove sentence(s) containing ungrounded numeric sleep claims only.
+
+    Preserves valid coaching content when a single sleep sentence is invalid.
+    """
+    import re
+
+    if not text:
+        return {"text": text, "removed": False}
+
+    known_sources = [s for s in [garmin_sleep_h, checkin_sleep_h] if s is not None]
+    sleep_num_re = re.compile(r"(\d+(?:\.\d+)?)\s*(?:h\b|hours?)", re.IGNORECASE)
+    # Mirror sleep validator splitting semantics: do not split decimal numbers.
+    chunks = [
+        c.strip()
+        for c in re.split(r"(?<!\d)[.!?](?!\d)", text)
+        if c and c.strip()
+    ]
+    kept = []
+    removed_any = False
+
+    for chunk in chunks:
+        sentence = chunk.strip()
+        if not sentence:
+            continue
+
+        lower = sentence.lower()
+        if not any(k in lower for k in _SLEEP_CONTEXT_KEYWORDS):
+            kept.append(sentence)
+            continue
+
+        remove_sentence = False
+        for m in sleep_num_re.finditer(sentence):
+            val = float(m.group(1))
+            if val > _SLEEP_MAX_H:
+                continue
+            if not known_sources:
+                remove_sentence = True
+                break
+            if not any(abs(val - s) <= _SLEEP_TOLERANCE_H for s in known_sources):
+                remove_sentence = True
+                break
+
+        if remove_sentence:
+            removed_any = True
+            continue
+        kept.append(sentence)
+
+    sanitized = " ".join(kept).strip()
+    if sanitized and sanitized[-1] not in ".!?":
+        sanitized += "."
+    return {"text": sanitized, "removed": removed_any}
+
+
+def _split_sentences(text: str) -> list:
+    """Sentence-split that preserves terminators and does not break decimals.
+
+    Returns list of sentences each ending with their original terminator
+    (`.`, `!`, `?`). Terminator preservation is required for the
+    interrogative gate to detect `?`-ending sentences after splitting.
+
+    The pattern matches a run of non-terminator chars followed by an
+    optional terminator. Decimal handling is enforced by a negative
+    lookbehind+lookahead on the terminator (so 7.5 stays a single token).
+    """
+    import re
+
+    if not text:
+        return []
+    # Each sentence is one-or-more body chars (anything that is NOT a
+    # sentence terminator, OR a `.`/`!`/`?` that sits between digits and
+    # therefore belongs to a number like 7.5), optionally followed by a
+    # real terminator (one not between digits). The mid-number dot
+    # accommodation is what makes "7.5 hours" stay a single token while
+    # still allowing the trailing period of the sentence to be captured.
+    pattern = re.compile(
+        r"(?:[^.!?]|(?<=\d)[.!?](?=\d))+(?:(?<!\d)[.!?](?!\d))?"
+    )
+    return [m.group(0).strip() for m in pattern.finditer(text) if m.group(0).strip()]
+
+
+def _sentence_has_disallowed_content(sentence: str) -> Optional[str]:
+    """Return a reason string if the sentence trips a content gate.
+
+    Gates checked (in order):
+      1. interrogative — sentence contains a literal question mark.
+      2. multi_topic   — starts with a banned transition phrase.
+      3. meta_preamble — contains any banned meta-preamble phrase.
+
+    Returns None if the sentence is clean.
+    """
+    if not sentence:
+        return None
+    lower = sentence.lower().lstrip()
+
+    if "?" in sentence:
+        return "interrogative"
+
+    for transition in _VOICE_MULTI_TOPIC_TRANSITIONS:
+        if lower.startswith(transition):
+            return f"multi_topic:{transition.rstrip(',')}"
+
+    for preamble in _VOICE_META_PREAMBLE:
+        if preamble in lower:
+            return f"meta_preamble:{preamble}"
+
+    return None
+
+
+def _strip_disallowed_sentences(text: str) -> dict:
+    """Remove sentences that trip content gates; preserve the rest.
+
+    Used by the morning_voice and coach_noticed validators as the
+    strip-and-recover pass before falling back to the deterministic
+    string. Keeps the 80% of good content intact when only a single
+    sentence is bad.
+
+    Returns:
+        {"text": str, "removed": bool, "reasons": list[str]}
+    """
+    if not text:
+        return {"text": text, "removed": False, "reasons": []}
+
+    sentences = _split_sentences(text)
+    kept: list = []
+    reasons: list = []
+
+    for s in sentences:
+        reason = _sentence_has_disallowed_content(s)
+        if reason is not None:
+            reasons.append(reason)
+            continue
+        kept.append(s)
+
+    if not reasons:
+        return {"text": text, "removed": False, "reasons": []}
+
+    sanitized = " ".join(kept).strip()
+    if sanitized and sanitized[-1] not in ".!?":
+        sanitized += "."
+    return {"text": sanitized, "removed": True, "reasons": reasons}
+
+
+_DESTRUCTIVE_LOAD_TERMS = (
+    "active calorie",
+    "active calories",
+    "calorie burn",
+    "calorie output",
+    "calories burned",
+    "higher-burn",
+    "high calorie",
+)
+
+_DESTRUCTIVE_EFFICIENCY_TERMS = (
+    "efficiency",
+    "responsive",
+    "sluggish",
+    "race feel",
+)
+
+_DESTRUCTIVE_THREAT_TERMS = (
+    "blunt",
+    "blunting",
+    "costing",
+    "drag",
+    "dragging",
+    "drags",
+    "hurt",
+    "hurting",
+    "less responsive",
+    "negative",
+    "suppress",
+    "suppressing",
+    "worsen",
+    "worsens",
+)
+
+
+def _is_destructive_load_efficiency_notice(text: str) -> bool:
+    """True when coach_noticed frames recent load calories as a race threat."""
+    if not text:
+        return False
+    lower = text.lower()
+    return (
+        any(term in lower for term in _DESTRUCTIVE_LOAD_TERMS)
+        and any(term in lower for term in _DESTRUCTIVE_EFFICIENCY_TERMS)
+        and any(term in lower for term in _DESTRUCTIVE_THREAT_TERMS)
+    )
+
+
+def _is_race_week_context(race_data: Optional[dict]) -> bool:
+    if not race_data or not isinstance(race_data, dict):
+        return False
+    days_remaining = race_data.get("days_remaining")
+    return isinstance(days_remaining, int) and days_remaining <= 7
+
+
+def _cached_payload_has_race_context(payload: dict) -> bool:
+    text = " ".join(
+        str(payload.get(field) or "")
+        for field in ("morning_voice", "race_assessment", "today_context")
+    ).lower()
+    race_terms = ("race", "5k", "10k", "marathon", "cup")
+    return any(term in text for term in race_terms)
 
 
 def validate_voice_output(text: str, field: str = "morning_voice") -> dict:
@@ -800,6 +1308,47 @@ def validate_voice_output(text: str, field: str = "morning_voice") -> dict:
             "fallback": _VOICE_FALLBACK,
         }
 
+    # 3b. Specificity gate — morning_voice must reference athlete-specific
+    # content, not generic template filler. Catches LLM outputs like
+    # "Your training data is ready" that pass numeric grounding (if a
+    # stray number exists) but contain zero personalization.
+    if field == "morning_voice":
+        _TEMPLATE_PHRASES = [
+            "training data is ready",
+            "check your workout below",
+            "check below for today",
+            "data is ready for review",
+            "your data has been updated",
+            "briefing is refreshed",
+            "your plan is ready",
+            "training is on track",
+            "everything looks good",
+            "keep up the good work",
+            "stay consistent",
+        ]
+        if any(tp in lower for tp in _TEMPLATE_PHRASES):
+            return {
+                "valid": False,
+                "reason": "specificity:template_phrase_detected",
+                "fallback": _VOICE_FALLBACK,
+            }
+
+        _SPECIFICITY_MARKERS = [
+            r"\d+\.?\d*\s*(mi|km|miles|k\b)",
+            r"\d+:\d{2}",
+            r"\d+\s*bpm",
+            r"yesterday|today|monday|tuesday|wednesday|thursday|friday|saturday|sunday",
+            r"your (last|latest|recent) (run|workout|session|effort)",
+            r"(easy|tempo|threshold|interval|long run|recovery|quality)",
+            r"\d+x\d+",
+        ]
+        if not any(re.search(pat, lower) for pat in _SPECIFICITY_MARKERS):
+            return {
+                "valid": False,
+                "reason": "specificity:no_athlete_specific_content",
+                "fallback": _VOICE_FALLBACK,
+            }
+
     # 4. Length check — minimum only; no upper cap.
     if field in ("morning_voice", "workout_why"):
         if len(text) < 40:
@@ -814,7 +1363,6 @@ def validate_voice_output(text: str, field: str = "morning_voice") -> dict:
     if field == "morning_voice":
         stripped = text.strip()
         if "\n" in stripped:
-            import re
             paragraphs = [p.strip() for p in re.split(r"\n+", stripped) if p.strip()]
             if len(paragraphs) > 1:
                 first_para = paragraphs[0]
@@ -830,6 +1378,56 @@ def validate_voice_output(text: str, field: str = "morning_voice") -> dict:
                     "reason": "structure:multiple_paragraphs_short_first",
                     "fallback": _VOICE_FALLBACK,
                 }
+
+    # 6. Content quality gates (added 2026-04-18).
+    # Scope: morning_voice and coach_noticed. workout_why is a conceptual
+    # one-liner and exempt — see test_workout_why_may_contain_question_mark.
+    if field in ("morning_voice", "coach_noticed"):
+        for sentence in _split_sentences(text):
+            reason = _sentence_has_disallowed_content(sentence)
+            if reason is not None:
+                logger.info(
+                    "voice gate fired field=%s reason=%s sentence=%r",
+                    field, reason, sentence[:120],
+                )
+                return {
+                    "valid": False,
+                    "reason": reason,
+                    "fallback": _VOICE_FALLBACK,
+                }
+
+    # 7. Sentence cap for morning_voice (max 3 sentences, contract is 2-3).
+    # If over the cap, truncate to the first three and signal via
+    # truncated_text so the caller can substitute it. We only keep the
+    # truncated text when it still satisfies the earlier gates (numeric
+    # grounding + length + specificity) — otherwise we fall back so we
+    # never publish a half-thought.
+    if field == "morning_voice":
+        sentences = _split_sentences(text)
+        if len(sentences) > _VOICE_SENTENCE_CAP:
+            truncated = ". ".join(sentences[:_VOICE_SENTENCE_CAP]).strip()
+            if truncated and truncated[-1] not in ".!?":
+                truncated += "."
+            # Re-check the truncated text against the cheap gates that
+            # could regress (numeric grounding, length, specificity, and
+            # the same content gates). If anything fires, we surface the
+            # cap reason so the caller chooses fallback over silently
+            # publishing a degraded shorter version.
+            recheck = validate_voice_output(truncated, field=field)
+            if recheck.get("valid") and not recheck.get("truncated_text"):
+                logger.warning(
+                    "morning_voice exceeded sentence cap (%d > %d); truncated",
+                    len(sentences), _VOICE_SENTENCE_CAP,
+                )
+                return {"valid": True, "truncated_text": truncated}
+            return {
+                "valid": False,
+                "reason": (
+                    f"sentence_cap:{len(sentences)}>"
+                    f"{_VOICE_SENTENCE_CAP}"
+                ),
+                "fallback": _VOICE_FALLBACK,
+            }
 
     return {"valid": True}
 
@@ -848,6 +1446,7 @@ def _normalize_cached_briefing_payload(
       - multi-paragraph morning_voice
       - ungrounded sleep claims
       - internal metrics in coach_noticed
+      - race-week destructive load/efficiency framing
     """
     if not payload or not isinstance(payload, dict):
         return None
@@ -858,7 +1457,25 @@ def _normalize_cached_briefing_payload(
     if raw_voice:
         voice_check = validate_voice_output(raw_voice, field="morning_voice")
         if not voice_check.get("valid"):
-            out["morning_voice"] = voice_check.get("fallback", _VOICE_FALLBACK)
+            # Strip-and-recover before falling back to the deterministic
+            # string. Old cache entries from before the content gates
+            # were added contain partially-bad text that is fully
+            # recoverable by removing the offending sentence(s).
+            stripped = _strip_disallowed_sentences(raw_voice)
+            recovered = False
+            if stripped["removed"] and stripped["text"]:
+                recheck = validate_voice_output(
+                    stripped["text"], field="morning_voice"
+                )
+                if recheck.get("valid"):
+                    out["morning_voice"] = (
+                        recheck.get("truncated_text") or stripped["text"]
+                    )
+                    recovered = True
+            if not recovered:
+                out["morning_voice"] = voice_check.get(
+                    "fallback", _VOICE_FALLBACK
+                )
         elif voice_check.get("truncated_text"):
             out["morning_voice"] = voice_check["truncated_text"]
 
@@ -866,24 +1483,69 @@ def _normalize_cached_briefing_payload(
         if final_voice and final_voice != _VOICE_FALLBACK:
             sleep_check = validate_sleep_claims(final_voice, garmin_sleep_h, checkin_sleep_h)
             if not sleep_check.get("valid"):
-                out["morning_voice"] = _VOICE_FALLBACK
+                stripped = _strip_ungrounded_sleep_sentences(
+                    final_voice, garmin_sleep_h, checkin_sleep_h
+                )
+                candidate = stripped.get("text") or ""
+                if candidate:
+                    candidate_voice_check = validate_voice_output(candidate, field="morning_voice")
+                    candidate_sleep_check = validate_sleep_claims(
+                        candidate, garmin_sleep_h, checkin_sleep_h
+                    )
+                    if candidate_voice_check.get("valid") and candidate_sleep_check.get("valid"):
+                        out["morning_voice"] = candidate
+                    else:
+                        out["morning_voice"] = _VOICE_FALLBACK
+                else:
+                    out["morning_voice"] = _VOICE_FALLBACK
     elif "morning_voice" in out:
         out["morning_voice"] = _VOICE_FALLBACK
 
     raw_noticed = out.get("coach_noticed")
     if raw_noticed:
-        noticed_check = validate_voice_output(raw_noticed, field="coach_noticed")
-        if not noticed_check.get("valid"):
+        if (
+            _cached_payload_has_race_context(out)
+            and _is_destructive_load_efficiency_notice(raw_noticed)
+        ):
             out["coach_noticed"] = None
+        else:
+            noticed_check = validate_voice_output(raw_noticed, field="coach_noticed")
+            if not noticed_check.get("valid"):
+                out["coach_noticed"] = None
 
     return out
 
 
+def _apply_race_week_coach_noticed_safety(
+    result: dict,
+    race_data: Optional[dict],
+) -> dict:
+    """Remove race-week coach_noticed text that could undermine readiness."""
+    if not result or not isinstance(result, dict):
+        return result
+    raw_noticed = result.get("coach_noticed")
+    if (
+        raw_noticed
+        and _is_race_week_context(race_data)
+        and _is_destructive_load_efficiency_notice(raw_noticed)
+    ):
+        logger.warning(
+            "coach_noticed cleared by race-week load/efficiency safety gate"
+        )
+        result["coach_noticed"] = None
+    return result
+
+
 def _sanitize_finding_text(text: str) -> str:
-    """Remove internal metric acronyms from athlete-facing finding text."""
+    """Normalize legacy/internal tokens in athlete-facing finding text."""
     if not text:
         return text
     out = text
+    import re
+
+    # Legacy all-caps pronoun appears in some persisted findings; normalize tone.
+    out = re.sub(r"\bYOUR\b", "your", out)
+
     replacements = (
         ("your tsb", "your form"),
         ("your ctl", "your fitness"),
@@ -892,16 +1554,50 @@ def _sanitize_finding_text(text: str) -> str:
     for raw, clean in replacements:
         out = out.replace(raw, clean)
         out = out.replace(raw.title(), clean.title())
-    import re
+
     out = re.sub(r"\btsb\b", "form", out, flags=re.IGNORECASE)
     out = re.sub(r"\bctl\b", "fitness", out, flags=re.IGNORECASE)
     out = re.sub(r"\batl\b", "fatigue", out, flags=re.IGNORECASE)
+
+    # Backward compatibility: persisted findings may still contain raw signal keys
+    # (underscore/space/dotted variants). Normalize to friendly labels at read-time.
+    try:
+        from services.n1_insight_generator import FRIENDLY_NAMES
+    except Exception:  # pragma: no cover - defensive fallback
+        FRIENDLY_NAMES = {}
+
+    for raw_key in sorted(FRIENDLY_NAMES.keys(), key=len, reverse=True):
+        friendly = friendly_signal_name(raw_key)
+        if not friendly:
+            continue
+        variants = {
+            raw_key,
+            raw_key.replace("_", " "),
+            raw_key.replace("_", "."),
+        }
+        parts = raw_key.split("_")
+        if len(parts) >= 3 and parts[-1].isdigit() and parts[-2].isdigit():
+            stem = "_".join(parts[:-2])
+            stem_space = stem.replace("_", " ")
+            a, b = parts[-2], parts[-1]
+            variants.update({
+                f"{stem} {a}.{b}",
+                f"{stem_space} {a}.{b}",
+                f"{stem} {a}/{b}",
+                f"{stem_space} {a}/{b}",
+            })
+        for variant in variants:
+            if not variant or variant.lower() == friendly.lower():
+                continue
+            pattern = rf"(?<![A-Za-z0-9]){re.escape(variant)}(?![A-Za-z0-9])"
+            out = re.sub(pattern, friendly, out, flags=re.IGNORECASE)
     return out
 
 
 def validate_relative_time_claims(
     text: str,
     recent_run_dates: List[date],
+    today: Optional[date] = None,
 ) -> dict:
     """
     Catch obviously wrong relative-time claims in LLM output.
@@ -919,7 +1615,8 @@ def validate_relative_time_claims(
         return {"valid": True}
 
     lower = text.lower()
-    today = date.today()
+    if today is None:
+        today = date.today()
 
     most_recent = max(recent_run_dates)
     days_since_most_recent = (today - most_recent).days
@@ -991,9 +1688,26 @@ def _valid_home_briefing_contract(result: dict, checkin_data: Optional[dict], ra
     action_sources = [today_context, result.get("checkin_reaction"), result.get("race_assessment")]
     if not any(_looks_like_action(s) for s in action_sources if isinstance(s, str)):
         return False
-    if checkin_data and not result.get("checkin_reaction"):
+    # Require checkin_reaction only when we have a real athlete check-in payload.
+    # `checkin_data` may be populated with Garmin metadata only (e.g. garmin_sleep_h),
+    # which should not force a hard A->I->A failure.
+    checkin_requires_reaction = bool(
+        checkin_data
+        and isinstance(checkin_data, dict)
+        and any(k != "garmin_sleep_h" for k in checkin_data.keys())
+    )
+    if checkin_requires_reaction and not result.get("checkin_reaction"):
         return False
-    if race_data and not result.get("race_assessment"):
+
+    # Require race_assessment only when the race is meaningfully near.
+    # Long-horizon plans often include race metadata months out; forcing this
+    # field at all times caused avoidable deterministic fallbacks.
+    race_requires_assessment = False
+    if race_data and isinstance(race_data, dict):
+        days_remaining = race_data.get("days_remaining")
+        if isinstance(days_remaining, int) and days_remaining <= 21:
+            race_requires_assessment = True
+    if race_requires_assessment and not result.get("race_assessment"):
         return False
     return True
 
@@ -1007,34 +1721,48 @@ def _call_opus_briefing_sync(
     required_fields: list,
     api_key: str,
     llm_timeout: Optional[int] = None,
+    athlete_id: Optional[str] = None,
+    local_today: Optional[date] = None,
+    local_now: Optional[datetime] = None,
 ) -> Optional[dict]:
     """
-    Synchronous Opus call — meant to be run via asyncio.to_thread() or
-    ThreadPoolExecutor in Celery workers.
+    Synchronous LLM call for home briefing — routes through the centralized
+    llm_client abstraction with canary support.
+
+    The `api_key` parameter is retained for backward compatibility with the
+    Celery task path (home_briefing_tasks.py calls this directly). Actual
+    key resolution is handled inside call_llm_with_json_parse via
+    core.config.settings and os.getenv().
 
     llm_timeout: SDK-level timeout in seconds. Defaults to HOME_BRIEFING_TIMEOUT_S
-    (10s) for the request path. Workers pass PROVIDER_TIMEOUT_S (45s) so the
-    richer prompt has enough generation time without blocking page loads.
+    for Sonnet. For Kimi (reasoning model), minimum 120s is enforced because
+    kimi-k2.6 thinks before responding (60-180s typical for briefing prompts).
+    athlete_id: when provided, enables Kimi canary routing for this athlete.
     """
-    import json as _json
+    from core.llm_client import call_llm_with_json_parse, resolve_briefing_model
 
-    timeout_s = llm_timeout if llm_timeout is not None else HOME_BRIEFING_TIMEOUT_S
+    model = resolve_briefing_model(athlete_id=athlete_id)
 
-    try:
-        from anthropic import Anthropic
-    except ImportError:
-        logger.warning("anthropic package not installed — cannot use Opus for home briefing")
-        return None
+    # kimi-k2.6 is a reasoning model — enforce minimum timeout
+    KIMI_MIN_TIMEOUT_S = 15  # kimi-k2-turbo-preview responds in ~800ms; 15s gives ample headroom
+    if model.startswith("kimi"):
+        timeout_s = max(llm_timeout or 0, KIMI_MIN_TIMEOUT_S)
+    else:
+        timeout_s = llm_timeout if llm_timeout is not None else HOME_BRIEFING_TIMEOUT_S
 
     field_descriptions = "\n".join(
         f'  - "{k}" ({"REQUIRED" if k in required_fields else "optional"}): {v}'
         for k, v in schema_fields.items()
     )
 
-    _today = date.today()
+    _today = local_today or date.today()
+    _now = local_now or datetime.now()
+    _tod = "morning" if _now.hour < 12 else ("afternoon" if _now.hour < 17 else "evening")
     system_prompt = (
         f"You are an elite running coach generating a structured home page briefing. "
         f"Today is {_today.isoformat()} ({_today.strftime('%A')}). "
+        f"Time of day: {_tod}. "
+        "Use time-appropriate language (e.g. 'this morning', 'this afternoon', 'tonight'). Do NOT state or repeat the clock time — the athlete already has a clock. "
         "All dates include pre-computed relative times like '(2 days ago)'. USE those labels — do NOT compute your own. "
         "Respond with ONLY a valid JSON object — no markdown, no code fences, no explanation. "
         "The JSON must contain these fields:\n"
@@ -1046,41 +1774,18 @@ def _call_opus_briefing_sync(
         "- Respond with the raw JSON object only."
     )
 
-    try:
-        client = Anthropic(api_key=api_key, timeout=timeout_s)
-        response = client.messages.create(
-            model="claude-opus-4-6",
-            system=system_prompt,
-            messages=[{"role": "user", "content": prompt}],
-            max_tokens=2000,
-            temperature=0.3,
-        )
+    result = call_llm_with_json_parse(
+        model=model,
+        system=system_prompt,
+        messages=[{"role": "user", "content": prompt}],
+        max_tokens=2000,
+        temperature=0.3,
+        timeout_s=timeout_s,
+    )
 
-        raw_text = response.content[0].text if response.content else ""
-        if not raw_text.strip():
-            logger.warning("Opus returned empty response for home briefing")
-            return None
-
-        text = raw_text.strip()
-        if text.startswith("```"):
-            text = text.split("\n", 1)[1] if "\n" in text else text[3:]
-        if text.endswith("```"):
-            text = text[:-3]
-        text = text.strip()
-
-        result = _json.loads(text)
-        logger.info(
-            f"Home briefing generated via Opus "
-            f"(input={response.usage.input_tokens}, output={response.usage.output_tokens})"
-        )
-        return result
-
-    except _json.JSONDecodeError as je:
-        logger.warning(f"Opus JSON parse failed: {je}")
-        return None
-    except Exception as e:
-        logger.warning(f"Opus home briefing call failed: {type(e).__name__}: {e}")
-        return None
+    if result is not None:
+        logger.info("Home briefing generated via %s", model)
+    return result
 
 
 def _call_gemini_briefing_sync(
@@ -1208,6 +1913,8 @@ def _fetch_llm_briefing_sync(
     race_data: Optional[dict],
     cache_key: str,
     athlete_id: str,
+    local_today: Optional[date] = None,
+    local_now: Optional[datetime] = None,
 ) -> Optional[dict]:
     """
     Pure LLM call + validation + Redis cache write.  No DB access.
@@ -1223,7 +1930,10 @@ def _fetch_llm_briefing_sync(
     # --- Primary: Claude Opus 4.6 ---
     anthropic_key = os.getenv("ANTHROPIC_API_KEY")
     if anthropic_key:
-        result = _call_opus_briefing_sync(prompt, schema_fields, required_fields, anthropic_key)
+        result = _call_opus_briefing_sync(
+            prompt, schema_fields, required_fields, anthropic_key,
+            athlete_id=athlete_id, local_today=local_today, local_now=local_now,
+        )
     else:
         logger.info("ANTHROPIC_API_KEY not set — falling back to Gemini for home briefing")
         result = None
@@ -1264,11 +1974,35 @@ def _fetch_llm_briefing_sync(
     if final_voice and final_voice != _VOICE_FALLBACK:
         sleep_check = validate_sleep_claims(final_voice, _garmin_sleep_h, _checkin_sleep_h)
         if not sleep_check["valid"]:
-            logger.warning(
-                "morning_voice sleep claim ungrounded (%s); suppressing to fallback",
-                sleep_check.get("reason"),
+            stripped = _strip_ungrounded_sleep_sentences(
+                final_voice, _garmin_sleep_h, _checkin_sleep_h
             )
-            result["morning_voice"] = _VOICE_FALLBACK
+            candidate = stripped.get("text") or ""
+            if candidate:
+                candidate_voice_check = validate_voice_output(candidate, field="morning_voice")
+                candidate_sleep_check = validate_sleep_claims(
+                    candidate, _garmin_sleep_h, _checkin_sleep_h
+                )
+                if candidate_voice_check.get("valid") and candidate_sleep_check.get("valid"):
+                    logger.warning(
+                        "morning_voice sleep claim ungrounded (%s); removed offending sentence(s) and kept remaining content",
+                        sleep_check.get("reason"),
+                    )
+                    result["morning_voice"] = candidate
+                else:
+                    logger.warning(
+                        "morning_voice sleep claim ungrounded (%s); candidate still invalid (voice=%s sleep=%s), using fallback",
+                        sleep_check.get("reason"),
+                        candidate_voice_check.get("reason"),
+                        candidate_sleep_check.get("reason"),
+                    )
+                    result["morning_voice"] = _VOICE_FALLBACK
+            else:
+                logger.warning(
+                    "morning_voice sleep claim ungrounded (%s); no valid content remained, using fallback",
+                    sleep_check.get("reason"),
+                )
+                result["morning_voice"] = _VOICE_FALLBACK
 
     # --- Post-generation validator: coach_noticed ---
     # Uses the same ban lists (sycophancy, causal, internal metrics).
@@ -1280,6 +2014,7 @@ def _fetch_llm_briefing_sync(
         if not noticed_check["valid"]:
             logger.warning(f"coach_noticed failed validation ({noticed_check.get('reason')}); clearing field")
             result["coach_noticed"] = None
+    result = _apply_race_week_coach_noticed_safety(result, race_data)
 
     # --- Post-generation validator: workout_why ---
     raw_why = result.get("workout_why")
@@ -1303,7 +2038,7 @@ def _fetch_llm_briefing_sync(
                 _field_text = result.get(_field_name)
                 if not _field_text:
                     continue
-                _time_check = validate_relative_time_claims(_field_text, _recent_dates)
+                _time_check = validate_relative_time_claims(_field_text, _recent_dates, today=local_today)
                 if not _time_check["valid"]:
                     logger.warning(
                         "Briefing field '%s' has wrong relative-time claim (%s); clearing",
@@ -1332,6 +2067,349 @@ def _fetch_llm_briefing_sync(
     return result
 
 
+# run_shape classifications that do NOT contradict a detected split-derived
+# workout structure.  Used by _render_workout_structure_block to decide
+# whether to lead with "WORKOUT STRUCTURE" (confirmed) vs "POSSIBLE
+# WORKOUT STRUCTURE" (run_shape disagrees).
+_STRUCTURE_AGREEING_SHAPE_CLASSIFICATIONS = frozenset({
+    "track_intervals",
+    "threshold_intervals",
+    "hill_repeats",
+    "fartlek",
+    "tempo",
+    "over_under",
+    "progression",
+    "strides",
+    "anomaly",  # anomaly = "doesn't fit a clean bucket" -- usually intervals
+    "",
+})
+
+
+def _render_workout_structure_block(c: dict) -> str:
+    """Build the workout-structure prompt block for today's run.
+
+    Three honest branches:
+
+    1. workout_structure present
+       -> render the structure with a confidence prefix based on whether
+          the run_shape classification agrees with structured work
+
+    2. splits_available=True, no workout_structure
+       -> tell the LLM the splits were examined and showed no structured
+          pattern.  Safe assertion -- splits really were inspected.
+
+    3. splits_available=False (or missing)
+       -> tell the LLM that split-level analysis is not yet available
+          for this run.  Do NOT claim splits were inspected.  This was
+          the founder's 2026-04-18 regression: brief fired before async
+          split processing finished, the prompt asserted "examined the
+          splits and determined CONTINUOUS", and the LLM faithfully
+          described an interval workout as a continuous fade.
+    """
+    workout_structure = c.get("workout_structure")
+    if workout_structure:
+        shape_class = c.get("shape_classification", "")
+        structure_agrees = shape_class in _STRUCTURE_AGREEING_SHAPE_CLASSIFICATIONS
+        if structure_agrees:
+            return (
+                f"WORKOUT STRUCTURE (from split data — confirmed by stream analysis):\n  "
+                f"{workout_structure}\n"
+                "The average pace blends warmup, work intervals, and rest jogs. "
+                "Coach from the split breakdown for this structured workout."
+            )
+        return (
+            f"POSSIBLE WORKOUT STRUCTURE (from split data — stream analysis classified this as "
+            f"'{shape_class}', which may indicate natural pace variation rather than structured "
+            f"intervals):\n  {workout_structure}\n"
+            "Use judgment: if the run_shape classification and this structure disagree, "
+            "trust the run_shape and mention the structure only as secondary context."
+        )
+
+    splits_available = c.get("splits_available")
+    if splits_available is True:
+        return (
+            "NO STRUCTURED WORKOUT PATTERN — split-level analysis ran on the splits "
+            "for this run and found no interval/rep structure. "
+            "Do NOT describe this run as intervals, reps, repeats, or any structured workout. "
+            "Do NOT invent split-level data (fastest rep, slowest rep, rep count). "
+            "Describe it from the overall distance, pace, HR, and elevation data only."
+        )
+
+    return (
+        "SPLIT-LEVEL ANALYSIS NOT YET AVAILABLE for this run -- describe it using "
+        "the overall metrics only (distance, pace, HR, elevation, conditions). "
+        "Do NOT invent split-level data (fastest rep, slowest rep, rep count). "
+        "Do NOT make claims about whether this was a structured workout or not -- "
+        "the split data simply hasn't been processed yet."
+    )
+
+
+def _summarize_workout_structure(activity_id, db: Session) -> Optional[str]:
+    """
+    Detect structured workouts (intervals, tempo w/ warmup) from split data
+    and return a coaching-useful summary instead of flat averages.
+
+    Returns None if no splits, < 4 splits, or no interval pattern detected.
+
+    Gating order (fastest rejections first):
+    1. Shape-extractor gate — if run_shape already classified this as an
+       easy/steady/long run, skip split analysis entirely
+    2. Elevation gate — if pace variation correlates with terrain, not structure
+    3. Alternating pattern gate — real intervals alternate work/rest
+    4. Work rep consistency gate — real intervals have consistent rep lengths
+    5. Pace gap gate — meaningful differential between work and rest
+    """
+    import statistics as _stats
+
+    METERS_PER_MILE = 1609.344
+
+    activity = db.query(Activity).filter(Activity.id == activity_id).first()
+    if not activity:
+        return None
+
+    # ── Gate 1: Shape-extractor veto ──
+    # The shape_extractor's classification uses full stream data (not just
+    # mile splits) and is far more reliable for distinguishing steady runs
+    # from structured workouts. If it says easy/long/gray, trust it.
+    NON_INTERVAL_SHAPES = {
+        'easy_run', 'long_run', 'medium_long_run', 'gray_zone_run',
+    }
+    run_shape_data = activity.run_shape
+    if run_shape_data and isinstance(run_shape_data, dict):
+        summary_data = run_shape_data.get('summary', {})
+        shape_class = summary_data.get('workout_classification', '')
+        if shape_class in NON_INTERVAL_SHAPES:
+            return None
+
+    splits = (
+        db.query(ActivitySplit)
+        .filter(ActivitySplit.activity_id == activity_id)
+        .order_by(ActivitySplit.split_number)
+        .all()
+    )
+    if not splits or len(splits) < 4:
+        return None
+
+    # ── Gate 2: Elevation gate ──
+    elev_gain_m = float(activity.total_elevation_gain or 0)
+    total_dist_m = sum(float(s.distance or 0) for s in splits)
+    total_dist_mi = total_dist_m / METERS_PER_MILE if total_dist_m > 0 else 0
+    elev_per_mile_m = elev_gain_m / total_dist_mi if total_dist_mi > 0 else 0
+    is_hilly = elev_per_mile_m > 15
+
+    if is_hilly:
+        gap_values = [
+            float(s.gap_seconds_per_mile)
+            for s in splits
+            if s.gap_seconds_per_mile is not None
+            and float(s.distance or 0) / METERS_PER_MILE > 0.05
+        ]
+        if len(gap_values) >= 4:
+            gap_mean = _stats.mean(gap_values)
+            if gap_mean > 0:
+                gap_cv = _stats.stdev(gap_values) / gap_mean
+                if gap_cv < 0.08:
+                    return None
+
+    parsed = []
+    for s in splits:
+        dist_m = float(s.distance) if s.distance else 0
+        elapsed = int(s.elapsed_time) if s.elapsed_time else 0
+        dist_mi = dist_m / METERS_PER_MILE
+        pace_per_mi = (elapsed / dist_mi) if dist_mi > 0.01 else 99999
+        parsed.append({
+            "num": s.split_number,
+            "dist_m": dist_m,
+            "dist_mi": round(dist_mi, 2),
+            "elapsed_s": elapsed,
+            "pace_s_per_mi": pace_per_mi,
+            "hr": int(s.average_heartrate) if s.average_heartrate else None,
+        })
+
+    real_paces = sorted(
+        p["pace_s_per_mi"] for p in parsed
+        if p["dist_mi"] > 0.05 and p["pace_s_per_mi"] < 50000
+    )
+    if len(real_paces) < 4:
+        return None
+
+    # Threshold: median-based with a tighter cutoff than the old q25 * 1.15.
+    # Using median avoids skew from a single fast mile on an otherwise easy run.
+    median_pace = real_paces[len(real_paces) // 2]
+    work_pace_cutoff = median_pace * 0.92  # Splits must be >=8% faster than median to be "work"
+
+    warmup_splits = []
+    i = 0
+    while i < len(parsed):
+        sp = parsed[i]
+        if sp["dist_mi"] < 0.3:
+            break
+        if sp["pace_s_per_mi"] <= work_pace_cutoff:
+            break
+        warmup_splits.append(sp)
+        i += 1
+
+    j = len(parsed) - 1
+    while j > i and parsed[j]["dist_mi"] < 0.1:
+        j -= 1
+    cooldown_splits = []
+    k = j
+    while k > i:
+        sp = parsed[k]
+        if sp["dist_mi"] < 0.3:
+            break
+        if sp["pace_s_per_mi"] <= work_pace_cutoff:
+            break
+        cooldown_splits.append(sp)
+        k -= 1
+    cooldown_splits.reverse()
+    j = k
+
+    middle = parsed[i:j + 1]
+    if len(middle) < 2:
+        return None
+
+    work_candidates = []
+    rest_candidates = []
+    for sp in middle:
+        if sp["dist_mi"] < 0.05:
+            rest_candidates.append(sp)
+        elif sp["pace_s_per_mi"] <= work_pace_cutoff:
+            work_candidates.append(sp)
+        else:
+            rest_candidates.append(sp)
+
+    if len(work_candidates) < 3:
+        return None
+
+    # ── Gate 3: Alternating work/rest pattern ──
+    # Real intervals alternate work and rest. If there are no rest splits
+    # between work splits, this is a steady or progressive run.
+    if len(rest_candidates) == 0:
+        return None
+
+    # Work:rest ratio — real intervals need recovery between reps.
+    # >=2 work per 1 rest is generous (e.g., 6x800 with 5 recovery jogs).
+    # If the ratio is much higher, the "rest" splits are noise.
+    if len(work_candidates) > len(rest_candidates) * 3:
+        return None
+
+    # Check actual alternation: label each middle split as W or R and
+    # verify the sequence has at least 2 W→R or R→W transitions.
+    labels = []
+    for sp in middle:
+        if sp in work_candidates:
+            labels.append('W')
+        else:
+            labels.append('R')
+    transitions = sum(1 for idx in range(len(labels) - 1) if labels[idx] != labels[idx + 1])
+    if transitions < 2:
+        return None
+
+    # ── Gate 4: Work rep consistency ──
+    # Real intervals have reasonably consistent rep lengths.
+    work_dists_m_check = [w["dist_m"] for w in work_candidates]
+    avg_work_dist_m = sum(work_dists_m_check) / len(work_dists_m_check)
+    if avg_work_dist_m > 0:
+        try:
+            dist_cv = _stats.stdev(work_dists_m_check) / avg_work_dist_m
+            if dist_cv > 0.50:
+                return None
+        except _stats.StatisticsError:
+            pass
+
+    # ── Gate 5: Pace gap ──
+    # The pace gap between avg work and avg rest must be meaningful (>=45s/mi).
+    rest_paces = [r["pace_s_per_mi"] for r in rest_candidates if r["pace_s_per_mi"] < 50000]
+    if rest_paces:
+        avg_work = sum(w["pace_s_per_mi"] for w in work_candidates) / len(work_candidates)
+        avg_rest = sum(rest_paces) / len(rest_paces)
+        if avg_rest - avg_work < 45:
+            return None
+
+    work_paces = [w["pace_s_per_mi"] for w in work_candidates]
+    work_hrs = [w["hr"] for w in work_candidates if w["hr"]]
+    work_dists = [w["dist_mi"] for w in work_candidates]
+    work_times = [w["elapsed_s"] for w in work_candidates]
+
+    avg_work_pace_s = sum(work_paces) / len(work_paces)
+    min_work_pace_s = min(work_paces)
+    max_work_pace_s = max(work_paces)
+    avg_work_dist = sum(work_dists) / len(work_dists)
+    avg_work_time_s = sum(work_times) / len(work_times)
+    avg_work_hr = round(sum(work_hrs) / len(work_hrs)) if work_hrs else None
+
+    def _fmt_pace(s_per_mi):
+        m = int(s_per_mi // 60)
+        sec = int(s_per_mi % 60)
+        return f"{m}:{sec:02d}/mi"
+
+    parts = []
+
+    if warmup_splits:
+        wu_dist = sum(w["dist_mi"] for w in warmup_splits)
+        wu_time = sum(w["elapsed_s"] for w in warmup_splits)
+        wu_pace = wu_time / wu_dist if wu_dist > 0 else 0
+        parts.append(f"Warmup: {wu_dist:.1f}mi at {_fmt_pace(wu_pace)}")
+
+    rep_label = None
+    avg_work_m = avg_work_dist * METERS_PER_MILE
+    if len(work_times) >= 3 and avg_work_time_s > 0:
+        time_spread = (max(work_times) - min(work_times)) / avg_work_time_s
+        work_dists_m = [w["dist_m"] for w in work_candidates]
+        dist_spread = (
+            (max(work_dists_m) - min(work_dists_m)) / avg_work_m
+            if avg_work_m > 0 else 999
+        )
+        rounded_min = round(avg_work_time_s / 60)
+        time_near_round = abs(avg_work_time_s - rounded_min * 60) < 15
+
+        if time_spread <= dist_spread and time_near_round and rounded_min >= 1:
+            rep_label = f"{rounded_min} min"
+
+    if rep_label is None:
+        if 350 < avg_work_m < 450:
+            rep_label = "400m"
+        elif 750 < avg_work_m < 900:
+            rep_label = "800m"
+        elif 900 < avg_work_m < 1100:
+            rep_label = "1000m"
+        elif 1500 < avg_work_m < 1700:
+            rep_label = "1mi"
+        elif 1100 < avg_work_m < 1400:
+            rep_label = "1200m"
+        elif 180 < avg_work_m < 250:
+            rep_label = "200m"
+        elif 250 < avg_work_m < 350:
+            rep_label = "300m"
+        else:
+            rep_label = f"{avg_work_dist:.2f}mi"
+
+    pace_range = f"{_fmt_pace(min_work_pace_s)}-{_fmt_pace(max_work_pace_s)}"
+    if abs(min_work_pace_s - max_work_pace_s) < 10:
+        pace_range = _fmt_pace(avg_work_pace_s)
+
+    hr_str = f", avg HR {avg_work_hr}" if avg_work_hr else ""
+    parts.append(
+        f"Work: {len(work_candidates)} x {rep_label} at {_fmt_pace(avg_work_pace_s)} avg "
+        f"(range {pace_range}){hr_str}"
+    )
+
+    if rest_candidates:
+        rest_jogs = [r for r in rest_candidates if r["elapsed_s"] > 0 and r["dist_mi"] < 0.5]
+        if rest_jogs:
+            avg_rest_s = sum(r["elapsed_s"] for r in rest_jogs) / len(rest_jogs)
+            parts.append(f"Recovery: ~{int(avg_rest_s)}s between reps")
+
+    if cooldown_splits:
+        cd_dist = sum(c["dist_mi"] for c in cooldown_splits)
+        cd_time = sum(c["elapsed_s"] for c in cooldown_splits)
+        cd_pace = cd_time / cd_dist if cd_dist > 0 else 0
+        parts.append(f"Cooldown: {cd_dist:.1f}mi at {_fmt_pace(cd_pace)}")
+
+    return "\n  ".join(parts)
+
+
 def generate_coach_home_briefing(
     athlete_id: str,
     db: Session,
@@ -1340,6 +2418,8 @@ def generate_coach_home_briefing(
     checkin_data: Optional[dict] = None,
     race_data: Optional[dict] = None,
     skip_cache: bool = False,
+    upcoming_plan: Optional[list] = None,
+    preferred_units: Optional[str] = None,
 ) -> tuple:
     """
     Prepare everything the LLM needs (DB work on request thread), then
@@ -1347,7 +2427,7 @@ def generate_coach_home_briefing(
     run the LLM call in a worker thread via ``asyncio.to_thread``.
 
     Returns ``(cached_result,)`` if Redis hit (request path only), or
-    ``(None, prompt, schema_fields, required_fields, cache_key, garmin_sleep_h)``
+    ``(None, prompt, schema_fields, required_fields, cache_key, garmin_sleep_h, local_today, local_now)``
     if the LLM call is needed.
 
     skip_cache=True: the Lane 2A Celery worker always passes this to bypass
@@ -1361,13 +2441,43 @@ def generate_coach_home_briefing(
     """
     import hashlib
     import json as _json
+    from uuid import UUID as _tz_uuid
 
-    # Build data fingerprint for cache key
+    from services.coach_units import coach_units
+
+    tz = get_athlete_timezone_from_db(db, _tz_uuid(athlete_id))
+    local_today = athlete_local_today(tz)
+    # local_now uses the effective timezone — where the athlete IS right now.
+    # During a race or vacation in another timezone, the briefing correctly
+    # says "It's 7 AM ET" instead of their home timezone.  Training day windows
+    # (local_today, day bounds) stay on the home timezone for consistency.
+    from services.timezone_utils import get_athlete_effective_timezone as _get_eff_tz
+    _eff_tz = _get_eff_tz(_tz_uuid(athlete_id), db)
+    local_now = datetime.now(timezone.utc).astimezone(_eff_tz)
+
+    # Resolve units. Callers from the request path may not pass the value;
+    # fall back to the athlete row so the prompt always speaks the athlete's
+    # language regardless of which entry point invoked us.
+    if preferred_units is None:
+        try:
+            from models import Athlete
+            preferred_units = (
+                db.query(Athlete.preferred_units)
+                .filter(Athlete.id == athlete_id)
+                .scalar()
+            ) or "imperial"
+        except Exception:
+            preferred_units = "imperial"
+    units = coach_units(preferred_units)
+
     cache_input = _json.dumps({
+        "date": local_today.isoformat(),
         "completed": today_completed,
         "planned": planned_workout,
         "checkin": checkin_data,
         "race": race_data,
+        "upcoming": upcoming_plan,
+        "units": units.preferred_units,
     }, sort_keys=True, default=str)
     data_hash = hashlib.md5(cache_input.encode()).hexdigest()[:12]
     cache_key = f"coach_home_briefing:{athlete_id}:{data_hash}"
@@ -1406,7 +2516,7 @@ def generate_coach_home_briefing(
             .filter(
                 InsightLog.athlete_id == athlete_id,
                 InsightLog.mode != "log",
-                InsightLog.trigger_date >= date.today() - timedelta(days=7),
+                InsightLog.trigger_date >= local_today - timedelta(days=7),
             )
             .order_by(desc(InsightLog.trigger_date))
             .limit(3)
@@ -1434,7 +2544,7 @@ def generate_coach_home_briefing(
     # Build the prompt
     # --- Insight rotation: suppress recently-surfaced coach_noticed insight for 48h ---
     parts = [
-        f"You are an elite running coach speaking directly to your athlete about TODAY ({date.today().isoformat()}, {date.today().strftime('%A')}).",
+        f"You are an elite running coach speaking directly to your athlete about TODAY ({local_today.isoformat()}, {local_today.strftime('%A')}).",
         "You have their full training profile below. Use it. Be specific, direct, insightful.",
         "CRITICAL: All dates below include pre-computed relative times like '(2 days ago)' or '(yesterday)'. USE those labels verbatim — do NOT compute your own relative time. NEVER say 'two weeks ago' unless the data says '(2 weeks ago)'.",
         "Reference their actual numbers. Sound like a real coach, not a dashboard.",
@@ -1451,11 +2561,12 @@ def generate_coach_home_briefing(
         "- Be direct and honest, not sycophantic. The athlete trusts data, not flattery.",
         "",
         "PERSONAL FINGERPRINT CONTRACT:",
-        "- Use threshold values to give specific advice ('your sleep cliff is at 6.2h — last night was 5.5').",
+        f"- Use threshold values to give specific advice WITH UNITS: 'your sleep cliff is at 6.2 hours — last night was 5.5 hours'. Pace as {units.pace_unit}, sleep in hours, time of day as AM/PM, distances in {units.distance_unit_long}, counts as numbers.",
         "- Use asymmetry ratios to convey magnitude ('bad sleep hurts you 3x more than good sleep helps').",
         "- Use decay timing for forward-looking advice ('the effect peaks tomorrow based on your 2-day half-life').",
+        "- When describing a pattern, be SPECIFIC about what the data shows. 'I've noticed a pattern' is vague and useless. 'Your easy runs before 7 AM are consistently slower — that threshold has held across 18 observations' is specific and actionable.",
         "- If no confirmed patterns exist, do not mention the fingerprint — coach from the other data.",
-        "- ABSOLUTE BAN on athlete-facing stats: never say 'confirmed N times', 'r=', 'p-value', 'times_confirmed', 'correlation coefficient', 'observations'. Translate into coaching language.",
+        "- ABSOLUTE BAN on athlete-facing stats: never say 'confirmed N times', 'r=', 'p-value', 'times_confirmed', 'correlation coefficient', 'observations'. Use coaching language: 'I've seen this consistently' not 'confirmed 34 times'. 'Strong pattern' not 'r=0.62'.",
         "",
         "TRUST-SAFETY CONSTRAINTS (enforced by post-generation validator):",
         "- Do NOT use sycophantic words: incredible, amazing, phenomenal, extraordinary, fantastic, wonderful, awesome, brilliant, magnificent, outstanding, superb, stellar, remarkable, spectacular.",
@@ -1464,6 +2575,12 @@ def generate_coach_home_briefing(
         "- morning_voice must be ONE paragraph only. No sentence count limit — say what needs to be said.",
         "- workout_why must be a single sentence explaining why today's workout matters.",
         "- ABSOLUTE BAN on quoting these to the athlete: CTL, ATL, TSB, chronic load, acute load, form score, durability index, recovery half-life, injury risk score. These appear in the brief for YOUR reasoning only. If you quote them, the output will be rejected.",
+        "",
+        "SEASONAL COMPARISON DISCIPLINE:",
+        "- NEVER compare runs across different seasons without acknowledging temperature/humidity differences. A July run and an April run are NOT comparable without heat context.",
+        "- If you reference a past run from a different season, note the conditions: 'Your 8:15 pace in July heat (adjusted: ~7:50 in cool conditions) vs today's 7:55 in April.'",
+        "- If heat_adjustment_pct data is available on the activities, USE IT for fair comparisons.",
+        "- When no environmental data is available for a past run, do NOT compare paces across seasons. Compare within the same 4-week window or acknowledge the limitation.",
         "",
         "=== ATHLETE BRIEF ===",
         athlete_brief,
@@ -1508,19 +2625,38 @@ def generate_coach_home_briefing(
     try:
         from models import AthleteFact as _AF
         MAX_INJECTED_FACTS = 15
-        active_facts = (
-            db.query(_AF)
-            .filter(
-                _AF.athlete_id == athlete_id,
-                _AF.is_active == True,  # noqa: E712
+        BATCH_SIZE = 50
+        MAX_SCAN_ROWS = 500
+        _now = datetime.now(timezone.utc)
+
+        active_facts = []
+        offset = 0
+        while len(active_facts) < MAX_INJECTED_FACTS and offset < MAX_SCAN_ROWS:
+            batch = (
+                db.query(_AF)
+                .filter(
+                    _AF.athlete_id == athlete_id,
+                    _AF.is_active == True,  # noqa: E712
+                )
+                .order_by(
+                    _AF.confirmed_by_athlete.desc(),
+                    _AF.extracted_at.desc(),
+                )
+                .offset(offset)
+                .limit(BATCH_SIZE)
+                .all()
             )
-            .order_by(
-                _AF.confirmed_by_athlete.desc(),
-                _AF.extracted_at.desc(),
-            )
-            .limit(MAX_INJECTED_FACTS)
-            .all()
-        )
+            if not batch:
+                break
+
+            for f in batch:
+                if f.temporal and f.ttl_days is not None:
+                    if f.extracted_at < _now - timedelta(days=f.ttl_days):
+                        continue
+                active_facts.append(f)
+                if len(active_facts) >= MAX_INJECTED_FACTS:
+                    break
+            offset += BATCH_SIZE
         if active_facts:
             facts_section = "=== ATHLETE-STATED FACTS (from coach conversations) ===\n"
             for f in active_facts:
@@ -1540,22 +2676,102 @@ def generate_coach_home_briefing(
     except Exception as fe:
         logger.warning(f"Fact injection into morning voice skipped: {fe}")
 
+    if units.is_metric:
+        _hilly_example = "+300m gain"
+        _heat_threshold = "16°C"
+        _heat_hot = "29°C/80%rh"
+        _heat_cool = "10°C/30%rh"
+        _heat_pace_hot = f"5:35{units.pace_unit_short}"
+        _heat_pace_cool = f"5:17{units.pace_unit_short}"
+        _heat_diff_threshold = "8°C"
+    else:
+        _hilly_example = "+1000ft gain"
+        _heat_threshold = "60°F"
+        _heat_hot = "85°F/80%rh"
+        _heat_cool = "50°F/30%rh"
+        _heat_pace_hot = f"9:00{units.pace_unit_short}"
+        _heat_pace_cool = f"8:30{units.pace_unit_short}"
+        _heat_diff_threshold = "15°F"
+
+    parts.append(
+        "=== PACE COMPARISON CONTRACT ===\n"
+        "NEVER compare paces between runs without accounting for these confounders:\n"
+        f"1. ELEVATION: A hilly run ({_hilly_example}) is inherently slower than a flat run. "
+        "If elevation data differs significantly between two runs, say so explicitly.\n"
+        f"2. HEAT: Runs above {_heat_threshold} are physiologically slower. A {_heat_pace_hot} in {_heat_hot} is "
+        f"FASTER effort than {_heat_pace_cool} in {_heat_cool}. Use the heat-adjustment percentage when "
+        f"available. If temperature data differs by >{_heat_diff_threshold} between compared runs, you MUST note it.\n"
+        "3. SEASON: Do NOT compare a March run to a July run and claim the athlete is 'getting faster' "
+        "or 'slowing down' without noting the seasonal temperature difference.\n"
+        "4. WORKOUT TYPE: Do NOT compare an interval/tempo workout average pace to an easy run pace. "
+        "They measure different things.\n"
+        "If confounders are present, either normalize the comparison or explicitly caveat it. "
+        "Silence is better than a misleading pace comparison."
+    )
+
     parts.append("=== TODAY ===")
 
     if today_completed:
         c = today_completed
-        parts.append(f"COMPLETED today: {c.get('name')}, {c.get('distance_mi')}mi, pace {c.get('pace')}, HR {c.get('avg_hr', 'N/A')}, {c.get('duration_min')}min")
+        # Prefer pre-formatted *_text fields written by the briefing builder
+        # (which respects the athlete's preferred units). Fall back to the
+        # legacy imperial keys for any caller that hasn't been migrated yet.
+        _dist_text = c.get("distance_text") or "?"
+        _dur_s = c.get("duration_s")
+        _dur_text = f"{int(_dur_s) // 60}min" if _dur_s else "?"
+        today_line = f"COMPLETED today: {c.get('name')}, {_dist_text}, pace {c.get('pace')}, HR {c.get('avg_hr', 'N/A')}, {_dur_text}"
+        _elev_text = c.get("elevation_text")
+        if _elev_text:
+            today_line += f", elevation {_elev_text}"
+        _temp_text = c.get("temperature_text")
+        if not _temp_text and c.get("temperature_f") is not None:
+            _temp_text = f"{c['temperature_f']}°F"
+        if _temp_text:
+            today_line += f", {_temp_text}"
+        if c.get("humidity_pct") is not None:
+            today_line += f" / {int(c['humidity_pct'])}% humidity"
+        if c.get("heat_adjustment_pct") is not None and c["heat_adjustment_pct"] > 0:
+            today_line += f" (heat-adjusted pace ≈ {c['heat_adjustment_pct']}% slower)"
+        parts.append(today_line)
+        parts.append(_render_workout_structure_block(c))
         if planned_workout and planned_workout.get("has_workout"):
-            plan_mi = planned_workout.get("distance_mi")
+            _plan_text = planned_workout.get("distance_text")
             plan_type = planned_workout.get("title") or planned_workout.get("workout_type")
-            if plan_mi and c.get("distance_mi") and abs(c["distance_mi"] - plan_mi) > 1.0:
-                parts.append(f"Note: plan had {plan_mi}mi {plan_type}, athlete ran {c['distance_mi']}mi instead.")
+            if _plan_text and _dist_text and _dist_text != "?" and _plan_text != _dist_text:
+                parts.append(f"Note: plan had {_plan_text} {plan_type}, athlete ran {_dist_text} instead.")
     elif planned_workout and planned_workout.get("has_workout"):
         w = planned_workout
-        parts.append(f"PLANNED (not yet completed): {w.get('title') or w.get('workout_type')}, {w.get('distance_mi', '?')}mi")
+        _w_dist = w.get("distance_text") or "?"
+        parts.append(f"PLANNED (not yet completed): {w.get('title') or w.get('workout_type')}, {_w_dist}")
         parts.append("The athlete may or may not follow this plan. Coach based on their actual patterns, not the plan.")
     else:
         parts.append("No planned workout and nothing completed yet today.")
+
+    if upcoming_plan:
+        _up_lines = ["=== UPCOMING PLAN (next 1-3 days) ==="]
+        for _up in upcoming_plan:
+            _up_type = _up.get("title") or _up.get("workout_type") or "workout"
+            if _up.get("distance_text"):
+                _up_dist = f", {_up['distance_text']}"
+            else:
+                _up_dist = ""
+            _up_desc = f" — {_up['description']}" if _up.get("description") else ""
+            _up_lines.append(f"- {_up['day_name']}: {_up_type}{_up_dist}{_up_desc}")
+        _up_lines.extend([
+            "",
+            "PLAN-AWARENESS RULES (non-negotiable):",
+            "- NEVER suggest rest, easy days, or alternative sessions on days when a quality "
+            "workout (threshold, intervals, tempo, long run) is scheduled.",
+            "- Frame today's session in the context of what is COMING, not what you imagine "
+            "should come. 'Good setup for tomorrow's threshold' not 'take it easy tomorrow.'",
+            "- If the athlete ran easy today and has quality work tomorrow, frame the easy run "
+            "as preparation: fueling, hydration, sleep priority.",
+            "- If quality work is scheduled within 48 hours, forward-looking advice should "
+            "reference that specific session by name and type.",
+            "- You may note when the upcoming plan looks heavy relative to current fatigue, "
+            "but do NOT override the plan. The athlete and plan generator decide the schedule.",
+        ])
+        parts.extend(_up_lines)
 
     if checkin_data:
         soreness_label = checkin_data.get("soreness_label")
@@ -1599,6 +2815,11 @@ def generate_coach_home_briefing(
             "GROUNDING_RULE: Any numeric sleep claim in your output MUST match one of the sources above within 30 minutes.",
         ])
     parts.extend(sleep_parts + [""])
+    baseline_guidance = _build_sleep_baseline_guidance(
+        athlete_id, db, last_night_sleep_h=garmin_sleep_h
+    )
+    if baseline_guidance:
+        parts.extend([baseline_guidance, ""])
 
     logger.debug(
         "Sleep grounding: athlete=%s garmin_sleep_h=%s checkin_sleep_h=%s",
@@ -1607,15 +2828,15 @@ def generate_coach_home_briefing(
 
     # Runs completed this week — ground the LLM so it never fabricates cut runs
     try:
-        from datetime import date as _date
-        _today = _date.today()
-        _week_start = _today - __import__("datetime").timedelta(days=_today.weekday())
+        _today = local_today
+        _week_start = _today - timedelta(days=_today.weekday())
         from models import Activity as _Activity
         from sqlalchemy import func as _func
         _runs_this_week = (
             db.query(_func.count(_Activity.id))
             .filter(
                 _Activity.athlete_id == athlete_id,
+                _Activity.sport == "run",
                 _Activity.start_time >= _week_start,
                 _Activity.start_time < _today + __import__("datetime").timedelta(days=1),
             )
@@ -1628,6 +2849,95 @@ def generate_coach_home_briefing(
         )
     except Exception:
         pass  # Non-blocking
+
+    # --- Recent cross-training context (last 48 hours) ---
+    try:
+        from models import Activity as _CTActivity
+        from services.training_load import TrainingLoadCalculator as _CTCalc
+        _ct_cutoff = datetime.now(timezone.utc) - timedelta(hours=48)
+        _ct_activities = (
+            db.query(_CTActivity)
+            .filter(
+                _CTActivity.athlete_id == athlete_id,
+                _CTActivity.sport.in_(["cycling", "walking", "hiking", "strength", "flexibility"]),
+                _CTActivity.start_time >= _ct_cutoff,
+                _CTActivity.is_duplicate == False,  # noqa: E712
+            )
+            .order_by(_CTActivity.start_time.desc())
+            .limit(5)
+            .all()
+        )
+        if _ct_activities:
+            _ct_calc = _CTCalc(db)
+            _athlete_obj = db.query(Athlete).filter(Athlete.id == athlete_id).first()
+            _ct_lines = ["=== RECENT CROSS-TRAINING (last 48 hours) ==="]
+            for _cta in _ct_activities:
+                _hours_ago = (datetime.now(timezone.utc) - _cta.start_time).total_seconds() / 3600
+                _dur_min = round((_cta.duration_s or 0) / 60)
+                _ct_tss = None
+                try:
+                    _stress = _ct_calc.calculate_workout_tss(_cta, _athlete_obj)
+                    _ct_tss = round(_stress.tss)
+                except Exception:
+                    pass
+                _ct_line = f"- {_cta.sport}: {_dur_min}min"
+                if _ct_tss:
+                    _ct_line += f" ({_ct_tss} TSS)"
+                if _cta.strength_session_type:
+                    _ct_line += f", {_cta.strength_session_type} session"
+                _ct_line += f", {round(_hours_ago)}h ago"
+                _ct_lines.append(_ct_line)
+            _ct_lines.extend([
+                "",
+                "CROSS-TRAINING MENTION RULES:",
+                "- When cross-training occurred in the last 48 hours and is relevant to "
+                "today's running context, acknowledge it briefly.",
+                "- A heavy strength session before a quality run day is relevant. "
+                "A yoga session before a rest day is not. Use judgment.",
+                "- When you do mention it, connect it to the running context: "
+                "'Yesterday's strength session adds to your total training load heading into today's threshold.'",
+                "- Do NOT always mention cross-training. Only when it matters to today's run.",
+                "- Do NOT make prescriptive claims about how the athlete will feel "
+                "('your legs will be fatigued'). State the load contribution, not the prediction.",
+            ])
+            parts.extend(_ct_lines)
+    except Exception as _ct_err:
+        logger.debug(f"Cross-training context query failed (non-blocking): {_ct_err}")
+
+    try:
+        from models import PlanAdaptationProposal
+        _pending_proposal = (
+            db.query(PlanAdaptationProposal)
+            .filter(
+                PlanAdaptationProposal.athlete_id == athlete_id,
+                PlanAdaptationProposal.status == "pending",
+            )
+            .first()
+        )
+        if _pending_proposal:
+            _trigger_labels = {
+                "missed_long_run": "a missed long run",
+                "consecutive_missed": "multiple missed training days",
+                "readiness_tank": "extended low readiness",
+            }
+            _trigger_desc = _trigger_labels.get(
+                _pending_proposal.trigger_type, _pending_proposal.trigger_type
+            )
+            _changed_count = sum(
+                1 for c in (_pending_proposal.proposed_changes or []) if c.get("changed")
+            )
+            parts.append(
+                f"\n=== PENDING PLAN ADJUSTMENT ===\n"
+                f"A plan adjustment has been proposed due to {_trigger_desc} "
+                f"({_changed_count} day{'s' if _changed_count != 1 else ''} adjusted, "
+                f"weeks {_pending_proposal.affected_week_start}-{_pending_proposal.affected_week_end}). "
+                f"The athlete has not yet responded. "
+                f"You may briefly acknowledge this: 'I've suggested a small adjustment to your "
+                f"upcoming week — check the home screen when you're ready.' "
+                f"Do NOT describe the specific changes. Do NOT pressure the athlete to accept."
+            )
+    except Exception:
+        pass
 
     parts.append(
         "\nONE-NEW-THING RULE: Your briefing should contain exactly ONE observation "
@@ -1653,7 +2963,11 @@ def generate_coach_home_briefing(
         from services.fingerprint_context import build_fingerprint_prompt_section
         from uuid import UUID as _lane_UUID
         fp = build_fingerprint_prompt_section(
-            _lane_UUID(athlete_id), db, verbose=False, max_findings=3,
+            _lane_UUID(athlete_id),
+            db,
+            verbose=False,
+            max_findings=3,
+            include_emerging_question=False,
         )
         if fp:
             fingerprint_summary = fp
@@ -1669,15 +2983,22 @@ def generate_coach_home_briefing(
     today_summary = ""
     if today_completed:
         c = today_completed
-        today_summary = (
-            f"Completed: {c.get('name')}, {c.get('distance_mi')}mi, "
-            f"pace {c.get('pace')}, HR {c.get('avg_hr', 'N/A')}"
-        )
+        _ts_dist = c.get("distance_text") or "?"
+        if c.get("workout_structure"):
+            today_summary = (
+                f"Completed: {c.get('name')}, {_ts_dist} total\n"
+                f"  {c.get('workout_structure')}"
+            )
+        else:
+            today_summary = (
+                f"Completed: {c.get('name')}, {_ts_dist}, "
+                f"pace {c.get('pace')}, HR {c.get('avg_hr', 'N/A')}"
+            )
     elif planned_workout and planned_workout.get("has_workout"):
         w = planned_workout
+        _w_dist = w.get("distance_text") or "?"
         today_summary = (
-            f"Planned: {w.get('title') or w.get('workout_type')}, "
-            f"{w.get('distance_mi', '?')}mi"
+            f"Planned: {w.get('title') or w.get('workout_type')}, {_w_dist}"
         )
 
     checkin_summary = ""
@@ -1707,13 +3028,13 @@ def generate_coach_home_briefing(
         return " YOUR DATA FOR THIS FIELD: Use the athlete brief and today context above."
 
     schema_fields = {
-        "coach_noticed": f"The single most important coaching observation the athlete doesn't already know. If a daily intelligence rule fired, lead with that. Otherwise draw from wellness trends, training load signals, or recent activity patterns. The athlete should read this and think 'I didn't know that.' 1-2 sentences. NEVER quote internal metrics (r=, confirmed, p-value, observations).{_lane(coach_noticed_source)}",
-        "today_context": f"Action-focused context: if run completed, state the result then specify next steps; if not yet, describe what today should look like. Must include a concrete next action. 1-2 sentences.{_lane(today_summary)}",
+        "coach_noticed": f"The single most important coaching observation the athlete doesn't already know. If a daily intelligence rule fired, lead with that. Otherwise draw from wellness trends, training load signals, or recent activity patterns. The athlete should read this and think 'I didn't know that.' 1-2 sentences. BE SPECIFIC: describe what you observed using the athlete's training units — pace in {units.pace_unit}, distances in {units.distance_unit_long}, sleep in hours, time as AM/PM, frequency as counts. Never be vague about the pattern. 'Your easy pace changes with time of day' is too vague. 'Your easy runs before 7 AM have been consistently slower across 18 observations — there's a threshold around 7 AM' is specific. BANNED: r-values, p-values, correlation coefficients, 'statistically significant', z-scores, any statistical language. Use coaching language, not statistics.{_lane(coach_noticed_source)}",
+        "today_context": f"Action-focused context: if run completed, state the result then specify next steps referencing the UPCOMING PLAN if available; if not yet, describe what today should look like. Must include a concrete next action. If tomorrow has a quality session scheduled, next steps should prepare for it (fueling, sleep, hydration). 1-2 sentences.{_lane(today_summary)}",
         "week_assessment": f"Implication: explain what this week's trajectory means for near-term training direction, based on actual training not plan adherence. 1 sentence.{_lane('')}",
         "checkin_reaction": f"Acknowledge how they feel FIRST, then guide next steps. If they feel good despite high load, validate that and suggest recovery actions to maintain it. Never contradict their self-report. 1-2 sentences.{_lane(checkin_summary)}",
         "race_assessment": f"Honest readiness assessment for their race based on current fitness, not plan adherence. 1-2 sentences.{_lane(race_summary)}",
-        "morning_voice": f"This is the most important surface in the product — the first thing the athlete reads every morning, updated after every activity. Give their data a voice by connecting a personal fingerprint pattern to today's context. Say what needs to be said — no arbitrary length limit. ONE paragraph only (no second paragraph). No restatement of a prior sentence. Example of GOOD: '6.8 hours of sleep last night. Your body tends to run easier the day after 7+ hours — today might not get that boost, so keep the effort honest.' Example of BAD: '38.3 miles through 5 runs this week. Your pacing has been consistent.' Must cite at least one specific number (pace, distance, HR — NOT internal metrics). ABSOLUTE BAN on CTL, ATL, TSB, chronic load, acute load, form score, durability index, recovery half-life, injury risk score. NEVER say 'confirmed N times', 'r=', 'correlation'.{_lane(fingerprint_summary)}",
-        "workout_why": f"One sentence explaining WHY today's workout matters in the context of their training. Example: 'Active recovery keeps blood flowing after yesterday's 10-mile effort.' No sycophantic language.{_lane(today_summary)}",
+        "morning_voice": f"The first thing the athlete reads. ONE paragraph, 2-3 sentences. Follow this structure exactly: Sentence 1: State what they did today with one specific number (distance, pace, or HR). Use time-appropriate language: 'this afternoon' if the run was in the afternoon, 'this evening' if evening, 'this morning' ONLY if they actually ran before noon. Sentence 2: Connect it to their recent training pattern — volume trend this week, load block context, or a personal fingerprint pattern. Sentence 3 (optional): One concrete forward-looking action for TOMORROW only — if the UPCOMING PLAN section exists, reference the actual scheduled workout by name and type instead of guessing. CRITICAL RULES: If the athlete already ran today, NEVER tell them to rest TODAY or do zero running TODAY — their run is done; guidance is about tomorrow. If a quality session (threshold, intervals, tempo, long run) is scheduled tomorrow, NEVER suggest rest or easy movement — frame today as preparation for that session. NEVER reference the briefing itself, synced data, data refreshes, or system internals. NEVER say 'home briefing', 'synced activity', 'refreshed'. Must cite at least one specific number (pace, distance, HR — NOT internal metrics). ABSOLUTE BAN on CTL, ATL, TSB, chronic load, acute load, form score, durability index, recovery half-life, injury risk score, 'confirmed N times', 'r=', 'correlation'.{_lane(fingerprint_summary)}",
+        "workout_why": f"One sentence explaining WHY today's workout matters in the context of their training. Example: 'Active recovery keeps blood flowing after yesterday's {'15 km' if units.is_metric else '10-mile'} effort.' No sycophantic language.{_lane(today_summary)}",
     }
     required_fields = ["coach_noticed", "today_context", "week_assessment", "morning_voice"]
     if checkin_data:
@@ -1721,7 +3042,7 @@ def generate_coach_home_briefing(
     if race_data:
         required_fields.append("race_assessment")
 
-    return (None, prompt, schema_fields, required_fields, cache_key, garmin_sleep_h)
+    return (None, prompt, schema_fields, required_fields, cache_key, garmin_sleep_h, local_today, local_now)
 
 
 def compute_coach_noticed(
@@ -1741,37 +3062,46 @@ def compute_coach_noticed(
     No live analyze_correlations — all correlation data comes from persisted
     CorrelationFinding rows (populated by the daily fingerprint refresh).
     """
+    tz = get_athlete_timezone_from_db(db, __import__("uuid").UUID(athlete_id))
+    _local_today = athlete_local_today(tz)
+
     # 1. Persisted fingerprint finding (trust-gated, rotated daily)
     try:
         from uuid import UUID as _UUID
-        from models import CorrelationFinding as _CF
-        eligible = (
-            db.query(_CF)
-            .filter(
-                _CF.athlete_id == _UUID(athlete_id),
-                _CF.is_active == True,  # noqa: E712
-                _CF.times_confirmed >= 3,
-            )
-            .order_by(_CF.times_confirmed.desc(), _CF.last_confirmed_at.desc())
-            .limit(5)
-            .all()
+        from services.fingerprint_context import _format_value_with_unit
+        from services.intelligence.finding_eligibility import (
+            select_eligible_findings,
+        )
+
+        eligible = select_eligible_findings(
+            _UUID(athlete_id),
+            db,
+            min_confirmations=3,
+            limit=5,
         )
         if eligible:
-            # deterministic daily rotation across top findings
-            idx = date.today().toordinal() % len(eligible)
+            idx = _local_today.toordinal() % len(eligible)
             f = eligible[idx]
             if not _is_finding_in_cooldown(athlete_id, f.input_name, f.output_metric):
+                inp_name = friendly_signal_name(f.input_name)
+                out_name = friendly_signal_name(f.output_metric)
+                direction_verb = "improves" if f.direction == "positive" else "worsens"
+
                 finding_text = _sanitize_finding_text(
                     f.insight_text or (
-                    f"{f.input_name.replace('_', ' ').title()} {f.direction}ly "
-                    f"affects your {f.output_metric.replace('_', ' ')}"
+                    f"{inp_name.title()} {f.direction}ly "
+                    f"affects your {out_name}"
                     )
                 )
+
                 detail_parts = []
                 if f.threshold_value is not None:
+                    thresh_fmt = _format_value_with_unit(
+                        f.threshold_value, f.input_name
+                    )
+                    above_below = f.threshold_direction or "below"
                     detail_parts.append(
-                        f"your {f.input_name.replace('_', ' ')} cliff is around "
-                        f"{f.threshold_value:.1f}"
+                        f"your {inp_name} threshold is around {thresh_fmt}"
                     )
                 if f.asymmetry_ratio is not None and f.asymmetry_ratio > 1.5:
                     detail_parts.append(
@@ -1780,8 +3110,17 @@ def compute_coach_noticed(
                     )
                 if f.decay_half_life_days is not None:
                     detail_parts.append(
-                        f"effect peaks within {f.decay_half_life_days:.0f} day(s)"
+                        f"the effect peaks within {f.decay_half_life_days:.0f} day(s)"
                     )
+                if f.time_lag_days and f.time_lag_days > 0:
+                    detail_parts.append(
+                        f"shows up {f.time_lag_days} day(s) later"
+                    )
+
+                detail_parts.append(
+                    f"consistent across {f.sample_size} of your runs"
+                )
+
                 text = finding_text
                 if detail_parts:
                     text += " — " + ", ".join(detail_parts)
@@ -1790,9 +3129,11 @@ def compute_coach_noticed(
                     text=text,
                     source="fingerprint",
                     ask_coach_query=(
-                        f"Tell me more about how {f.input_name.replace('_', ' ')} "
-                        f"affects my {f.output_metric.replace('_', ' ')}"
+                        f"Tell me more about how {inp_name} "
+                        f"affects my {out_name}. "
+                        f"What should I do about it?"
                     ),
+                    finding_id=str(f.id),
                 )
     except Exception as e:
         logger.debug("Fingerprint finding for coach_noticed failed: %s", e)
@@ -1862,13 +3203,15 @@ def _build_rich_intelligence_context(athlete_id: str, db: Session) -> str:
     """
     from uuid import UUID as _UUID
     athlete_uuid = _UUID(athlete_id)
+    _tz = get_athlete_timezone_from_db(db, athlete_uuid)
+    _local_today = athlete_local_today(_tz)
 
     sections: list[str] = []
 
     # 1. Daily intelligence rules that fired today
     try:
         from services.daily_intelligence import DailyIntelligenceEngine, InsightMode
-        intel_result = DailyIntelligenceEngine().evaluate(athlete_uuid, date.today(), db)
+        intel_result = DailyIntelligenceEngine().evaluate(athlete_uuid, _local_today, db)
         fired = [
             ins for ins in intel_result.insights
             if ins.mode != InsightMode.LOG
@@ -1952,20 +3295,25 @@ def _build_rich_intelligence_context(athlete_id: str, db: Session) -> str:
     except Exception as e:
         logger.debug(f"Training story failed for home briefing ({athlete_id}): {e}")
 
-    # 7. Recent activity shapes — what the athlete actually did this week
+    # 7. Recent activity shapes — last 10 days only
     try:
+        ten_days_ago = datetime.now(timezone.utc) - timedelta(days=10)
         recent = db.query(Activity).filter(
             Activity.athlete_id == athlete_uuid,
+            Activity.sport == "run",
             Activity.shape_sentence.isnot(None),
+            Activity.start_time >= ten_days_ago,
         ).order_by(Activity.start_time.desc()).limit(5).all()
         if recent:
+            from services.coach_tools import _relative_date as _rel
             lines = []
             for a in recent:
-                day = a.start_time.strftime("%a") if a.start_time else "?"
-                lines.append(f"- {day}: {a.shape_sentence}")
+                day = a.start_time.strftime("%a %b %d") if a.start_time else "?"
+                rel = _rel(to_activity_local_date(a, _tz), _local_today) if a.start_time else ""
+                lines.append(f"- {day} {rel}: {a.shape_sentence}")
             if lines:
                 sections.append(
-                    "--- This Week's Training (auto-detected from stream data) ---\n"
+                    "--- Recent Runs (auto-detected from stream data) ---\n"
                     + "\n".join(lines)
                 )
     except Exception as e:
@@ -1974,7 +3322,13 @@ def _build_rich_intelligence_context(athlete_id: str, db: Session) -> str:
     # 8. Personal Fingerprint — confirmed, persisted correlation findings with layer data
     try:
         from services.fingerprint_context import build_fingerprint_prompt_section
-        fp_section = build_fingerprint_prompt_section(athlete_uuid, db, verbose=True, max_findings=8)
+        fp_section = build_fingerprint_prompt_section(
+            athlete_uuid,
+            db,
+            verbose=True,
+            max_findings=8,
+            include_emerging_question=False,
+        )
         if fp_section:
             sections.append(fp_section)
     except Exception as e:
@@ -2159,6 +3513,8 @@ def compute_race_countdown(
     plan: Optional[TrainingPlan],
     athlete_id: str,
     db: Session,
+    local_today: Optional[date] = None,
+    preferred_units: Optional[str] = None,
 ) -> Optional[RaceCountdown]:
     """
     ADR-17 Phase 2: Race countdown from active training plan.
@@ -2171,13 +3527,16 @@ def compute_race_countdown(
     if not race_date:
         return None
 
-    days_remaining = (race_date - date.today()).days
+    if local_today is None:
+        _tz = get_athlete_timezone_from_db(db, __import__("uuid").UUID(athlete_id))
+        local_today = athlete_local_today(_tz)
+    days_remaining = (race_date - local_today).days
     if days_remaining < 0:
-        return None  # Race already happened
+        return None
 
     race_name = getattr(plan, "goal_race_name", None)
+    _is_metric = (preferred_units or "imperial").lower() == "metric"
 
-    # Format goal_time
     goal_time_str = None
     goal_time_s = getattr(plan, "goal_time_seconds", None)
     if goal_time_s:
@@ -2186,14 +3545,16 @@ def compute_race_countdown(
         secs = int(goal_time_s % 60)
         goal_time_str = f"{hours}:{mins:02d}:{secs:02d}"
 
-    # Derive goal pace from goal_time and distance
     goal_pace_str = None
     distance_m = getattr(plan, "goal_race_distance_m", None)
     if goal_time_s and distance_m and distance_m > 0:
-        pace_s_per_mile = goal_time_s / (distance_m / 1609.344)
-        p_mins = int(pace_s_per_mile // 60)
-        p_secs = int(pace_s_per_mile % 60)
-        goal_pace_str = f"{p_mins}:{p_secs:02d}/mi"
+        if _is_metric:
+            _pace_s = goal_time_s / (distance_m / 1000)
+        else:
+            _pace_s = goal_time_s / (distance_m / 1609.344)
+        p_mins = int(_pace_s // 60)
+        p_secs = int(_pace_s % 60)
+        goal_pace_str = f"{p_mins}:{p_secs:02d}/{('km' if _is_metric else 'mi')}"
 
     # Predicted time from race predictor
     predicted_str = None
@@ -2291,6 +3652,7 @@ def compute_last_run(
         db.query(Activity)
         .filter(
             Activity.athlete_id == athlete_id,
+            Activity.sport == "run",
             Activity.start_time >= cutoff,
         )
         .order_by(desc(Activity.start_time))
@@ -2303,6 +3665,7 @@ def compute_last_run(
             db.query(Activity)
             .filter(
                 Activity.athlete_id == athlete_id,
+                Activity.sport == "run",
                 Activity.source == "demo",
             )
             .order_by(desc(Activity.start_time))
@@ -2323,6 +3686,15 @@ def compute_last_run(
     from routers.activities import resolve_activity_title
     resolved = resolve_activity_title(latest)
 
+    workout_classification = None
+    run_shape = getattr(latest, "run_shape", None)
+    if isinstance(run_shape, dict):
+        summary = run_shape.get("summary")
+        if isinstance(summary, dict):
+            candidate = summary.get("workout_classification")
+            if isinstance(candidate, str) and candidate.strip():
+                workout_classification = candidate.strip()
+
     last_run = LastRun(
         activity_id=str(latest.id),
         name=latest.name or "Run",
@@ -2338,6 +3710,7 @@ def compute_last_run(
         athlete_title=getattr(latest, "athlete_title", None),
         resolved_title=resolved,
         heat_adjustment_pct=getattr(latest, "heat_adjustment_pct", None),
+        workout_classification=workout_classification,
     )
 
     # Enrich with stream analysis data when available — serve from cache
@@ -2357,6 +3730,8 @@ def compute_last_run(
                     max_hr=getattr(athlete, "max_hr", None),
                     resting_hr=getattr(athlete, "resting_hr", None),
                     threshold_hr=getattr(athlete, "threshold_hr", None),
+                    threshold_pace_per_km=getattr(athlete, "threshold_pace_per_km", None),
+                    rpi=getattr(athlete, "rpi", None),
                 )
 
                 # Serve from cache (or compute + cache on first hit)
@@ -2422,17 +3797,19 @@ async def get_home_data(
     """
     Get home page data: today's workout, yesterday's insight, week progress.
     """
-    today = date.today()
+    _ath_tz = get_athlete_timezone(current_user)
+    today = athlete_local_today(_ath_tz)
     yesterday = today - timedelta(days=1)
+    # UTC bounds for yesterday's activity window
+    _yest_start_utc, _yest_end_utc = local_day_bounds_utc(yesterday, _ath_tz)
+    # UTC bounds for today (used in week progress and today's workout lookup)
+    _today_start_utc, _today_end_utc = local_day_bounds_utc(today, _ath_tz)
 
     # --- Today's Workout ---
     today_workout = TodayWorkout(has_workout=False)
 
     # Find active plan
-    active_plan = db.query(TrainingPlan).filter(
-        TrainingPlan.athlete_id == current_user.id,
-        TrainingPlan.status == "active"
-    ).first()
+    active_plan = get_active_plan_for_athlete(db, current_user.id)
 
     if active_plan:
         # Find today's planned workout
@@ -2442,11 +3819,8 @@ async def get_home_data(
         ).first()
 
         if planned:
-            distance_mi = None
-            if planned.target_distance_km:
-                distance_mi = planned.target_distance_km * 0.621371
+            distance_m = int(planned.target_distance_km * 1000) if planned.target_distance_km else None
 
-            # Enhanced why_context with correlation/load priority
             why_context, why_source = generate_why_context(
                 planned,
                 active_plan,
@@ -2460,7 +3834,7 @@ async def get_home_data(
                 has_workout=True,
                 workout_type=planned.workout_type,
                 title=planned.title,
-                distance_mi=round(distance_mi, 1) if distance_mi else None,
+                distance_m=distance_m,
                 pace_guidance=planned.coach_notes,
                 why_context=why_context,
                 why_source=why_source,
@@ -2473,53 +3847,50 @@ async def get_home_data(
 
     yesterday_activity = db.query(Activity).filter(
         Activity.athlete_id == current_user.id,
-        Activity.start_time >= yesterday,
-        Activity.start_time < today
+        Activity.sport == "run",
+        Activity.start_time >= _yest_start_utc,
+        Activity.start_time < _yest_end_utc
     ).order_by(Activity.start_time.desc()).first()
 
     if yesterday_activity:
-        distance_mi = None
-        pace_str = None
-
-        if yesterday_activity.distance_m:
-            distance_mi = yesterday_activity.distance_m / 1609.344
-
+        distance_m = int(yesterday_activity.distance_m) if yesterday_activity.distance_m else None
+        pace_s_per_km = None
         if yesterday_activity.distance_m and yesterday_activity.duration_s:
-            pace_per_mile = yesterday_activity.duration_s / (yesterday_activity.distance_m / 1609.344)
-            pace_str = format_pace(pace_per_mile)
+            pace_s_per_km = round(yesterday_activity.duration_s / (yesterday_activity.distance_m / 1000), 1)
 
-        # Try to get insight from InsightAggregator (CalendarInsight) first
         stored_insight = db.query(CalendarInsight).filter(
             CalendarInsight.athlete_id == current_user.id,
             CalendarInsight.insight_date == yesterday,
-            CalendarInsight.is_dismissed == False
+            CalendarInsight.is_dismissed.is_(False)
         ).order_by(desc(CalendarInsight.priority)).first()
 
         if stored_insight:
             insight = stored_insight.content or stored_insight.title
         else:
-            # Fallback to inline generation
             insight = generate_yesterday_insight(yesterday_activity)
 
         yesterday_insight = YesterdayInsight(
             has_activity=True,
             activity_name=yesterday_activity.name or "Run",
             activity_id=str(yesterday_activity.id),
-            distance_mi=round(distance_mi, 1) if distance_mi else None,
-            pace_per_mi=pace_str,
+            distance_m=distance_m,
+            pace_s_per_km=pace_s_per_km,
             insight=insight
         )
     else:
-        # No yesterday activity - find most recent activity for context
+        # No yesterday activity - find most recent run for context
         last_activity = db.query(Activity).filter(
-            Activity.athlete_id == current_user.id
+            Activity.athlete_id == current_user.id,
+            Activity.sport == "run",
         ).order_by(Activity.start_time.desc()).first()
 
         if last_activity:
-            days_ago = (today - last_activity.start_time.date()).days
+            from services.timezone_utils import to_activity_local_date as _to_act_local
+            last_local_date = _to_act_local(last_activity, _ath_tz)
+            days_ago = (today - last_local_date).days
             yesterday_insight = YesterdayInsight(
                 has_activity=False,
-                last_activity_date=last_activity.start_time.date().isoformat(),
+                last_activity_date=last_local_date.isoformat(),
                 last_activity_name=last_activity.name or "Run",
                 last_activity_id=str(last_activity.id),
                 days_since_last=days_ago
@@ -2531,9 +3902,9 @@ async def get_home_data(
     sunday = monday + timedelta(days=6)
 
     week_days = []
-    completed_mi = 0.0
-    planned_mi = 0.0
-    remaining_mi = 0.0  # Only count today + future planned miles
+    completed_m = 0  # meters
+    planned_m = 0  # meters
+    remaining_m = 0  # meters — only today + future planned
     current_week_number = None
     current_phase = None
 
@@ -2547,16 +3918,27 @@ async def get_home_data(
         ).all()
         _week_planned = {w.scheduled_date: w for w in _week_workouts}
 
+    # Pull EVERY activity in the week (all sports). Running and non-running are
+    # separated below so that:
+    #   - running mileage is never inflated by walks/strength/cycling
+    #   - multi-run days are summed (we never silently drop the 2nd run)
+    #   - non-running activity remains visible/tappable on the day chip
     _week_actuals_raw = db.query(Activity).filter(
         Activity.athlete_id == current_user.id,
-        Activity.start_time >= monday,
-        Activity.start_time < sunday + timedelta(days=1),
+        Activity.is_duplicate.is_(False),
+        Activity.start_time >= local_day_bounds_utc(monday, _ath_tz)[0],
+        Activity.start_time < local_day_bounds_utc(sunday, _ath_tz)[1],
     ).all()
-    _week_actuals: dict = {}
+
+    from services.timezone_utils import to_activity_local_date as _to_act_local2
+    _runs_by_day: dict = {}   # day -> list[Activity] (sport='run' only)
+    _other_by_day: dict = {}  # day -> list[Activity] (everything else)
     for _a in _week_actuals_raw:
-        _day = _a.start_time.date()
-        if _day not in _week_actuals:
-            _week_actuals[_day] = _a  # keep first per day
+        _day = _to_act_local2(_a, _ath_tz)
+        if (_a.sport or "").lower() == "run":
+            _runs_by_day.setdefault(_day, []).append(_a)
+        else:
+            _other_by_day.setdefault(_day, []).append(_a)
 
     for i in range(7):
         day_date = monday + timedelta(days=i)
@@ -2565,11 +3947,13 @@ async def get_home_data(
         is_today_or_future = day_date >= today
 
         planned_workout = _week_planned.get(day_date)
-        actual = _week_actuals.get(day_date)
+        runs_today = _runs_by_day.get(day_date, [])
+        others_today = _other_by_day.get(day_date, [])
 
         workout_type = None
-        distance_mi = None
-        planned_distance_mi = None
+        sport = None
+        distance_m = None
+        planned_distance_m = None
         completed = False
         is_missed = False
         activity_id = None
@@ -2578,53 +3962,66 @@ async def get_home_data(
         if planned_workout:
             workout_type = planned_workout.workout_type
             workout_id = str(planned_workout.id)
-            planned_distance = planned_workout.target_distance_km * 0.621371 if planned_workout.target_distance_km else 0
-            planned_mi += planned_distance
-            planned_distance_mi = round(planned_distance, 1) if planned_distance else None
+            planned_dist = int(planned_workout.target_distance_km * 1000) if planned_workout.target_distance_km else 0
+            planned_m += planned_dist
+            planned_distance_m = planned_dist if planned_dist else None
 
-            # Only count future planned miles as "remaining"
-            if is_today_or_future and not actual:
-                remaining_mi += planned_distance
+            if is_today_or_future and not runs_today:
+                remaining_m += planned_dist
 
             if day_date == today:
                 current_week_number = planned_workout.week_number
                 current_phase = planned_workout.phase
 
-        if actual:
+        if runs_today:
             completed = True
-            activity_id = str(actual.id)
-            if actual.distance_m:
-                actual_mi = actual.distance_m / 1609.344
-                completed_mi += actual_mi
-                distance_mi = round(actual_mi, 1)
+            day_run_m = sum(int(r.distance_m or 0) for r in runs_today)
+            completed_m += day_run_m
+            distance_m = day_run_m if day_run_m else None
+            longest = max(
+                runs_today, key=lambda r: (r.distance_m or 0)
+            )
+            activity_id = str(longest.id)
+            sport = longest.sport
         elif planned_workout and planned_workout.target_distance_km:
-            # Past day with no activity = missed
             if is_past:
                 is_missed = True
-                distance_mi = None  # Don't show planned distance for missed days
+                distance_m = None
             else:
-                # Future day - show planned distance
-                distance_mi = round(planned_workout.target_distance_km * 0.621371, 0)
+                distance_m = int(planned_workout.target_distance_km * 1000)
+
+        other_refs: list[OtherActivityRef] = []
+        for _o in others_today:
+            other_refs.append(OtherActivityRef(
+                activity_id=str(_o.id),
+                sport=(_o.sport or "other").lower(),
+                distance_m=int(_o.distance_m) if _o.distance_m else None,
+                duration_s=int(_o.duration_s) if _o.duration_s else None,
+                name=_o.name,
+            ))
 
         week_days.append(WeekDay(
             date=day_date.isoformat(),
             day_abbrev=day_abbrev,
-            workout_type=workout_type if not is_missed else None,  # Don't show workout type for missed
-            distance_mi=distance_mi,
-            planned_distance_mi=planned_distance_mi,
+            workout_type=workout_type if not is_missed else None,
+            sport=sport,
+            distance_m=distance_m,
+            planned_distance_m=planned_distance_m,
             completed=completed,
             is_today=(day_date == today),
             activity_id=activity_id,
             workout_id=workout_id,
+            run_count=len(runs_today),
+            other_activities=other_refs,
         ))
 
     # Determine status
     if not active_plan:
         status = "no_plan"
-    elif planned_mi == 0:
+    elif planned_m == 0:
         status = "no_plan"
     else:
-        progress_ratio = completed_mi / planned_mi if planned_mi > 0 else 0
+        progress_ratio = completed_m / planned_m if planned_m > 0 else 0
         expected_ratio = (today.weekday() + 1) / 7  # How far into the week
 
         if progress_ratio >= expected_ratio * 1.1:
@@ -2634,33 +4031,57 @@ async def get_home_data(
         else:
             status = "behind"
 
-    # Count activities this week for trajectory
-    activities_this_week = sum(1 for day in week_days if day.completed)
+    # Count RUNS this week for the trajectory sentence (was "activities" — the
+    # sentence renders "across N runs" so it must mean runs, not walks).
+    activities_this_week = sum(d.run_count for d in week_days)
 
-    # Get TSB context for trajectory
+    # Aggregate non-running activity for the week so the UI can render
+    # "Other this week" without re-querying. Sum raw meters + seconds from ORM
+    # rows (not per-row rounded ``OtherActivityRef`` minutes) so totals match
+    # a single round at the end (avoids order-dependent double-rounding).
+    _other_agg: dict[str, dict] = {}
+    for _day_key, _acts in _other_by_day.items():
+        for _a in _acts:
+            _sp = (_a.sport or "other").lower()
+            bucket = _other_agg.setdefault(_sp, {"count": 0, "distance_m": 0, "duration_s": 0})
+            bucket["count"] += 1
+            bucket["distance_m"] += int(_a.distance_m or 0)
+            bucket["duration_s"] += int(_a.duration_s or 0)
+    other_sport_summary = [
+        OtherSportSummary(
+            sport=sport,
+            count=v["count"],
+            distance_m=v["distance_m"],
+            duration_s=v["duration_s"],
+        )
+        for sport, v in sorted(_other_agg.items())
+    ]
+
     tsb_label, load_trend, tsb_short_context = get_tsb_context(str(current_user.id), db)
 
     trajectory_sentence = generate_trajectory_sentence(
         status=status,
-        completed_mi=round(completed_mi, 1),
-        planned_mi=round(planned_mi, 1),
-        remaining_mi=round(remaining_mi, 1),
+        completed_m=completed_m,
+        planned_m=planned_m,
+        remaining_m=remaining_m,
         activities_this_week=activities_this_week,
-        tsb_context=tsb_short_context
+        tsb_context=tsb_short_context,
+        preferred_units=getattr(current_user, "preferred_units", None),
     )
 
     week_progress = WeekProgress(
         week_number=current_week_number,
         total_weeks=active_plan.total_weeks if active_plan else None,
         phase=format_phase(current_phase),
-        completed_mi=round(completed_mi, 1),
-        planned_mi=round(planned_mi, 1),
-        progress_pct=round((completed_mi / planned_mi * 100) if planned_mi > 0 else 0, 0),
+        completed_m=completed_m,
+        planned_m=planned_m,
+        progress_pct=round((completed_m / planned_m * 100) if planned_m > 0 else 0, 0),
         days=week_days,
         status=status,
         trajectory_sentence=trajectory_sentence,
         tsb_context=tsb_label,
-        load_trend=load_trend
+        load_trend=load_trend,
+        other_sport_summary=other_sport_summary,
     )
 
     # Check Strava and Garmin connection status
@@ -2757,7 +4178,8 @@ async def get_home_data(
 
     # --- Phase 2 (ADR-17): Race Countdown ---
     race_countdown = compute_race_countdown(
-        active_plan, str(current_user.id), db
+        active_plan, str(current_user.id), db, local_today=today,
+        preferred_units=getattr(current_user, "preferred_units", None),
     )
 
     # --- Phase 2 (ADR-17): Check-in Needed + Today's Check-in Summary ---
@@ -2796,6 +4218,9 @@ async def get_home_data(
     # If cache is stale or missing, a Celery task is enqueued (fire-and-forget).
     coach_briefing = None
     briefing_state = "missing"
+    briefing_is_interim = False
+    briefing_last_updated_at = None
+    briefing_source = None
 
     # P1-D: Consent gate — no AI processing without explicit opt-in.
     from services.consent import has_ai_consent as _has_consent
@@ -2809,11 +4234,14 @@ async def get_home_data(
                 "lane_2a_cache_briefing", str(current_user.id), db
             )
             if _use_cache_briefing:
-                from services.home_briefing_cache import read_briefing_cache, BriefingState
+                from services.home_briefing_cache import read_briefing_cache_with_meta, BriefingState
                 from tasks.home_briefing_tasks import enqueue_briefing_refresh
 
-                cached_payload, b_state = read_briefing_cache(str(current_user.id))
+                cached_payload, b_state, b_meta = read_briefing_cache_with_meta(str(current_user.id))
                 briefing_state = b_state.value
+                briefing_is_interim = bool(b_meta.get("briefing_is_interim", False))
+                briefing_last_updated_at = b_meta.get("briefing_last_updated_at")
+                briefing_source = b_meta.get("briefing_source")
                 _garmin_sleep_h = None
                 _checkin_sleep_h = today_checkin.sleep_h if today_checkin else None
                 try:
@@ -2828,7 +4256,7 @@ async def get_home_data(
                     checkin_sleep_h=_checkin_sleep_h,
                 )
 
-                if b_state in (BriefingState.STALE, BriefingState.MISSING):
+                if b_state in (BriefingState.STALE, BriefingState.MISSING) or briefing_is_interim:
                     try:
                         enqueue_briefing_refresh(str(current_user.id), priority="high")
                     except Exception as enq_err:
@@ -2845,35 +4273,109 @@ async def get_home_data(
                 briefing_state = None
                 today_actual = db.query(Activity).filter(
                     Activity.athlete_id == current_user.id,
-                    Activity.start_time >= today,
-                    Activity.start_time < today + timedelta(days=1),
+                    Activity.sport == "run",
+                    Activity.start_time >= _today_start_utc,
+                    Activity.start_time < _today_end_utc,
                 ).order_by(Activity.start_time.desc()).first()
 
                 today_completed = None
+                _u = getattr(current_user, "preferred_units", "imperial")
+                _is_metric = (_u or "imperial").lower() == "metric"
                 if today_actual:
-                    actual_mi = round(today_actual.distance_m / 1609.344, 1) if today_actual.distance_m else None
-                    actual_pace = None
-                    if today_actual.distance_m and today_actual.duration_s:
-                        pace_s = today_actual.duration_s / (today_actual.distance_m / 1609.344)
-                        mins = int(pace_s // 60)
-                        secs = int(pace_s % 60)
-                        actual_pace = f"{mins}:{secs:02d}/mi"
+                    _dist_m = today_actual.distance_m
+                    actual_dist_text = None
+                    actual_pace_text = None
+                    if _dist_m:
+                        if _is_metric:
+                            actual_dist_text = f"{_dist_m / 1000:.1f} km"
+                        else:
+                            actual_dist_text = f"{_dist_m / 1609.344:.1f} mi"
+                    if _dist_m and today_actual.duration_s:
+                        if _is_metric:
+                            _ps = today_actual.duration_s / (_dist_m / 1000)
+                        else:
+                            _ps = today_actual.duration_s / (_dist_m / 1609.344)
+                        _pm = int(_ps // 60)
+                        _psec = int(_ps % 60)
+                        actual_pace_text = f"{_pm}:{_psec:02d}/{('km' if _is_metric else 'mi')}"
+                    elev_m = float(today_actual.total_elevation_gain) if today_actual.total_elevation_gain is not None else None
+                    elev_text = None
+                    if elev_m is not None:
+                        if _is_metric:
+                            elev_text = f"+{int(round(elev_m))} m"
+                        else:
+                            elev_text = f"+{int(round(elev_m * 3.28084))} ft"
                     today_completed = {
                         "name": today_actual.name or "Run",
-                        "distance_mi": actual_mi,
-                        "pace": actual_pace,
+                        "distance_text": actual_dist_text,
+                        "pace": actual_pace_text,
                         "avg_hr": int(today_actual.avg_hr) if today_actual.avg_hr else None,
-                        "duration_min": round(today_actual.duration_s / 60, 0) if today_actual.duration_s else None,
+                        "duration_s": int(today_actual.duration_s) if today_actual.duration_s else None,
+                        "elevation_text": elev_text,
+                        "temperature_f": round(float(today_actual.temperature_f), 1) if today_actual.temperature_f is not None else None,
+                        "humidity_pct": round(float(today_actual.humidity_pct), 0) if today_actual.humidity_pct is not None else None,
+                        "heat_adjustment_pct": round(float(today_actual.heat_adjustment_pct), 1) if today_actual.heat_adjustment_pct is not None else None,
                     }
+                    try:
+                        from models import ActivitySplit as _ActivitySplit
+                        # See _render_workout_structure_block: this flag
+                        # keeps the "no structure" prompt branch honest
+                        # when splits haven't been processed yet.
+                        today_completed["splits_available"] = (
+                            db.query(_ActivitySplit.id)
+                            .filter(_ActivitySplit.activity_id == today_actual.id)
+                            .first()
+                        ) is not None
+                        ws = _summarize_workout_structure(today_actual.id, db)
+                        if ws:
+                            today_completed["workout_structure"] = ws
+                        if today_actual.run_shape and isinstance(today_actual.run_shape, dict):
+                            sc = today_actual.run_shape.get('summary', {}).get('workout_classification', '')
+                            if sc:
+                                today_completed["shape_classification"] = sc
+                    except Exception as _ws_err:
+                        logger.debug("Workout structure detection skipped: %s", _ws_err)
 
                 planned_workout_dict = None
                 if today_workout and today_workout.has_workout:
+                    _td = today_workout.distance_m
+                    _td_text = None
+                    if _td:
+                        _td_text = f"{_td / 1000:.1f} km" if _is_metric else f"{_td / 1609.344:.1f} mi"
                     planned_workout_dict = {
                         "has_workout": True,
                         "workout_type": today_workout.workout_type,
                         "title": today_workout.title,
-                        "distance_mi": today_workout.distance_mi,
+                        "distance_text": _td_text,
                     }
+
+                upcoming_plan_list = []
+                if active_plan:
+                    _upcoming_days = (
+                        db.query(PlannedWorkout)
+                        .filter(
+                            PlannedWorkout.plan_id == active_plan.id,
+                            PlannedWorkout.scheduled_date > today,
+                            PlannedWorkout.scheduled_date <= today + timedelta(days=3),
+                        )
+                        .order_by(PlannedWorkout.scheduled_date)
+                        .all()
+                    )
+                    for pw in _upcoming_days:
+                        _pw_dist_text = None
+                        if pw.target_distance_km:
+                            if _is_metric:
+                                _pw_dist_text = f"{pw.target_distance_km:.1f} km"
+                            else:
+                                _pw_dist_text = f"{pw.target_distance_km * 0.621371:.1f} mi"
+                        upcoming_plan_list.append({
+                            "date": pw.scheduled_date.isoformat(),
+                            "day_name": pw.scheduled_date.strftime("%A"),
+                            "workout_type": pw.workout_type,
+                            "title": pw.title,
+                            "distance_text": _pw_dist_text,
+                            "description": pw.description,
+                        })
 
                 race_data_dict = None
                 if race_countdown:
@@ -2903,12 +4405,13 @@ async def get_home_data(
                     planned_workout=planned_workout_dict,
                     checkin_data=checkin_data_dict,
                     race_data=race_data_dict,
+                    upcoming_plan=upcoming_plan_list if upcoming_plan_list else None,
                 )
 
                 if len(prep) == 1:
                     coach_briefing = prep[0]
                 else:
-                    _, prompt, schema_fields, required_fields, cache_key, garmin_sleep_h = prep
+                    _, prompt, schema_fields, required_fields, cache_key, garmin_sleep_h, _local_today, _local_now = prep
                     if garmin_sleep_h is not None:
                         if checkin_data_dict is None:
                             checkin_data_dict = {}
@@ -2924,6 +4427,8 @@ async def get_home_data(
                                 race_data=race_data_dict,
                                 cache_key=cache_key,
                                 athlete_id=str(current_user.id),
+                                local_today=_local_today,
+                                local_now=_local_now,
                             ),
                             timeout=HOME_BRIEFING_TIMEOUT_S,
                         )
@@ -2971,12 +4476,13 @@ async def get_home_data(
                 .limit(5)
                 .all()
             )
-            idx = date.today().toordinal() % len(eligible)
+            _home_tz = get_athlete_timezone(current_user)
+            idx = athlete_local_today(_home_tz).toordinal() % len(eligible)
             f = eligible[idx]
             tier = "strong" if f.times_confirmed >= 8 else "confirmed"
             home_finding = HomeFinding(
                 text=_sanitize_finding_text(
-                    f.insight_text or f"{f.input_name.replace('_', ' ')} affects your {f.output_metric}"
+                    f.insight_text or f"{friendly_signal_name(f.input_name)} affects your {friendly_signal_name(f.output_metric)}"
                 ),
                 confidence_tier=tier,
                 domain=f.output_metric,
@@ -2984,6 +4490,40 @@ async def get_home_data(
             )
     except Exception as e:
         logger.warning(f"Home finding computation failed: {type(e).__name__}: {e}")
+
+    garmin_wellness = _build_garmin_wellness(str(current_user.id), db)
+
+    # Recent cross-training: most recent non-run activity in last 24h (athlete local)
+    recent_cross_training = None
+    try:
+        _ct_cutoff_utc = _today_start_utc - timedelta(hours=24)
+        _ct_activities = (
+            db.query(Activity)
+            .filter(
+                Activity.athlete_id == current_user.id,
+                Activity.sport != "run",
+                Activity.is_duplicate == False,  # noqa: E712
+                Activity.start_time >= _ct_cutoff_utc,
+            )
+            .order_by(desc(Activity.start_time))
+            .all()
+        )
+        if _ct_activities:
+            _latest_ct = _ct_activities[0]
+            recent_cross_training = RecentCrossTraining(
+                id=str(_latest_ct.id),
+                sport=_latest_ct.sport or "other",
+                name=_latest_ct.name,
+                distance_m=_latest_ct.distance_m,
+                duration_s=_latest_ct.duration_s or _latest_ct.moving_time_s,
+                avg_hr=_latest_ct.avg_hr,
+                steps=_latest_ct.steps,
+                active_kcal=_latest_ct.active_kcal,
+                start_time=_latest_ct.start_time.isoformat(),
+                additional_count=len(_ct_activities) - 1,
+            )
+    except Exception as e:
+        logger.warning(f"Recent cross-training query failed: {type(e).__name__}: {e}")
 
     return HomeResponse(
         today=today_workout,
@@ -3004,9 +4544,14 @@ async def get_home_data(
         strava_status=strava_status_detail,
         coach_briefing=coach_briefing,
         briefing_state=briefing_state,
+        briefing_is_interim=briefing_is_interim,
+        briefing_last_updated_at=briefing_last_updated_at,
+        briefing_source=briefing_source,
         last_run=last_run,
         finding=home_finding,
         has_correlations=has_correlations,
+        garmin_wellness=garmin_wellness,
+        recent_cross_training=recent_cross_training,
     )
 
 
@@ -3058,7 +4603,7 @@ async def get_home_signals(
         return HomeSignalsResponse(
             signals=[],
             suppressed_count=0,
-            last_updated=date.today().isoformat()
+            last_updated=athlete_local_today(get_athlete_timezone(current_user)).isoformat()
         )
 
     # Aggregate signals from all analytics methods
@@ -3086,7 +4631,6 @@ async def admin_refresh_briefing(
     Manually trigger a home briefing refresh for an athlete.
     Requires admin or owner role. Audit-logged.
     """
-    from core.auth import require_admin
     from services.audit_logger import log_audit
     from uuid import UUID
 

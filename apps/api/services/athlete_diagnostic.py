@@ -8,13 +8,12 @@ ADR-019: On-Demand Diagnostic Report
 """
 from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional, Any
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass
 from enum import Enum
 from collections import defaultdict
 from sqlalchemy.orm import Session
-from sqlalchemy import func
 
-from models import Athlete, Activity, PersonalBest, DailyCheckin
+from models import Activity, PersonalBest, DailyCheckin
 
 
 class FindingType(str, Enum):
@@ -298,7 +297,7 @@ def get_efficiency_trend(athlete_id: str, db: Session, weeks: int = 12) -> Effic
     runs = db.query(Activity).filter(
         Activity.athlete_id == athlete_id,
         Activity.start_time >= cutoff,
-        Activity.avg_hr != None,
+        Activity.avg_hr is not None,
         Activity.avg_hr > 100,
         Activity.distance_m > 3000
     ).order_by(Activity.start_time).all()
@@ -369,7 +368,7 @@ def get_race_history(athlete_id: str, db: Session, limit: int = 5) -> List[RaceE
     """Get recent race history."""
     races = db.query(Activity).filter(
         Activity.athlete_id == athlete_id,
-        Activity.is_race_candidate == True
+        Activity.is_race_candidate
     ).order_by(Activity.start_time.desc()).limit(limit).all()
     
     result = []
@@ -398,7 +397,7 @@ def get_data_quality_assessment(athlete_id: str, db: Session) -> DataQualityAsse
     # Count runs with HR
     runs_with_hr = db.query(Activity).filter(
         Activity.athlete_id == athlete_id,
-        Activity.avg_hr != None,
+        Activity.avg_hr is not None,
         Activity.avg_hr > 100
     ).count()
     
@@ -415,7 +414,7 @@ def get_data_quality_assessment(athlete_id: str, db: Session) -> DataQualityAsse
     # Count check-ins with HRV
     hrv_count = db.query(DailyCheckin).filter(
         DailyCheckin.athlete_id == athlete_id,
-        DailyCheckin.hrv_rmssd != None
+        DailyCheckin.hrv_rmssd is not None
     ).count()
     
     # Build available data

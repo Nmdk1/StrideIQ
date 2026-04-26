@@ -1,8 +1,8 @@
 /**
  * ADR-064 effort intensity → color mapping.
  *
- * 6-stop muted F1 palette: steel-blue → teal → warm amber → orange → red → deep crimson.
- * All stops have lightness ≤ 45% and saturation ≤ 75% for dark-background rendering.
+ * 7-stop muted F1 palette: steel-blue → teal → warm amber → orange → red → deep crimson.
+ * All stops have lightness <= 45% and saturation <= 75% for dark-background rendering.
  * Input: effort scalar in [0.0, 1.0].
  * Output: CSS rgb() string.
  *
@@ -40,13 +40,15 @@ function hslToRgb(h: number, s: number, l: number): RGB {
   return { r: Math.round(r * 255), g: Math.round(g * 255), b: Math.round(b * 255) };
 }
 
-// 6-stop muted palette — all L ≤ 45%, all S ≤ 75%
+// 7-stop muted palette tuned for stronger visible separation in the common
+// aerobic band (roughly 0.30-0.55 effort), while preserving global semantics.
 const STOPS: Array<{ t: number; color: RGB }> = [
   { t: 0.0,  color: hslToRgb(205, 55, 35) },   // Steel blue (recovery)
-  { t: 0.3,  color: hslToRgb(175, 45, 32) },   // Muted teal (easy)
-  { t: 0.5,  color: hslToRgb(38,  60, 38) },   // Warm amber (moderate)
-  { t: 0.7,  color: hslToRgb(18,  62, 36) },   // Burnt orange (tempo)
-  { t: 0.85, color: hslToRgb(5,   65, 35) },   // Red-orange (threshold)
+  { t: 0.18, color: hslToRgb(194, 50, 34) },   // Blue-cyan (easy)
+  { t: 0.33, color: hslToRgb(181, 45, 33) },   // Teal (steady aerobic)
+  { t: 0.40, color: hslToRgb(42,  58, 39) },   // Amber onset (moderate)
+  { t: 0.58, color: hslToRgb(22,  63, 36) },   // Burnt orange (tempo)
+  { t: 0.78, color: hslToRgb(7,   66, 35) },   // Red-orange (threshold)
   { t: 1.0,  color: hslToRgb(350, 70, 28) },   // Deep crimson (max)
 ];
 
@@ -54,8 +56,21 @@ function lerp(a: number, b: number, t: number): number {
   return a + (b - a) * t;
 }
 
+// Monotonic display remap to increase visible separation in aerobic progressions
+// (roughly 0.25-0.60 effort) without turning easy runs warm.
+function remapEffortForDisplay(e: number): number {
+  if (e <= 0.25) {
+    return lerp(0.0, 0.22, e / 0.25);
+  }
+  if (e <= 0.60) {
+    return lerp(0.22, 0.72, (e - 0.25) / 0.35);
+  }
+  return lerp(0.72, 1.0, (e - 0.60) / 0.40);
+}
+
 export function effortToColor(effort: number): string {
-  const e = Math.max(0, Math.min(1, effort));
+  const clamped = Math.max(0, Math.min(1, effort));
+  const e = remapEffortForDisplay(clamped);
 
   // Find surrounding stops
   for (let i = 0; i < STOPS.length - 1; i++) {

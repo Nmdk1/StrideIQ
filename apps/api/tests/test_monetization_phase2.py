@@ -30,7 +30,7 @@ Categories:
 """
 
 from uuid import uuid4
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timezone, timedelta
 
 import pytest
 from fastapi.testclient import TestClient
@@ -59,6 +59,8 @@ def _make_athlete(tier: str = "free") -> Athlete:
         display_name=f"P2Test-{tier}",
         role="athlete",
         subscription_tier=tier,
+        # Keep baseline helper deterministic: no active trial unless explicitly set.
+        trial_ends_at=datetime.now(timezone.utc) - timedelta(days=1),
     )
     db.add(athlete)
     db.commit()
@@ -186,22 +188,9 @@ class TestCanAccessPlanPaces:
             db.close()
             _cleanup(plan, athlete)
 
-    def test_free_athlete_with_purchase_can_access(self):
+    def test_subscriber_athlete_can_access(self):
         from core.pace_access import can_access_plan_paces
-        athlete = _make_athlete("free")
-        plan = _make_plan(athlete)
-        purchase = _make_purchase(athlete, plan)
-        db = SessionLocal()
-        try:
-            result = can_access_plan_paces(athlete, plan.id, db)
-            assert result is True
-        finally:
-            db.close()
-            _cleanup(purchase, plan, athlete)
-
-    def test_guided_athlete_no_purchase_can_access(self):
-        from core.pace_access import can_access_plan_paces
-        athlete = _make_athlete("guided")
+        athlete = _make_athlete("subscriber")
         plan = _make_plan(athlete)
         db = SessionLocal()
         try:
@@ -211,32 +200,18 @@ class TestCanAccessPlanPaces:
             db.close()
             _cleanup(plan, athlete)
 
-    def test_premium_athlete_no_purchase_can_access(self):
-        from core.pace_access import can_access_plan_paces
-        athlete = _make_athlete("premium")
-        plan = _make_plan(athlete)
-        db = SessionLocal()
-        try:
-            result = can_access_plan_paces(athlete, plan.id, db)
-            assert result is True
-        finally:
-            db.close()
-            _cleanup(plan, athlete)
-
-    def test_purchase_for_different_plan_does_not_unlock(self):
-        """A purchase for plan A does NOT unlock plan B."""
+    def test_free_has_no_per_plan_purchase_unlock(self):
+        """Two-tier model: free tier has no one-off unlock path."""
         from core.pace_access import can_access_plan_paces
         athlete = _make_athlete("free")
-        plan_a = _make_plan(athlete)
         plan_b = _make_plan(athlete)
-        purchase = _make_purchase(athlete, plan_a)  # purchase for plan_a only
         db = SessionLocal()
         try:
-            result = can_access_plan_paces(athlete, plan_b.id, db)  # check plan_b
+            result = can_access_plan_paces(athlete, plan_b.id, db)
             assert result is False
         finally:
             db.close()
-            _cleanup(purchase, plan_a, plan_b, athlete)
+            _cleanup(plan_b, athlete)
 
     def test_admin_can_always_access(self):
         from core.pace_access import can_access_plan_paces
@@ -251,19 +226,6 @@ class TestCanAccessPlanPaces:
         db.commit()
         db.refresh(athlete)
         plan = _make_plan(athlete)
-        try:
-            result = can_access_plan_paces(athlete, plan.id, db)
-            assert result is True
-        finally:
-            db.close()
-            _cleanup(plan, athlete)
-
-    def test_legacy_pro_tier_can_access(self):
-        """Legacy 'pro' tier normalizes to premium-level access."""
-        from core.pace_access import can_access_plan_paces
-        athlete = _make_athlete("pro")
-        plan = _make_plan(athlete)
-        db = SessionLocal()
         try:
             result = can_access_plan_paces(athlete, plan.id, db)
             assert result is True
@@ -338,22 +300,8 @@ class TestGetPlanPaceGating:
         finally:
             _cleanup(plan, athlete)
 
-    def test_free_with_purchase_coach_notes_visible(self):
-        athlete = _make_athlete("free")
-        plan = _make_plan(athlete)
-        purchase = _make_purchase(athlete, plan)
-        try:
-            resp = client.get(f"/v2/plans/{plan.id}", headers=_headers(athlete))
-            assert resp.status_code == 200
-            data = resp.json()
-            week_1 = data["weeks"]["1"]
-            has_paces = any(w["coach_notes"] is not None for w in week_1)
-            assert has_paces, "Free athlete with purchase must see pace data in coach_notes"
-        finally:
-            _cleanup(purchase, plan, athlete)
-
-    def test_guided_coach_notes_visible(self):
-        athlete = _make_athlete("guided")
+    def test_subscriber_coach_notes_visible(self):
+        athlete = _make_athlete("subscriber")
         plan = _make_plan(athlete)
         try:
             resp = client.get(f"/v2/plans/{plan.id}", headers=_headers(athlete))
@@ -361,20 +309,7 @@ class TestGetPlanPaceGating:
             data = resp.json()
             week_1 = data["weeks"]["1"]
             has_paces = any(w["coach_notes"] is not None for w in week_1)
-            assert has_paces, "Guided athlete must see pace data"
-        finally:
-            _cleanup(plan, athlete)
-
-    def test_premium_coach_notes_visible(self):
-        athlete = _make_athlete("premium")
-        plan = _make_plan(athlete)
-        try:
-            resp = client.get(f"/v2/plans/{plan.id}", headers=_headers(athlete))
-            assert resp.status_code == 200
-            data = resp.json()
-            week_1 = data["weeks"]["1"]
-            has_paces = any(w["coach_notes"] is not None for w in week_1)
-            assert has_paces, "Premium athlete must see pace data"
+            assert has_paces, "Subscriber athlete must see pace data in coach_notes"
         finally:
             _cleanup(plan, athlete)
 
@@ -398,21 +333,8 @@ class TestGetWeekPaceGating:
         finally:
             _cleanup(plan, athlete)
 
-    def test_free_with_purchase_coach_notes_visible(self):
-        athlete = _make_athlete("free")
-        plan = _make_plan(athlete)
-        purchase = _make_purchase(athlete, plan)
-        try:
-            resp = client.get(f"/v2/plans/{plan.id}/week/1", headers=_headers(athlete))
-            assert resp.status_code == 200
-            data = resp.json()
-            has_paces = any(w["coach_notes"] is not None for w in data["workouts"])
-            assert has_paces
-        finally:
-            _cleanup(purchase, plan, athlete)
-
-    def test_guided_coach_notes_visible(self):
-        athlete = _make_athlete("guided")
+    def test_subscriber_coach_notes_visible(self):
+        athlete = _make_athlete("subscriber")
         plan = _make_plan(athlete)
         try:
             resp = client.get(f"/v2/plans/{plan.id}/week/1", headers=_headers(athlete))
@@ -431,6 +353,7 @@ class TestGetWeekPaceGating:
 class TestPreviewPaceGating:
     """Plan preview endpoints gate paces for unauthenticated/free users."""
 
+    @pytest.mark.xfail(reason="Standard plan endpoints return 501 — old generators removed, N=1 pending")
     def test_standard_preview_public_paces_null(self):
         """Standard preview is public — no auth → paces always null."""
         resp = client.post("/v2/plans/standard/preview", json={
@@ -591,8 +514,8 @@ class TestWorkoutNarrativePremiumOnly:
                 f"/v1/intelligence/workout-narrative/{date.today()}",
                 headers=_headers(athlete),
             )
-            assert resp.status_code == 403, (
-                f"Guided should not access workout narrative (premium only), got {resp.status_code}"
+            assert resp.status_code != 403, (
+                f"Guided should access workout narrative after monetization reset, got {resp.status_code}"
             )
         finally:
             _cleanup(athlete)
@@ -696,7 +619,8 @@ class TestFeatureFlagTierConsolidation:
         assert self.flags._tier_satisfies("guided", "guided") is True
 
     def test_guided_does_not_satisfy_premium(self):
-        assert self.flags._tier_satisfies("guided", "premium") is False
+        # Two-tier normalization: guided/premium both collapse to subscriber.
+        assert self.flags._tier_satisfies("guided", "premium") is True
 
     def test_premium_satisfies_all(self):
         assert self.flags._tier_satisfies("premium", "free") is True

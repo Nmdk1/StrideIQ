@@ -17,8 +17,9 @@
 import React, { useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useUnits } from '@/lib/context/UnitsContext';
-import { useCalendarDay, useAddNote, useSendCoachMessage } from '@/lib/hooks/queries/calendar';
-import type { CalendarDay, CalendarNote, InlineInsight } from '@/lib/api/services/calendar';
+import { formatPaceTextForUnit } from '@/lib/utils/paceText';
+import { useCalendarDay, useAddNote, useSendCoachMessage, useWorkoutVariants, useSelectVariant } from '@/lib/hooks/queries/calendar';
+import type { CalendarDay, CalendarNote, InlineInsight, VariantOption } from '@/lib/api/services/calendar';
 import { apiClient } from '@/lib/api/client';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 
@@ -65,6 +66,21 @@ export function DayDetailPanel({ date, isOpen, onClose }: DayDetailPanelProps) {
 
   const planned = dayData?.planned_workout;
   const canEditPlannedWorkout = !!planned && !planned.completed && !planned.skipped;
+
+  const [variantOpen, setVariantOpen] = useState(false);
+  const hasVariant = !!planned?.workout_variant_id;
+  const { data: variantOptions, isLoading: variantsLoading } = useWorkoutVariants(
+    planned?.id,
+    canEditPlannedWorkout && (variantOpen || hasVariant),
+  );
+  const selectVariant = useSelectVariant();
+  const currentVariant = useMemo(() => {
+    if (!variantOptions || !planned?.workout_variant_id) return null;
+    return variantOptions.find((v: VariantOption) => v.id === planned.workout_variant_id) ?? null;
+  }, [variantOptions, planned?.workout_variant_id]);
+  const currentVariantName = currentVariant?.display_name
+    ?? planned?.workout_variant_id?.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
+    ?? null;
 
   // Init edit form from planned workout
   React.useEffect(() => {
@@ -120,11 +136,20 @@ export function DayDetailPanel({ date, isOpen, onClose }: DayDetailPanelProps) {
     return workouts.filter(w => w.id !== currentId && !w.completed && !w.skipped && !!w.date);
   }, [weekData?.workouts, planned?.id]);
 
-  const updateWorkoutMutation = useMutation({
+  const saveAllChangesMutation = useMutation({
     mutationFn: async () => {
       if (!planId || !planned?.id) throw new Error('Missing plan/workout id');
       setEditError(null);
 
+      // Step 1: Execute swap if a target is selected
+      if (swapTargetId) {
+        await apiClient.post(`/v2/plans/${planId}/swap-days`, {
+          workout_id_1: planned.id,
+          workout_id_2: swapTargetId,
+        });
+      }
+
+      // Step 2: Save detail edits
       const distanceValue = editForm.distance.trim();
       const distanceKm =
         distanceValue === ''
@@ -152,27 +177,7 @@ export function DayDetailPanel({ date, isOpen, onClose }: DayDetailPanelProps) {
       setSwapTargetId('');
     },
     onError: (e: any) => {
-      setEditError(e?.message || 'Unable to update workout.');
-    },
-  });
-
-  const swapDaysMutation = useMutation({
-    mutationFn: async () => {
-      if (!planId || !planned?.id) throw new Error('Missing plan/workout id');
-      if (!swapTargetId) throw new Error('Select a workout to swap with');
-      setEditError(null);
-      return apiClient.post(`/v2/plans/${planId}/swap-days`, {
-        workout_id_1: planned.id,
-        workout_id_2: swapTargetId,
-      });
-    },
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ['calendar'] });
-      setIsEditingPlan(false);
-      setSwapTargetId('');
-    },
-    onError: (e: any) => {
-      setEditError(e?.message || 'Unable to swap workouts.');
+      setEditError(e?.message || 'Unable to save changes.');
     },
   });
   
@@ -332,36 +337,117 @@ export function DayDetailPanel({ date, isOpen, onClose }: DayDetailPanelProps) {
                 </div>
                 <div className="border-l-2 border-orange-500 pl-3">
                   <div className="font-semibold text-white">{dayData.planned_workout.title}</div>
-                  {dayData.planned_workout.target_distance_km && (
-                    <div className="text-slate-400 text-sm">
-                      {formatDistance(dayData.planned_workout.target_distance_km * 1000, 1)}
+
+                  {/* Variant selector — child of workout type */}
+                  {canEditPlannedWorkout && currentVariantName && (
+                    <div className="mt-1">
+                      <button
+                        onClick={() => setVariantOpen(v => !v)}
+                        className="flex items-center gap-1.5 text-sm text-slate-300 hover:text-orange-300 transition-colors"
+                      >
+                        <span>{currentVariantName}</span>
+                        <svg
+                          className={`w-3.5 h-3.5 transition-transform ${variantOpen ? 'rotate-180' : ''}`}
+                          fill="none" viewBox="0 0 24 24" stroke="currentColor"
+                        >
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                        </svg>
+                      </button>
+
+                      {variantOpen && (
+                        <div className="mt-2 bg-slate-900/80 border border-slate-700/50 rounded-lg overflow-hidden">
+                          {variantsLoading ? (
+                            <div className="px-3 py-2 text-xs text-slate-500">Loading variants...</div>
+                          ) : variantOptions && variantOptions.length > 0 ? (
+                            variantOptions.map((opt: VariantOption) => (
+                              <button
+                                key={opt.id}
+                                onClick={() => {
+                                  if (opt.id !== planned?.workout_variant_id) {
+                                    selectVariant.mutate(
+                                      { workoutId: planned!.id, variantId: opt.id },
+                                      { onSuccess: () => setVariantOpen(false) },
+                                    );
+                                  } else {
+                                    setVariantOpen(false);
+                                  }
+                                }}
+                                disabled={selectVariant.isPending}
+                                className={`w-full text-left px-3 py-2 text-sm transition-colors ${
+                                  opt.is_current
+                                    ? 'bg-orange-900/30 text-orange-300'
+                                    : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                                }`}
+                              >
+                                <div className="font-medium">{opt.display_name}</div>
+                              </button>
+                            ))
+                          ) : (
+                            <div className="px-3 py-2 text-xs text-slate-500">No alternatives available for this phase.</div>
+                          )}
+                        </div>
+                      )}
                     </div>
                   )}
-                  {/* Pace - the key training information */}
+
+                  {dayData.planned_workout.target_distance_km && (
+                    <div className="text-slate-400 text-sm mt-1">
+                      {formatDistance(dayData.planned_workout.target_distance_km * 1000, 1)}
+                      {dayData.planned_workout.phase && (
+                        <span> &middot; {dayData.planned_workout.phase.replace(/_/g, ' ')} phase</span>
+                      )}
+                    </div>
+                  )}
                   {dayData.planned_workout.coach_notes && (
                     <div className="text-green-400 text-sm mt-2 font-semibold">
-                      {dayData.planned_workout.coach_notes}
+                      {formatPaceTextForUnit(dayData.planned_workout.coach_notes, units)}
                     </div>
                   )}
                   {dayData.planned_workout.description && (
                     <div className="text-slate-300 text-sm mt-2 bg-slate-900/50 rounded p-2 font-mono">
-                      {dayData.planned_workout.description}
+                      {formatPaceTextForUnit(dayData.planned_workout.description, units)}
                     </div>
                   )}
                 </div>
 
-                {/* Day-level plan editor */}
+                {/* Day-level plan editor — swap first, details second */}
                 {isEditingPlan && canEditPlannedWorkout && (
-                  <div className="mt-4 bg-slate-900/50 border border-slate-700/50 rounded-lg p-3 space-y-3">
-                    {workoutTypesData?.can_modify === false && (
-                      <div className="text-xs text-slate-300 bg-slate-800/60 border border-slate-700/50 rounded p-2">
-                        Full plan edits require a paid tier. You can still swap and adjust load from “Manage Plan.”
+                  <div className="mt-4 space-y-3">
+                    {editError && (
+                      <div className="text-sm text-red-300 bg-red-900/20 border border-red-700/40 rounded-lg p-2">
+                        {editError}
                       </div>
                     )}
 
-                    {editError && (
-                      <div className="text-sm text-red-300 bg-red-900/20 border border-red-700/40 rounded p-2">
-                        {editError}
+                    {/* Swap with another day */}
+                    <div className="bg-slate-900/50 border border-slate-700/50 rounded-lg p-3 space-y-3">
+                      <div className="text-sm font-semibold text-slate-400">Swap with another day</div>
+                      {weekLoading ? (
+                        <div className="text-sm text-slate-500">Loading week…</div>
+                      ) : swapOptions.length === 0 ? (
+                        <div className="text-sm text-slate-500">No swappable workouts this week</div>
+                      ) : (
+                        <select
+                          value={swapTargetId}
+                          onChange={(e) => setSwapTargetId(e.target.value)}
+                          className="w-full bg-slate-900 border border-slate-700/50 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-purple-500"
+                        >
+                          <option value="">Keep current day</option>
+                          {swapOptions.map((w) => (
+                            <option key={w.id} value={w.id}>
+                              {w.day_name} — {w.title}
+                            </option>
+                          ))}
+                        </select>
+                      )}
+                    </div>
+
+                    {/* Edit details */}
+                    <div className="bg-slate-900/50 border border-slate-700/50 rounded-lg p-3 space-y-3">
+                      <div className="text-sm font-semibold text-slate-400">Edit workout details</div>
+                    {workoutTypesData?.can_modify === false && (
+                      <div className="text-xs text-slate-300 bg-slate-800/60 border border-slate-700/50 rounded p-2">
+                        Full plan edits require a paid tier. You can still swap days above.
                       </div>
                     )}
 
@@ -440,46 +526,19 @@ export function DayDetailPanel({ date, isOpen, onClose }: DayDetailPanelProps) {
                           disabled={workoutTypesData?.can_modify === false}
                         />
                       </div>
-
-                      <div className="col-span-1 flex items-end">
-                        <button
-                          onClick={() => updateWorkoutMutation.mutate()}
-                          disabled={updateWorkoutMutation.isPending || workoutTypesData?.can_modify === false}
-                          className="w-full px-3 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-700 rounded-lg text-sm font-semibold transition-colors"
-                        >
-                          {updateWorkoutMutation.isPending ? 'Saving…' : 'Save'}
-                        </button>
-                      </div>
+                    </div>
                     </div>
 
-                    <div className="border-t border-slate-700/50 pt-3">
-                      <div className="text-xs text-slate-400 mb-2">Swap with another day (this week)</div>
-                      {weekLoading ? (
-                        <div className="text-sm text-slate-500">Loading week…</div>
-                      ) : (
-                        <div className="flex gap-2">
-                          <select
-                            value={swapTargetId}
-                            onChange={(e) => setSwapTargetId(e.target.value)}
-                            className="flex-1 bg-slate-900 border border-slate-700/50 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-purple-500"
-                          >
-                            <option value="">Select day…</option>
-                            {swapOptions.map((w) => (
-                              <option key={w.id} value={w.id}>
-                                {w.day_name} — {w.title}
-                              </option>
-                            ))}
-                          </select>
-                          <button
-                            onClick={() => swapDaysMutation.mutate()}
-                            disabled={swapDaysMutation.isPending || !swapTargetId}
-                            className="px-3 py-2 bg-purple-600 hover:bg-purple-700 disabled:bg-slate-700 rounded-lg text-sm font-semibold transition-colors"
-                          >
-                            {swapDaysMutation.isPending ? 'Swapping…' : 'Swap'}
-                          </button>
-                        </div>
-                      )}
-                    </div>
+                    {/* Single save button for everything */}
+                    <button
+                      onClick={() => saveAllChangesMutation.mutate()}
+                      disabled={saveAllChangesMutation.isPending || workoutTypesData?.can_modify === false}
+                      className="w-full px-4 py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-700 rounded-lg text-sm font-semibold transition-colors"
+                    >
+                      {saveAllChangesMutation.isPending
+                        ? (swapTargetId ? 'Swapping & saving…' : 'Saving…')
+                        : (swapTargetId ? 'Swap & Save' : 'Save')}
+                    </button>
                   </div>
                 )}
               </section>

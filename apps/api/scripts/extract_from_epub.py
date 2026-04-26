@@ -5,10 +5,7 @@ EPUB Extraction Script
 Extracts text from EPUB files and processes them for knowledge extraction.
 """
 import sys
-import os
 import zipfile
-import xml.etree.ElementTree as ET
-from pathlib import Path
 import re
 
 def extract_text_from_epub(epub_path: str) -> str:
@@ -31,9 +28,6 @@ def extract_text_from_epub(epub_path: str) -> str:
             
             # Find content files (usually .html, .xhtml, or .htm)
             content_files = [f for f in file_list if f.endswith(('.html', '.xhtml', '.htm'))]
-            
-            # Also check for .opf file to find content structure
-            opf_files = [f for f in file_list if f.endswith('.opf')]
             
             # Extract text from HTML/XHTML files
             for content_file in sorted(content_files):
@@ -81,7 +75,7 @@ def main():
         f.write(text)
     
     print(f"✅ Extracted {len(text)} characters to {output_file}")
-    print(f"✅ Ready for knowledge extraction!")
+    print("✅ Ready for knowledge extraction!")
 
 
 if __name__ == "__main__":

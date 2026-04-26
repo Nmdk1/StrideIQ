@@ -5,7 +5,6 @@ Tasks are defined here and imported by both the API (to enqueue) and
 the worker (to execute).
 """
 from celery import Celery
-from celery.schedules import crontab
 from core.config import settings
 
 # Create Celery app instance
@@ -34,13 +33,14 @@ celery_app.conf.update(
     },
 )
 
-# Import tasks to register them
-from . import strava_tasks  # noqa: E402
-from . import digest_tasks  # noqa: E402
-from . import best_effort_tasks  # noqa: E402
-from . import import_tasks  # noqa: E402
-from . import intelligence_tasks  # noqa: E402
-from . import home_briefing_tasks  # noqa: E402
+# Import tasks to register them with Celery
+from . import strava_tasks  # noqa: E402, F401
+from . import digest_tasks  # noqa: E402, F401
+from . import best_effort_tasks  # noqa: E402, F401
+from . import import_tasks  # noqa: E402, F401
+from . import intelligence_tasks  # noqa: E402, F401
+from . import home_briefing_tasks  # noqa: E402, F401
+from . import auto_discovery_tasks  # noqa: E402, F401
 
 # SEV-1 guardrail: fail worker startup if home briefing imports are broken.
 try:
@@ -77,9 +77,25 @@ except ImportError as e:
 from . import garmin_webhook_tasks  # noqa: E402  # D4: Celery task stubs
 from . import progress_prewarm_tasks  # noqa: E402
 from . import garmin_health_monitor_task  # noqa: E402  # daily GarminDay coverage check
+from . import strava_fallback_tasks  # noqa: E402  # Garmin->Strava structural repair
 from . import correlation_tasks  # noqa: E402  # daily correlation sweep
 from . import experience_guardrail_task  # noqa: E402  # daily experience audit
 from . import fact_extraction_task  # noqa: E402  # coach memory layer 1
+from . import timezone_tasks  # noqa: E402  # GPS-based timezone inference + backfill
+from . import route_fingerprint_tasks  # noqa: E402  # Phase 2 — route fingerprint backfill
+from . import block_detection_tasks  # noqa: E402  # Phase 4 — training block detection
+from . import workout_classification_tasks  # noqa: E402  # backfill / safety-net for Garmin path
+from . import plan_lifecycle_tasks  # noqa: E402
+from . import beat_startup_dispatch  # noqa: E402  # deploy-proof daily task dispatch
+
+# Strength v1 reconciliation sweep — non-fatal if absent (sandbox).
+try:
+    from . import strength_reconciliation_tasks  # noqa: E402, F401
+except ImportError as e:
+    import logging
+    logging.getLogger(__name__).warning(
+        "strength_reconciliation_tasks not loaded (non-fatal): %s", e
+    )
 
 try:
     from . import runtoon_tasks  # noqa: E402

@@ -14,7 +14,7 @@ Usage:
     plan = ab_test.generate_with_tracking(athlete_id, race_date, distance)
 """
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, date
 from typing import List, Dict, Optional, Tuple
 from uuid import UUID
@@ -264,28 +264,10 @@ class PlanABTest:
             plan_data = plan.to_dict()
             plan_id = plan.id
         else:
-            # Use template-based generation
-            from services.plan_framework import PlanGenerator
-            generator = PlanGenerator(self.db)
-            
-            today = date.today()
-            duration_weeks = min(24, max(4, (race_date - today).days // 7))
-            
-            plan = generator.generate_standard(
-                distance=race_distance,
-                duration_weeks=duration_weeks,
-                tier="mid",
-                days_per_week=6,
-                start_date=today,
+            raise NotImplementedError(
+                "Template-based generation removed. "
+                "All plan generation now uses constraint-aware path."
             )
-            plan_data = {
-                "plan_tier": plan.plan_tier.value,
-                "distance": plan.distance,
-                "duration_weeks": plan.duration_weeks,
-                "total_miles": plan.total_miles,
-                "peak_volume": plan.peak_volume,
-            }
-            plan_id = "template_" + str(athlete_id)[:8]
         
         # Record generation
         self.record_plan_generation(athlete_id, plan_id)

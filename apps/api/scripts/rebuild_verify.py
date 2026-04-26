@@ -243,7 +243,7 @@ def run_rebuild_verify():
         results.append(result)
         
         status = "[PASS]" if result.passed else "[FAIL]"
-        constraint_str = f" (injury return)" if constraint == ConstraintType.INJURY else ""
+        constraint_str = " (injury return)" if constraint == ConstraintType.INJURY else ""
         tau1_str = f" tau1={tau1}" if tau1 != 42 else ""
         
         print(f"{status} {athlete_id}: {distance} {weeks}wk{constraint_str}{tau1_str}")

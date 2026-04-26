@@ -7,17 +7,17 @@ Must be lightning fast - this is the data that feeds the correlation engine.
 
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, status
 from sqlalchemy.orm import Session
-from sqlalchemy.dialects.postgresql import insert
 from pydantic import BaseModel, ConfigDict
 from typing import Optional
-from datetime import date, datetime
+from datetime import date
 from uuid import UUID
 
 from core.database import get_db
 from core.auth import get_current_user
 from models import Athlete, DailyCheckin
+from services.timezone_utils import get_athlete_timezone, athlete_local_today
 
 logger = logging.getLogger(__name__)
 
@@ -26,18 +26,19 @@ router = APIRouter(prefix="/v1/daily-checkin", tags=["Daily Check-in"])
 
 def _trigger_briefing_refresh(athlete_id: str) -> None:
     """
-    Non-blocking: mark cached briefing dirty and enqueue a refresh task.
+    Non-blocking: enqueue a briefing refresh task after check-in.
     Called after any successful check-in save. Never raises.
+
+    The check-in changes the data fingerprint (checkin ID is a fingerprint
+    component), so the refresh task will detect the mismatch and regenerate.
+    We intentionally do NOT call mark_briefing_dirty here — evicting the
+    cached briefing before the replacement is ready leaves the athlete
+    staring at an empty/degraded home page if the LLM call is slow or
+    fails. The old briefing stays visible as stale until the new one lands.
     """
     try:
-        from services.home_briefing_cache import mark_briefing_dirty
-        mark_briefing_dirty(athlete_id)
-    except Exception as e:
-        logger.warning("mark_briefing_dirty failed (non-blocking): %s", e)
-
-    try:
         from tasks.home_briefing_tasks import enqueue_briefing_refresh
-        enqueue_briefing_refresh(athlete_id, force=True)
+        enqueue_briefing_refresh(athlete_id, force=True, allow_circuit_probe=True)
     except Exception as e:
         logger.warning("enqueue_briefing_refresh failed (non-blocking): %s", e)
 
@@ -130,7 +131,7 @@ async def get_today_checkin(
     """
     Get today's check-in if it exists.
     """
-    today = date.today()
+    today = athlete_local_today(get_athlete_timezone(current_user))
     checkin = db.query(DailyCheckin).filter(
         DailyCheckin.athlete_id == current_user.id,
         DailyCheckin.date == today

@@ -23,8 +23,11 @@ from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Optional
 from unittest.mock import MagicMock, patch, PropertyMock
+from uuid import uuid4
 
 import pytest
+
+_VALID_UUID = str(uuid4())
 
 # ---------------------------------------------------------------------------
 # Path setup — mirror what the worker does
@@ -128,14 +131,17 @@ class TestCheckinDataDictWorkerPath:
         # generate_coach_home_briefing is imported lazily inside _build_briefing_prompt;
         # patch at the routers.home module level where the function is defined.
         with patch("routers.home.generate_coach_home_briefing") as mock_gen:
-            # Return a 6-tuple (the new format after the fix)
-            mock_gen.return_value = (None, "prompt", {}, [], "cache_key", None)
+            from datetime import date as _d, datetime as _dt
+            mock_gen.return_value = (None, "prompt", {}, [], "cache_key", None, _d.today(), _dt.utcnow())
 
-            result = _build_briefing_prompt("athlete-uuid-123", mock_db)
+            result = _build_briefing_prompt(_VALID_UUID, mock_db)
 
-        # result is (prompt, schema_fields, required_fields, checkin_data_dict, race_data_dict, garmin_sleep_h)
         assert result is not None and result is not False
-        _, _, _, checkin_data, _, _ = result
+        # _build_briefing_prompt returns a 10-tuple:
+        # (prompt, schema_fields, required_fields, checkin_data, race_data,
+        #  garmin_sleep_h, _local_now, today_completed, planned_workout_snapshot,
+        #  upcoming_plan_snapshot)
+        _, _, _, checkin_data, _, _, _, _, _, _ = result
         assert checkin_data is not None
         assert "sleep_h" in checkin_data
         assert abs(checkin_data["sleep_h"] - 6.5) < 0.01
@@ -168,14 +174,14 @@ class TestPromptContainsSourceLabeledSleepFields:
             patch("routers.home._get_garmin_sleep_h_for_last_night", return_value=(None, str(date.today()), False)),
         ):
             prep = generate_coach_home_briefing(
-                athlete_id="test-athlete-id",
+                athlete_id=_VALID_UUID,
                 db=mock_db,
                 checkin_data={"readiness_label": "Fine", "sleep_label": "Good", "soreness_label": "None", "sleep_h": 7.0},
                 skip_cache=True,
             )
 
-        assert len(prep) == 6
-        _, prompt, _, _, _, _ = prep
+        assert len(prep) == 8
+        _, prompt, _, _, _, _, _, _ = prep
         assert "TODAY_CHECKIN_SLEEP_HOURS" in prompt
         assert "7.0" in prompt
 
@@ -194,13 +200,13 @@ class TestPromptContainsSourceLabeledSleepFields:
             patch("routers.home._get_garmin_sleep_h_for_last_night", return_value=(6.75, str(date.today()), True)),
         ):
             prep = generate_coach_home_briefing(
-                athlete_id="test-athlete-id",
+                athlete_id=_VALID_UUID,
                 db=mock_db,
                 checkin_data={"sleep_h": 7.0, "sleep_label": "Good", "readiness_label": "Fine", "soreness_label": "None"},
                 skip_cache=True,
             )
 
-        _, prompt, _, _, _, _ = prep
+        _, prompt, _, _, _, _, _, _ = prep
         assert "synthesize" in prompt.lower() or "average" in prompt.lower() or "invent" in prompt.lower()
 
     def test_prompt_contains_garmin_sleep_when_available(self):
@@ -218,13 +224,13 @@ class TestPromptContainsSourceLabeledSleepFields:
             patch("routers.home._get_garmin_sleep_h_for_last_night", return_value=(6.75, str(date.today()), True)),
         ):
             prep = generate_coach_home_briefing(
-                athlete_id="test-athlete-id",
+                athlete_id=_VALID_UUID,
                 db=mock_db,
                 checkin_data={"sleep_h": 7.0, "sleep_label": "Good", "readiness_label": "Fine", "soreness_label": "None"},
                 skip_cache=True,
             )
 
-        _, prompt, _, _, _, garmin_sleep_h = prep
+        _, prompt, _, _, _, garmin_sleep_h, _, _ = prep
         assert garmin_sleep_h == 6.75
         assert "GARMIN_LAST_NIGHT_SLEEP_HOURS" in prompt
         assert "6.75" in prompt
@@ -244,13 +250,13 @@ class TestPromptContainsSourceLabeledSleepFields:
             patch("routers.home._get_garmin_sleep_h_for_last_night", return_value=(6.75, "2026-03-09", False)),
         ):
             prep = generate_coach_home_briefing(
-                athlete_id="test-athlete-id",
+                athlete_id=_VALID_UUID,
                 db=mock_db,
                 checkin_data={"sleep_h": 7.0, "sleep_label": "Good", "readiness_label": "Fine", "soreness_label": "None"},
                 skip_cache=True,
             )
 
-        _, prompt, _, _, _, garmin_sleep_h = prep
+        _, prompt, _, _, _, garmin_sleep_h, _, _ = prep
         assert "GARMIN_LAST_NIGHT_SLEEP_HOURS" not in prompt
         assert "NOT YET AVAILABLE" in prompt
         assert garmin_sleep_h is None
@@ -536,3 +542,75 @@ class TestFalsePositivePrevention:
         result = validate_sleep_claims(text, garmin_sleep_h=None, checkin_sleep_h=None)
 
         assert result["valid"] is True
+
+
+# ===========================================================================
+# Fix 5 — Sleep baseline guidance injection logic
+# ===========================================================================
+class TestSleepBaselineGuidance:
+    ATHLETE_ID = "11111111-1111-1111-1111-111111111111"
+
+    @staticmethod
+    def _mock_db_for_sleep_hours(hours: list[float]) -> MagicMock:
+        mock_db = MagicMock()
+        mock_athlete = MagicMock()
+        mock_athlete.timezone = "UTC"
+        rows = []
+        for h in hours:
+            row = MagicMock()
+            row.sleep_total_s = int(h * 3600)
+            rows.append(row)
+
+        def query_side_effect(model):
+            q = MagicMock()
+            table = getattr(model, "__tablename__", "")
+            if table == "athlete":
+                q.filter.return_value.first.return_value = mock_athlete
+            elif table == "garmin_day":
+                q.filter.return_value.order_by.return_value.all.return_value = rows
+            else:
+                q.filter.return_value.first.return_value = None
+                q.filter.return_value.order_by.return_value.first.return_value = None
+                q.filter.return_value.order_by.return_value.limit.return_value.all.return_value = []
+            return q
+
+        mock_db.query.side_effect = query_side_effect
+        return mock_db
+
+    def test_within_normal_baseline_injects_sleep_not_newsworthy(self):
+        from routers.home import _build_sleep_baseline_guidance
+
+        db = self._mock_db_for_sleep_hours([7.0] * 20)
+        guidance = _build_sleep_baseline_guidance(
+            self.ATHLETE_ID,
+            db,
+            last_night_sleep_h=7.4,
+        )
+
+        assert guidance is not None
+        assert "Sleep is NOT newsworthy today. Lead with something else." in guidance
+
+    def test_outside_normal_baseline_injects_sleep_is_noteworthy(self):
+        from routers.home import _build_sleep_baseline_guidance
+
+        db = self._mock_db_for_sleep_hours([7.0] * 20)
+        guidance = _build_sleep_baseline_guidance(
+            self.ATHLETE_ID,
+            db,
+            last_night_sleep_h=5.2,
+        )
+
+        assert guidance is not None
+        assert "This IS noteworthy; frame as deviation from personal norm." in guidance
+
+    def test_under_14_nights_skips_baseline_context(self):
+        from routers.home import _build_sleep_baseline_guidance
+
+        db = self._mock_db_for_sleep_hours([7.0] * 10)
+        guidance = _build_sleep_baseline_guidance(
+            self.ATHLETE_ID,
+            db,
+            last_night_sleep_h=6.0,
+        )
+
+        assert guidance is None

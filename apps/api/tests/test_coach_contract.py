@@ -188,13 +188,14 @@ class TestNormalizationPipeline:
 
 class TestToolDefinitions:
     """
-    The coach has 23 tools. All must be importable and callable from coach_tools.
+    The coach has 27 tools. All must be importable and callable from coach_tools.
     Missing tools mean the coach can't answer certain questions.
     """
 
-    # All 23 tools from coach_tools.py — reconciled against actual module.
+    # All tools from coach_tools.py — reconciled against actual module.
     REQUIRED_TOOLS = [
         "get_recent_runs",
+        "search_activities",
         "get_calendar_day_context",
         "get_efficiency_trend",
         "get_plan_week",
@@ -203,6 +204,7 @@ class TestToolDefinitions:
         "get_training_paces",
         "get_correlations",
         "get_race_predictions",
+        "get_race_strategy_packet",
         "get_recovery_status",
         "get_active_insights",
         "get_pb_patterns",
@@ -217,6 +219,8 @@ class TestToolDefinitions:
         "set_coach_intent_snapshot",
         "get_training_prescription_window",
         "compute_running_math",
+        "get_mile_splits",
+        "get_profile_edit_paths",
     ]
 
     def test_all_tools_exist_in_module(self):
@@ -243,9 +247,9 @@ class TestToolDefinitions:
         assert not non_callable, f"Non-callable tools: {non_callable}"
 
     def test_tool_count_matches(self):
-        """Tool list must have exactly 23 entries (reconciliation check)."""
-        assert len(self.REQUIRED_TOOLS) == 23, \
-            f"Expected 23 tools, found {len(self.REQUIRED_TOOLS)} in REQUIRED_TOOLS list"
+        """Tool list must have exactly 27 entries (reconciliation check)."""
+        assert len(self.REQUIRED_TOOLS) == 27, \
+            f"Expected 27 tools, found {len(self.REQUIRED_TOOLS)} in REQUIRED_TOOLS list"
 
 
 # ---------------------------------------------------------------------------
@@ -315,18 +319,46 @@ class TestKnownRegressions:
         assert len(lines_with_vdot) == 0, \
             f"System prompt instructs coach to use VDOT (trademark): {lines_with_vdot}"
 
+    def test_no_self_contradicting_terminology_rule(self):
+        """
+        Guard against the specific regression where a global find/replace
+        ("VDOT" -> "RPI") turned a rule of the form
+        `NEVER say "X" ... ALWAYS say "Y"` into
+        `NEVER say "Y" ... ALWAYS say "Y"`, instructing the coach to both
+        avoid and use the same term. That is pure noise to the LLM and
+        silently collapses the terminology guardrail.
+        """
+        import re
+        instructions = _get_system_instructions()
+        # Match any sentence containing both `NEVER say "X"` and
+        # `ALWAYS say "X"` on the same line with the SAME quoted term.
+        pattern = re.compile(
+            r'NEVER\s+say\s+"(?P<never>[^"]+)".*?ALWAYS\s+say\s+"(?P<always>[^"]+)"',
+            re.IGNORECASE,
+        )
+        contradictions = []
+        for line in instructions.split('\n'):
+            m = pattern.search(line)
+            if m and m.group('never').strip().lower() == m.group('always').strip().lower():
+                contradictions.append(line.strip())
+        assert not contradictions, (
+            "Coach system prompt contains a terminology rule that forbids "
+            "and requires the same term. This is almost always the residue "
+            "of a global find/replace that swept over the rule itself:\n  - "
+            + "\n  - ".join(contradictions)
+        )
+
     def test_normalization_called_in_chat_path(self):
         """
         Normalization MUST be called before returning responses.
-        This is a structural check — verify the chat method calls normalize.
-        Normalization is called from the chat() method, not query_gemini().
+        This is a structural check — verify the chat method calls finalizer.
         """
         import inspect
         from services.ai_coach import AICoach
-        # Normalization is called in the chat() method which wraps query_gemini
+        # Normalization now runs inside _finalize_response_with_turn_guard().
         source = inspect.getsource(AICoach.chat)
-        assert "_normalize_response_for_ui" in source, \
-            "chat() must call _normalize_response_for_ui before returning"
+        assert "_finalize_response_with_turn_guard" in source, \
+            "chat() must finalize responses with turn-guard before returning"
 
     def test_system_prompt_not_empty(self):
         """System instructions must not be empty."""

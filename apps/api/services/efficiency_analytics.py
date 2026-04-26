@@ -9,9 +9,7 @@ V2 Enhancement (ADR-008): Adds statistical significance testing for trends.
 
 from datetime import datetime, timedelta
 from typing import List, Dict, Optional, Tuple
-from decimal import Decimal
 from sqlalchemy.orm import Session
-from sqlalchemy import and_, func
 from collections import defaultdict
 from models import Activity, Athlete, ActivitySplit
 from services.efficiency_calculation import calculate_activity_efficiency_with_decoupling
@@ -360,7 +358,7 @@ def calculate_load_response(
         result.append({
             "week_start": week_key,
             "total_distance_km": round(week_data["total_distance_m"] / 1000, 2),
-            "total_distance_miles": round(week_data["total_distance_m"] / 1609.34, 2),
+            "total_distance_m": round(week_data["total_distance_m"], 1),
             "total_duration_hours": round(week_data["total_duration_s"] / 3600, 2),
             "activity_count": len(week_data["activities"]),
             "avg_efficiency": round(avg_efficiency, 4) if avg_efficiency else None,
@@ -488,7 +486,7 @@ def get_efficiency_trends(
         }
     
     # Get athlete for max HR if available
-    athlete = db.query(Athlete).filter(Athlete.id == athlete_id).first()
+    db.query(Athlete).filter(Athlete.id == athlete_id).first()
     max_hr = None  # Could extract from athlete profile if stored
     
     # Bulk load splits for all activities (eliminates N+1)
@@ -516,7 +514,7 @@ def get_efficiency_trends(
             time_series.append({
                 "date": activity.start_time.isoformat(),
                 "efficiency_factor": ef,
-                "pace_per_mile": round(activity.pace_per_mile, 2) if activity.pace_per_mile else None,
+                "pace_s_per_km": round(activity.pace_per_mile * 60 * 1000 / 1609.34, 2) if activity.pace_per_mile else None,
                 "avg_hr": activity.avg_hr,
                 "distance_m": float(activity.distance_m) if activity.distance_m else None,
                 "duration_s": activity.duration_s,

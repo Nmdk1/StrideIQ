@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import logging
 import math
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass
 from typing import Dict, List, Optional
 from uuid import UUID
 
@@ -789,7 +789,6 @@ def _layer4_fitness_relative(
     group_sizes = (len(outperformers), len(underperformers))
     can_stat_test = min(group_sizes) >= QUALITY_THRESHOLDS['min_per_group']
 
-    KM_TO_MI = 0.621371
     is_imperial = units != "metric"
 
     dimensions = [

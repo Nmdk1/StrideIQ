@@ -17,7 +17,10 @@ export function useHomeData() {
     refetchOnWindowFocus: true,
     refetchInterval: (query) => {
       const state = query.state.data?.briefing_state;
-      return state && BRIEFING_PENDING_STATES.has(state) ? 2000 : false;
+      const isInterim = Boolean(query.state.data?.briefing_is_interim);
+      if (state === 'fresh' && !isInterim) return false;
+      if ((state && BRIEFING_PENDING_STATES.has(state)) || isInterim) return 2000;
+      return false;
     },
   });
 }
@@ -35,6 +38,8 @@ export interface QuickCheckinPayload {
   sleep_quality_1_5?: number;  // 1=poor, 5=great
   sleep_h?: number;            // actual hours (explicit input)
   soreness_1_5?: number;
+  enjoyment_1_5?: number;
+  confidence_1_5?: number;
 }
 
 // Label maps for optimistic cache update (match backend maps)

@@ -5,9 +5,10 @@
  * plan_comparison presence and shows correct content.
  */
 import React from 'react';
-import { render, screen } from '@testing-library/react';
+import { screen } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { mockTier1Result, mockResultWithPlan, generateTestStreamData, mockUnitsImperial } from './rsi-fixtures';
+import { renderWithStreamHover } from '@/test-utils/renderWithStreamHover';
 
 import { RunShapeCanvas } from '@/components/activities/rsi/RunShapeCanvas';
 
@@ -34,7 +35,7 @@ describe('AC-7: Plan Comparison Card', () => {
       refetch: jest.fn(),
     } as any);
 
-    render(<RunShapeCanvas activityId="test-123" />);
+    renderWithStreamHover(<RunShapeCanvas activityId="test-123" />);
 
     const planCard = screen.getByTestId('plan-comparison-card') ||
                      screen.getByText(/planned/i);
@@ -49,7 +50,7 @@ describe('AC-7: Plan Comparison Card', () => {
       refetch: jest.fn(),
     } as any);
 
-    render(<RunShapeCanvas activityId="test-123" />);
+    renderWithStreamHover(<RunShapeCanvas activityId="test-123" />);
 
     // Should display planned and actual values
     // Duration: planned 3600s (60:00), actual 3720s (62:00)
@@ -65,7 +66,7 @@ describe('AC-7: Plan Comparison Card', () => {
       refetch: jest.fn(),
     } as any);
 
-    render(<RunShapeCanvas activityId="test-123" />);
+    renderWithStreamHover(<RunShapeCanvas activityId="test-123" />);
 
     // Interval count: 5/6
     expect(screen.getByText(/5.*6|5\/6/)).toBeInTheDocument();
@@ -79,7 +80,7 @@ describe('AC-7: Plan Comparison Card', () => {
       refetch: jest.fn(),
     } as any);
 
-    render(<RunShapeCanvas activityId="test-123" />);
+    renderWithStreamHover(<RunShapeCanvas activityId="test-123" />);
 
     // mockTier1Result has plan_comparison: null
     const planCard = screen.queryByTestId('plan-comparison-card');

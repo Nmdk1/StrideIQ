@@ -12,17 +12,13 @@ import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from datetime import date, datetime, timedelta
-from uuid import UUID
 from sqlalchemy import func
 
 # Use the app's database session
 from core.database import SessionLocal
 from models import Athlete, Activity
 from services.training_load import (
-    TrainingLoadCalculator,
-    PersonalTSBProfile,
-    TSBZone
+    TrainingLoadCalculator
 )
 
 
@@ -110,13 +106,13 @@ def main():
         print(f"  Sample days: {profile.sample_days}")
         print(f"  Sufficient data (>=56 days): {profile.is_sufficient_data}")
         print()
-        print(f"  Personal Statistics:")
+        print("  Personal Statistics:")
         print(f"    Mean TSB: {profile.mean_tsb:.1f}")
         print(f"    Std Dev:  {profile.std_tsb:.1f}")
         print(f"    Min TSB:  {profile.min_tsb:.1f}")
         print(f"    Max TSB:  {profile.max_tsb:.1f}")
         print()
-        print(f"  Personal Zone Thresholds:")
+        print("  Personal Zone Thresholds:")
         print(f"    Race Ready (fresh):   > {profile.threshold_fresh:.1f}")
         print(f"    Recovering:           > {profile.threshold_recovering:.1f}")
         print(f"    Normal training:      > {profile.threshold_normal_low:.1f}")
@@ -128,8 +124,8 @@ def main():
         print("4. COMPARISON: PERSONAL vs POPULATION THRESHOLDS")
         print("-" * 50)
         print()
-        print(f"  Zone           | Population | Personal (This Athlete)")
-        print(f"  ---------------|------------|------------------------")
+        print("  Zone           | Population | Personal (This Athlete)")
+        print("  ---------------|------------|------------------------")
         print(f"  Race Ready     | > +15      | > {profile.threshold_fresh:+.1f}")
         print(f"  Recovering     | > +5       | > {profile.threshold_recovering:+.1f}")
         print(f"  Normal Low     | > -10      | > {profile.threshold_normal_low:+.1f}")
@@ -161,10 +157,10 @@ def main():
         
         # Check if zones differ
         if population_zone.zone != personal_zone:
-            print(f"  ✓ ZONES DIFFER: Personal zones are working!")
+            print("  ✓ ZONES DIFFER: Personal zones are working!")
             print(f"    Population says '{population_zone.zone.value}' but personal says '{personal_zone.value}'")
         else:
-            print(f"  Zones match (this is OK if athlete's profile is close to population norm)")
+            print("  Zones match (this is OK if athlete's profile is close to population norm)")
         print()
         
         # Sanity checks
@@ -197,7 +193,7 @@ def main():
         if profile.sample_days != len(history):
             warnings.append(f"Sample days ({profile.sample_days}) doesn't match history length ({len(history)})")
         else:
-            print(f"  ✓ Sample days matches history length")
+            print("  ✓ Sample days matches history length")
         
         if errors:
             print()

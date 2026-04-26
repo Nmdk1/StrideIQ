@@ -23,12 +23,12 @@ _ROOT = os.path.abspath(os.path.join(_HERE, ".."))
 if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 
-from fastapi.testclient import TestClient
+from fastapi.testclient import TestClient  # noqa: E402
 
-from core.database import SessionLocal
-from core.security import create_access_token
-from main import app
-from models import Athlete, CoachActionProposal, PlanModificationLog, PlannedWorkout, TrainingPlan
+from core.database import SessionLocal  # noqa: E402
+from core.security import create_access_token  # noqa: E402
+from main import app  # noqa: E402
+from models import Athlete, CoachActionProposal, PlanModificationLog, PlannedWorkout, TrainingPlan  # noqa: E402
 
 
 client = TestClient(app)

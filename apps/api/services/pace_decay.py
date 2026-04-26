@@ -7,13 +7,11 @@ Provides insights on pacing strategy and potential causes.
 ADR-012: Pace Decay Analysis
 """
 
-from datetime import date, datetime
+from datetime import date
 from typing import List, Dict, Optional, Tuple
 from dataclasses import dataclass
 from enum import Enum
-from uuid import UUID
 from sqlalchemy.orm import Session
-import math
 import statistics
 
 
@@ -313,7 +311,7 @@ def compare_to_history(
         return None
     
     typical = statistics.mean(historical_decays)
-    std_dev = statistics.stdev(historical_decays) if len(historical_decays) > 1 else 0
+    statistics.stdev(historical_decays) if len(historical_decays) > 1 else 0
     
     deviation = current_decay - typical
     deviation_pct = abs(deviation)
@@ -360,7 +358,6 @@ def generate_insights(
     """Generate human-readable insights from decay metrics."""
     insights = []
     
-    activity_type = "Race" if is_race else "Run"
     
     # Primary decay insight
     if metrics.overall_pattern == SplitPattern.NEGATIVE:
@@ -567,9 +564,9 @@ def _get_historical_decays(
     races = db.query(Activity).filter(
         Activity.athlete_id == athlete_id,
         or_(
-            Activity.user_verified_race == True,
+            Activity.user_verified_race,
             Activity.workout_type == 'race',
-            and_(Activity.is_race_candidate == True, Activity.race_confidence >= 0.7)
+            and_(Activity.is_race_candidate, Activity.race_confidence >= 0.7)
         ),
         Activity.distance_m >= low,
         Activity.distance_m <= high,
@@ -626,9 +623,9 @@ def get_athlete_decay_profile(
     races = db.query(Activity).filter(
         Activity.athlete_id == athlete_id,
         or_(
-            Activity.user_verified_race == True,
+            Activity.user_verified_race,
             Activity.workout_type == 'race',
-            and_(Activity.is_race_candidate == True, Activity.race_confidence >= 0.7)
+            and_(Activity.is_race_candidate, Activity.race_confidence >= 0.7)
         )
     ).order_by(Activity.start_time.desc()).limit(100).all()
     

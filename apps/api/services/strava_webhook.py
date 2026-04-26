@@ -8,7 +8,7 @@ Enables automatic activity sync when activities are created/updated.
 import hmac
 import hashlib
 import requests
-from typing import Dict, Optional
+from typing import Dict
 from core.config import settings
 import logging
 

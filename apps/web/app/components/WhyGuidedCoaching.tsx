@@ -1,6 +1,7 @@
 "use client";
 
 import React from 'react';
+import Link from 'next/link';
 
 export default function WhyGuidedCoaching() {
   return (
@@ -8,120 +9,60 @@ export default function WhyGuidedCoaching() {
       <div className="max-w-6xl mx-auto px-6">
         <div className="text-center mb-16">
           <h2 className="text-4xl md:text-5xl font-bold mb-4">
-            Why Elite?
+            Why StrideIQ exists
           </h2>
           <p className="text-xl text-slate-300 max-w-3xl mx-auto">
-            Complete AI running coach for marathon training, 5K training, injury prevention, and run analysis.
-            Syncs with Garmin Connect and Strava. Elite-level coaching accessible to everyone.
+            A record of what your training is telling you — built from your data, auditable to the last decimal, available the moment you need it. It does not replace a coach. It gives you and your coach the same view.
           </p>
         </div>
 
-        {/* Target Audiences */}
-        <div className="grid md:grid-cols-2 gap-8 mb-16">
-          {/* Masters+ Runners */}
+        {/* Four cooperative cards — Memory / Pattern detection / Availability / Evidence */}
+        <div className="grid md:grid-cols-2 gap-6 mb-12">
           <div className="bg-slate-900 rounded-lg p-8 border border-slate-700/50">
-            <h3 className="text-2xl font-bold mb-4 text-orange-400">For Masters+ Runners</h3>
-            <p className="text-slate-300 mb-4">
-              Tired of being treated as &quot;fragile&quot; because of your age? We don&apos;t see decline—we see potential.
+            <h3 className="text-xl font-bold mb-3 text-orange-400">Memory</h3>
+            <p className="text-slate-300 leading-relaxed">
+              Remembers every run, every wellness check-in, every weather day. A pattern that takes 200 runs to emerge is a pattern most plans and most coaches will never see.
             </p>
-            <ul className="space-y-2 text-slate-400">
-              <li>✓ Held to the same high standards as athletes of all ages</li>
-              <li>✓ Age-graded analysis shows your true performance</li>
-              <li>✓ No assumptions about &quot;slowing down&quot;</li>
-              <li>✓ Training that adapts to YOUR response curves, not averages</li>
-            </ul>
           </div>
 
-          {/* Rural/Small Town Runners */}
           <div className="bg-slate-900 rounded-lg p-8 border border-slate-700/50">
-            <h3 className="text-2xl font-bold mb-4 text-orange-400">For Runners Everywhere</h3>
-            <p className="text-slate-300 mb-4">
-              Can&apos;t access coaches or running clubs? Elite coaching is now available wherever you are.
+            <h3 className="text-xl font-bold mb-3 text-orange-400">Pattern detection</h3>
+            <p className="text-slate-300 leading-relaxed">
+              Finds correlations across your sleep, nutrition, training load, and outcomes. A Bayesian engine runs every night and compiles what it learns. The coach reads what the engine compiled.
             </p>
-            <ul className="space-y-2 text-slate-400">
-              <li>✓ No geographic limitations</li>
-              <li>✓ No need for local running groups</li>
-              <li>✓ Same elite-level coaching whether you&apos;re in NYC or rural Montana</li>
-              <li>✓ 24/7 availability—no scheduling conflicts</li>
-            </ul>
+          </div>
+
+          <div className="bg-slate-900 rounded-lg p-8 border border-slate-700/50">
+            <h3 className="text-xl font-bold mb-3 text-orange-400">Availability</h3>
+            <p className="text-slate-300 leading-relaxed">
+              There at 5am when you are deciding whether to run. Not as a substitute for human judgment — as a record of what your data has actually shown.
+            </p>
+          </div>
+
+          <div className="bg-slate-900 rounded-lg p-8 border border-slate-700/50">
+            <h3 className="text-xl font-bold mb-3 text-orange-400">Evidence</h3>
+            <p className="text-slate-300 leading-relaxed">
+              Every recommendation cites the runs, the dates, the numbers. If the data is not strong enough, the system stays quiet. Suppression over hallucination.
+            </p>
           </div>
         </div>
 
-        {/* Advantages Over Human Coaches */}
-        <div className="bg-gradient-to-r from-orange-900/20 to-slate-900 rounded-lg p-8 border border-orange-500/30 mb-12">
-          <h3 className="text-2xl font-bold mb-6 text-center">AI Running Coach vs Human Running Coach</h3>
-          <div className="grid md:grid-cols-2 gap-6">
-            <div>
-              <h4 className="font-semibold text-slate-300 mb-3">Knowledge Base</h4>
-              <p className="text-slate-400 text-sm mb-4">
-                <strong className="text-orange-400">Elite:</strong> Synthesizes decades of proven training principles from world-class coaches and exercise science—distilled into personalized guidance.
-              </p>
-              <p className="text-slate-500 text-sm">
-                <strong>Human Coach:</strong> One person&apos;s experience, training, and biases.
-              </p>
-            </div>
-            <div>
-              <h4 className="font-semibold text-slate-300 mb-3">Availability</h4>
-              <p className="text-slate-400 text-sm mb-4">
-                <strong className="text-orange-400">Elite:</strong> 24/7 analysis and optimization. Never sleeps, never forgets, never has an off day.
-              </p>
-              <p className="text-slate-500 text-sm">
-                <strong>Human Coach:</strong> Scheduled calls, email delays, limited hours.
-              </p>
-            </div>
-            <div>
-              <h4 className="font-semibold text-slate-300 mb-3">Personalization</h4>
-              <p className="text-slate-400 text-sm mb-4">
-                <strong className="text-orange-400">Elite:</strong> Learns specifically from YOUR data. Builds personal response curves—not general principles.
-              </p>
-              <p className="text-slate-500 text-sm">
-                <strong>Human Coach:</strong> Applies general principles, limited personal data history.
-              </p>
-            </div>
-            <div>
-              <h4 className="font-semibold text-slate-300 mb-3">Cost & Accessibility</h4>
-              <p className="text-slate-400 text-sm mb-4">
-                <strong className="text-orange-400">Elite:</strong> $18.99/month. Available everywhere, no geographic limitations.
-              </p>
-              <p className="text-slate-500 text-sm">
-                <strong>Human Coach:</strong> Typically $50-$300/month. Limited by location and availability.
-              </p>
-            </div>
-          </div>
-        </div>
-
-        {/* Key Differentiators */}
-        <div className="grid md:grid-cols-3 gap-6">
-          <div className="text-center">
-            <div className="w-16 h-16 bg-orange-600 rounded-full flex items-center justify-center text-2xl mb-4 mx-auto">
-              📚
-            </div>
-            <h4 className="text-xl font-bold mb-2">Encyclopedic Knowledge</h4>
-            <p className="text-slate-400">
-              The knowledge of decades of elite coaching, distilled and personalized—not just one coach&apos;s experience.
-            </p>
-          </div>
-          <div className="text-center">
-            <div className="w-16 h-16 bg-orange-600 rounded-full flex items-center justify-center text-2xl mb-4 mx-auto">
-              🔄
-            </div>
-            <h4 className="text-xl font-bold mb-2">Never Stops Learning</h4>
-            <p className="text-slate-400">
-              Analyzes every run, optimizes continuously. Your coach is always working, even when you&apos;re sleeping.
-            </p>
-          </div>
-          <div className="text-center">
-            <div className="w-16 h-16 bg-orange-600 rounded-full flex items-center justify-center text-2xl mb-4 mx-auto">
-              🎯
-            </div>
-            <h4 className="text-xl font-bold mb-2">Optimized For You</h4>
-            <p className="text-slate-400">
-              Learns from YOUR data specifically. Builds personal response curves—what works for YOU, not averages.
-            </p>
-          </div>
+        {/* DEXA case-study callout — single-paragraph proof, links to depth */}
+        <div className="bg-gradient-to-r from-orange-900/20 to-slate-900 rounded-lg p-8 border border-orange-500/30">
+          <p className="text-lg text-slate-200 leading-relaxed mb-4">
+            One athlete uploaded his DEXA scan. The coach reconciled it with his Garmin scale, his lift history, and his upcoming 20-miler — and explained why his bones are 7 lbs heavier than Garmin thinks.
+          </p>
+          <Link
+            href="/case-studies/dexa-and-the-7-pound-gap"
+            className="inline-flex items-center gap-2 text-orange-400 hover:text-orange-300 font-semibold transition-colors"
+          >
+            Read the full finding
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 8l4 4m0 0l-4 4m4-4H3" />
+            </svg>
+          </Link>
         </div>
       </div>
     </section>
   );
 }
-

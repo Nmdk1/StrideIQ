@@ -8,7 +8,6 @@ export default function robots(): MetadataRoute.Robots {
       disallow: [
         '/api/',
         '/admin/',
-        '/dashboard/',
         '/home/',
         '/activities/',
         '/checkin/',
@@ -26,7 +25,6 @@ export default function robots(): MetadataRoute.Robots {
         '/personal-bests/',
         '/compare/',
         '/plans/',
-        '/diagnostic/',
         '/progress/',
         '/fingerprint/',
       ],

@@ -21,7 +21,7 @@ open_std = get_wma_open_standard_seconds(sex, distance)
 age_std = open_std * time_mult
 pct = (age_std / time_seconds) * 100
 
-print(f"Our Implementation:")
+print("Our Implementation:")
 print(f"  WMA_5K_FEMALE[81] = {WMA_5K_FEMALE.get(81)}")
 print(f"  Time Multiplier: {time_mult:.4f}")
 print(f"  WMA Factor: {wma_factor:.4f}")

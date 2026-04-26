@@ -91,8 +91,13 @@ function ActionBar({
   weekStats: { completed: number; planned: number };
   isCurrentMonthView: boolean;
 }) {
+  const { units, formatDistance } = useUnits();
   const showProgress = weekStats.planned > 0;
   const progressPct = showProgress ? Math.min(100, (weekStats.completed / weekStats.planned) * 100) : 0;
+
+  const completedStr = formatDistance(weekStats.completed, 0);
+  const plannedStr = formatDistance(weekStats.planned, 0);
+  const completedNumStr = completedStr.replace(/\s*(mi|km)\s*$/, '');
   
   return (
     <div className="fixed bottom-0 left-0 right-0 bg-slate-900/95 backdrop-blur border-t border-slate-700 px-4 py-3 z-30">
@@ -104,9 +109,9 @@ function ActionBar({
               <div className="flex items-center gap-2 text-sm">
                 <Activity className="w-4 h-4 text-orange-500" />
                 <span className="text-slate-400">This week:</span>
-                <span className="text-white font-medium">{weekStats.completed.toFixed(0)}</span>
+                <span className="text-white font-medium">{completedNumStr}</span>
                 <span className="text-slate-600">/</span>
-                <span className="text-slate-500">{weekStats.planned.toFixed(0)} mi</span>
+                <span className="text-slate-500">{plannedStr}</span>
               </div>
               {/* Mini progress bar */}
               <div className="hidden sm:block w-24 h-1.5 bg-slate-700 rounded-full overflow-hidden">
@@ -132,7 +137,7 @@ function ActionBar({
         {/* Quick actions */}
         <div className="flex items-center gap-1">
           <Button variant="ghost" size="sm" asChild className="text-slate-400 hover:text-white">
-            <a href="/insights">
+            <a href="/manual">
               <Lightbulb className="w-4 h-4 mr-1.5" />
               Insights
             </a>
@@ -150,16 +155,24 @@ function ActionBar({
 }
 
 function MonthTotals({ days }: { days: CalendarDay[] }) {
-  const totalDistance = days.reduce((sum, d) => sum + (d.total_distance_m || 0), 0);
+  const { formatDistance } = useUnits();
+  // Month header: running mileage only (walks/cycles must not read as "run miles").
+  const totalDistance = days.reduce((sum, d) => {
+    const rm = d.running_distance_m;
+    if (typeof rm === 'number') return sum + rm;
+    return sum + (d.total_distance_m || 0);
+  }, 0);
   const totalDuration = days.reduce((sum, d) => sum + (d.total_duration_s || 0), 0);
   const totalActivities = days.reduce((sum, d) => sum + d.activities.length, 0);
-  
-  const totalMiles = (totalDistance / 1609.344).toFixed(1);
+
+  const distanceStr = formatDistance(totalDistance, 1);
   const hours = Math.floor(totalDuration / 3600);
   const mins = Math.floor((totalDuration % 3600) / 60);
   const secs = totalDuration % 60;
   const timeStr = `${hours}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
-  
+
+  // Calorie estimate is independent of display units; ~100 kcal per mile
+  // remains a reasonable rough heuristic regardless of athlete preference.
   const estCalories = Math.round((totalDistance / 1609.344) * 100);
   
   if (totalActivities === 0) return null;
@@ -179,7 +192,7 @@ function MonthTotals({ days }: { days: CalendarDay[] }) {
             </div>
             <div>
               <span className="text-slate-500">Distance: </span>
-              <span className="text-white font-semibold">{totalMiles} mi</span>
+              <span className="text-white font-semibold">{distanceStr}</span>
             </div>
             <div>
               <span className="text-slate-500">Time: </span>
@@ -199,6 +212,7 @@ function MonthTotals({ days }: { days: CalendarDay[] }) {
 export default function CalendarPage() {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  const { formatDistance } = useUnits();
   
   // Calculate date range for current month view
   const { startDate, endDate, monthName, year } = useMemo(() => {
@@ -329,8 +343,8 @@ export default function CalendarPage() {
     }
     
     return {
-      completed: todayWeek.completed_miles || 0,
-      planned: todayWeek.planned_miles || 0,
+      completed: todayWeek.completed_m || 0,
+      planned: todayWeek.planned_m || 0,
     };
   }, [calendar, today]);
   
@@ -402,10 +416,14 @@ export default function CalendarPage() {
               {/* Calendar grid with aligned weekly totals */}
               <div className="border-l border-slate-700">
                 {weeksWithDays.map((week, weekIndex) => {
-                  const weekDistance = week.days.reduce((sum, d) => sum + (d.total_distance_m || 0), 0);
+                  const weekDistance = week.days.reduce((sum, d) => {
+                    const rm = d.running_distance_m;
+                    if (typeof rm === 'number') return sum + rm;
+                    return sum + (d.total_distance_m || 0);
+                  }, 0);
                   const weekDuration = week.days.reduce((sum, d) => sum + (d.total_duration_s || 0), 0);
                   const hasActivity = weekDistance > 0;
-                  const weekMiles = (weekDistance / 1609.344).toFixed(1);
+                  const weekDistanceStr = formatDistance(weekDistance, 1);
                   const hours = Math.floor(weekDuration / 3600);
                   const mins = Math.floor((weekDuration % 3600) / 60);
                   const timeStr = hours > 0 ? `${hours}h ${mins}m` : `${mins}m`;
@@ -429,7 +447,7 @@ export default function CalendarPage() {
                         <div className="hidden lg:flex flex-col justify-center items-end p-3 border-r border-b border-slate-700/30 min-h-[120px]">
                           {hasActivity ? (
                             <div className="text-right">
-                              <div className="text-white font-medium text-sm">{weekMiles} mi</div>
+                              <div className="text-white font-medium text-sm">{weekDistanceStr}</div>
                               <div className="text-slate-500 text-xs">{timeStr}</div>
                               {/* Week trajectory sentence */}
                               {getWeekTrajectory(week.weekNumber) && (
@@ -470,7 +488,7 @@ export default function CalendarPage() {
                         <div className="md:hidden px-3 py-2 bg-slate-800/20 border-b border-slate-700/30 text-sm">
                           <div className="flex justify-between items-center">
                             <span className="text-slate-500">Week</span>
-                            <span className="text-slate-300 font-medium">{weekMiles} mi · {timeStr}</span>
+                            <span className="text-slate-300 font-medium">{weekDistanceStr} · {timeStr}</span>
                           </div>
                           {/* Week trajectory sentence - mobile */}
                           {getWeekTrajectory(week.weekNumber) && (

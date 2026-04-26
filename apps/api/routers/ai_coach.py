@@ -4,18 +4,19 @@ AI Coach API Router
 Provides chat interface to the AI running coach.
 """
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional, List, AsyncIterator
 import asyncio
 import json
 
 from core.database import get_db
-from core.auth import get_current_athlete
+from core.auth import require_tier
 from models import Athlete, CoachChat
 from services.ai_coach import AICoach
+from services.coaching._conversation_contract import classify_conversation_contract
 
 router = APIRouter(prefix="/v1/coach", tags=["AI Coach"])
 
@@ -24,6 +25,8 @@ class ChatRequest(BaseModel):
     """Request to chat with AI coach."""
     message: str
     include_context: bool = True
+    is_synthetic_probe: bool = False
+    finding_id: Optional[str] = None
 
 
 class ChatResponse(BaseModel):
@@ -36,6 +39,12 @@ class ChatResponse(BaseModel):
     used_baseline: bool = False
     baseline_needed: bool = False
     rebuild_plan_prompt: bool = False
+    tools_used: List[str] = Field(default_factory=list)
+    tool_count: int = 0
+    conversation_contract: Optional[str] = None
+    runtime_version: str = "v1"
+    runtime_mode: str = "off"
+    fallback_reason: Optional[str] = None
 
 
 class ContextResponse(BaseModel):
@@ -51,6 +60,10 @@ class ThreadMessage(BaseModel):
     role: str
     content: str
     created_at: Optional[str] = None
+    tools_used: List[str] = Field(default_factory=list)
+    tool_count: int = 0
+    conversation_contract: Optional[str] = None
+    runtime_metadata: Optional[dict] = None
 
 
 class ThreadHistoryResponse(BaseModel):
@@ -61,7 +74,7 @@ class ThreadHistoryResponse(BaseModel):
 @router.post("/chat", response_model=ChatResponse)
 async def chat_with_coach(
     request: ChatRequest,
-    athlete: Athlete = Depends(get_current_athlete),
+    athlete: Athlete = Depends(require_tier(["guided"])),
     db: Session = Depends(get_db),
 ):
     """
@@ -74,8 +87,14 @@ async def chat_with_coach(
     result = await coach.chat(
         athlete_id=athlete.id,
         message=request.message,
-        include_context=request.include_context
+        include_context=request.include_context,
+        is_synthetic_probe=bool(request.is_synthetic_probe),
+        finding_id=request.finding_id,
     )
+    tools_used = list(result.get("tools_used") or result.get("tools_called") or [])
+    conversation_contract = result.get("conversation_contract")
+    if not conversation_contract:
+        conversation_contract = classify_conversation_contract(request.message).contract_type.value
     
     return ChatResponse(
         response=result.get("response", ""),
@@ -86,13 +105,19 @@ async def chat_with_coach(
         used_baseline=bool(result.get("used_baseline", False)),
         baseline_needed=bool(result.get("baseline_needed", False)),
         rebuild_plan_prompt=bool(result.get("rebuild_plan_prompt", False)),
+        tools_used=tools_used,
+        tool_count=int(result.get("tool_count") or len(tools_used)),
+        conversation_contract=conversation_contract,
+        runtime_version=str(result.get("runtime_version") or "v1"),
+        runtime_mode=str(result.get("runtime_mode") or "off"),
+        fallback_reason=result.get("fallback_reason"),
     )
 
 
 @router.post("/chat/stream")
 async def chat_with_coach_stream(
     request: ChatRequest,
-    athlete: Athlete = Depends(get_current_athlete),
+    athlete: Athlete = Depends(require_tier(["guided"])),
     db: Session = Depends(get_db),
 ):
     """
@@ -114,7 +139,13 @@ async def chat_with_coach_stream(
     async def _gen() -> AsyncIterator[bytes]:
         try:
             task = asyncio.create_task(
-                coach.chat(athlete_id=athlete.id, message=request.message, include_context=request.include_context)
+                coach.chat(
+                    athlete_id=athlete.id,
+                    message=request.message,
+                    include_context=request.include_context,
+                    is_synthetic_probe=bool(request.is_synthetic_probe),
+                    finding_id=request.finding_id,
+                )
             )
 
             yield b"event: meta\ndata: " + json.dumps({"type": "meta"}).encode("utf-8") + b"\n\n"
@@ -139,6 +170,10 @@ async def chat_with_coach_stream(
             result = await task
             text = (result.get("response") or "").strip()
             timed_out = bool(result.get("timed_out", False))
+            tools_used = list(result.get("tools_used") or result.get("tools_called") or [])
+            conversation_contract = result.get("conversation_contract")
+            if not conversation_contract:
+                conversation_contract = classify_conversation_contract(request.message).contract_type.value
 
             chunk_size = 220
             for i in range(0, len(text), chunk_size):
@@ -155,6 +190,12 @@ async def chat_with_coach_stream(
                     "used_baseline": bool(result.get("used_baseline", False)),
                     "baseline_needed": bool(result.get("baseline_needed", False)),
                     "rebuild_plan_prompt": bool(result.get("rebuild_plan_prompt", False)),
+                    "tools_used": tools_used,
+                    "tool_count": int(result.get("tool_count") or len(tools_used)),
+                    "conversation_contract": conversation_contract,
+                    "runtime_version": str(result.get("runtime_version") or "v1"),
+                    "runtime_mode": str(result.get("runtime_mode") or "off"),
+                    "fallback_reason": result.get("fallback_reason"),
                 }
             ).encode("utf-8") + b"\n\n"
 
@@ -182,7 +223,7 @@ async def chat_with_coach_stream(
 
 @router.post("/new-conversation", response_model=NewConversationResponse)
 async def new_conversation(
-    athlete: Athlete = Depends(get_current_athlete),
+    athlete: Athlete = Depends(require_tier(["guided"])),
     db: Session = Depends(get_db),
 ):
     """
@@ -195,7 +236,7 @@ async def new_conversation(
     db.query(CoachChat).filter(
         CoachChat.athlete_id == athlete.id,
         CoachChat.context_type == "open",
-        CoachChat.is_active == True,
+        CoachChat.is_active.is_(True),
     ).update({"is_active": False})
     db.commit()
     return NewConversationResponse(ok=True)
@@ -204,7 +245,7 @@ async def new_conversation(
 @router.get("/context", response_model=ContextResponse)
 async def get_coach_context(
     days: int = 30,
-    athlete: Athlete = Depends(get_current_athlete),
+    athlete: Athlete = Depends(require_tier(["guided"])),
     db: Session = Depends(get_db),
 ):
     """
@@ -220,7 +261,7 @@ async def get_coach_context(
 
 @router.get("/suggestions")
 async def get_suggested_questions(
-    athlete: Athlete = Depends(get_current_athlete),
+    athlete: Athlete = Depends(require_tier(["guided"])),
     db: Session = Depends(get_db),
 ):
     """
@@ -236,7 +277,7 @@ async def get_suggested_questions(
 @router.get("/history", response_model=ThreadHistoryResponse)
 async def get_coach_history(
     limit: int = 50,
-    athlete: Athlete = Depends(get_current_athlete),
+    athlete: Athlete = Depends(require_tier(["guided"])),
     db: Session = Depends(get_db),
 ):
     """
@@ -245,7 +286,15 @@ async def get_coach_history(
     coach = AICoach(db)
     hist = coach.get_thread_history(athlete.id, limit=limit)
     msgs = [
-        ThreadMessage(role=m.get("role", "assistant"), content=m.get("content", ""), created_at=m.get("created_at"))
+        ThreadMessage(
+            role=m.get("role", "assistant"),
+            content=m.get("content", ""),
+            created_at=m.get("created_at"),
+            tools_used=list(m.get("tools_used") or []),
+            tool_count=int(m.get("tool_count") or 0),
+            conversation_contract=m.get("conversation_contract"),
+            runtime_metadata=m.get("runtime_metadata"),
+        )
         for m in (hist.get("messages") or [])
         if (m.get("content") or "").strip()
     ]

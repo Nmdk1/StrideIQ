@@ -75,6 +75,8 @@ class TestProductionConfigValidation:
             debug=False,
             cors_origins="https://strideiq.run,https://www.strideiq.run",
             postgres_password="secure-password-12chars",
+            briefing_primary_model="kimi-k2-turbo-preview",
+            kimi_canary_model="kimi-k2-turbo-preview",
         )
 
     def test_production_case_insensitive_triggers_validation(self):
@@ -86,6 +88,39 @@ class TestProductionConfigValidation:
                 cors_origins="https://x.com",
                 postgres_password="secure-password-12chars",
             )
+
+    def test_production_briefing_primary_kimi_k25_passes(self):
+        """k2.5 is now valid for briefings via non-thinking mode."""
+        validate_production_config(
+            environment="production",
+            debug=False,
+            cors_origins="https://strideiq.run",
+            postgres_password="secure-password-12chars",
+            briefing_primary_model="kimi-k2.5",
+            kimi_canary_model="kimi-k2-turbo-preview",
+        )
+
+    def test_production_briefing_canary_kimi_k25_passes(self):
+        """k2.5 is now valid as canary model via non-thinking mode."""
+        validate_production_config(
+            environment="production",
+            debug=False,
+            cors_origins="https://strideiq.run",
+            postgres_password="secure-password-12chars",
+            briefing_primary_model="claude-sonnet-4-6",
+            kimi_canary_model="kimi-k2.5",
+        )
+
+    def test_production_briefing_kimi_k26_passes(self):
+        """k2.6 is the current default model."""
+        validate_production_config(
+            environment="production",
+            debug=False,
+            cors_origins="https://strideiq.run",
+            postgres_password="secure-password-12chars",
+            briefing_primary_model="kimi-k2.6",
+            kimi_canary_model="kimi-k2.6",
+        )
 
 
 class TestNonProductionNotValidated:

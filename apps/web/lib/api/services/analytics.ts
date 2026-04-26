@@ -9,7 +9,7 @@ import { apiClient } from '../client';
 export interface EfficiencyTrendPoint {
   date: string;
   efficiency_factor: number;
-  pace_per_mile: number;
+  pace_s_per_km: number;
   avg_hr: number;
   distance_m?: number;
   duration_s?: number;
@@ -53,8 +53,7 @@ export interface EfficiencyTrendsResponse {
   };
   load_response?: Array<{
     week_start: string;
-    total_distance_km: number;
-    total_distance_miles: number;
+    total_distance_m: number;
     total_duration_hours: number;
     activity_count: number;
     avg_efficiency?: number;
@@ -87,15 +86,13 @@ export interface LoadResponseExplainResponse {
   };
   metrics: {
     current: {
-      total_distance_miles: number;
-      total_distance_km: number;
+      total_distance_m: number;
       total_duration_hours: number;
       activity_count: number;
       avg_efficiency: number | null;
     };
     previous: {
-      total_distance_miles: number;
-      total_distance_km: number;
+      total_distance_m: number;
       total_duration_hours: number;
       activity_count: number;
       avg_efficiency: number | null;

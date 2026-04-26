@@ -24,13 +24,15 @@ See docs/PHASE2_GARMIN_INTEGRATION_AC.md §D5, §D6
 """
 
 import logging
+import json
 import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from tasks import celery_app
+from core.cache import get_redis_client
 from core.database import get_db_sync
-from models import Activity, ActivitySplit, ActivityStream, Athlete, GarminDay
+from models import Activity, ActivitySplit, ActivityStream, Athlete, CorrelationFinding, GarminDay
 from services.garmin_adapter import (
     adapt_activity_summary,
     adapt_activity_detail_envelope,
@@ -41,11 +43,22 @@ from services.garmin_adapter import (
     adapt_stress_detail,
     adapt_daily_summary,
     adapt_user_metrics,
+    _ACCEPTED_SPORTS,
 )
 from services.activity_deduplication import match_activities, TIME_WINDOW_S
-from services.garmin_backfill import request_garmin_backfill
+from services.garmin_backfill import (
+    request_deep_garmin_backfill,
+    request_garmin_backfill,
+)
+from services.sync.garmin_oauth import ensure_fresh_garmin_token
 
 logger = logging.getLogger(__name__)
+_BACKFILL_PROGRESS_TTL_S = 24 * 60 * 60
+_FIRST_SESSION_SWEEP_LOCK_TTL_S = 600
+_BRIEFING_COALESCE_WINDOW_S = 45
+_BRIEFING_PENDING_TTL_S = 180
+_DEFERRED_DETAIL_TTL_S = 6 * 60 * 60
+_DEFERRED_DETAIL_MAX_PER_ACTIVITY = 8
 
 
 # ---------------------------------------------------------------------------
@@ -121,6 +134,137 @@ def _set_if_not_none(obj, attr: str, value: Any) -> None:
         setattr(obj, attr, value)
 
 
+def _backfill_progress_key(athlete_id: str) -> str:
+    return f"backfill_progress:{athlete_id}"
+
+
+def _first_session_lock_key(athlete_id: str) -> str:
+    return f"first_session_sweep_lock:{athlete_id}"
+
+
+def _briefing_coalesce_key(athlete_id: str) -> str:
+    return f"home_briefing_coalesce:{athlete_id}"
+
+
+def _briefing_pending_key(athlete_id: str) -> str:
+    return f"home_briefing_pending:{athlete_id}"
+
+
+def _deferred_detail_key(athlete_id: str, garmin_activity_id: int) -> str:
+    return f"garmin_detail_pending:{athlete_id}:{garmin_activity_id}"
+
+
+def _defer_activity_detail_payload(
+    athlete_id: str,
+    garmin_activity_id: int,
+    raw_item: Dict[str, Any],
+) -> None:
+    """
+    Store out-of-order Garmin detail payloads until summary ingestion creates the
+    parent Activity row. This closes the detail-before-summary webhook race.
+    """
+    r = get_redis_client()
+    if not r:
+        return
+    key = _deferred_detail_key(str(athlete_id), int(garmin_activity_id))
+    try:
+        r.rpush(key, json.dumps(raw_item))
+        # Bound memory per activity in pathological retry storms.
+        r.ltrim(key, -_DEFERRED_DETAIL_MAX_PER_ACTIVITY, -1)
+        r.expire(key, _DEFERRED_DETAIL_TTL_S)
+    except Exception as exc:
+        logger.warning(
+            "Failed to defer Garmin detail payload athlete=%s garmin_activity_id=%s: %s",
+            athlete_id,
+            garmin_activity_id,
+            exc,
+        )
+
+
+def _pop_deferred_activity_detail_payloads(
+    athlete_id: str,
+    garmin_activity_id: int,
+) -> List[Dict[str, Any]]:
+    """
+    Read and clear deferred detail payloads for one Garmin activity.
+    """
+    r = get_redis_client()
+    if not r:
+        return []
+    key = _deferred_detail_key(str(athlete_id), int(garmin_activity_id))
+    try:
+        raw_values = r.lrange(key, 0, -1) or []
+        r.delete(key)
+    except Exception:
+        return []
+
+    out: List[Dict[str, Any]] = []
+    for raw in raw_values:
+        try:
+            parsed = json.loads(raw)
+            if isinstance(parsed, dict):
+                out.append(parsed)
+        except Exception:
+            continue
+    return out
+
+
+def _replay_deferred_activity_details(
+    athlete_id: str,
+    garmin_activity_ids: List[int],
+) -> int:
+    """
+    Enqueue deferred detail payloads after summary ingestion succeeds.
+    Returns the number of payload dicts replayed.
+    """
+    replayed = 0
+    for garmin_activity_id in garmin_activity_ids:
+        payloads = _pop_deferred_activity_detail_payloads(athlete_id, int(garmin_activity_id))
+        if not payloads:
+            continue
+        process_garmin_activity_detail_task.apply_async(
+            args=[str(athlete_id), payloads],
+            countdown=5,
+        )
+        replayed += len(payloads)
+    return replayed
+
+
+def _progress_hincr(athlete_id: str, field: str, amount: int) -> None:
+    if amount <= 0:
+        return
+    r = get_redis_client()
+    if not r:
+        return
+    key = _backfill_progress_key(athlete_id)
+    r.hincrby(key, field, int(amount))
+    r.expire(key, _BACKFILL_PROGRESS_TTL_S)
+
+
+def _progress_hset(athlete_id: str, field: str, value: str) -> None:
+    r = get_redis_client()
+    if not r:
+        return
+    key = _backfill_progress_key(athlete_id)
+    r.hset(key, field, value)
+    r.expire(key, _BACKFILL_PROGRESS_TTL_S)
+
+
+def _try_acquire_first_session_lock(athlete_id: str) -> bool:
+    """Acquire idempotency lock; False means a sweep is already in-flight/recent."""
+    r = get_redis_client()
+    if not r:
+        return True
+    return bool(
+        r.set(
+            _first_session_lock_key(athlete_id),
+            "1",
+            ex=_FIRST_SESSION_SWEEP_LOCK_TTL_S,
+            nx=True,
+        )
+    )
+
+
 def _create_activity_from_adapted(adapted: Dict[str, Any], athlete_id) -> Activity:
     """
     Construct a new Activity ORM instance from an adapt_activity_summary() output dict.
@@ -135,6 +279,8 @@ def _create_activity_from_adapted(adapted: Dict[str, Any], athlete_id) -> Activi
         garmin_activity_id=adapted.get("garmin_activity_id"),
         source=adapted.get("source") or "garmin",
         sport=adapted.get("sport", "run"),
+        garmin_activity_type=adapted.get("garmin_activity_type"),
+        cadence_unit=adapted.get("cadence_unit"),
         name=adapted.get("name"),
         start_time=adapted["start_time"],
         duration_s=adapted.get("duration_s"),
@@ -155,6 +301,46 @@ def _create_activity_from_adapted(adapted: Dict[str, Any], athlete_id) -> Activi
         start_lat=adapted.get("start_lat"),
         start_lng=adapted.get("start_lng"),
         is_race_candidate=False,
+    )
+
+
+def _coalesced_home_briefing_refresh(athlete_id: str) -> None:
+    """
+    Coalesce burst health events into:
+      - at most one active enqueue inside the coalesce window
+      - at most one queued follow-up after the window
+    """
+    r = get_redis_client()
+    if not r:
+        # Fail open if Redis unavailable.
+        from tasks.home_briefing_tasks import enqueue_briefing_refresh
+        enqueue_briefing_refresh(str(athlete_id), force=True)
+        return
+
+    coalesce_key = _briefing_coalesce_key(str(athlete_id))
+    pending_key = _briefing_pending_key(str(athlete_id))
+    try:
+        first_event_in_window = bool(r.set(coalesce_key, "1", nx=True, ex=_BRIEFING_COALESCE_WINDOW_S))
+        r.setex(pending_key, _BRIEFING_PENDING_TTL_S, "1")
+    except Exception:
+        from tasks.home_briefing_tasks import enqueue_briefing_refresh
+        enqueue_briefing_refresh(str(athlete_id), force=True)
+        return
+
+    if not first_event_in_window:
+        return
+
+    from services.home_briefing_cache import is_task_lock_held
+    from tasks.home_briefing_tasks import enqueue_briefing_refresh
+
+    # First event in burst: enqueue immediately when no active task.
+    if not is_task_lock_held(str(athlete_id)):
+        enqueue_briefing_refresh(str(athlete_id), force=True)
+
+    # Always queue one bounded follow-up after window to pick up late health events.
+    flush_home_briefing_followup_task.apply_async(
+        args=[str(athlete_id)],
+        countdown=_BRIEFING_COALESCE_WINDOW_S,
     )
 
 
@@ -266,6 +452,28 @@ def _ingest_health_item(
         return False
 
     _upsert_garmin_day(athlete_id, calendar_date, adapted, db)
+
+    try:
+        from models import Activity, Athlete
+        from services.wellness_stamp import stamp_wellness
+        athlete = db.query(Athlete).filter(Athlete.id == athlete_id).first()
+        tz_name = getattr(athlete, "timezone", None) if athlete else None
+        unstamped = (
+            db.query(Activity)
+            .filter(
+                Activity.athlete_id == athlete_id,
+                Activity.pre_recovery_hrv.is_(None),
+                Activity.start_time.isnot(None),
+            )
+            .all()
+        )
+        for act in unstamped:
+            from services.wellness_stamp import _resolve_date
+            if _resolve_date(act.start_time, tz_name) == calendar_date:
+                stamp_wellness(act, db, athlete_timezone=tz_name)
+    except Exception:
+        logger.warning("Retro-stamp wellness on health ingest failed — non-fatal", exc_info=True)
+
     return True
 
 
@@ -289,10 +497,11 @@ def _ingest_activity_item(
     """
     adapted = adapt_activity_summary(raw_item)
 
-    if adapted.get("sport") != "run":
-        logger.debug(
-            "Skipping non-run activity (sport=%s, external_id=%s)",
+    if adapted.get("sport") not in _ACCEPTED_SPORTS:
+        logger.warning(
+            "Skipping unmapped activity (sport=%s, type=%s, external_id=%s)",
             adapted.get("sport"),
+            adapted.get("garmin_activity_type"),
             adapted.get("external_activity_id"),
         )
         return "skipped"
@@ -347,11 +556,95 @@ def _ingest_activity_item(
                 candidate.id,
             )
             _apply_garmin_fields_to_activity(candidate, adapted)
+            try:
+                from services.wellness_stamp import stamp_wellness
+                tz_name = getattr(athlete, "timezone", None)
+                stamp_wellness(candidate, db, athlete_timezone=tz_name)
+            except Exception:
+                logger.warning("Wellness stamp failed on garmin-update for %s — non-fatal", external_id, exc_info=True)
+            if candidate.dew_point_f is None and candidate.start_lat is not None:
+                try:
+                    from services.weather_backfill import enrich_activity_weather
+                    enrich_activity_weather(candidate, db)
+                except Exception:
+                    logger.warning("Weather enrichment failed on garmin-update for %s — non-fatal", external_id, exc_info=True)
             return "updated"
 
     # --- No match: create new Activity row ---
     new_activity = _create_activity_from_adapted(adapted, athlete.id)
     db.add(new_activity)
+    try:
+        from services.hr_backfill import backfill_hr_from_garmin
+        backfill_hr_from_garmin(db, athlete.id, new_activity)
+    except Exception:
+        logger.warning("HR backfill failed for garmin activity %s — non-fatal", external_id, exc_info=True)
+
+    try:
+        from services.wellness_stamp import stamp_wellness
+        tz_name = getattr(athlete, "timezone", None)
+        stamp_wellness(new_activity, db, athlete_timezone=tz_name)
+    except Exception:
+        logger.warning("Wellness stamp failed for garmin activity %s — non-fatal", external_id, exc_info=True)
+
+    try:
+        from services.weather_backfill import enrich_activity_weather
+        enrich_activity_weather(new_activity, db)
+    except Exception:
+        logger.warning("Weather enrichment failed for garmin activity %s — non-fatal", external_id, exc_info=True)
+
+    # Race detection + workout classification — same logic as the Strava path.
+    # Without this, Garmin activities are born with is_race_candidate=False and
+    # workout_type=None, which means marathons, 5Ks, etc. are invisible to the
+    # fitness bank's race performance tracking.
+    try:
+        from services.performance_engine import detect_race_candidate
+        dist_m = float(new_activity.distance_m or 0)
+        dur_s = new_activity.duration_s or new_activity.moving_time_s
+        avg_hr = new_activity.avg_hr
+        max_hr = new_activity.max_hr
+        pace = None
+        if dist_m > 0 and dur_s and dur_s > 0:
+            pace = (dur_s / 60.0) / (dist_m / 1609.344)
+        is_candidate, confidence = detect_race_candidate(
+            activity_pace=pace,
+            distance_meters=dist_m,
+            duration_seconds=dur_s,
+            avg_hr=avg_hr,
+            max_hr=max_hr,
+            splits=[],
+            activity_name=new_activity.name,
+        )
+        if is_candidate:
+            new_activity.is_race_candidate = True
+            new_activity.race_confidence = confidence
+            logger.info("Garmin activity %s flagged as race candidate (conf=%.2f)", external_id, confidence)
+    except Exception:
+        logger.warning("Race detection failed for garmin activity %s — non-fatal", external_id, exc_info=True)
+
+    # Classify workout type (long_run, easy_run, threshold_run, race, etc.)
+    # This is what populates `activity.workout_type` for the comparison
+    # service to find same-type matches.  Previously this was called as a
+    # class method without instantiation -- it threw TypeError on every
+    # Garmin ingest, was swallowed by the broad except, and every Garmin
+    # activity went to disk with workout_type=NULL.  That single bug is
+    # what made the Compare tab return "no similar runs" for every Garmin-
+    # primary athlete, because tiers 3 and 4 both gate on workout_type.
+    try:
+        from services.workout_classifier import WorkoutClassifierService
+
+        classifier = WorkoutClassifierService(db)
+        classification = classifier.classify_activity(new_activity)
+        new_activity.workout_type = classification.workout_type.value
+        new_activity.workout_zone = classification.workout_zone.value
+        new_activity.workout_confidence = classification.confidence
+        new_activity.intensity_score = classification.intensity_score
+    except Exception:
+        logger.warning(
+            "Workout classification failed for garmin activity %s — non-fatal",
+            external_id,
+            exc_info=True,
+        )
+
     return "created"
 
 
@@ -360,11 +653,30 @@ def _ingest_activity_detail_item(
     athlete_id: str,
     db,
 ) -> bool:
+    """Bool wrapper around :func:`_ingest_activity_detail_item_full`.
+
+    Existing call sites and tests (e.g. ``test_garmin_splits.py``) treat the
+    return value as a strict bool (``assert result is True``). The richer
+    helper below additionally returns the resolved Activity row so the
+    Celery task can chain follow-up work without re-querying.
+    """
+    _, was_processed = _ingest_activity_detail_item_full(raw_item, athlete_id, db)
+    return was_processed
+
+
+def _ingest_activity_detail_item_full(
+    raw_item: Dict[str, Any],
+    athlete_id: str,
+    db,
+):
     """
     Process a single Garmin ClientActivityDetail dict: extract samples,
     build ActivityStream row, link to parent Activity via garmin_activity_id.
 
-    Returns True if processed, False if skipped.
+    Returns ``(activity, was_processed)`` where ``activity`` is the matched
+    Activity row (or ``None`` if no row was matched) and ``was_processed``
+    is True if work was performed (stream upsert, lap split write, or the
+    "unavailable" fail-closed path), False if the item was skipped.
     """
     # All Garmin→internal field name translation delegated to adapter (source contract)
     envelope = adapt_activity_detail_envelope(raw_item)
@@ -372,7 +684,7 @@ def _ingest_activity_detail_item(
 
     if garmin_activity_id_int is None:
         logger.warning("Activity detail missing or invalid garmin_activity_id — skipping")
-        return False
+        return None, False
 
     # Find parent Activity by garmin_activity_id
     activity = (
@@ -384,12 +696,25 @@ def _ingest_activity_detail_item(
         .first()
     )
     if activity is None:
+        _defer_activity_detail_payload(athlete_id, garmin_activity_id_int, raw_item)
         logger.warning(
-            "Activity detail for unknown garmin_activity_id=%s (athlete=%s) — skipping",
+            "Activity detail for unknown garmin_activity_id=%s (athlete=%s) — deferred",
             garmin_activity_id_int,
             athlete_id,
         )
-        return False
+        return None, False
+
+    if activity.sport != "run":
+        activity.session_detail = {
+            **(activity.session_detail or {}),
+            "detail_webhook_raw": raw_item,
+        }
+        logger.info(
+            "Non-run detail stored in session_detail for garmin_activity_id=%s (sport=%s)",
+            garmin_activity_id_int,
+            activity.sport,
+        )
+        return activity, True
 
     samples = envelope.get("samples") or []
 
@@ -398,12 +723,33 @@ def _ingest_activity_detail_item(
     lap_splits = adapt_activity_detail_laps(raw_item, samples)
 
     if not samples and not lap_splits:
-        logger.debug(
-            "Activity detail garmin_activity_id=%s has no samples or laps",
+        logger.info(
+            "garmin_activity_detail_empty garmin_activity_id=%s activity_id=%s — marking unavailable and enqueueing strava fallback",
             garmin_activity_id_int,
+            activity.id,
         )
         activity.stream_fetch_status = "unavailable"
-        return True
+        activity.stream_fetch_error = "garmin_detail_empty_no_samples_or_laps"
+        # Mirror the cleanup-beat behavior: every fail-closed Garmin row gets
+        # one shot at Strava-side repair.  Without this, the webhook path
+        # silently accepts permanent emptiness while the timeout path heals
+        # itself — that asymmetry is the regression that broke Larry's run
+        # and lit up "no chart" for athletes whose detail webhook returns
+        # an empty envelope.  Best-effort enqueue: a broker hiccup must not
+        # roll back the activity row.
+        try:
+            from tasks.strava_fallback_tasks import (
+                repair_garmin_activity_from_strava_task,
+            )
+
+            repair_garmin_activity_from_strava_task.delay(str(activity.id))
+        except Exception as enqueue_exc:  # pragma: no cover - logged only
+            logger.warning(
+                "strava_fallback_enqueue_failed_from_webhook activity_id=%s error=%s",
+                activity.id,
+                enqueue_exc,
+            )
+        return activity, True
 
     # All Garmin→internal channel translation delegated to adapter (source contract)
     if samples:
@@ -474,24 +820,62 @@ def _ingest_activity_detail_item(
         db.query(ActivitySplit).filter(
             ActivitySplit.activity_id == activity.id
         ).delete(synchronize_session=False)
-        for lap in lap_splits:
+        from services.interval_detector import detect_interval_structure
+        analysis = detect_interval_structure(lap_splits)
+
+        for ls in analysis.labeled_splits:
             db.add(ActivitySplit(
                 activity_id=activity.id,
-                split_number=lap["split_number"],
-                distance=lap["distance"],
-                elapsed_time=lap["elapsed_time"],
-                moving_time=lap["moving_time"],
-                average_heartrate=lap["average_heartrate"],
-                max_heartrate=lap["max_heartrate"],
-                average_cadence=lap["average_cadence"],
-                gap_seconds_per_mile=lap["gap_seconds_per_mile"],
+                split_number=ls.split_number,
+                distance=ls.distance,
+                elapsed_time=ls.elapsed_time,
+                moving_time=ls.moving_time,
+                average_heartrate=ls.average_heartrate,
+                max_heartrate=ls.max_heartrate,
+                average_cadence=ls.average_cadence,
+                gap_seconds_per_mile=ls.gap_seconds_per_mile,
+                lap_type=ls.lap_type,
+                interval_number=ls.interval_number,
             ))
         logger.info(
-            "Created %d splits for garmin_activity_id=%s",
-            len(lap_splits), garmin_activity_id_int,
+            "Created %d splits (structured=%s) for garmin_activity_id=%s",
+            len(lap_splits), analysis.summary.is_structured, garmin_activity_id_int,
         )
 
-    return True
+        # Re-run race detection now that splits are available.
+        # The summary webhook runs detection with splits=[] (they don't exist yet),
+        # so this is the first opportunity to score pace consistency and effort profile.
+        if not activity.is_race_candidate:
+            try:
+                from services.performance_engine import detect_race_candidate
+                _dist_m = float(activity.distance_m or 0)
+                _dur_s = activity.duration_s or activity.moving_time_s
+                _pace = None
+                if _dist_m > 0 and _dur_s and _dur_s > 0:
+                    _pace = (_dur_s / 60.0) / (_dist_m / 1609.344)
+                is_candidate, confidence = detect_race_candidate(
+                    activity_pace=_pace,
+                    distance_meters=_dist_m,
+                    duration_seconds=_dur_s,
+                    avg_hr=activity.avg_hr,
+                    max_hr=activity.max_hr,
+                    splits=lap_splits,
+                    activity_name=activity.name,
+                )
+                if is_candidate:
+                    activity.is_race_candidate = True
+                    activity.race_confidence = confidence
+                    logger.info(
+                        "Race re-detection with splits: garmin_activity_id=%s flagged (conf=%.2f)",
+                        garmin_activity_id_int, confidence,
+                    )
+            except Exception:
+                logger.warning(
+                    "Race re-detection failed for garmin_activity_id=%s — non-fatal",
+                    garmin_activity_id_int, exc_info=True,
+                )
+
+    return activity, True
 
 
 # ---------------------------------------------------------------------------
@@ -517,7 +901,7 @@ def process_garmin_activity_task(
 
     Steps per activity item:
       1. adapt_activity_summary() — Garmin→internal field translation
-      2. Filter: sport="run" only (RUNNING, TRAIL_RUNNING, TREADMILL_RUNNING, etc.)
+      2. Filter: sport must be in _ACCEPTED_SPORTS (run, cycling, walking, hiking, strength, flexibility)
       3. Idempotency: skip if already synced as Garmin (same external_activity_id)
       4. Deduplication: time-window check against existing activities
       5. Garmin wins on dedup match: update existing row, provider→"garmin"
@@ -549,13 +933,22 @@ def process_garmin_activity_task(
         created = 0
         updated = 0
         skipped = 0
+        replay_candidates: List[int] = []
 
         for raw_item in items:
             result = _ingest_activity_item(raw_item, athlete, db)
             if result == "created":
                 created += 1
+                adapted = adapt_activity_summary(raw_item)
+                garmin_activity_id = adapted.get("garmin_activity_id")
+                if isinstance(garmin_activity_id, int):
+                    replay_candidates.append(garmin_activity_id)
             elif result == "updated":
                 updated += 1
+                adapted = adapt_activity_summary(raw_item)
+                garmin_activity_id = adapted.get("garmin_activity_id")
+                if isinstance(garmin_activity_id, int):
+                    replay_candidates.append(garmin_activity_id)
             else:
                 skipped += 1
 
@@ -563,9 +956,27 @@ def process_garmin_activity_task(
         db.commit()
         from core.cache import invalidate_athlete_cache
         invalidate_athlete_cache(str(athlete_id))
+
+        replayed_detail_payloads = 0
+        if replay_candidates:
+            replayed_detail_payloads = _replay_deferred_activity_details(
+                str(athlete_id),
+                replay_candidates,
+            )
+            if replayed_detail_payloads > 0:
+                logger.info(
+                    "Replayed %d deferred Garmin detail payload(s) for athlete=%s",
+                    replayed_detail_payloads,
+                    athlete_id,
+                )
         # Ensure home coach briefing reflects newly ingested activities.
         # We only trigger when data actually changed (created/updated), not for all-skipped payloads.
         if created > 0 or updated > 0:
+            # Progress contract for first-session UX.
+            try:
+                _progress_hincr(str(athlete_id), "activities_ingested", created + updated)
+            except Exception:
+                pass
             try:
                 from services.home_briefing_cache import mark_briefing_dirty
                 from tasks.home_briefing_tasks import enqueue_briefing_refresh
@@ -583,15 +994,49 @@ def process_garmin_activity_task(
                     refresh_exc,
                 )
 
+            # First-session trigger: meaningful initial batch and no existing findings.
+            if created + updated >= 3:
+                try:
+                    from tasks.correlation_tasks import run_athlete_first_session_sweep
+                    has_finding = (
+                        db.query(CorrelationFinding.id)
+                        .filter(CorrelationFinding.athlete_id == athlete.id)
+                        .first()
+                    )
+                    if not has_finding:
+                        if _try_acquire_first_session_lock(str(athlete_id)):
+                            run_athlete_first_session_sweep.apply_async(
+                                args=[str(athlete_id)],
+                                countdown=30,
+                            )
+                            logger.info(
+                                "First-session sweep enqueued for athlete %s (created=%d updated=%d)",
+                                athlete_id,
+                                created,
+                                updated,
+                            )
+                        else:
+                            logger.info(
+                                "First-session sweep enqueue skipped (lock held) for athlete %s",
+                                athlete_id,
+                            )
+                except Exception as sweep_exc:
+                    logger.warning(
+                        "First-session sweep trigger failed for athlete %s: %s",
+                        athlete_id,
+                        sweep_exc,
+                    )
+
         # Runtoon generation is on-demand only (athlete taps "Share Your Run").
         # Auto-generation removed per RUNTOON_SHARE_FLOW_SPEC.md — Mar 2026.
 
         logger.info(
-            "process_garmin_activity_task: athlete=%s created=%d updated=%d skipped=%d",
+            "process_garmin_activity_task: athlete=%s created=%d updated=%d skipped=%d replayed_detail_payloads=%d",
             athlete_id,
             created,
             updated,
             skipped,
+            replayed_detail_payloads,
         )
         return {"status": "ok", "created": created, "updated": updated, "skipped": skipped}
 
@@ -649,10 +1094,29 @@ def process_garmin_activity_detail_task(
         items: List[Dict[str, Any]] = payload if isinstance(payload, list) else [payload]
 
         processed = 0
+        processed_activity_ids: List[Any] = []
         for raw_item in items:
-            if _ingest_activity_detail_item(raw_item, athlete_id, db):
+            # Use the richer helper so we get the Activity row back without a
+            # second DB roundtrip. This also keeps Garmin field names out of
+            # the task module (enforced by
+            # tests/test_garmin_d5_activity_sync.py::TestSourceContract).
+            activity_row, ingested = _ingest_activity_detail_item_full(
+                raw_item, athlete_id, db
+            )
+            if ingested:
                 processed += 1
                 db.commit()
+                if activity_row is not None:
+                    processed_activity_ids.append(activity_row.id)
+
+        # --- ROUTE FINGERPRINT (Phase 2 of comparison family) ---
+        for act_id in processed_activity_ids:
+            try:
+                from services.routes.route_fingerprint import compute_for_activity
+                compute_for_activity(db, act_id)
+            except Exception as exc:  # pragma: no cover — defensive
+                logger.warning("route_fingerprint_failed activity_id=%s err=%s", act_id, exc)
+                db.rollback()
 
         logger.info(
             "process_garmin_activity_detail_task: athlete=%s processed=%d",
@@ -726,6 +1190,84 @@ def request_garmin_backfill_task(self, athlete_id: str) -> Dict[str, Any]:
         db.close()
 
 
+@celery_app.task(
+    name="request_garmin_activity_files_backfill_task",
+    bind=True,
+    max_retries=2,
+    default_retry_delay=300,
+    time_limit=120,
+)
+def request_garmin_activity_files_backfill_task(
+    self,
+    athlete_id: str,
+    days: int = 30,
+) -> Dict[str, Any]:
+    """Quarantined — Garmin's activityFiles backfill endpoint does not work.
+
+    See ``services.sync.garmin_backfill.ActivityFilesBackfillUnavailable``
+    for the full history. This task no longer attempts the call; it
+    returns a structured "unavailable" result so any scheduled invocation
+    or manual op surfaces the truth instead of producing 404 spam in the
+    logs and burning Garmin rate-limit headroom.
+
+    Do not re-enable this task. FIT files arrive only via the live
+    activity-files webhook at sync time. Historical activities synced
+    before the FIT run parser existed (``fit_run_001``, Apr 19, 2026)
+    will not be backfilled by us.
+    """
+    logger.warning(
+        "request_garmin_activity_files_backfill_task called for athlete=%s days=%d — "
+        "endpoint does not work; returning unavailable.",
+        athlete_id, days,
+    )
+    return {
+        "status": "unavailable",
+        "reason": "garmin_activity_files_backfill_not_supported",
+        "athlete_id": athlete_id,
+        "days": days,
+    }
+
+
+@celery_app.task(
+    name="request_deep_garmin_backfill_task",
+    bind=True,
+    max_retries=2,
+    default_retry_delay=600,
+    time_limit=900,
+    soft_time_limit=840,
+)
+def request_deep_garmin_backfill_task(
+    self,
+    athlete_id: str,
+    target_days_back: int = 730,
+) -> Dict[str, Any]:
+    """
+    Request deep Garmin history in rolling windows (up to target_days_back).
+    """
+    from datetime import timedelta
+
+    db = get_db_sync()
+    try:
+        athlete = _find_athlete_in_db(athlete_id, db)
+        if athlete is None:
+            return {"status": "skipped", "reason": "athlete_not_found"}
+
+        target_start = datetime.now(timezone.utc) - timedelta(days=target_days_back)
+        result = request_deep_garmin_backfill(
+            athlete,
+            db,
+            target_start=target_start,
+            inter_window_delay_s=3.0,
+        )
+        return result
+    except Exception as exc:
+        db.rollback()
+        logger.exception("request_deep_garmin_backfill_task failed for athlete %s: %s", athlete_id, exc)
+        raise self.retry(exc=exc)
+    finally:
+        db.close()
+
+
 # ---------------------------------------------------------------------------
 # D6: health tasks — implemented in D6
 # ---------------------------------------------------------------------------
@@ -788,12 +1330,16 @@ def process_garmin_health_task(
         # Health data can materially change home coaching context (sleep/HRV/stress).
         # Trigger a briefing refresh when new health records were processed.
         if processed > 0:
+            # Progress contract for first-session UX.
+            try:
+                _progress_hincr(str(athlete_id), "health_records_ingested", processed)
+            except Exception:
+                pass
             try:
                 from services.home_briefing_cache import mark_briefing_dirty
-                from tasks.home_briefing_tasks import enqueue_briefing_refresh
 
                 mark_briefing_dirty(str(athlete_id))
-                enqueue_briefing_refresh(str(athlete_id), force=True)
+                _coalesced_home_briefing_refresh(str(athlete_id))
             except Exception as refresh_exc:
                 logger.warning(
                     "Garmin health briefing refresh trigger failed for athlete %s: %s",
@@ -821,6 +1367,41 @@ def process_garmin_health_task(
         raise self.retry(exc=exc)
     finally:
         db.close()
+
+
+@celery_app.task(
+    name="flush_home_briefing_followup_task",
+    bind=True,
+    max_retries=8,
+    default_retry_delay=15,
+)
+def flush_home_briefing_followup_task(self, athlete_id: str) -> Dict[str, Any]:
+    """
+    Execute one bounded follow-up refresh after a webhook burst.
+    Retries while an active briefing generation lock is held.
+    """
+    from services.home_briefing_cache import is_task_lock_held
+    from tasks.home_briefing_tasks import enqueue_briefing_refresh
+
+    r = get_redis_client()
+    if not r:
+        enqueue_briefing_refresh(str(athlete_id), force=True)
+        return {"status": "ok", "reason": "redis_unavailable_fail_open"}
+
+    pending_key = _briefing_pending_key(str(athlete_id))
+    try:
+        if not r.exists(pending_key):
+            return {"status": "ok", "reason": "no_pending"}
+
+        if is_task_lock_held(str(athlete_id)):
+            raise self.retry()
+
+        enqueue_briefing_refresh(str(athlete_id), force=True)
+        r.delete(pending_key)
+        return {"status": "ok", "reason": "followup_enqueued"}
+    except self.MaxRetriesExceededError:
+        logger.warning("Follow-up briefing flush exceeded retries for athlete %s", athlete_id)
+        return {"status": "error", "reason": "max_retries_exceeded"}
 
 
 @celery_app.task(
@@ -879,4 +1460,216 @@ def process_garmin_permissions_task(
     logger.info(
         "[D5 STUB] process_garmin_permissions_task",
         extra={"athlete_id": athlete_id},
+    )
+
+
+# ---------------------------------------------------------------------------
+# Activity File Processing — FIT file pipeline
+# ---------------------------------------------------------------------------
+
+_FIT_DOWNLOAD_TIMEOUT_S = 30
+
+
+@celery_app.task(
+    name="process_garmin_activity_file_task",
+    bind=True,
+    max_retries=3,
+    default_retry_delay=60,
+    rate_limit="5/m",
+)
+def process_garmin_activity_file_task(
+    self,
+    athlete_id: str,
+    record: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Download FIT file from Garmin callback URL and extract exercise sets.
+
+    Triggered by the activity-files webhook.  The record contains a
+    callbackURL with a temporary download token.  We download the binary
+    FIT file, parse exercise sets via fitparse, match to the existing
+    Activity, and feed into the strength parser pipeline.
+    """
+    import requests as http_requests
+    from services.garmin_adapter import adapt_activity_file_record
+
+    adapted = adapt_activity_file_record(record)
+    callback_url = adapted["callback_url"]
+    if not callback_url:
+        logger.warning(
+            "process_activity_file: no callbackURL in record for athlete %s — keys: %s",
+            athlete_id,
+            list(record.keys()),
+        )
+        return {"status": "skipped", "reason": "no_callback_url"}
+
+    summary_id = adapted["summary_id"]
+    file_type = adapted["file_type"]
+
+    # Garmin's activity-file callback URLs require the athlete's OAuth bearer
+    # token, same as every other Garmin REST endpoint. Earlier versions of this
+    # task issued an unauthenticated GET, which Garmin rejected with HTTP 400
+    # (not 401), causing every strength-workout FIT to be silently dropped.
+    db = get_db_sync()
+    try:
+        athlete = db.query(Athlete).filter(Athlete.id == athlete_id).first()
+        if athlete is None:
+            logger.warning(
+                "process_activity_file: athlete not found id=%s summary=%s",
+                athlete_id, summary_id,
+            )
+            return {"status": "skipped", "reason": "athlete_not_found"}
+
+        access_token = ensure_fresh_garmin_token(athlete, db)
+        if not access_token:
+            logger.warning(
+                "process_activity_file: no garmin token for athlete=%s summary=%s — skipping",
+                athlete_id, summary_id,
+            )
+            return {"status": "skipped", "reason": "no_garmin_token"}
+
+        headers = {"Authorization": f"Bearer {access_token}"}
+
+        logger.info(
+            "process_activity_file: downloading %s file for athlete=%s summary=%s",
+            file_type, athlete_id, summary_id,
+        )
+
+        try:
+            resp = http_requests.get(
+                callback_url,
+                headers=headers,
+                timeout=_FIT_DOWNLOAD_TIMEOUT_S,
+            )
+        except Exception as exc:
+            logger.error(
+                "process_activity_file: download failed for athlete=%s summary=%s: %s",
+                athlete_id, summary_id, exc,
+            )
+            raise self.retry(exc=exc)
+
+        if resp.status_code != 200:
+            # Always surface Garmin's response body on non-2xx so we can tell
+            # apart auth failures, expired URLs, and rate limiting. Trim to
+            # 300 chars to avoid blowing up logs on HTML error pages.
+            body_preview = (resp.text or "").strip()
+            if len(body_preview) > 300:
+                body_preview = f"{body_preview[:300]}..."
+            logger.warning(
+                "process_activity_file: download returned %d for athlete=%s summary=%s body=%r",
+                resp.status_code, athlete_id, summary_id, body_preview,
+            )
+            if resp.status_code >= 500:
+                raise self.retry(countdown=60)
+            return {
+                "status": "error",
+                "http_code": resp.status_code,
+                "body_preview": body_preview,
+            }
+
+        fit_bytes = resp.content
+        logger.info(
+            "process_activity_file: downloaded %d bytes for athlete=%s summary=%s",
+            len(fit_bytes), athlete_id, summary_id,
+        )
+
+        activity = _find_activity_for_summary_id(db, athlete_id, summary_id)
+
+        if activity is None:
+            logger.warning(
+                "process_activity_file: no matching activity for athlete=%s summary=%s — retrying",
+                athlete_id, summary_id,
+            )
+            raise self.retry(countdown=30)
+
+        # --- Strength path ---
+        if activity.sport == "strength":
+            from services.fit_parser import extract_exercise_sets_from_fit
+            from services.strength_parser import process_strength_activity
+
+            parsed = extract_exercise_sets_from_fit(fit_bytes)
+            exercise_sets = parsed.get("exerciseSets", [])
+            active_sets = [s for s in exercise_sets if s.get("setType") == "ACTIVE"]
+            if not active_sets:
+                logger.info(
+                    "process_activity_file: no active exercise sets for athlete=%s summary=%s (total messages: %d)",
+                    athlete_id, summary_id, len(exercise_sets),
+                )
+                return {"status": "ok", "reason": "no_exercise_sets", "file_type": file_type}
+
+            result = process_strength_activity(db, activity, parsed)
+            db.commit()
+            logger.info(
+                "Exercise sets processed for activity=%s: %d sets, type=%s",
+                activity.id, result["sets_written"], result["session_type"],
+            )
+            if result.get("unknown_exercises"):
+                logger.warning(
+                    "Unknown exercises in FIT file for activity=%s: %s",
+                    activity.id, result["unknown_exercises"],
+                )
+            return {
+                "status": "ok",
+                "activity_id": str(activity.id),
+                "sets_written": result["sets_written"],
+                "session_type": result["session_type"],
+            }
+
+        # --- Endurance path (run / cycling / walking / hiking) ---
+        if activity.sport in ("run", "cycling", "walking", "hiking"):
+            from services.sync.fit_run_parser import parse_run_fit
+            from services.sync.fit_run_apply import apply_fit_run_data
+
+            parsed = parse_run_fit(fit_bytes)
+            applied = apply_fit_run_data(db, activity, parsed)
+            db.commit()
+            logger.info(
+                "FIT run/endurance applied for activity=%s sport=%s session=%s laps=%d",
+                activity.id, activity.sport, applied["session_applied"], applied["laps_written"],
+            )
+            return {
+                "status": "ok",
+                "activity_id": str(activity.id),
+                "sport": activity.sport,
+                "session_applied": applied["session_applied"],
+                "laps_written": applied["laps_written"],
+            }
+
+        # --- Anything else (yoga / pilates / etc.) ---
+        logger.info(
+            "process_activity_file: activity %s sport=%s — no FIT enrichment defined",
+            activity.id, activity.sport,
+        )
+        return {"status": "ok", "reason": "no_handler_for_sport", "sport": activity.sport}
+
+    except self.MaxRetriesExceededError:
+        logger.error(
+            "process_activity_file: max retries for athlete=%s summary=%s",
+            athlete_id, summary_id,
+        )
+        return {"status": "error", "reason": "max_retries_exceeded"}
+    finally:
+        db.close()
+
+
+def _find_activity_for_summary_id(db, athlete_id, summary_id):
+    """Look up the Activity row that matches the activity-file summary id.
+
+    The activity-files webhook ships a summary id (string) which maps to
+    Activity.external_activity_id in our schema. The legacy code path in
+    this file also tried Activity.garmin_activity_id == str(summary_id),
+    but that column is BigInteger and the summary id is the summary id
+    (not the per-activity id). The legacy fallback referenced
+    Activity.external_id which doesn't exist on the model. Both cases
+    would AttributeError or silently never match. Single source of truth
+    here.
+    """
+    if not summary_id:
+        return None
+    return (
+        db.query(Activity)
+        .filter(
+            Activity.athlete_id == athlete_id,
+            Activity.external_activity_id == str(summary_id),
+        )
+        .first()
     )

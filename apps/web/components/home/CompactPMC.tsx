@@ -17,7 +17,7 @@
 import React from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { TrendingUp } from 'lucide-react';
+import { TrendingUp, Info } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '@/lib/hooks/useAuth';
 import { API_CONFIG } from '@/lib/api/config';
@@ -129,6 +129,12 @@ export function CompactPMC() {
             </UiTooltip>
           </TooltipProvider>
         ))}
+      </div>
+
+      {/* Cross-training disclosure */}
+      <div className="flex items-center gap-1.5 mb-2">
+        <Info className="w-3 h-3 text-slate-600" />
+        <span className="text-[10px] text-slate-500">Includes all activities (running, cross-training)</span>
       </div>
 
       {/* Chart body — tap navigates to /training-load */}

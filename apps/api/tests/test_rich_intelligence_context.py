@@ -169,13 +169,12 @@ class TestOpusPrimaryModel:
              patch("tasks.home_briefing_tasks._call_opus_briefing", return_value=dummy_result) as mock_opus, \
              patch("tasks.home_briefing_tasks._call_gemini_briefing") as mock_gemini:
 
-            result = _call_llm_for_briefing("prompt", {}, [])
+            result, model = _call_llm_for_briefing("prompt", {}, [])
 
-        # Opus must have been called
         mock_opus.assert_called_once()
-        # Gemini must NOT have been called (Opus succeeded)
         mock_gemini.assert_not_called()
         assert result == dummy_result
+        assert "claude" in model or "sonnet" in model
 
     def test_gemini_fallback_when_opus_fails(self):
         """_call_llm_for_briefing falls back to Gemini if Opus returns None."""
@@ -188,7 +187,8 @@ class TestOpusPrimaryModel:
              patch("tasks.home_briefing_tasks._call_opus_briefing", return_value=None), \
              patch("tasks.home_briefing_tasks._call_gemini_briefing", return_value=gemini_result) as mock_gemini:
 
-            result = _call_llm_for_briefing("prompt", {}, [])
+            result, model = _call_llm_for_briefing("prompt", {}, [])
 
         mock_gemini.assert_called_once()
         assert result == gemini_result
+        assert model == "gemini-2.5-flash"

@@ -7,9 +7,10 @@
  * - No block-stepping (architecture enforcement)
  */
 import React from 'react';
-import { render, screen } from '@testing-library/react';
+import { screen } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { mockTier1Result, mockTier4Result, generateTestStreamData, mockUnitsImperial } from './rsi-fixtures';
+import { renderWithStreamHover } from '@/test-utils/renderWithStreamHover';
 
 import { RunShapeCanvas } from '@/components/activities/rsi/RunShapeCanvas';
 
@@ -37,7 +38,7 @@ describe('AC-2: Effort Gradient', () => {
   });
 
   test('renders canvas element for gradient (not SVG rects)', () => {
-    render(<RunShapeCanvas activityId="test-123" />);
+    renderWithStreamHover(<RunShapeCanvas activityId="test-123" />);
 
     const canvas = screen.getByTestId('effort-gradient');
     expect(canvas).toBeInTheDocument();
@@ -58,19 +59,19 @@ describe('AC-2: Effort Gradient', () => {
       refetch: jest.fn(),
     } as any);
 
-    render(<RunShapeCanvas activityId="test-123" />);
+    renderWithStreamHover(<RunShapeCanvas activityId="test-123" />);
 
     expect(screen.getByText(/Effort colors show the shape of this run/i)).toBeInTheDocument();
     expect(screen.getByText(/Connect a heart rate monitor/i)).toBeInTheDocument();
   });
 
   test('Tier 4 caveat NOT visible when cross_run_comparable is true', () => {
-    render(<RunShapeCanvas activityId="test-123" />);
+    renderWithStreamHover(<RunShapeCanvas activityId="test-123" />);
     expect(screen.queryByText(/Effort colors show the shape of this run/i)).not.toBeInTheDocument();
   });
 
   test('effort gradient uses ADR-064 color mapping', () => {
-    render(<RunShapeCanvas activityId="test-123" />);
+    renderWithStreamHover(<RunShapeCanvas activityId="test-123" />);
 
     const canvas = screen.getByTestId('effort-gradient');
     expect(canvas).toBeInTheDocument();
@@ -78,7 +79,7 @@ describe('AC-2: Effort Gradient', () => {
   });
 
   test('no visible block-stepping in DOM structure', () => {
-    render(<RunShapeCanvas activityId="test-123" />);
+    renderWithStreamHover(<RunShapeCanvas activityId="test-123" />);
 
     // Architecture enforcement: gradient rendered via single <canvas>,
     // NOT via ReferenceArea SVG elements

@@ -22,6 +22,22 @@ class TestLastRunHeatAdjustment:
         assert "heat_adjustment_pct" in src
 
 
+class TestLastRunWorkoutClassification:
+    """LastRun includes workout_classification field."""
+
+    def test_last_run_model_has_workout_classification_field(self):
+        from routers.home import LastRun
+        fields = LastRun.model_fields
+        assert "workout_classification" in fields
+
+    def test_compute_last_run_populates_workout_classification(self):
+        from routers.home import compute_last_run
+
+        src = inspect.getsource(compute_last_run)
+        assert "workout_classification" in src
+        assert "run_shape" in src
+
+
 class TestHomeFindingModel:
     """HomeFinding typed model exists with required fields."""
 

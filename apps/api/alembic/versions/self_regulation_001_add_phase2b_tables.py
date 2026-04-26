@@ -13,7 +13,7 @@ Phase 2B: Workout State Machine + Self-Regulation Tracking
 
 from alembic import op
 import sqlalchemy as sa
-from sqlalchemy.dialects.postgresql import UUID, JSONB
+from sqlalchemy.dialects.postgresql import JSONB
 
 # revision identifiers, used by Alembic.
 revision = 'self_regulation_001'

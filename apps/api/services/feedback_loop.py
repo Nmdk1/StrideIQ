@@ -9,10 +9,9 @@ This implements the core feedback loop structure from the manifesto:
 """
 
 from datetime import datetime, timedelta, timezone
-from typing import List, Dict, Optional, Tuple
+from typing import List, Dict
 from sqlalchemy.orm import Session
-from models import Athlete, Activity, ActivitySplit
-from services.performance_engine import calculate_age_at_date
+from models import Athlete, Activity
 from services.athlete_metrics import calculate_athlete_derived_signals
 
 

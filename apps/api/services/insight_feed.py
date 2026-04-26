@@ -8,7 +8,7 @@ This is intentionally deterministic (no LLM calls) and built on existing analyti
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 from sqlalchemy.orm import Session
 
@@ -204,7 +204,7 @@ def build_insight_feed_cards(
         if "heart_rate" not in (dq.available or {}):
             actions.append({"label": "Use HR for more runs", "href": "/settings"})
         if not actions:
-            actions = [{"label": "View Diagnostics", "href": "/diagnostic"}]
+            actions = [{"label": "View Analytics", "href": "/analytics"}]
 
         cards.append(
             {

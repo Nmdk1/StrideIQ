@@ -13,8 +13,8 @@ from typing import Optional
 from uuid import UUID
 
 from core.database import get_db
-from core.security import decode_access_token, get_user_id_from_token
-from core.tier_utils import normalize_tier, tier_level, tier_satisfies
+from core.security import decode_access_token
+from core.tier_utils import tier_level, tier_satisfies
 from models import Athlete
 
 # Use auto_error=False to handle missing credentials manually and return 401 (not 403)
@@ -242,31 +242,31 @@ def get_athlete_or_admin(
 
 # Tier-based access control.
 # All comparisons use tier_utils to enforce the canonical hierarchy:
-#   free=0 < guided=1 < premium=2
-# Legacy tier strings (pro, elite, subscription) normalize to premium automatically.
+#   free=0 < subscriber=1
+# Historical labels (guided/premium/pro/elite/subscription) normalize to subscriber.
 
 
 def require_query_access(
     current_user: Athlete = Depends(get_current_active_user)
 ) -> Athlete:
-    """Require guided-or-above tier for query engine access.
+    """Require paid subscriber tier for query engine access.
 
     Access granted to:
     - Admin/owner roles (always).
-    - Guided, premium, and legacy paid tiers (pro/elite/subscription → premium).
+    - Subscriber tier (historical paid labels normalize to subscriber).
     - Active trial holders.
     """
     if current_user.role in ("admin", "owner"):
         return current_user
 
     if getattr(current_user, "has_active_subscription", False) or tier_satisfies(
-        current_user.subscription_tier, "guided"
+        current_user.subscription_tier, "subscriber"
     ):
         return current_user
 
     raise HTTPException(
         status_code=status.HTTP_403_FORBIDDEN,
-        detail="Query access requires Guided membership or above.",
+        detail="Query access requires an active paid subscription.",
     )
 
 
@@ -278,14 +278,13 @@ def require_tier(allowed_tiers: list[str]):
 
     Examples::
 
-        require_tier(["guided"])   → allows guided and premium (and legacy pro/elite)
-        require_tier(["premium"])  → allows premium only (and legacy pro/elite)
+        require_tier(["subscriber"]) → allows paid users
         require_tier(["free"])     → allows everyone
 
     Usage::
 
-        @router.get("/guided-feature")
-        def endpoint(user: Athlete = Depends(require_tier(["guided"]))):
+        @router.get("/subscriber-feature")
+        def endpoint(user: Athlete = Depends(require_tier(["subscriber"]))):
             ...
     """
     min_level = min((tier_level(t) for t in allowed_tiers), default=0)
@@ -297,15 +296,12 @@ def require_tier(allowed_tiers: list[str]):
         actual_level = tier_level(current_user.subscription_tier)
 
         # Trial elevation: free-tier athletes with an active subscription (trial)
-        # receive premium-level access.  Paid subscribers (guided, premium) already
-        # have their tier set correctly via subscription_tier — do NOT override it.
-        # This prevents guided subscribers ($15/mo) from accidentally accessing
-        # premium-only ($25/mo) features.
+        # receive paid-tier access.
         athlete_tier_is_free = tier_level(
             getattr(current_user, "subscription_tier", "free")
         ) == 0
         if athlete_tier_is_free and getattr(current_user, "has_active_subscription", False):
-            actual_level = max(actual_level, tier_level("premium"))
+            actual_level = max(actual_level, tier_level("subscriber"))
 
         if actual_level < min_level:
             raise HTTPException(

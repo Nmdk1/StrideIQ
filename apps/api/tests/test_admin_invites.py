@@ -64,7 +64,7 @@ def test_admin_create_and_revoke_invite(admin_headers):
 
 
 def test_admin_create_invite_with_grant_tier(admin_headers):
-    """Admin can create an invite with grant_tier='pro' for beta testers."""
+    """Admin can create an invite with paid grant_tier normalized to subscriber."""
     email = f"beta_invite_{uuid4()}@example.com"
     resp = client.post(
         "/v1/admin/invites", 
@@ -75,14 +75,14 @@ def test_admin_create_invite_with_grant_tier(admin_headers):
     inv = resp.json()["invite"]
     assert inv["email"] == email.lower()
     assert inv["is_active"] is True
-    assert inv["grant_tier"] == "pro"
+    assert inv["grant_tier"] == "subscriber"
 
     # DB sanity
     db = SessionLocal()
     try:
         row = db.query(InviteAllowlist).filter(InviteAllowlist.email == email.lower()).first()
         assert row is not None
-        assert row.grant_tier == "pro"
+        assert row.grant_tier == "subscriber"
     finally:
         try:
             if row:
@@ -135,7 +135,7 @@ def test_admin_create_duplicate_invite_is_idempotent(admin_headers):
     assert resp1.status_code == 200
     inv1 = resp1.json()["invite"]
     
-    # Create duplicate invite with different note
+    # Create duplicate invite with different note and paid grant tier alias.
     resp2 = client.post(
         "/v1/admin/invites", 
         json={"email": email, "note": "Updated note", "grant_tier": "pro"}, 
@@ -144,9 +144,9 @@ def test_admin_create_duplicate_invite_is_idempotent(admin_headers):
     assert resp2.status_code == 200
     inv2 = resp2.json()["invite"]
     
-    # Should be same invite ID, updated grant_tier
+    # Should be same invite ID, updated canonical grant_tier
     assert inv2["id"] == inv1["id"]
-    assert inv2["grant_tier"] == "pro"
+    assert inv2["grant_tier"] == "subscriber"
 
     # Cleanup
     db = SessionLocal()

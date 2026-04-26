@@ -5,9 +5,10 @@
  * behind the trace lines, aligned with segment timestamps.
  */
 import React from 'react';
-import { render, screen } from '@testing-library/react';
+import { screen } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { mockTier1Result, mockEmptyResult, generateTestStreamData, mockUnitsImperial } from './rsi-fixtures';
+import { renderWithStreamHover } from '@/test-utils/renderWithStreamHover';
 
 import { RunShapeCanvas } from '@/components/activities/rsi/RunShapeCanvas';
 
@@ -35,7 +36,7 @@ describe('AC-6: Segment Overlay', () => {
   });
 
   test('renders segment bands for each segment in analysis result', () => {
-    render(<RunShapeCanvas activityId="test-123" />);
+    renderWithStreamHover(<RunShapeCanvas activityId="test-123" />);
 
     // mockTier1Result has 5 segments
     const segmentBands = document.querySelectorAll('[data-testid^="segment-band-"]');
@@ -43,7 +44,7 @@ describe('AC-6: Segment Overlay', () => {
   });
 
   test('segment bands use correct colors per type', () => {
-    render(<RunShapeCanvas activityId="test-123" />);
+    renderWithStreamHover(<RunShapeCanvas activityId="test-123" />);
 
     // Check each segment type has appropriate color class or style
     const warmupBand = document.querySelector('[data-testid="segment-band-warmup"]') ||
@@ -63,7 +64,7 @@ describe('AC-6: Segment Overlay', () => {
   });
 
   test('segment bands align with start_time_s and end_time_s', () => {
-    render(<RunShapeCanvas activityId="test-123" />);
+    renderWithStreamHover(<RunShapeCanvas activityId="test-123" />);
 
     // First segment: warmup 0–480s
     const firstBand = document.querySelector('[data-testid="segment-band-0"]') ||
@@ -87,7 +88,7 @@ describe('AC-6: Segment Overlay', () => {
       refetch: jest.fn(),
     } as any);
 
-    render(<RunShapeCanvas activityId="test-123" />);
+    renderWithStreamHover(<RunShapeCanvas activityId="test-123" />);
 
     const segmentBands = document.querySelectorAll('[data-testid^="segment-band-"]');
     expect(segmentBands.length).toBe(0);

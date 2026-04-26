@@ -16,7 +16,6 @@ from uuid import UUID
 from core.database import get_db
 from core.auth import get_current_athlete
 from models import Athlete, Activity
-from services.workout_classifier import WorkoutType, WorkoutZone
 
 router = APIRouter(prefix="/v1/activities", tags=["Activity Workout Type"])
 
@@ -44,6 +43,7 @@ WORKOUT_TYPE_OPTIONS = [
     {"value": "race", "label": "Race", "zone": "race_specific", "description": "Competition or time trial"},
     {"value": "tune_up_race", "label": "Tune-up Race", "zone": "race_specific", "description": "Training race"},
     {"value": "shakeout", "label": "Shakeout", "zone": "recovery", "description": "Pre-race easy jog"},
+    {"value": "pacing", "label": "Pacing", "zone": "endurance", "description": "Holding steady pace for someone else"},
 ]
 
 # Map value to zone
@@ -140,6 +140,14 @@ async def update_activity_workout_type(
     activity.workout_type = request.workout_type
     activity.workout_zone = WORKOUT_ZONE_MAP.get(request.workout_type)
     activity.workout_confidence = 1.0  # User-set = 100% confidence
+
+    if request.workout_type in ("race", "tune_up_race"):
+        activity.user_verified_race = True
+        activity.is_race_candidate = True
+    else:
+        # Explicit user override to non-race must clear both race signals.
+        activity.user_verified_race = False
+        activity.is_race_candidate = False
     
     db.commit()
     db.refresh(activity)

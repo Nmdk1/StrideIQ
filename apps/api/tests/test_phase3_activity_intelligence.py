@@ -22,7 +22,7 @@ class TestActivityFindingsEndpoint:
     def test_limits_to_3(self):
         from routers.activities import get_activity_findings
         src = inspect.getsource(get_activity_findings)
-        assert ".limit(3)" in src
+        assert "len(result) >= 3" in src
 
 
 class TestAuthMeHasCorrelations:

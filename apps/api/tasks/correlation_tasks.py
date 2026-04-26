@@ -16,10 +16,12 @@ from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Tuple
 
 from tasks import celery_app
+from core.cache import get_redis_client
 from core.database import SessionLocal
 from models import Athlete, Activity, CorrelationFinding
 
 logger = logging.getLogger(__name__)
+_BACKFILL_PROGRESS_TTL_S = 24 * 60 * 60
 
 ALL_OUTPUT_METRICS = [
     "efficiency",
@@ -32,6 +34,33 @@ ALL_OUTPUT_METRICS = [
     "pb_events",
     "race_pace",
 ]
+
+
+def _backfill_progress_key(athlete_id: str) -> str:
+    return f"backfill_progress:{athlete_id}"
+
+
+def _progress_hset(athlete_id: str, field: str, value: str) -> None:
+    r = get_redis_client()
+    if not r:
+        return
+    key = _backfill_progress_key(athlete_id)
+    r.hset(key, field, value)
+    r.expire(key, _BACKFILL_PROGRESS_TTL_S)
+
+
+def _refresh_living_fingerprint_for_athlete(athlete_id: str, db) -> int:
+    """
+    Refresh fingerprint findings for one athlete only.
+    """
+    from services.race_input_analysis import mine_race_inputs
+    from services.finding_persistence import store_all_findings
+
+    findings, _gaps = mine_race_inputs(athlete_id, db)
+    if findings:
+        store_all_findings(athlete_id, findings, db)
+        db.commit()
+    return len(findings or [])
 
 
 def _aggregate_output_for_metric(
@@ -173,6 +202,37 @@ def run_daily_correlation_sweep(self, athlete_ids: List[str] | None = None):
                     )
             db.commit()
 
+            # Lifecycle classification pass (Phase 3)
+            try:
+                from services.plan_framework.limiter_classifier import classify_lifecycle_states
+                lc_results = classify_lifecycle_states(athlete_id, db)
+                if lc_results:
+                    db.commit()
+                    logger.info("Lifecycle classification: %d findings classified for %s", len(lc_results), athlete_id)
+            except Exception as exc:
+                logger.warning("Lifecycle classification failed for %s: %s", athlete_id, exc)
+                db.rollback()
+
+            # Phase 5: Transition detection (active→resolving→closed)
+            try:
+                from services.plan_framework.limiter_classifier import check_transitions
+                tr = check_transitions(athlete_id, db)
+                any_transitions = sum(len(v) for v in tr.values())
+                if any_transitions > 0:
+                    db.commit()
+                    logger.info(
+                        "Transition check: %d transitions for %s "
+                        "(a→r=%d, r→c=%d, r→a=%d, frontier=%d)",
+                        any_transitions, athlete_id,
+                        len(tr["active_to_resolving"]),
+                        len(tr["resolving_to_closed"]),
+                        len(tr["resolving_to_active"]),
+                        len(tr["next_frontier"]),
+                    )
+            except Exception as exc:
+                logger.warning("Transition check failed for %s: %s", athlete_id, exc)
+                db.rollback()
+
             # Second pass: Layers 1–4 on confirmed findings
             try:
                 n = _run_layer_pass(athlete_id, db)
@@ -184,5 +244,147 @@ def run_daily_correlation_sweep(self, athlete_ids: List[str] | None = None):
                 db.rollback()
 
         logger.info("Correlation sweep complete for %d athletes", len(ids))
+
+        from tasks.beat_startup_dispatch import record_task_run
+        record_task_run("beat:last_run:daily_correlation_sweep")
+    finally:
+        db.close()
+
+
+@celery_app.task(
+    name="tasks.run_athlete_first_session_sweep",
+    bind=True,
+    max_retries=2,
+    default_retry_delay=120,
+    soft_time_limit=240,
+    time_limit=300,
+)
+def run_athlete_first_session_sweep(self, athlete_id: str) -> Dict:
+    """
+    Targeted first-session sweep for one athlete after Garmin backfill bursts.
+    """
+    db = SessionLocal()
+    try:
+        run_count = (
+            db.query(Activity.id)
+            .filter(
+                Activity.athlete_id == athlete_id,
+                Activity.sport == "run",
+                Activity.is_duplicate == False,  # noqa: E712
+            )
+            .count()
+        )
+        if run_count < 10:
+            try:
+                _progress_hset(athlete_id, "sweep_complete", "true")
+                _progress_hset(athlete_id, "findings_count", "0")
+            except Exception:
+                pass
+            logger.info(
+                "First-session sweep skipped for athlete %s (insufficient runs=%d)",
+                athlete_id,
+                run_count,
+            )
+            return {"status": "insufficient_data", "runs": run_count}
+
+        from services.correlation_engine import analyze_correlations
+
+        for metric in ALL_OUTPUT_METRICS:
+            try:
+                analyze_correlations(athlete_id, days=90, db=db, output_metric=metric)
+            except Exception as exc:
+                logger.warning("First-session metric failed for %s/%s: %s", athlete_id, metric, exc)
+        db.commit()
+
+        try:
+            processed = _run_layer_pass(athlete_id, db)
+            if processed > 0:
+                db.commit()
+        except Exception as exc:
+            db.rollback()
+            logger.warning("First-session layer pass failed for %s: %s", athlete_id, exc)
+
+        # Refresh fingerprint findings for this athlete only.
+        try:
+            _refresh_living_fingerprint_for_athlete(athlete_id, db)
+        except Exception as exc:
+            logger.warning("First-session fingerprint refresh failed for %s: %s", athlete_id, exc)
+
+        # Always refresh briefing cache so first-session voice can pick up new data.
+        try:
+            from services.home_briefing_cache import mark_briefing_dirty
+            from tasks.home_briefing_tasks import enqueue_briefing_refresh
+
+            mark_briefing_dirty(str(athlete_id))
+            enqueue_briefing_refresh(str(athlete_id), force=True, allow_circuit_probe=True)
+        except Exception as exc:
+            logger.warning("First-session briefing refresh failed for %s: %s", athlete_id, exc)
+
+        findings_count = (
+            db.query(CorrelationFinding.id)
+            .filter(
+                CorrelationFinding.athlete_id == athlete_id,
+                CorrelationFinding.is_active == True,  # noqa: E712
+            )
+            .count()
+        )
+        try:
+            _progress_hset(athlete_id, "sweep_complete", "true")
+            _progress_hset(athlete_id, "findings_count", str(int(findings_count)))
+        except Exception:
+            pass
+
+        return {
+            "status": "ok",
+            "runs": run_count,
+            "findings_count": int(findings_count),
+        }
+    except Exception as exc:
+        db.rollback()
+        logger.exception("First-session sweep failed for %s: %s", athlete_id, exc)
+        raise self.retry(exc=exc)
+    finally:
+        db.close()
+
+
+@celery_app.task(name="tasks.backfill_lifecycle_states", bind=True, max_retries=0)
+def backfill_lifecycle_states(self):
+    """One-time backfill: classify lifecycle_state for all existing findings.
+
+    Transitional task for Phase 3 deployment. Runs classify_lifecycle_states
+    for every athlete who has CorrelationFinding rows with lifecycle_state IS NULL.
+    After this runs once, the daily sweep + persist_correlation_findings keep
+    states current. This task can be removed once all NULL states are resolved.
+    """
+    from services.plan_framework.limiter_classifier import classify_lifecycle_states
+
+    db = SessionLocal()
+    try:
+        null_athletes = (
+            db.query(CorrelationFinding.athlete_id)
+            .filter(
+                CorrelationFinding.lifecycle_state.is_(None),
+                CorrelationFinding.is_active == True,  # noqa: E712
+                CorrelationFinding.times_confirmed >= 3,
+            )
+            .distinct()
+            .all()
+        )
+        athlete_ids = [str(r[0]) for r in null_athletes]
+        logger.info("Lifecycle backfill: %d athletes with NULL lifecycle_state", len(athlete_ids))
+
+        classified_total = 0
+        for athlete_id in athlete_ids:
+            try:
+                results = classify_lifecycle_states(athlete_id, db)
+                if results:
+                    db.commit()
+                    classified_total += len(results)
+            except Exception as exc:
+                db.rollback()
+                logger.warning("Lifecycle backfill failed for %s: %s", athlete_id, exc)
+
+        logger.info("Lifecycle backfill complete: %d findings classified across %d athletes",
+                     classified_total, len(athlete_ids))
     finally:
         db.close()

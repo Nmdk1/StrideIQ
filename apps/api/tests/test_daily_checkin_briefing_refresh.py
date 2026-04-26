@@ -82,8 +82,9 @@ class TestTriggerBriefingRefreshUnit:
     the function directly covers the shared contract.
     """
 
-    def test_calls_mark_dirty_with_athlete_id(self):
-        """Test 1a: mark_briefing_dirty receives correct athlete_id."""
+    def test_does_not_call_mark_dirty(self):
+        """mark_briefing_dirty is intentionally NOT called — old briefing stays
+        visible as stale until the replacement lands (avoids empty home page)."""
         from routers.daily_checkin import _trigger_briefing_refresh
 
         athlete_id = str(uuid4())
@@ -91,26 +92,24 @@ class TestTriggerBriefingRefreshUnit:
              patch("tasks.home_briefing_tasks.enqueue_briefing_refresh"):
             _trigger_briefing_refresh(athlete_id)
 
-        mock_dirty.assert_called_once_with(athlete_id)
+        mock_dirty.assert_not_called()
 
     def test_calls_enqueue_with_athlete_id(self):
-        """Test 1b: enqueue_briefing_refresh receives correct athlete_id."""
+        """enqueue_briefing_refresh receives correct athlete_id with force + circuit probe."""
         from routers.daily_checkin import _trigger_briefing_refresh
 
         athlete_id = str(uuid4())
-        with patch("services.home_briefing_cache.mark_briefing_dirty"), \
-             patch("tasks.home_briefing_tasks.enqueue_briefing_refresh") as mock_enq:
+        with patch("tasks.home_briefing_tasks.enqueue_briefing_refresh") as mock_enq:
             _trigger_briefing_refresh(athlete_id)
 
-        mock_enq.assert_called_once_with(athlete_id, force=True)
+        mock_enq.assert_called_once_with(athlete_id, force=True, allow_circuit_probe=True)
 
     def test_calls_enqueue_with_force_true(self):
-        """Test 1d: _trigger_briefing_refresh always passes force=True."""
+        """_trigger_briefing_refresh always passes force=True."""
         from routers.daily_checkin import _trigger_briefing_refresh
 
         athlete_id = str(uuid4())
-        with patch("services.home_briefing_cache.mark_briefing_dirty"), \
-             patch("tasks.home_briefing_tasks.enqueue_briefing_refresh") as mock_enq:
+        with patch("tasks.home_briefing_tasks.enqueue_briefing_refresh") as mock_enq:
             _trigger_briefing_refresh(athlete_id)
 
         args, kwargs = mock_enq.call_args
@@ -118,21 +117,19 @@ class TestTriggerBriefingRefreshUnit:
         assert force_value is True, \
             f"_trigger_briefing_refresh must pass force=True, got force={force_value}"
 
-    def test_calls_dirty_before_enqueue(self):
-        """Test 1c: mark_briefing_dirty is called before enqueue_briefing_refresh."""
+    def test_enqueue_called_without_dirty(self):
+        """enqueue is called directly — no dirty step."""
         from routers.daily_checkin import _trigger_briefing_refresh
 
         athlete_id = str(uuid4())
         call_order = []
 
-        with patch("services.home_briefing_cache.mark_briefing_dirty",
-                   side_effect=lambda _: call_order.append("dirty")), \
-             patch("tasks.home_briefing_tasks.enqueue_briefing_refresh",
+        with patch("tasks.home_briefing_tasks.enqueue_briefing_refresh",
                    side_effect=lambda *a, **kw: call_order.append("enqueue")):
             _trigger_briefing_refresh(athlete_id)
 
-        assert call_order == ["dirty", "enqueue"], \
-            f"Expected dirty before enqueue, got: {call_order}"
+        assert call_order == ["enqueue"], \
+            f"Expected only enqueue, got: {call_order}"
 
 
 # ===========================================================================
@@ -142,39 +139,13 @@ class TestTriggerBriefingRefreshUnit:
 class TestTriggerBriefingRefreshNonBlocking:
     """Test 3: _trigger_briefing_refresh is non-blocking even when helpers raise."""
 
-    def test_mark_dirty_raising_does_not_propagate(self):
-        """Test 3a: exception in mark_briefing_dirty is caught; function returns cleanly."""
-        from routers.daily_checkin import _trigger_briefing_refresh
-
-        athlete_id = str(uuid4())
-        with patch("services.home_briefing_cache.mark_briefing_dirty",
-                   side_effect=RuntimeError("Redis gone")), \
-             patch("tasks.home_briefing_tasks.enqueue_briefing_refresh") as mock_enq:
-            _trigger_briefing_refresh(athlete_id)  # Must not raise
-
-        mock_enq.assert_called_once_with(athlete_id, force=True)
-
     def test_enqueue_raising_does_not_propagate(self):
-        """Test 3b: exception in enqueue_briefing_refresh is caught; function returns cleanly."""
+        """exception in enqueue_briefing_refresh is caught; function returns cleanly."""
         from routers.daily_checkin import _trigger_briefing_refresh
 
         athlete_id = str(uuid4())
-        with patch("services.home_briefing_cache.mark_briefing_dirty") as mock_dirty, \
-             patch("tasks.home_briefing_tasks.enqueue_briefing_refresh",
+        with patch("tasks.home_briefing_tasks.enqueue_briefing_refresh",
                    side_effect=ConnectionError("Broker offline")):
-            _trigger_briefing_refresh(athlete_id)  # Must not raise
-
-        mock_dirty.assert_called_once_with(athlete_id)
-
-    def test_both_raising_does_not_propagate(self):
-        """Test 3c: both helpers raising; function still returns cleanly."""
-        from routers.daily_checkin import _trigger_briefing_refresh
-
-        athlete_id = str(uuid4())
-        with patch("services.home_briefing_cache.mark_briefing_dirty",
-                   side_effect=RuntimeError("dirty fail")), \
-             patch("tasks.home_briefing_tasks.enqueue_briefing_refresh",
-                   side_effect=RuntimeError("enqueue fail")):
             _trigger_briefing_refresh(athlete_id)  # Must not raise
 
 
@@ -359,8 +330,8 @@ class TestForceEnqueueBehavior:
         assert result is False, "force=False + cooldown must skip enqueue"
         mock_task.apply_async.assert_not_called()
 
-    def test_force_true_with_cooldown_enqueues(self):
-        """Test 7: force=True bypasses cooldown when circuit is closed."""
+    def test_force_true_with_cooldown_skips_for_normal_priority(self):
+        """Test 7: force=True still honors cooldown for normal-priority traffic."""
         from tasks.home_briefing_tasks import enqueue_briefing_refresh
         from services.home_briefing_cache import _cooldown_key
 
@@ -372,8 +343,24 @@ class TestForceEnqueueBehavior:
              patch("tasks.home_briefing_tasks.generate_home_briefing_task") as mock_task:
             result = enqueue_briefing_refresh(athlete_id, force=True)
 
-        assert result is True, "force=True + closed circuit must allow enqueue"
-        mock_task.apply_async.assert_called_once_with(args=[athlete_id], queue="briefing")
+        assert result is False, "force=True + cooldown + normal priority must skip enqueue"
+        mock_task.apply_async.assert_not_called()
+
+    def test_force_true_with_cooldown_enqueues_for_high_priority(self):
+        """force=True bypasses cooldown only for high-priority user-blocking refreshes."""
+        from tasks.home_briefing_tasks import enqueue_briefing_refresh
+        from services.home_briefing_cache import _cooldown_key
+
+        athlete_id = str(uuid4())
+        fake_r = FakeRedis()
+        fake_r.setex(_cooldown_key(athlete_id), 60, "1")
+
+        with patch("services.home_briefing_cache.get_redis_client", return_value=fake_r), \
+             patch("tasks.home_briefing_tasks.generate_home_briefing_task") as mock_task:
+            result = enqueue_briefing_refresh(athlete_id, force=True, priority="high")
+
+        assert result is True
+        mock_task.apply_async.assert_called_once_with(args=[athlete_id], queue="briefing_high")
 
     def test_force_true_with_open_circuit_blocks(self):
         """Test 8: force=True is still blocked when circuit is open."""

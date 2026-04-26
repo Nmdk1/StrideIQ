@@ -11,7 +11,7 @@ Key principles:
 - Supportive but no coddling - data speaks
 """
 from sqlalchemy.orm import Session
-from typing import Dict, List, Optional
+from typing import Dict
 from datetime import datetime
 from models import Activity, ActivityFeedback, Athlete
 from services.activity_analysis import ActivityAnalysis
@@ -65,7 +65,7 @@ def format_insight_message(insight: str, improvement_pct: float, baseline_type: 
         # Try to extract from insight string
         try:
             improvement_pct = float(insight.split("%")[0].split()[-1])
-        except:
+        except Exception:
             improvement_pct = 0
     
     # Determine tone based on baseline type and improvement

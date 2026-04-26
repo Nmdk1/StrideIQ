@@ -14,7 +14,7 @@ Usage:
     easy_pace = paces.easy_pace_per_mile_seconds
 """
 
-from typing import Optional, Dict, Any
+from typing import Optional
 from dataclasses import dataclass
 
 
@@ -42,6 +42,22 @@ class TrainingPaces:
     threshold_pace_per_km: int
     interval_pace_per_km: int
     repetition_pace_per_km: int
+
+    def enforce_pace_order_contract(self) -> None:
+        """Ensure interval/repetition are faster than threshold, threshold faster than marathon."""
+        # Faster pace means fewer seconds per mile.
+        if self.threshold_pace >= self.marathon_pace:
+            self.threshold_pace = max(1, self.marathon_pace - 2)
+        if self.interval_pace >= self.threshold_pace:
+            self.interval_pace = max(1, self.threshold_pace - 2)
+        if self.repetition_pace >= self.interval_pace:
+            self.repetition_pace = max(1, self.interval_pace - 2)
+
+        # Keep km mirrors consistent after corrections.
+        self.marathon_pace_per_km = int(self.marathon_pace / 1.609)
+        self.threshold_pace_per_km = int(self.threshold_pace / 1.609)
+        self.interval_pace_per_km = int(self.interval_pace / 1.609)
+        self.repetition_pace_per_km = int(self.repetition_pace / 1.609)
     
     def get_pace_description(self, workout_type: str) -> str:
         """
@@ -59,7 +75,7 @@ class TrainingPaces:
             # Medium-long slightly quicker than easy
             pace = f"{self._format_pace(self.easy_pace_low)}-{self._format_pace(self.easy_pace_high)}/mi"
             return f"{pace} (easy to steady)"
-        elif workout_type in ["marathon", "mp", "marathon_pace", "long_mp"]:
+        elif workout_type in ["marathon", "mp", "marathon_pace", "long_mp", "mp_touch"]:
             pace = f"{self._format_pace(self.marathon_pace)}/mi"
             return f"{pace} (goal race pace)"
         elif workout_type in ["long_hmp"]:
@@ -141,7 +157,7 @@ class PaceEngine:
                 return None
             
             # Convert to our format
-            return TrainingPaces(
+            out = TrainingPaces(
                 rpi=rpi,
                 race_distance=distance,
                 race_time_seconds=time_seconds,
@@ -162,6 +178,8 @@ class PaceEngine:
                 interval_pace_per_km=int(paces.get("interval_pace", 390) / 1.609),
                 repetition_pace_per_km=int(paces.get("repetition_pace", 360) / 1.609),
             )
+            out.enforce_pace_order_contract()
+            return out
         except Exception as e:
             import logging
             logging.warning(f"Pace calculation failed: {e}")
@@ -179,7 +197,7 @@ class PaceEngine:
             if not paces:
                 return None
             
-            return TrainingPaces(
+            out = TrainingPaces(
                 rpi=rpi,
                 race_distance="estimated",
                 race_time_seconds=0,
@@ -198,6 +216,8 @@ class PaceEngine:
                 interval_pace_per_km=int(paces.get("interval_pace", 390) / 1.609),
                 repetition_pace_per_km=int(paces.get("repetition_pace", 360) / 1.609),
             )
+            out.enforce_pace_order_contract()
+            return out
         except Exception as e:
             import logging
             logging.warning(f"Pace calculation from RPI failed: {e}")

@@ -20,7 +20,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from core.database import SessionLocal
 from models import Athlete
-from services.fitness_bank import get_fitness_bank, FitnessBankCalculator
+from services.fitness_bank import get_fitness_bank
 
 
 def main():

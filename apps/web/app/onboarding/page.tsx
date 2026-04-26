@@ -2,14 +2,15 @@
  * Onboarding Flow Page
  * 
  * Multi-step wizard for new users following waterfall intake approach.
- * Stages: initial -> basic_profile -> goals -> nutrition_setup -> work_setup -> complete
+ * Stages: initial -> basic_profile -> goals -> consent_ai -> connect_strava -> complete
  * 
  * Tone: Sparse, non-guilt-inducing, everything optional except basics.
+ * Legacy: users stuck on nutrition_setup/work_setup auto-complete via AutoComplete.
  */
 
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
 import { useAuth } from '@/lib/hooks/useAuth';
@@ -18,10 +19,12 @@ import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { ErrorMessage } from '@/components/ui/ErrorMessage';
 import { stravaService } from '@/lib/api/services/strava';
 import { garminService } from '@/lib/api/services/garmin';
+import { API_CONFIG } from '@/lib/api/config';
 import { useGarminStatus } from '@/lib/hooks/queries/garmin';
 import { onboardingService } from '@/lib/api/services/onboarding';
 import { useBootstrapOnboarding, useOnboardingStatus } from '@/lib/hooks/queries/onboarding';
 import { useConsent } from '@/lib/context/ConsentContext';
+import { useUnits } from '@/lib/context/UnitsContext';
 
 type OnboardingStage = 'initial' | 'basic_profile' | 'goals' | 'consent_ai' | 'connect_strava' | 'nutrition_setup' | 'work_setup' | 'complete';
 
@@ -30,9 +33,11 @@ interface OnboardingData {
   birthdate?: string;
   sex?: string;
   height_cm?: number;
+  running_experience?: string;
+  current_runs_per_week?: string;
+  current_longest_run_miles?: string;
+  sport_background?: string;
   goals?: string[];
-  nutrition_setup?: boolean;
-  work_setup?: boolean;
   // Onboarding value artifact (optional, produced by Goals stage save)
   pace_profile_status?: string;
   pace_profile?: any;
@@ -45,41 +50,44 @@ export default function OnboardingPage() {
   const [data, setData] = useState<OnboardingData>({});
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<Error | null>(null);
+  const checkoutInFlight = useRef(false);
 
   useEffect(() => {
     if (user) {
-      if (user.onboarding_completed) {
-        router.push('/dashboard');
+      if (user.onboarding_completed && !checkoutInFlight.current) {
+        router.push('/home');
         return;
       }
-      setCurrentStage((user.onboarding_stage as OnboardingStage) || 'initial');
+      if (!user.onboarding_completed) {
+        setCurrentStage((user.onboarding_stage as OnboardingStage) || 'initial');
+      }
     }
   }, [user, router]);
 
 
-  const handleNext = async (stageData: Partial<OnboardingData>, nextStage: OnboardingStage) => {
+  const handleNext = async (stageData: Partial<OnboardingData>, nextStage: OnboardingStage): Promise<boolean> => {
     const newData = { ...data, ...stageData };
     setData(newData);
 
     setSaving(true);
     setError(null);
     try {
-      // Update profile data if provided
       const profileUpdates: any = {};
       if (stageData.display_name !== undefined) profileUpdates.display_name = stageData.display_name || null;
       if (stageData.birthdate !== undefined) profileUpdates.birthdate = stageData.birthdate || null;
       if (stageData.sex !== undefined) profileUpdates.sex = stageData.sex || null;
       if (stageData.height_cm !== undefined) profileUpdates.height_cm = stageData.height_cm || null;
       
-      // Update onboarding stage
       profileUpdates.onboarding_stage = nextStage;
       profileUpdates.onboarding_completed = nextStage === 'complete';
 
       await authService.updateProfile(profileUpdates);
       await refreshUser();
       setCurrentStage(nextStage);
+      return true;
     } catch (err) {
       setError(err as Error);
+      return false;
     } finally {
       setSaving(false);
     }
@@ -90,8 +98,31 @@ export default function OnboardingPage() {
   };
 
   const handleComplete = async () => {
-    await handleNext({}, 'complete');
-    router.push('/dashboard');
+    checkoutInFlight.current = true;
+    const saved = await handleNext({}, 'complete');
+
+    if (!saved) {
+      checkoutInFlight.current = false;
+      return;
+    }
+
+    try {
+      const token = localStorage.getItem('auth_token');
+      const resp = await fetch(`${API_CONFIG.baseURL}/v1/billing/checkout/trial`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ billing_period: 'monthly' }),
+      });
+      const data = await resp.json().catch(() => ({}));
+      if (resp.ok && data?.url) {
+        window.location.href = data.url;
+        return;
+      }
+    } catch {
+      // Stripe checkout creation failed — fall through to home
+    }
+    checkoutInFlight.current = false;
+    router.push('/home');
   };
 
   if (!user) {
@@ -117,15 +148,14 @@ export default function OnboardingPage() {
           <div className="mb-8">
             <div className="flex items-center justify-between text-sm text-slate-400">
               <span className={currentStage !== 'initial' ? 'text-white' : ''}>Basics</span>
-              <span className={['basic_profile', 'goals', 'connect_strava', 'nutrition_setup', 'work_setup', 'complete'].includes(currentStage) ? 'text-white' : ''}>Profile</span>
-              <span className={['goals', 'connect_strava', 'nutrition_setup', 'work_setup', 'complete'].includes(currentStage) ? 'text-white' : ''}>Goals</span>
-              <span className={['connect_strava', 'nutrition_setup', 'work_setup', 'complete'].includes(currentStage) ? 'text-white' : ''}>Connect</span>
-              <span className={['nutrition_setup', 'work_setup', 'complete'].includes(currentStage) ? 'text-white' : ''}>Optional</span>
+              <span className={['basic_profile', 'goals', 'consent_ai', 'connect_strava', 'complete'].includes(currentStage) ? 'text-white' : ''}>Profile</span>
+              <span className={['goals', 'consent_ai', 'connect_strava', 'complete'].includes(currentStage) ? 'text-white' : ''}>Goals</span>
+              <span className={['connect_strava', 'complete'].includes(currentStage) ? 'text-white' : ''}>Connect</span>
             </div>
             <div className="h-1 bg-slate-800 rounded-full mt-2">
               <div 
                 className="h-1 bg-blue-600 rounded-full transition-all"
-                style={{ width: `${(['initial', 'basic_profile', 'goals', 'connect_strava', 'nutrition_setup', 'work_setup', 'complete'].indexOf(currentStage) + 1) * 16.67}%` }}
+                style={{ width: `${Math.min(100, (['initial', 'basic_profile', 'goals', 'consent_ai', 'connect_strava', 'complete'].indexOf(currentStage) + 1) * 20)}%` }}
               />
             </div>
           </div>
@@ -171,25 +201,14 @@ export default function OnboardingPage() {
             <ConnectStravaStage
               paceProfileStatus={data.pace_profile_status}
               paceProfile={data.pace_profile}
-              onNext={() => handleNext({}, 'nutrition_setup')}
-              onSkip={() => handleSkip('nutrition_setup')}
-            />
-          )}
-
-          {currentStage === 'nutrition_setup' && (
-            <NutritionSetupStage
-              data={data}
-              onNext={(d) => handleNext(d, 'work_setup')}
-              onSkip={() => handleSkip('work_setup')}
-            />
-          )}
-
-          {currentStage === 'work_setup' && (
-            <WorkSetupStage
-              data={data}
-              onComplete={handleComplete}
+              onNext={handleComplete}
               onSkip={handleComplete}
             />
+          )}
+
+          {/* Legacy: skip nutrition_setup / work_setup to complete */}
+          {(currentStage === 'nutrition_setup' || currentStage === 'work_setup') && (
+            <AutoComplete onComplete={handleComplete} />
           )}
         </div>
       </div>
@@ -255,35 +274,41 @@ function BasicProfileStage({
     birthdate: data.birthdate || (user?.birthdate ? user.birthdate.split('T')[0] : ''),
     sex: data.sex || user?.sex || '',
     height_cm: data.height_cm || user?.height_cm || '',
+    running_experience: data.running_experience || '',
+    current_runs_per_week: data.current_runs_per_week || '',
+    current_longest_run_miles: data.current_longest_run_miles || '',
+    sport_background: data.sport_background || '',
   });
 
   return (
     <div className="bg-slate-800 rounded-lg border border-slate-700/50 p-6">
-      <h2 className="text-xl font-semibold mb-4">Basic Profile</h2>
-      <p className="text-slate-400 mb-6">Help us calculate age-graded performance. (Optional)</p>
+      <h2 className="text-xl font-semibold mb-4">About You</h2>
+      <p className="text-slate-400 mb-6">This helps us build a plan that fits your body and your life.</p>
       
       <div className="space-y-4">
-        <div>
-          <label className="block text-sm font-medium mb-2">Birthdate</label>
-          <input
-            type="date"
-            value={formData.birthdate}
-            onChange={(e) => setFormData({ ...formData, birthdate: e.target.value })}
-            className="w-full px-3 py-2 bg-slate-900 border border-slate-700/50 rounded text-white"
-          />
-        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label className="block text-sm font-medium mb-2">Birthdate</label>
+            <input
+              type="date"
+              value={formData.birthdate}
+              onChange={(e) => setFormData({ ...formData, birthdate: e.target.value })}
+              className="w-full px-3 py-2 bg-slate-900 border border-slate-700/50 rounded text-white"
+            />
+          </div>
 
-        <div>
-          <label className="block text-sm font-medium mb-2">Sex</label>
-          <select
-            value={formData.sex}
-            onChange={(e) => setFormData({ ...formData, sex: e.target.value })}
-            className="w-full px-3 py-2 bg-slate-900 border border-slate-700/50 rounded text-white"
-          >
-            <option value="">Select...</option>
-            <option value="M">Male</option>
-            <option value="F">Female</option>
-          </select>
+          <div>
+            <label className="block text-sm font-medium mb-2">Sex</label>
+            <select
+              value={formData.sex}
+              onChange={(e) => setFormData({ ...formData, sex: e.target.value })}
+              className="w-full px-3 py-2 bg-slate-900 border border-slate-700/50 rounded text-white"
+            >
+              <option value="">Select...</option>
+              <option value="M">Male</option>
+              <option value="F">Female</option>
+            </select>
+          </div>
         </div>
 
         <div>
@@ -296,7 +321,66 @@ function BasicProfileStage({
             className="w-full px-3 py-2 bg-slate-900 border border-slate-700/50 rounded text-white"
             placeholder="e.g., 175.0"
           />
-          <p className="text-xs text-slate-500 mt-1">Required for BMI calculation</p>
+          <p className="text-xs text-slate-500 mt-1">Used for BMI tracking when you log weight</p>
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium mb-2">Running experience</label>
+          <select
+            value={formData.running_experience}
+            onChange={(e) => setFormData({ ...formData, running_experience: e.target.value })}
+            className="w-full px-3 py-2 bg-slate-900 border border-slate-700/50 rounded text-white"
+          >
+            <option value="">Select...</option>
+            <option value="just_starting">Just starting out</option>
+            <option value="less_than_1_year">Less than 1 year</option>
+            <option value="1_to_3_years">1–3 years</option>
+            <option value="3_plus_years">3+ years</option>
+          </select>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label className="block text-sm font-medium mb-2">How many times per week do you currently run?</label>
+            <input
+              type="number"
+              min={0}
+              max={14}
+              value={formData.current_runs_per_week}
+              onChange={(e) => setFormData({ ...formData, current_runs_per_week: e.target.value })}
+              className="w-full px-3 py-2 bg-slate-900 border border-slate-700/50 rounded text-white"
+              placeholder="e.g., 3"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium mb-2">Longest run in the last month (miles)</label>
+            <input
+              type="number"
+              min={0}
+              step={0.5}
+              value={formData.current_longest_run_miles}
+              onChange={(e) => setFormData({ ...formData, current_longest_run_miles: e.target.value })}
+              className="w-full px-3 py-2 bg-slate-900 border border-slate-700/50 rounded text-white"
+              placeholder="e.g., 5"
+            />
+          </div>
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium mb-2">Athletic background before running</label>
+          <select
+            value={formData.sport_background}
+            onChange={(e) => setFormData({ ...formData, sport_background: e.target.value })}
+            className="w-full px-3 py-2 bg-slate-900 border border-slate-700/50 rounded text-white"
+          >
+            <option value="">Select...</option>
+            <option value="sedentary">Mostly sedentary</option>
+            <option value="gym_fitness">Gym / general fitness</option>
+            <option value="team_sport">Team sport (soccer, basketball, etc.)</option>
+            <option value="endurance_sport">Endurance sport (cycling, swimming, triathlon)</option>
+            <option value="multi_sport">Multiple sports / very active</option>
+          </select>
         </div>
 
         <div className="flex gap-2">
@@ -789,40 +873,6 @@ function GoalsStage({ data, onNext, onSkip }: { data: OnboardingData; onNext: (d
   );
 }
 
-function NutritionSetupStage({ data, onNext, onSkip }: { data: OnboardingData; onNext: (d: OnboardingData) => void; onSkip: () => void }) {
-  return (
-    <div className="bg-slate-800 rounded-lg border border-slate-700/50 p-6">
-      <h2 className="text-xl font-semibold mb-4">Nutrition</h2>
-      <p className="text-slate-400 mb-6">
-        Optional. Helps spot patterns when you log.
-      </p>
-      
-      <div className="space-y-4 mb-6">
-        <p className="text-sm text-slate-300">
-          Pre-run fuel, post-run recovery, daily intake — log what you want, when convenient.
-        </p>
-        <p className="text-xs text-slate-500">
-          You can set this up anytime from the Nutrition page.
-        </p>
-      </div>
-
-      <div className="flex gap-2">
-        <button
-          onClick={() => onNext({ nutrition_setup: true })}
-          className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded text-white font-medium"
-        >
-          Continue
-        </button>
-        <button
-          onClick={onSkip}
-          className="px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded text-slate-300 font-medium"
-        >
-          Skip
-        </button>
-      </div>
-    </div>
-  );
-}
 
 function ConnectStravaStage({
   paceProfileStatus,
@@ -838,6 +888,10 @@ function ConnectStravaStage({
   const { data: status } = useOnboardingStatus(true);
   const { data: garminStatus, refetch: refetchGarminStatus } = useGarminStatus();
   const bootstrap = useBootstrapOnboarding();
+  const { units } = useUnits();
+  const isMetricUnits = units === 'metric';
+  const paceUnitKey = isMetricUnits ? 'km' : 'mi';
+  const easyDisplayKey = isMetricUnits ? 'display_km' : 'display_mi';
   const isStravaConnected = !!status?.strava_connected;
   const isGarminConnected = !!garminStatus?.connected;
   const garminAvailable = !!garminStatus?.garmin_connect_available;
@@ -904,19 +958,19 @@ function ConnectStravaStage({
           <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-2 text-sm">
             <div className="flex items-center justify-between bg-slate-900/40 border border-slate-700/50 rounded px-3 py-2">
               <span className="text-slate-300">Easy</span>
-              <span className="text-slate-100">{paceProfile?.paces?.easy?.display_mi || paceProfile?.paces?.easy?.mi || '—'}</span>
+              <span className="text-slate-100">{paceProfile?.paces?.easy?.[easyDisplayKey] || paceProfile?.paces?.easy?.[paceUnitKey] || '—'}</span>
             </div>
             <div className="flex items-center justify-between bg-slate-900/40 border border-slate-700/50 rounded px-3 py-2">
               <span className="text-slate-300">Threshold</span>
-              <span className="text-slate-100">{paceProfile?.paces?.threshold?.mi || '—'}</span>
+              <span className="text-slate-100">{paceProfile?.paces?.threshold?.[paceUnitKey] || '—'}</span>
             </div>
             <div className="flex items-center justify-between bg-slate-900/40 border border-slate-700/50 rounded px-3 py-2">
               <span className="text-slate-300">Marathon</span>
-              <span className="text-slate-100">{paceProfile?.paces?.marathon?.mi || '—'}</span>
+              <span className="text-slate-100">{paceProfile?.paces?.marathon?.[paceUnitKey] || '—'}</span>
             </div>
             <div className="flex items-center justify-between bg-slate-900/40 border border-slate-700/50 rounded px-3 py-2">
               <span className="text-slate-300">Interval</span>
-              <span className="text-slate-100">{paceProfile?.paces?.interval?.mi || '—'}</span>
+              <span className="text-slate-100">{paceProfile?.paces?.interval?.[paceUnitKey] || '—'}</span>
             </div>
           </div>
         </div>
@@ -1009,55 +1063,33 @@ function ConnectStravaStage({
         </p>
       </div>
 
-      <div className="flex gap-2">
+      {isAnyConnected ? (
         <button
           onClick={onNext}
-          className="flex-1 px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded text-white font-medium"
+          className="w-full px-4 py-2 bg-green-600 hover:bg-green-700 rounded text-white font-medium transition-colors"
         >
-          {isAnyConnected ? 'Continue' : 'Continue Without Connecting'}
+          Continue
         </button>
-        <button
-          onClick={onSkip}
-          className="px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded text-slate-300 font-medium"
-        >
-          Skip
-        </button>
-      </div>
+      ) : (
+        <p className="text-sm text-slate-500 text-center">
+          Connect Strava or Garmin above to continue. StrideIQ needs your training data to work.
+        </p>
+      )}
     </div>
   );
 }
 
-function WorkSetupStage({ data, onComplete, onSkip }: { data: OnboardingData; onComplete: () => void; onSkip: () => void }) {
-  return (
-    <div className="bg-slate-800 rounded-lg border border-slate-700/50 p-6">
-      <h2 className="text-xl font-semibold mb-4">Work Patterns</h2>
-      <p className="text-slate-400 mb-6">
-        Optional. Helps identify work-performance correlations.
-      </p>
-      
-      <div className="space-y-4 mb-6">
-        <p className="text-sm text-slate-300">
-          Log work hours and stress levels to see how they affect your running.
-        </p>
-        <p className="text-xs text-slate-500">
-          Set up anytime from Settings.
-        </p>
-      </div>
 
-      <div className="flex gap-2">
-        <button
-          onClick={() => onComplete()}
-          className="flex-1 px-4 py-2 bg-green-600 hover:bg-green-700 rounded text-white font-medium"
-        >
-          Complete Setup
-        </button>
-        <button
-          onClick={onSkip}
-          className="px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded text-slate-300 font-medium"
-        >
-          Skip to Dashboard
-        </button>
-      </div>
+function AutoComplete({ onComplete }: { onComplete: () => void }) {
+  const fired = useRef(false);
+  useEffect(() => {
+    if (fired.current) return;
+    fired.current = true;
+    onComplete();
+  }, [onComplete]);
+  return (
+    <div className="flex items-center justify-center py-12">
+      <LoadingSpinner size="lg" />
     </div>
   );
 }

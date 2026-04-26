@@ -230,6 +230,9 @@ def run_experience_guardrail(self):
         else:
             logger.error("Experience guardrail FAILED: %s", summary["summary"])
 
+        from tasks.beat_startup_dispatch import record_task_run
+        record_task_run("beat:last_run:experience_guardrail")
+
         return {"status": "completed", **summary}
 
     except Exception as exc:

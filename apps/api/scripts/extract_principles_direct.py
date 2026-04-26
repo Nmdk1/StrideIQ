@@ -6,11 +6,10 @@ Extracts coaching principles from text using pattern matching and analysis.
 No external AI APIs needed - uses direct text analysis.
 """
 import sys
-import os
 import json
 import re
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict
 
 # Add parent directory to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -154,7 +153,7 @@ def extract_and_store_principles(text_file: str, source: str, methodology: str):
                 principle_type="rpi_formula"
             )
             db.add(entry)
-            print(f"✅ Extracted RPI principles")
+            print("✅ Extracted RPI principles")
         
         # Extract periodization principles
         print("Extracting periodization principles...")
@@ -169,7 +168,7 @@ def extract_and_store_principles(text_file: str, source: str, methodology: str):
                 principle_type="periodization"
             )
             db.add(entry)
-            print(f"✅ Extracted periodization principles")
+            print("✅ Extracted periodization principles")
         
         # Extract general training principles
         print("Extracting general training principles...")
@@ -184,10 +183,10 @@ def extract_and_store_principles(text_file: str, source: str, methodology: str):
                 principle_type="general"
             )
             db.add(entry)
-            print(f"✅ Extracted general training principles")
+            print("✅ Extracted general training principles")
         
         db.commit()
-        print(f"✅ All principles extracted and stored!")
+        print("✅ All principles extracted and stored!")
         
     except Exception as e:
         print(f"❌ Error: {e}")

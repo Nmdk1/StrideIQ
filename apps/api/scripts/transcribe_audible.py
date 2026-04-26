@@ -11,7 +11,6 @@ Note: This requires:
 """
 import sys
 import os
-from pathlib import Path
 
 try:
     import whisper
@@ -145,7 +144,7 @@ def main():
         f.write(text)
     
     print(f"✅ Transcribed {len(text)} characters to {output_file}")
-    print(f"✅ Ready for knowledge extraction!")
+    print("✅ Ready for knowledge extraction!")
 
 
 if __name__ == "__main__":

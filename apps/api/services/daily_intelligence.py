@@ -33,6 +33,8 @@ from uuid import UUID
 
 import logging
 
+from services.intelligence.narration_tiers import evidence_phrase as _di_evidence_phrase
+
 logger = logging.getLogger(__name__)
 
 
@@ -219,6 +221,7 @@ class DailyIntelligenceEngine:
                 db.query(Activity)
                 .filter(
                     Activity.athlete_id == athlete_id,
+                    Activity.sport == "run",
                     Activity.start_time >= datetime.combine(start, datetime.min.time()),
                     Activity.start_time < datetime.combine(end + timedelta(days=1), datetime.min.time()),
                 )
@@ -242,6 +245,7 @@ class DailyIntelligenceEngine:
                 db.query(Activity)
                 .filter(
                     Activity.athlete_id == athlete_id,
+                    Activity.sport == "run",
                     Activity.start_time >= datetime.combine(current_start, datetime.min.time()),
                     Activity.start_time < datetime.combine(target_date + timedelta(days=1), datetime.min.time()),
                 )
@@ -414,6 +418,7 @@ class DailyIntelligenceEngine:
             db.query(Activity)
             .filter(
                 Activity.athlete_id == athlete_id,
+                Activity.sport == "run",
                 Activity.start_time >= day_start,
                 Activity.start_time < day_end,
                 Activity.distance_m.isnot(None),
@@ -501,7 +506,7 @@ class DailyIntelligenceEngine:
         weekly_efs = []
         for week_idx in range(4):
             week_end = target_date - timedelta(days=week_idx * 7)
-            week_start = week_end - timedelta(days=6)
+            week_end - timedelta(days=6)
             efs = self._get_ef_series(athlete_id, week_end, db, days=7)
             if efs:
                 avg_ef = sum(ef for _, ef in efs) / len(efs)
@@ -635,6 +640,7 @@ class DailyIntelligenceEngine:
             db.query(Activity)
             .filter(
                 Activity.athlete_id == athlete_id,
+                Activity.sport == "run",
                 Activity.start_time >= datetime.combine(lookback, datetime.min.time()),
                 Activity.start_time < datetime.combine(target_date + timedelta(days=1), datetime.min.time()),
             )
@@ -735,7 +741,7 @@ class DailyIntelligenceEngine:
 
             message += (
                 f" Timing signal: effect usually appears {lag_phrase}."
-                f" Confirmed {finding.times_confirmed} times."
+                f" Pattern {_di_evidence_phrase(finding.times_confirmed)}."
                 f" Evidence: r={finding.correlation_coefficient:.2f}."
             )
 
@@ -786,6 +792,7 @@ class DailyIntelligenceEngine:
             db.query(Activity)
             .filter(
                 Activity.athlete_id == athlete_id,
+                Activity.sport == "run",
                 Activity.start_time >= datetime.combine(window_start, datetime.min.time()),
                 Activity.start_time < datetime.combine(target_date + timedelta(days=1), datetime.min.time()),
                 Activity.avg_hr.isnot(None),

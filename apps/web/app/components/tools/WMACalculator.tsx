@@ -12,8 +12,9 @@
  * Feature flagged: AGE_GRADE_V2
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { API_CONFIG } from '@/lib/api/config';
+import { sendToolTelemetry } from '@/lib/hooks/useToolTelemetry';
 import TimeInput from '@/components/ui/TimeInput';
 import { isFeatureEnabled, FEATURE_FLAGS } from '@/lib/featureFlags';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -98,6 +99,11 @@ export default function WMACalculator() {
   const [results, setResults] = useState<AgeGradeResults | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!results) return;
+    void sendToolTelemetry('tool_result_view', { tool: 'wma_age_grade' });
+  }, [results]);
 
   const handleCalculate = async (e?: React.MouseEvent) => {
     if (e) {

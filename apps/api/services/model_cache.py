@@ -27,9 +27,7 @@ from sqlalchemy import text
 from services.individual_performance_model import (
     IndividualPerformanceModel,
     BanisterModel,
-    ModelConfidence,
-    DEFAULT_TAU1,
-    DEFAULT_TAU2
+    ModelConfidence
 )
 
 logger = logging.getLogger(__name__)
@@ -178,6 +176,7 @@ class ModelCache:
                 SELECT MAX(DATE(start_time))
                 FROM activity
                 WHERE athlete_id = :aid
+                  AND sport = 'run'
             """), {"aid": str(athlete_id)}).scalar()
             
             # Compute input hash for cache validation
@@ -300,9 +299,11 @@ class ModelCache:
                     last_activity_date,
                     (SELECT COUNT(*) FROM activity 
                      WHERE athlete_id = :aid 
+                       AND sport = 'run'
                        AND DATE(start_time) > im.last_activity_date) as new_count,
                     (SELECT COUNT(*) FROM activity 
                      WHERE athlete_id = :aid 
+                       AND sport = 'run'
                        AND is_race = TRUE
                        AND DATE(start_time) > im.last_activity_date) as new_races
                 FROM individual_model im
@@ -334,6 +335,7 @@ class ModelCache:
                     COUNT(*) FILTER (WHERE is_race = TRUE) as n_races
                 FROM activity
                 WHERE athlete_id = :aid
+                    AND sport = 'run'
                     AND start_time > NOW() - INTERVAL '1 year'
             """), {"aid": str(athlete_id)}).fetchone()
             

@@ -11,7 +11,7 @@
 
 The backend intelligence is built. The product vision is documented. The gap is between them.
 
-The founder's product strategy defines 10 priority-ranked concepts, all powered by the correlation engine. The correlation engine roadmap defines 12 capability layers. Layers 1-4 are shipped. The Living Fingerprint — weather normalization, shape extraction, 15 investigations, finding persistence — is shipped. The Training Story Engine is shipped.
+The founder's product strategy defines 16 priority-ranked concepts, all powered by the correlation engine. The correlation engine roadmap defines 12 capability layers. Layers 1-4 are shipped. The Living Fingerprint — weather normalization, shape extraction, 15 investigations, finding persistence — is shipped. The Training Story Engine is shipped.
 
 None of it speaks to the athlete.
 
@@ -400,25 +400,29 @@ Weather gets its own **permanent home on the home page** — not a situational a
 
 ## Part 10: Build Sequence
 
-### Now: Phase 0 — Fix What's Broken
+### Phase 0 — Fix What's Broken — ✅ COMPLETE
 
-Already in progress. Builder instructions at `BUILDER_INSTRUCTIONS_2026-03-08_WORKER_AND_DEDUP.md`:
-- Fix Strava dedup bug (P0)
-- Split beat/worker, fingerprint skip, priority queues (P1)
-- Restore reliable home briefing generation
+Infrastructure stabilized (Mar 8-9):
+- Strava dedup fixed
+- Worker/beat split done
+- Reliable home briefing generation via Redis cache (Lane 2A)
 
-No visibility work succeeds on a broken foundation.
+### Path A — The Literacy Program — SUBSTANTIALLY SHIPPED
 
-### Next: Path A — The Literacy Program
-
-Scope for the builder alongside Phase 0 infrastructure:
-- Weather-adjusted effort coloring on pace charts
-- Finding annotations on activity detail
-- Miniaturized shape icons on activity cards
-- Sharper morning voice (finding-aware prompt)
-- One finding with micro-visual on home page
-
-All frontend + prompt work. Data exists. No new backend computation.
+Shipped (Mar 9 – Apr 4):
+- ✅ Weather-adjusted effort coloring on pace charts (heat_adjustment_pct)
+- ✅ Finding annotations on activity detail (top 3 findings)
+- ✅ Sharper morning voice (finding-aware prompt, per-field lane injection)
+- ✅ One finding with micro-visual on home page (day-based rotation)
+- ✅ **Personal Operating Manual V2** (Apr 4) — the full literacy program:
+  Race Character, Cascade Stories, Highlighted Findings, Full Record,
+  human-language headlines, interestingness filter, delta tracking
+- ✅ **Home Wellness Row** (Apr 4) — Recovery HRV, Overnight Avg HRV,
+  RHR, Sleep with personal 30-day ranges and explanation tooltip
+- ✅ **Activity Wellness Stamps** (Apr 4) — pre-activity wellness snapshot
+  on every activity, visible in "Going In" section on detail page
+- ✅ **Manual in primary nav** (Apr 4) — promoted to top-level, left of Progress
+- Remaining: miniaturized shape icons on activity cards (deferred)
 
 ### Then: Path B Design Exploration (Separate Track, Non-Code)
 
@@ -461,15 +465,17 @@ Each surface gates independently. The athlete doesn't wait for all of Path B to 
 
 ---
 
-## The Honest Assessment
+## The Honest Assessment (Updated Apr 4, 2026)
 
-Path A is buildable now. It uses existing data, existing screens, and existing infrastructure. The builder can execute it alongside Phase 0.
+Path A is substantially shipped. The Personal Operating Manual V2, home wellness row, activity wellness stamps, and finding annotations are live. The Manual is the product's primary intelligence surface — it teaches athletes about themselves using their own data. It has earned primary navigation placement.
 
 Path B design exploration can start in parallel — emotional storyboards, creative coding sketches, technology proofs-of-concept. No production code until the aesthetic is right.
 
-The fingerprint organism is the highest-risk, highest-reward surface in the product. If the form is beautiful and the reconnection moment lands, it creates a category of one — no running app has anything remotely like it. If the form is mediocre, it's worse than no fingerprint at all. The visual quality standard exists to prevent the mediocre outcome.
+The fingerprint organism remains the highest-risk, highest-reward surface. The Manual V2 is Path A's culmination — it's where findings become story, character, and self-knowledge. Path B should build from this foundation, not replace it.
 
-Phase 3 (Pre-Race Fingerprint / Race Canvas) remains the highest-impact strategic priority and needs new analysis logic. The raw data exists for the founder. It's a focused backend build plus a visually ambitious frontend surface.
+A key design principle emerged from Path A work: **never hide numbers.** Athletes track trends, research, and compare. The magic is making data understandable to a 79-year-old AND meaningful to an elite — interpretation layered on raw data, not replacing it. This principle applies to every Path B surface.
+
+Phase 3 (Pre-Race Fingerprint / Race Canvas) remains the highest-impact strategic priority.
 
 The N=1 ecosystem is years away from production but the architecture must protect it now. Every `CorrelationFinding` stored today is a building block for Layer 11 tomorrow. The data model is already N=1 native. Don't corrupt it with population aggregation.
 

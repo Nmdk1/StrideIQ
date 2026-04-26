@@ -8,7 +8,6 @@ Provides audit trail for security, analytics, and rollback capability.
 from uuid import UUID
 from typing import Optional, Any
 from sqlalchemy.orm import Session
-from datetime import datetime
 
 from models import PlanModificationLog, PlannedWorkout
 

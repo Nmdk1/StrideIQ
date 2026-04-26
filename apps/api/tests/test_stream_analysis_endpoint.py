@@ -205,6 +205,28 @@ def activity_fetching(db_session, test_athlete):
 
 
 @pytest.fixture
+def activity_garmin_stale_pending(db_session, test_athlete):
+    """Garmin activity stuck pending beyond stale window should be unavailable."""
+    activity = Activity(
+        athlete_id=test_athlete.id,
+        name="Garmin Stale Pending",
+        start_time=datetime.now(timezone.utc) - timedelta(hours=2),
+        sport="run",
+        source="garmin",
+        provider="garmin",
+        external_activity_id=f"garmin_pending_{uuid4().hex[:8]}",
+        garmin_activity_id=123456789,
+        duration_s=2400,
+        distance_m=6500,
+        stream_fetch_status="pending",
+    )
+    db_session.add(activity)
+    db_session.commit()
+    db_session.refresh(activity)
+    return activity
+
+
+@pytest.fixture
 def activity_unavailable(db_session, test_athlete):
     """Activity with stream_fetch_status='unavailable' (manual entry)."""
     activity = Activity(
@@ -389,6 +411,16 @@ class TestStreamAnalysisEndpoint:
     ):
         """200 with {"status": "unavailable"} when stream_fetch_status='unavailable'."""
         url = self.ENDPOINT.format(activity_id=activity_unavailable.id)
+        resp = client.get(url, headers=_auth_headers(test_athlete))
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data.get("status") == "unavailable"
+
+    def test_returns_unavailable_for_stale_garmin_pending_without_stream(
+        self, client, test_athlete, activity_garmin_stale_pending
+    ):
+        """Stale Garmin pending state should not stay in perpetual pending."""
+        url = self.ENDPOINT.format(activity_id=activity_garmin_stale_pending.id)
         resp = client.get(url, headers=_auth_headers(test_athlete))
         assert resp.status_code == 200
         data = resp.json()

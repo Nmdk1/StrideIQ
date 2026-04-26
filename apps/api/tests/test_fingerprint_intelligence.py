@@ -41,6 +41,9 @@ def _make_finding(**overrides):
         "category": "what_works",
         "confidence": 0.85,
         "is_active": True,
+        "lifecycle_state": None,
+        "lifecycle_state_updated_at": None,
+        "resolving_context": None,
         "threshold_value": 6.2,
         "threshold_direction": "below_hurts",
         "r_below_threshold": -0.71,
@@ -74,14 +77,14 @@ class TestFormatFindingLine:
     def test_verbose_includes_threshold(self):
         f = _make_finding()
         line = format_finding_line(f, verbose=True)
-        assert "cliff at 6.2" in line
-        assert "r=-0.71" in line
+        assert "cliff at 6.2 hours" in line
+        assert "Below: 18 observations" in line
 
     def test_verbose_includes_asymmetry(self):
         f = _make_finding()
         line = format_finding_line(f, verbose=True)
         assert "3.1x" in line
-        assert "negative_dominant" in line
+        assert "downside hits harder" in line
 
     def test_verbose_includes_decay(self):
         f = _make_finding()
@@ -92,7 +95,7 @@ class TestFormatFindingLine:
     def test_compact_single_line(self):
         f = _make_finding()
         line = format_finding_line(f, verbose=False)
-        assert "cliff at 6.2" in line
+        assert "cliff at 6.2 hours" in line
         assert "\n" not in line
 
     def test_no_layers_omits_details(self):
@@ -101,16 +104,20 @@ class TestFormatFindingLine:
             asymmetry_ratio=None,
             decay_half_life_days=None,
             time_lag_days=0,
+            lifecycle_state=None,
         )
         line = format_finding_line(f, verbose=False)
-        assert "STRONG 12x" in line
+        # Narration tier comes from times_confirmed (founder rule:
+        # 3-5 EMERGING, 6-9 REPEATED, 10+ CONFIRMED). The legacy
+        # strength label was the trust-rupture vector.
+        assert "CONFIRMED 12x" in line
         assert "cliff" not in line
         assert "Asymmetry" not in line
 
     def test_includes_confirmation_count(self):
-        f = _make_finding(times_confirmed=47)
+        f = _make_finding(times_confirmed=47, lifecycle_state=None)
         line = format_finding_line(f, verbose=False)
-        assert "STRONG 47x" in line
+        assert "CONFIRMED 47x" in line
 
 
 # ---------------------------------------------------------------------------
@@ -118,34 +125,54 @@ class TestFormatFindingLine:
 # ---------------------------------------------------------------------------
 
 class TestBuildFingerprintPromptSection:
+    """Section assembly is what matters here; the eligibility chokepoint
+    has its own dedicated tests in ``test_finding_eligibility``. We stub
+    ``get_confirmed_findings`` so these tests stay focused on formatting
+    and grouping behavior rather than re-asserting the chokepoint's
+    query mechanics."""
 
     def test_returns_none_when_no_findings(self):
         db = MagicMock()
-        db.query.return_value.filter.return_value.order_by.return_value.limit.return_value.all.return_value = []
-        result = build_fingerprint_prompt_section(ATHLETE_ID, db)
+        db.query.return_value.filter.return_value.order_by.return_value.nulls_last.return_value = MagicMock()
+        with patch(
+            "services.fingerprint_context.get_confirmed_findings",
+            return_value=[],
+        ):
+            result = build_fingerprint_prompt_section(ATHLETE_ID, db)
         assert result is None
 
     def test_verbose_section_has_header(self):
         f = _make_finding()
         db = MagicMock()
-        db.query.return_value.filter.return_value.order_by.return_value.limit.return_value.all.return_value = [f]
-        result = build_fingerprint_prompt_section(ATHLETE_ID, db, verbose=True)
+        db.query.return_value.filter.return_value.order_by.return_value.limit.return_value.all.return_value = []
+        with patch(
+            "services.fingerprint_context.get_confirmed_findings",
+            return_value=[f],
+        ):
+            result = build_fingerprint_prompt_section(ATHLETE_ID, db, verbose=True)
         assert "Personal Fingerprint" in result
-        assert "STRONG/CONFIRMED" in result
+        assert "ACTIVE" in result
 
     def test_compact_section_has_instruction(self):
         f = _make_finding()
         db = MagicMock()
-        db.query.return_value.filter.return_value.order_by.return_value.limit.return_value.all.return_value = [f]
-        result = build_fingerprint_prompt_section(ATHLETE_ID, db, verbose=False)
-        assert "confirmed" in result
-        assert "STRONG/CONFIRMED" in result
+        db.query.return_value.filter.return_value.order_by.return_value.limit.return_value.all.return_value = []
+        with patch(
+            "services.fingerprint_context.get_confirmed_findings",
+            return_value=[f],
+        ):
+            result = build_fingerprint_prompt_section(ATHLETE_ID, db, verbose=False)
+        assert "Treat ACTIVE as fact" in result
 
     def test_limits_findings(self):
         findings = [_make_finding(times_confirmed=50 - i) for i in range(12)]
         db = MagicMock()
-        db.query.return_value.filter.return_value.order_by.return_value.limit.return_value.all.return_value = findings[:8]
-        result = build_fingerprint_prompt_section(ATHLETE_ID, db, max_findings=8)
+        db.query.return_value.filter.return_value.order_by.return_value.limit.return_value.all.return_value = []
+        with patch(
+            "services.fingerprint_context.get_confirmed_findings",
+            return_value=findings[:8],
+        ):
+            result = build_fingerprint_prompt_section(ATHLETE_ID, db, max_findings=8)
         assert result is not None
         assert result.count("→") == 8  # 8 finding lines, each with "→"
 
@@ -181,10 +208,13 @@ class TestCoachNoticedFingerprint:
 
         assert result is not None
         assert result.source == "fingerprint"
-        # No stats language — coach-speak only
-        assert "confirmed" not in result.text.lower()
         assert "r=" not in result.text
-        assert "cliff" in result.text or "sleep" in result.text.lower()
+        assert "p-value" not in result.text
+        assert "sleep" in result.text.lower()
+        assert "threshold" in result.text.lower() or "6.2" in result.text
+        assert "consistent across" in result.text
+        assert "45" in result.text
+        assert result.finding_id is not None
 
     def test_fingerprint_requires_recent_confirmation(self):
         from routers.home import compute_coach_noticed

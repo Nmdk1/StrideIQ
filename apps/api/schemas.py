@@ -1,7 +1,7 @@
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, model_validator
 from datetime import datetime, date
 from uuid import UUID
-from typing import Optional, List, Dict
+from typing import Any, Dict, List, Optional
 
 
 class AthleteCreate(BaseModel):
@@ -58,7 +58,12 @@ class ActivityCreate(BaseModel):
 
 
 class ActivitySplitResponse(BaseModel):
-    """Schema for individual mile splits within an activity"""
+    """Schema for individual mile splits within an activity.
+
+    The fit-derived columns (total_ascent_m onward) are only populated
+    when the activity ingested a FIT file with lap messages. They are
+    nullable for legacy activities and for partial uploads.
+    """
     split_number: int  # Split number (mile number)
     distance: Optional[float] = None
     elapsed_time: Optional[int] = None
@@ -66,9 +71,56 @@ class ActivitySplitResponse(BaseModel):
     average_heartrate: Optional[int] = None
     max_heartrate: Optional[int] = None
     average_cadence: Optional[float] = None
-    gap_seconds_per_mile: Optional[float] = None
+    gap_s_per_km: Optional[float] = None
+    lap_type: Optional[str] = None
+    interval_number: Optional[int] = None
+
+    # FIT-derived per-lap metrics (fit_run_001).
+    total_ascent_m: Optional[float] = None
+    total_descent_m: Optional[float] = None
+    avg_power_w: Optional[int] = None
+    max_power_w: Optional[int] = None
+    avg_stride_length_m: Optional[float] = None
+    avg_ground_contact_ms: Optional[float] = None
+    avg_vertical_oscillation_cm: Optional[float] = None
+    avg_vertical_ratio_pct: Optional[float] = None
+    extras: Optional[Dict[str, Any]] = None
 
     model_config = ConfigDict(from_attributes=True)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _convert_gap_from_db(cls, data: Any) -> Any:
+        if hasattr(data, "gap_seconds_per_mile"):
+            raw = getattr(data, "gap_seconds_per_mile", None)
+            if raw is not None:
+                data = {
+                    k: getattr(data, k, None)
+                    for k in cls.model_fields
+                }
+                data["gap_s_per_km"] = round(float(raw) * 1000 / 1609.34, 2)
+        elif isinstance(data, dict) and "gap_seconds_per_mile" in data:
+            raw = data.pop("gap_seconds_per_mile", None)
+            if raw is not None and "gap_s_per_km" not in data:
+                data["gap_s_per_km"] = round(float(raw) * 1000 / 1609.34, 2)
+        return data
+
+
+class IntervalSummaryResponse(BaseModel):
+    is_structured: bool = False
+    workout_description: Optional[str] = None
+    num_work_intervals: int = 0
+    avg_work_pace_sec_per_km: Optional[float] = None
+    avg_work_hr: Optional[int] = None
+    avg_rest_duration_s: Optional[float] = None
+    avg_rest_hr: Optional[int] = None
+    fastest_interval: Optional[int] = None
+    slowest_interval: Optional[int] = None
+
+
+class SplitsWithIntervalsResponse(BaseModel):
+    splits: List[ActivitySplitResponse]
+    interval_summary: Optional[IntervalSummaryResponse] = None
 
 
 class ActivityResponse(BaseModel):
@@ -76,6 +128,7 @@ class ActivityResponse(BaseModel):
     id: str  # UUID as string
     strava_id: Optional[int] = None
     name: str
+    sport: str = "run"
     distance: float  # Distance in meters
     moving_time: int  # Moving time in seconds
     start_date: str  # ISO format datetime string
@@ -84,7 +137,7 @@ class ActivityResponse(BaseModel):
     average_heartrate: Optional[int] = None
     average_cadence: Optional[float] = None
     total_elevation_gain: Optional[float] = None
-    pace_per_mile: Optional[str] = None  # Formatted as "MM:SS/mi"
+    pace_s_per_km: Optional[float] = None
     duration_formatted: Optional[str] = None  # Formatted as "HH:MM:SS" or "MM:SS"
     splits: Optional[List[ActivitySplitResponse]] = None
     # Performance Physics Engine fields
@@ -171,14 +224,45 @@ class NutritionEntryCreate(BaseModel):
     athlete_id: UUID
     date: date
     entry_type: str  # 'pre_activity', 'during_activity', 'post_activity', 'daily'
-    activity_id: Optional[UUID] = None  # Required for pre/during/post, None for daily
+    activity_id: Optional[UUID] = None
     calories: Optional[float] = None
     protein_g: Optional[float] = None
     carbs_g: Optional[float] = None
     fat_g: Optional[float] = None
     fiber_g: Optional[float] = None
-    timing: Optional[datetime] = None  # When consumed
+    timing: Optional[datetime] = None
     notes: Optional[str] = None
+    caffeine_mg: Optional[float] = None
+    fluid_ml: Optional[float] = None
+    carb_source: Optional[str] = None
+    glucose_fructose_ratio: Optional[float] = None
+    macro_source: Optional[str] = None
+    fueling_product_id: Optional[int] = None
+    # Source identifier of the food this entry was created from. Set by the
+    # frontend when the entry comes from a barcode scan or USDA lookup so the
+    # backend can auto-learn per-athlete macro corrections on edit.
+    source_fdc_id: Optional[int] = None
+    source_upc: Optional[str] = None
+
+
+class NutritionEntryUpdate(BaseModel):
+    """Schema for partial update of a nutrition entry (all fields optional)."""
+    date: Optional[date] = None
+    entry_type: Optional[str] = None
+    activity_id: Optional[UUID] = None
+    calories: Optional[float] = None
+    protein_g: Optional[float] = None
+    carbs_g: Optional[float] = None
+    fat_g: Optional[float] = None
+    fiber_g: Optional[float] = None
+    notes: Optional[str] = None
+    caffeine_mg: Optional[float] = None
+    fluid_ml: Optional[float] = None
+    carb_source: Optional[str] = None
+    macro_source: Optional[str] = None
+    fueling_product_id: Optional[int] = None
+    source_fdc_id: Optional[int] = None
+    source_upc: Optional[str] = None
 
 
 class NutritionEntryResponse(BaseModel):
@@ -195,9 +279,176 @@ class NutritionEntryResponse(BaseModel):
     fiber_g: Optional[float] = None
     timing: Optional[datetime] = None
     notes: Optional[str] = None
+    caffeine_mg: Optional[float] = None
+    fluid_ml: Optional[float] = None
+    carb_source: Optional[str] = None
+    glucose_fructose_ratio: Optional[float] = None
+    macro_source: Optional[str] = None
+    fueling_product_id: Optional[int] = None
+    source_fdc_id: Optional[int] = None
+    source_upc: Optional[str] = None
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class PhotoParseItemResponse(BaseModel):
+    food: str
+    grams: float
+    calories: float
+    protein_g: float
+    carbs_g: float
+    fat_g: float
+    fiber_g: float
+    macro_source: str
+    fdc_id: Optional[int] = None
+    is_athlete_override: bool = False
+    override_id: Optional[int] = None
+
+
+class PhotoParseResponse(BaseModel):
+    items: list[PhotoParseItemResponse]
+    total_calories: float
+    total_protein_g: float
+    total_carbs_g: float
+    total_fat_g: float
+    total_fiber_g: float
+    template_match: Optional[dict] = None
+
+
+class BarcodeScanRequest(BaseModel):
+    upc: str
+
+
+class BarcodeScanResponse(BaseModel):
+    found: bool
+    food_name: Optional[str] = None
+    serving_size_g: Optional[float] = None
+    calories: Optional[float] = None
+    protein_g: Optional[float] = None
+    carbs_g: Optional[float] = None
+    fat_g: Optional[float] = None
+    fiber_g: Optional[float] = None
+    macro_source: str = "branded_barcode"
+    fdc_id: Optional[int] = None
+    upc: Optional[str] = None
+    is_athlete_override: bool = False
+    override_id: Optional[int] = None
+
+
+class MealTemplateItem(BaseModel):
+    """One food in a saved meal."""
+    food: str
+    grams: Optional[float] = None
+    calories: Optional[float] = None
+    protein_g: Optional[float] = None
+    carbs_g: Optional[float] = None
+    fat_g: Optional[float] = None
+    fiber_g: Optional[float] = None
+    source_upc: Optional[str] = None
+    source_fdc_id: Optional[int] = None
+
+
+class MealTemplateCreate(BaseModel):
+    name: str
+    items: list[MealTemplateItem]
+
+
+class MealTemplateUpdate(BaseModel):
+    name: Optional[str] = None
+    items: Optional[list[MealTemplateItem]] = None
+
+
+class MealTemplateResponse(BaseModel):
+    id: int
+    name: Optional[str] = None
+    is_user_named: bool
+    times_confirmed: int
+    last_used: Optional[datetime] = None
+    items: list[dict]
+    total_calories: float = 0.0
+    total_protein_g: float = 0.0
+    total_carbs_g: float = 0.0
+    total_fat_g: float = 0.0
+    total_fiber_g: float = 0.0
+
+
+class MealTemplateLogRequest(BaseModel):
+    date: date
+    entry_type: str = "daily"
+    activity_id: Optional[UUID] = None
+    notes_override: Optional[str] = None
+
+
+class FuelingProductResponse(BaseModel):
+    id: int
+    brand: str
+    product_name: str
+    variant: Optional[str] = None
+    category: str
+    serving_size_g: Optional[float] = None
+    calories: Optional[float] = None
+    carbs_g: Optional[float] = None
+    protein_g: Optional[float] = None
+    fat_g: Optional[float] = None
+    fiber_g: Optional[float] = None
+    caffeine_mg: Optional[float] = None
+    sodium_mg: Optional[float] = None
+    fluid_ml: Optional[float] = None
+    carb_source: Optional[str] = None
+    glucose_fructose_ratio: Optional[float] = None
+    is_verified: Optional[bool] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class FuelingProductCreate(BaseModel):
+    brand: str
+    product_name: str
+    variant: Optional[str] = None
+    category: str
+    serving_size_g: Optional[float] = None
+    calories: Optional[float] = None
+    carbs_g: float
+    protein_g: Optional[float] = None
+    fat_g: Optional[float] = None
+    fiber_g: Optional[float] = None
+    caffeine_mg: float = 0
+    sodium_mg: Optional[float] = None
+    fluid_ml: Optional[float] = None
+    carb_source: Optional[str] = None
+    glucose_fructose_ratio: Optional[float] = None
+
+
+class FuelingProfileAdd(BaseModel):
+    product_id: int
+    usage_context: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class FuelingProfileResponse(BaseModel):
+    id: int
+    product_id: int
+    is_active: bool
+    usage_context: Optional[str] = None
+    notes: Optional[str] = None
+    product: FuelingProductResponse
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class FuelingLogRequest(BaseModel):
+    product_id: int
+    entry_type: str = "daily"
+    activity_id: Optional[UUID] = None
+    quantity: float = 1.0
+    timing: Optional[datetime] = None
+    # Optional explicit calendar day so the shelf-tap one-tap log can backfill
+    # prior days. Defaults to athlete-local today when omitted. Field is named
+    # `entry_date` (not `date`) to avoid shadowing the imported `date` type
+    # during Pydantic v2 annotation evaluation, which silently coerces the
+    # field's type to `None`.
+    entry_date: Optional[date] = None
 
 
 class WorkPatternCreate(BaseModel):

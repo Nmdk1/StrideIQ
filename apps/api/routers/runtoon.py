@@ -19,11 +19,10 @@ Privacy invariant: storage keys are NEVER returned in API responses.
 All image access is via signed URLs with 15-minute TTL.
 """
 
-import hashlib
 import logging
 import uuid
 from datetime import datetime, timezone
-from typing import List, Optional
+from typing import Any, List, Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
@@ -52,6 +51,8 @@ PHOTO_MAX = 10
 RUNTOON_PER_ACTIVITY_CAP = 3
 SIGNED_URL_TTL = 900  # 15 minutes
 DOWNLOAD_SIGNED_URL_TTL = 900
+
+FOUNDER_ATHLETE_ID = "4368ec7f-c30d-45ff-a6ee-58db7716be24"
 
 
 # ---------------------------------------------------------------------------
@@ -111,7 +112,7 @@ def _require_feature_flag(db: Session, athlete_id) -> None:
         )
 
 
-def _get_storage() -> "storage_service":  # type: ignore[return]
+def _get_storage() -> Any:
     from services import storage_service
     return storage_service
 
@@ -177,7 +178,7 @@ async def upload_photo(
     # Slot check
     active_count = (
         db.query(sa_func.count(AthletePhoto.id))
-        .filter(AthletePhoto.athlete_id == current_user.id, AthletePhoto.is_active == True)
+        .filter(AthletePhoto.athlete_id == current_user.id, AthletePhoto.is_active.is_(True))
         .scalar()
     ) or 0
     if active_count >= PHOTO_MAX:
@@ -244,7 +245,7 @@ def list_photos(
 
     photos = (
         db.query(AthletePhoto)
-        .filter(AthletePhoto.athlete_id == current_user.id, AthletePhoto.is_active == True)
+        .filter(AthletePhoto.athlete_id == current_user.id, AthletePhoto.is_active.is_(True))
         .order_by(AthletePhoto.created_at)
         .all()
     )
@@ -338,7 +339,7 @@ def get_runtoon(
         .filter(
             RuntoonImage.activity_id == activity_id,
             RuntoonImage.athlete_id == current_user.id,
-            RuntoonImage.is_visible == True,
+            RuntoonImage.is_visible.is_(True),
         )
         .order_by(RuntoonImage.attempt_number.desc())
         .first()
@@ -403,7 +404,8 @@ def trigger_regeneration(
         )
         .scalar()
     ) or 0
-    if existing_count >= RUNTOON_PER_ACTIVITY_CAP:
+    is_founder = str(current_user.id) == FOUNDER_ATHLETE_ID
+    if existing_count >= RUNTOON_PER_ACTIVITY_CAP and not is_founder:
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail=f"Maximum {RUNTOON_PER_ACTIVITY_CAP} Runtoons per activity reached.",
@@ -420,7 +422,7 @@ def trigger_regeneration(
         )
         .scalar()
     ) or 0
-    if today_count >= 5:
+    if today_count >= 5 and not is_founder:
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail="Daily Runtoon limit (5) reached. Try again tomorrow.",
@@ -538,8 +540,8 @@ PHOTO_REQUIRED_FOR_PROMPT = 3
 
 class ActivitySummary(BaseModel):
     name: Optional[str]
-    distance_mi: float
-    pace: str
+    distance_m: float
+    pace_s_per_km: Optional[float] = None
     duration: str
 
 
@@ -580,7 +582,7 @@ def get_pending(
         db.query(sa_func.count(AthletePhoto.id))
         .filter(
             AthletePhoto.athlete_id == current_user.id,
-            AthletePhoto.is_active == True,
+            AthletePhoto.is_active.is_(True),
         )
         .scalar()
     ) or 0
@@ -630,7 +632,7 @@ def get_pending(
         .filter(
             RuntoonImage.activity_id == candidate.id,
             RuntoonImage.athlete_id == current_user.id,
-            RuntoonImage.is_visible == True,
+            RuntoonImage.is_visible.is_(True),
         )
         .order_by(sa_desc(RuntoonImage.attempt_number))
         .first()
@@ -638,7 +640,7 @@ def get_pending(
     has_runtoon = existing_runtoon is not None
 
     # Format activity summary
-    miles = (candidate.distance_m / 1609.344) if candidate.distance_m else 0.0
+    dist_m = float(candidate.distance_m) if candidate.distance_m else 0.0
     duration_str = ""
     if candidate.moving_time_s:
         h = int(candidate.moving_time_s // 3600)
@@ -646,19 +648,16 @@ def get_pending(
         s = int(candidate.moving_time_s % 60)
         duration_str = f"{h}:{m:02d}:{s:02d}" if h else f"{m}:{s:02d}"
 
-    pace_str = ""
-    if candidate.distance_m and candidate.moving_time_s:
-        pace_spm = candidate.moving_time_s / (candidate.distance_m / 1609.344)
-        pace_min = int(pace_spm // 60)
-        pace_sec = int(pace_spm % 60)
-        pace_str = f"{pace_min}:{pace_sec:02d}/mi"
+    pace_s_per_km = None
+    if candidate.distance_m and candidate.moving_time_s and candidate.distance_m > 0:
+        pace_s_per_km = round(candidate.moving_time_s / (candidate.distance_m / 1000), 2)
 
     return PendingRuntoonResponse(
         activity_id=candidate.id,
         activity_summary=ActivitySummary(
             name=getattr(candidate, "name", None),
-            distance_mi=round(miles, 1),
-            pace=pace_str,
+            distance_m=round(dist_m, 1),
+            pace_s_per_km=pace_s_per_km,
             duration=duration_str,
         ),
         has_runtoon=has_runtoon,

@@ -15,36 +15,141 @@ import { GarminConnection } from '@/components/integrations/GarminConnection';
 import { useAuth } from '@/lib/hooks/useAuth';
 import { useUnits } from '@/lib/context/UnitsContext';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
+import { ErrorMessage } from '@/components/ui/ErrorMessage';
 import { API_CONFIG } from '@/lib/api/config';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Settings, Link2, Gauge, CreditCard, Download, Trash2, AlertTriangle, X, ArrowUpRight, BrainCircuit, ChevronUp, Sparkles } from 'lucide-react';
+import { Settings, Link2, Gauge, CreditCard, Download, Trash2, AlertTriangle, X, ArrowUpRight, BrainCircuit, ChevronUp, Sparkles, User } from 'lucide-react';
 import { RuntoonPhotoUpload } from '@/components/settings/RuntoonPhotoUpload';
 import { authService } from '@/lib/api/services/auth';
 import { useConsent } from '@/lib/context/ConsentContext';
 
-// Map legacy/raw tier values to canonical 3-tier model.
-// Trial users have subscription_tier='free' with has_active_subscription=true;
-// we treat them as 'free' so the upgrade panel still shows.
-type CanonicalTier = 'free' | 'guided' | 'premium';
+type CanonicalTier = 'free' | 'subscriber';
 function canonicalizeTier(raw: string, hasActiveSub: boolean): CanonicalTier {
   const t = (raw || '').toLowerCase();
-  if (t === 'guided' && hasActiveSub) return 'guided';
-  if (['premium', 'pro', 'elite', 'subscription'].includes(t)) return 'premium';
+  if (['subscriber', 'premium', 'pro', 'elite', 'subscription', 'guided'].includes(t) && hasActiveSub) return 'subscriber';
   return 'free';
 }
 
 const TIER_LABELS: Record<CanonicalTier, string> = {
   free: 'Free',
-  guided: 'Guided',
-  premium: 'Premium',
+  subscriber: 'StrideIQ',
 };
 
-const TIER_PRICES = {
-  guided:  { monthly: '$15/mo', annual: '$150/yr', savingsNote: 'Save $30/yr on annual' },
-  premium: { monthly: '$25/mo', annual: '$250/yr', savingsNote: 'Save $50/yr on annual' },
-};
+const STRIDEIQ_PRICE = { monthly: '$24.99/mo', annual: '$199/yr', savingsNote: 'Save $100/yr on annual' };
+
+function ProfileSection() {
+  const { user, refreshUser } = useAuth();
+  const [editing, setEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<Error | null>(null);
+  const [formData, setFormData] = useState({
+    display_name: user?.display_name || '',
+    email: user?.email || '',
+    birthdate: user?.birthdate ? user.birthdate.split('T')[0] : '',
+    sex: user?.sex || '',
+    height_cm: user?.height_cm || '',
+  });
+
+  const handleSave = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSaving(true);
+    setError(null);
+    try {
+      const updates: any = {};
+      if (formData.display_name !== user?.display_name) updates.display_name = formData.display_name || null;
+      if (formData.email !== user?.email) updates.email = formData.email || null;
+      if (formData.birthdate !== (user?.birthdate ? user.birthdate.split('T')[0] : '')) updates.birthdate = formData.birthdate || null;
+      if (formData.sex !== user?.sex) updates.sex = formData.sex || null;
+      if (formData.height_cm !== (user?.height_cm || '')) updates.height_cm = formData.height_cm ? parseFloat(formData.height_cm.toString()) : null;
+      await authService.updateProfile(updates);
+      await refreshUser();
+      setEditing(false);
+    } catch (err) {
+      setError(err as Error);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (!user) return null;
+
+  const age = (() => {
+    if (!user.birthdate) return null;
+    const birth = new Date(user.birthdate);
+    const today = new Date();
+    let a = today.getFullYear() - birth.getFullYear();
+    const md = today.getMonth() - birth.getMonth();
+    if (md < 0 || (md === 0 && today.getDate() < birth.getDate())) a--;
+    return a;
+  })();
+
+  return (
+    <Card className="bg-slate-800 border-slate-700">
+      <CardHeader>
+        <div className="flex justify-between items-center">
+          <CardTitle className="flex items-center gap-2">
+            <User className="w-5 h-5 text-green-500" />
+            Personal Information
+          </CardTitle>
+          {!editing && (
+            <Button variant="ghost" size="sm" onClick={() => setEditing(true)} className="text-slate-400 hover:text-white">
+              Edit
+            </Button>
+          )}
+        </div>
+        <CardDescription>Name, email, and athlete details</CardDescription>
+      </CardHeader>
+      <CardContent>
+        {editing ? (
+          <form onSubmit={handleSave} className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium mb-1.5 text-slate-300">Display Name</label>
+              <input type="text" value={formData.display_name} onChange={(e) => setFormData({ ...formData, display_name: e.target.value })} className="w-full px-3 py-2 bg-slate-900 border border-slate-700/50 rounded text-white text-sm" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1.5 text-slate-300">Email</label>
+              <input type="email" value={formData.email} onChange={(e) => setFormData({ ...formData, email: e.target.value })} className="w-full px-3 py-2 bg-slate-900 border border-slate-700/50 rounded text-white text-sm" />
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div>
+                <label className="block text-sm font-medium mb-1.5 text-slate-300">Birthdate</label>
+                <input type="date" value={formData.birthdate} onChange={(e) => setFormData({ ...formData, birthdate: e.target.value })} className="w-full px-3 py-2 bg-slate-900 border border-slate-700/50 rounded text-white text-sm" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1.5 text-slate-300">Sex</label>
+                <select value={formData.sex} onChange={(e) => setFormData({ ...formData, sex: e.target.value })} className="w-full px-3 py-2 bg-slate-900 border border-slate-700/50 rounded text-white text-sm">
+                  <option value="">Select...</option>
+                  <option value="M">Male</option>
+                  <option value="F">Female</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1.5 text-slate-300">Height (cm)</label>
+                <input type="number" step="0.1" value={formData.height_cm} onChange={(e) => setFormData({ ...formData, height_cm: e.target.value })} className="w-full px-3 py-2 bg-slate-900 border border-slate-700/50 rounded text-white text-sm" placeholder="175.0" />
+              </div>
+            </div>
+            {error && <ErrorMessage error={error} />}
+            <div className="flex gap-2">
+              <Button type="submit" disabled={saving} size="sm">{saving ? <LoadingSpinner size="sm" /> : 'Save'}</Button>
+              <Button type="button" variant="ghost" size="sm" onClick={() => { setEditing(false); setFormData({ display_name: user.display_name || '', email: user.email || '', birthdate: user.birthdate ? user.birthdate.split('T')[0] : '', sex: user.sex || '', height_cm: user.height_cm || '' }); setError(null); }}>Cancel</Button>
+            </div>
+          </form>
+        ) : (
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+            <div><p className="text-xs text-slate-400">Name</p><p className="text-sm font-medium">{user.display_name || '--'}</p></div>
+            <div><p className="text-xs text-slate-400">Email</p><p className="text-sm font-medium">{user.email || '--'}</p></div>
+            <div><p className="text-xs text-slate-400">Birthdate</p><p className="text-sm font-medium">{user.birthdate ? new Date(user.birthdate).toLocaleDateString() : '--'}{age ? ` (${age})` : ''}</p></div>
+            <div><p className="text-xs text-slate-400">Sex</p><p className="text-sm font-medium">{user.sex || '--'}</p></div>
+            {user.height_cm && <div><p className="text-xs text-slate-400">Height</p><p className="text-sm font-medium">{user.height_cm} cm</p></div>}
+            {user.age_category && <div><p className="text-xs text-slate-400">Age Category</p><p className="text-sm font-medium">{user.age_category}</p></div>}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
 
 function SettingsPageContent() {
   const { user } = useAuth();
@@ -59,19 +164,17 @@ function SettingsPageContent() {
   const [paceProfileStatus, setPaceProfileStatus] = useState<'loading' | 'computed' | 'missing' | 'error'>('loading');
   const [paceProfile, setPaceProfile] = useState<any | null>(null);
 
-  // Upgrade panel state — pre-seeded from ?upgrade= and ?period= URL params (e.g. from Pricing page CTA).
-  // Uses window.location.search instead of useSearchParams to avoid Next.js Suspense boundary requirement.
-  const [urlUpgradeTier, setUrlUpgradeTier] = useState<'guided' | 'premium' | null>(null);
+  const [urlUpgradeRequested, setUrlUpgradeRequested] = useState(false);
   const [upgradePeriod, setUpgradePeriod] = useState<'monthly' | 'annual'>('annual');
   const [upgradePanel, setUpgradePanel] = useState<boolean>(false);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const params = new URLSearchParams(window.location.search);
-    const tier = params.get('upgrade') as 'guided' | 'premium' | null;
+    const upgrade = params.get('upgrade');
     const period = params.get('period') as 'monthly' | 'annual' | null;
-    if (tier === 'guided' || tier === 'premium') {
-      setUrlUpgradeTier(tier);
+    if (upgrade) {
+      setUrlUpgradeRequested(true);
       setUpgradePanel(true);
     }
     if (period === 'monthly') setUpgradePeriod('monthly');
@@ -81,7 +184,7 @@ function SettingsPageContent() {
   const rawTier = (user?.subscription_tier || 'free').toLowerCase();
   // has_active_subscription=true can also be set during a free trial — only consider
   // it in combination with a non-free subscription_tier to avoid promoting trial
-  // users to 'premium' tier incorrectly.
+  // users to 'subscriber' tier incorrectly.
   const hasActiveSub = !!user?.has_active_subscription && rawTier !== 'free';
   const canonicalTier = canonicalizeTier(rawTier, hasActiveSub);
   const displayTier = TIER_LABELS[canonicalTier];
@@ -93,12 +196,12 @@ function SettingsPageContent() {
 
   // Scroll membership card into view when opened via Pricing page deep link.
   useEffect(() => {
-    if (urlUpgradeTier && membershipRef.current) {
+    if (urlUpgradeRequested && membershipRef.current) {
       setTimeout(() => {
         membershipRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
       }, 400);
     }
-  }, [urlUpgradeTier]);
+  }, [urlUpgradeRequested]);
 
   useEffect(() => {
     let mounted = true;
@@ -193,8 +296,8 @@ function SettingsPageContent() {
     }
   };
 
-  const handleUpgrade = async (tier: 'guided' | 'premium', period: 'monthly' | 'annual') => {
-    const key = `checkout_${tier}_${period}`;
+  const handleUpgrade = async (tier: string, period: 'monthly' | 'annual') => {
+    const key = `checkout_${period}`;
     setBillingLoading(key);
     try {
       const token = localStorage.getItem('auth_token');
@@ -264,6 +367,8 @@ function SettingsPageContent() {
           </div>
 
           <div className="space-y-6">
+            <ProfileSection />
+
             {/* Integrations */}
             <Card className="bg-slate-800 border-slate-700">
               <CardHeader>
@@ -318,7 +423,7 @@ function SettingsPageContent() {
             </Card>
 
             {/* Membership */}
-            <Card ref={membershipRef} className={`bg-slate-800 border-slate-700 ${urlUpgradeTier ? 'ring-1 ring-orange-500/50' : ''}`}>
+            <Card ref={membershipRef} className={`bg-slate-800 border-slate-700 ${urlUpgradeRequested ? 'ring-1 ring-orange-500/50' : ''}`}>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <CreditCard className="w-5 h-5 text-purple-500" />
@@ -340,20 +445,19 @@ function SettingsPageContent() {
                       {canonicalTier === 'free' && trialActive && (
                         <>Trial ends <span className="text-slate-200">{trialEndsAt?.toLocaleDateString()}</span>. Upgrade to keep full access.</>
                       )}
-                      {canonicalTier === 'guided' && 'Daily adaptation, readiness score, and all 7 intelligence rules.'}
-                      {canonicalTier === 'premium' && 'Full coaching stack — narratives, advisory mode, conversational AI.'}
+                      {canonicalTier === 'subscriber' && 'Full coaching stack — AI coach, daily intelligence, adaptive plans, workout narratives.'}
                     </p>
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
-                    {canonicalTier === 'premium' ? (
+                    {canonicalTier === 'subscriber' ? (
                       <Button
                         className="bg-slate-700 hover:bg-slate-600"
-                        onClick={user?.stripe_customer_id ? handleManageSubscription : () => handleUpgrade('premium', upgradePeriod)}
+                        onClick={user?.stripe_customer_id ? handleManageSubscription : () => handleUpgrade('subscriber', upgradePeriod)}
                         disabled={billingLoading !== null}
-                        title={!user?.stripe_customer_id ? 'No billing profile yet — start Premium billing to enable portal' : undefined}
+                        title={!user?.stripe_customer_id ? 'No billing profile yet — start billing to enable portal' : undefined}
                       >
                         {billingLoading === 'portal' ? <LoadingSpinner size="sm" /> : (
-                          <>{user?.stripe_customer_id ? 'Manage subscription' : 'Start Premium billing'} <ArrowUpRight className="w-4 h-4 ml-1" /></>
+                          <>{user?.stripe_customer_id ? 'Manage subscription' : 'Start billing'} <ArrowUpRight className="w-4 h-4 ml-1" /></>
                         )}
                       </Button>
                     ) : (
@@ -363,9 +467,9 @@ function SettingsPageContent() {
                             className="bg-slate-700 hover:bg-slate-600"
                             onClick={handleStartTrial}
                             disabled={billingLoading !== null}
-                            title="7-day free trial"
+                            title="30-day free trial"
                           >
-                            {billingLoading === 'trial' ? <LoadingSpinner size="sm" /> : 'Start 7-day trial'}
+                            {billingLoading === 'trial' ? <LoadingSpinner size="sm" /> : 'Start 30-day trial'}
                           </Button>
                         )}
                         <Button
@@ -385,8 +489,8 @@ function SettingsPageContent() {
                   </div>
                 </div>
 
-                {/* Upgrade panel — visible for free/guided users when panel is open */}
-                {upgradePanel && canonicalTier !== 'premium' && (
+                {/* Upgrade panel — visible for free users when panel is open */}
+                {upgradePanel && canonicalTier === 'free' && (
                   <div className="border border-slate-700 rounded-xl p-4 space-y-4 bg-slate-900/40">
 
                     {/* Period toggle */}
@@ -412,74 +516,31 @@ function SettingsPageContent() {
                       </div>
                     </div>
 
-                    {/* Tier buttons */}
-                    <div className={`grid gap-3 ${canonicalTier === 'free' ? 'sm:grid-cols-2' : 'grid-cols-1'}`}>
-
-                      {/* Guided — show for free users only */}
-                      {canonicalTier === 'free' && (
-                        <div className="border border-orange-500/40 rounded-xl p-4 bg-orange-500/5">
-                          <div className="flex items-center justify-between mb-1">
-                            <span className="font-semibold text-orange-300">Guided</span>
-                            <span className="text-sm font-bold">{TIER_PRICES.guided[upgradePeriod]}</span>
-                          </div>
-                          <p className="text-xs text-slate-400 mb-3">{TIER_PRICES.guided.savingsNote}</p>
-                          <ul className="text-xs text-slate-400 space-y-1 mb-4">
-                            <li>✓ Daily adaptation engine</li>
-                            <li>✓ Readiness score at 5 AM</li>
-                            <li>✓ All 7 intelligence rules</li>
-                            <li>✓ Continuous plan generation</li>
-                          </ul>
-                          <Button
-                            className="w-full bg-orange-600 hover:bg-orange-500 text-white"
-                            onClick={() => handleUpgrade('guided', upgradePeriod)}
-                            disabled={billingLoading !== null}
-                          >
-                            {billingLoading === `checkout_guided_${upgradePeriod}` ? (
-                              <LoadingSpinner size="sm" />
-                            ) : (
-                              <>Start Guided <ArrowUpRight className="w-4 h-4 ml-1" /></>
-                            )}
-                          </Button>
-                        </div>
-                      )}
-
-                      {/* Premium */}
-                      <div className="border border-purple-500/40 rounded-xl p-4 bg-purple-500/5">
-                        <div className="flex items-center justify-between mb-1">
-                          <span className="font-semibold text-purple-300">Premium</span>
-                          <span className="text-sm font-bold">{TIER_PRICES.premium[upgradePeriod]}</span>
-                        </div>
-                        <p className="text-xs text-slate-400 mb-3">{TIER_PRICES.premium.savingsNote}</p>
-                        <ul className="text-xs text-slate-400 space-y-1 mb-4">
-                          {canonicalTier === 'free' ? (
-                            <>
-                              <li>✓ Everything in Guided</li>
-                              <li>✓ Contextual workout narratives</li>
-                              <li>✓ AI advisory mode</li>
-                              <li>✓ Conversational AI coach</li>
-                            </>
-                          ) : (
-                            <>
-                              <li>✓ Contextual workout narratives</li>
-                              <li>✓ AI advisory mode — coach proposes, you approve</li>
-                              <li>✓ Full conversational AI coach</li>
-                              <li>✓ Multi-race planning</li>
-                            </>
-                          )}
-                        </ul>
-                        <Button
-                          className="w-full bg-purple-700 hover:bg-purple-600 text-white"
-                          onClick={() => handleUpgrade('premium', upgradePeriod)}
-                          disabled={billingLoading !== null}
-                        >
-                          {billingLoading === `checkout_premium_${upgradePeriod}` ? (
-                            <LoadingSpinner size="sm" />
-                          ) : (
-                            <>{canonicalTier === 'guided' ? 'Upgrade to Premium' : 'Start Premium'} <ArrowUpRight className="w-4 h-4 ml-1" /></>
-                          )}
-                        </Button>
+                    <div className="border border-orange-500/40 rounded-xl p-4 bg-orange-500/5">
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="font-semibold text-orange-300">StrideIQ</span>
+                        <span className="text-sm font-bold">{STRIDEIQ_PRICE[upgradePeriod]}</span>
                       </div>
-
+                      <p className="text-xs text-slate-400 mb-3">{STRIDEIQ_PRICE.savingsNote}</p>
+                      <ul className="text-xs text-slate-400 space-y-1 mb-4">
+                        <li>✓ Personal AI running coach</li>
+                        <li>✓ Morning briefing with your data</li>
+                        <li>✓ Daily intelligence and readiness</li>
+                        <li>✓ Adaptive training plans</li>
+                        <li>✓ Performance analytics and workout narratives</li>
+                        <li>✓ Living Fingerprint that compounds over time</li>
+                      </ul>
+                      <Button
+                        className="w-full bg-orange-600 hover:bg-orange-500 text-white"
+                        onClick={() => handleUpgrade('subscriber', upgradePeriod)}
+                        disabled={billingLoading !== null}
+                      >
+                        {billingLoading === `checkout_${upgradePeriod}` ? (
+                          <LoadingSpinner size="sm" />
+                        ) : (
+                          <>Subscribe <ArrowUpRight className="w-4 h-4 ml-1" /></>
+                        )}
+                      </Button>
                     </div>
 
                     <p className="text-xs text-slate-500 text-center">
@@ -506,6 +567,18 @@ function SettingsPageContent() {
                     <LoadingSpinner size="sm" />
                   </div>
                 ) : paceProfileStatus === 'computed' && paceProfile ? (
+                  (() => {
+                    // The API returns each pace zone with both `.mi` and `.km`
+                    // strings (and `display_mi` / `display_km` for easy). Pick
+                    // the one that matches the athlete's unit preference so
+                    // metric users don't see "9:06" min/mi labelled as their
+                    // easy pace.
+                    const isMetric = units === 'metric';
+                    const unitKey = isMetric ? 'km' : 'mi';
+                    const easyDisplayKey = isMetric ? 'display_km' : 'display_mi';
+                    const paceFor = (zone: 'easy' | 'marathon' | 'threshold' | 'interval' | 'repetition') =>
+                      paceProfile?.paces?.[zone]?.[unitKey] || '—';
+                    return (
                   <div className="space-y-3">
                     <div className="text-xs text-slate-500">
                       Anchor: {paceProfile?.anchor?.distance_key || '—'} in {paceProfile?.anchor?.time_display || '—'}
@@ -514,29 +587,31 @@ function SettingsPageContent() {
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm">
                       <div className="flex items-center justify-between bg-slate-900/40 border border-slate-700/50 rounded px-3 py-2">
                         <span className="text-slate-300">Easy</span>
-                        <span className="text-slate-100">{paceProfile?.paces?.easy?.display_mi || paceProfile?.paces?.easy?.mi || '—'}</span>
+                        <span className="text-slate-100">{paceProfile?.paces?.easy?.[easyDisplayKey] || paceProfile?.paces?.easy?.[unitKey] || '—'}</span>
                       </div>
                       <div className="flex items-center justify-between bg-slate-900/40 border border-slate-700/50 rounded px-3 py-2">
                         <span className="text-slate-300">Marathon</span>
-                        <span className="text-slate-100">{paceProfile?.paces?.marathon?.mi || '—'}</span>
+                        <span className="text-slate-100">{paceFor('marathon')}</span>
                       </div>
                       <div className="flex items-center justify-between bg-slate-900/40 border border-slate-700/50 rounded px-3 py-2">
                         <span className="text-slate-300">Threshold</span>
-                        <span className="text-slate-100">{paceProfile?.paces?.threshold?.mi || '—'}</span>
+                        <span className="text-slate-100">{paceFor('threshold')}</span>
                       </div>
                       <div className="flex items-center justify-between bg-slate-900/40 border border-slate-700/50 rounded px-3 py-2">
                         <span className="text-slate-300">Interval</span>
-                        <span className="text-slate-100">{paceProfile?.paces?.interval?.mi || '—'}</span>
+                        <span className="text-slate-100">{paceFor('interval')}</span>
                       </div>
                       <div className="flex items-center justify-between bg-slate-900/40 border border-slate-700/50 rounded px-3 py-2">
                         <span className="text-slate-300">Repetition</span>
-                        <span className="text-slate-100">{paceProfile?.paces?.repetition?.mi || '—'}</span>
+                        <span className="text-slate-100">{paceFor('repetition')}</span>
                       </div>
                     </div>
                     <div className="text-xs text-slate-500">
                       If you haven&apos;t raced recently, do a short time trial to unlock accurate prescriptive paces.
                     </div>
                   </div>
+                    );
+                  })()
                 ) : paceProfileStatus === 'missing' ? (
                   <div className="text-sm text-slate-400">
                     No prescriptive paces yet. Add a recent race/time trial result during onboarding (Goals stage) to compute them.

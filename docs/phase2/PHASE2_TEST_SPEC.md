@@ -153,12 +153,12 @@
 ### PlanComparison object (summary-level, v1)
 ```
 {
-  "planned_duration_min":    float?
-  "actual_duration_min":     float
-  "duration_delta_min":      float?     # null if planned missing
-  "planned_distance_km":     float?
-  "actual_distance_km":      float
-  "distance_delta_km":       float?     # null if planned missing
+  "planned_duration_s":      float?
+  "actual_duration_s":       float
+  "duration_delta_s":        float?     # null if planned missing
+  "planned_distance_m":      float?
+  "actual_distance_m":       float
+  "distance_delta_m":        float?     # null if planned missing
   "planned_pace_s_km":       float?     # target pace
   "actual_pace_s_km":        float
   "pace_delta_s_km":         float?     # null if planned missing

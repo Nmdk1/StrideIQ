@@ -94,8 +94,9 @@ class ApiClient {
     } = options;
 
     const url = `${this.baseURL}${endpoint}`;
+    const isFormData = typeof FormData !== 'undefined' && fetchOptions.body instanceof FormData;
     const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
+      ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
       ...(fetchOptions.headers as Record<string, string>),
     };
 
@@ -190,10 +191,11 @@ class ApiClient {
   }
 
   async post<T>(endpoint: string, data?: unknown, options?: RequestOptions): Promise<T> {
+    const isFormData = typeof FormData !== 'undefined' && data instanceof FormData;
     return this.request<T>(endpoint, {
       ...options,
       method: 'POST',
-      body: data ? JSON.stringify(data) : undefined,
+      body: isFormData ? (data as BodyInit) : data ? JSON.stringify(data) : undefined,
     });
   }
 

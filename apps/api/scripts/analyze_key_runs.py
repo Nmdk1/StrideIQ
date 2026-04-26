@@ -79,7 +79,7 @@ def main():
         long_runs = [r for r in runs if r['distance_km'] > 18]
         long_runs.sort(key=lambda x: x['date'])
         
-        print(f"\nRuns over 18km:")
+        print("\nRuns over 18km:")
         for r in long_runs:
             print(f"  {r['date'].strftime('%m/%d')} | {r['distance_km']:.1f}km | {r['pace_min_km']:.2f}/km | HR:{r['avg_hr']:.0f} | eff:{r['efficiency']:.4f}")
         
@@ -101,7 +101,7 @@ def main():
         tempo_runs = [r for r in runs if 5 < r['distance_km'] < 12 and r['pace_min_km'] < 4.5 and r['avg_hr'] > 140]
         tempo_runs.sort(key=lambda x: x['date'])
         
-        print(f"\nLikely tempo sessions (5-12km, <4.5/km, HR>140):")
+        print("\nLikely tempo sessions (5-12km, <4.5/km, HR>140):")
         for r in tempo_runs:
             print(f"  {r['date'].strftime('%m/%d')} | {r['distance_km']:.1f}km | {r['pace_min_km']:.2f}/km | HR:{r['avg_hr']:.0f}")
         
@@ -120,7 +120,7 @@ def main():
         fast_long = [r for r in runs if r['distance_km'] > 15 and r['pace_min_km'] < 4.8]
         fast_long.sort(key=lambda x: x['date'])
         
-        print(f"\nFast long runs (>15km at <4.8/km):")
+        print("\nFast long runs (>15km at <4.8/km):")
         for r in fast_long:
             print(f"  {r['date'].strftime('%m/%d')} | {r['distance_km']:.1f}km | {r['pace_min_km']:.2f}/km | HR:{r['avg_hr']:.0f}")
         

@@ -18,15 +18,15 @@ See docs/PHASE2_GARMIN_INTEGRATION_AC.md §D2
 """
 
 import logging
-from datetime import datetime, timezone
 from typing import Optional
 
 import requests
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
-from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 
 from core.auth import get_current_user
+from core.cache import get_redis_client
 from core.config import settings
 from core.database import get_db
 from core.feature_flags import is_feature_enabled
@@ -34,7 +34,6 @@ from models import Activity, ActivitySplit, ActivityStream, Athlete, ConsentAudi
 from services.garmin_oauth import (
     build_auth_url,
     deregister_user,
-    ensure_fresh_garmin_token,
     exchange_code_for_token,
     generate_pkce_pair,
     get_garmin_user_id,
@@ -43,7 +42,10 @@ from services.garmin_oauth import (
 )
 from services.oauth_state import create_oauth_state, verify_oauth_state
 from services.token_encryption import decrypt_token
-from tasks.garmin_webhook_tasks import request_garmin_backfill_task
+from tasks.garmin_webhook_tasks import (
+    request_deep_garmin_backfill_task,
+    request_garmin_backfill_task,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -98,6 +100,16 @@ def get_auth_url(
 
     Access is gated by the `garmin_connect_enabled` feature flag.
     """
+    # Demo accounts must not link real provider accounts. A demo athlete
+    # is shared across viewers (race directors, prospects); allowing them
+    # to start a real Garmin OAuth flow would store private tokens on the
+    # shared account and leak data. Mirrors the Strava /auth-url guard.
+    if getattr(current_user, "is_demo", False):
+        raise HTTPException(
+            status_code=403,
+            detail="Demo accounts cannot connect to Garmin. Create a free account to link your data.",
+        )
+
     if not is_feature_enabled("garmin_connect_enabled", str(current_user.id), db):
         raise HTTPException(
             status_code=403,
@@ -169,6 +181,18 @@ def garmin_callback(
     athlete = db.query(Athlete).filter(Athlete.id == athlete_id_str).first()
     if not athlete:
         return RedirectResponse(url="/settings?garmin=error&reason=athlete_not_found", status_code=302)
+    was_connected = bool(athlete.garmin_connected)
+
+    # --- Demo guard (defense in depth) ---
+    # Even if /auth-url's guard was bypassed (e.g., reused state token from
+    # before is_demo was set), the callback must refuse to store tokens on
+    # the shared demo account. Mirrors the Strava callback double-guard.
+    if getattr(athlete, "is_demo", False):
+        logger.warning(
+            "Garmin callback blocked for demo athlete %s", athlete_id_str
+        )
+        redirect_url = _web_redirect(request, f"{return_to}?garmin=error&reason=demo")
+        return RedirectResponse(url=redirect_url, status_code=302)
 
     # --- Feature flag gate (defense in depth) ---
     # Prevents token storage and backfill for non-allowlisted athletes even if
@@ -232,21 +256,50 @@ def garmin_callback(
     except Exception as exc:
         logger.error(f"Failed to write Garmin connect audit log for athlete {athlete_id_str}: {exc}")
 
-    # --- Trigger 90-day initial backfill (D7) — fire-and-forget ---
+    # --- Trigger standard + deep backfill (D7 + first-session hook) ---
     # Backfill is async: Garmin returns 202 per endpoint and pushes historical
     # data to the D4 webhook endpoints. The callback does not wait for backfill.
     try:
         request_garmin_backfill_task.delay(athlete_id_str)
-        logger.info("Garmin backfill task enqueued for athlete %s", athlete_id_str)
+        request_deep_garmin_backfill_task.apply_async(
+            args=[athlete_id_str],
+            kwargs={"target_days_back": 730},
+            countdown=60,
+        )
+        logger.info("Garmin standard + deep backfill tasks enqueued for athlete %s", athlete_id_str)
     except Exception as exc:
         logger.warning(
-            "Could not enqueue Garmin backfill task for athlete %s: %s",
+            "Could not enqueue Garmin backfill tasks for athlete %s: %s",
             athlete_id_str,
             exc,
         )
 
-    sep = "&" if "?" in return_to else "?"
-    redirect_url = _web_redirect(request, f"{return_to}{sep}garmin=connected")
+    # --- Infer timezone from GPS if not already set (Garmin provides none) ---
+    try:
+        from tasks.timezone_tasks import infer_timezone_for_athlete
+        infer_timezone_for_athlete.apply_async(
+            args=[athlete_id_str],
+            countdown=300,  # wait 5 min for backfill activities to land first
+        )
+        logger.info("Timezone inference task enqueued for athlete %s", athlete_id_str)
+    except Exception as exc:
+        logger.warning(
+            "Could not enqueue timezone inference task for athlete %s: %s",
+            athlete_id_str,
+            exc,
+        )
+
+    activity_count = (
+        db.query(Activity.id)
+        .filter(Activity.athlete_id == athlete.id)
+        .count()
+    )
+    is_fresh_connect_flow = (not was_connected)
+    if is_fresh_connect_flow and activity_count == 0:
+        redirect_url = _web_redirect(request, "/home?garmin=connected")
+    else:
+        sep = "&" if "?" in return_to else "?"
+        redirect_url = _web_redirect(request, f"{return_to}{sep}garmin=connected")
     return RedirectResponse(url=redirect_url, status_code=302)
 
 
@@ -280,6 +333,42 @@ def get_garmin_status(
             "garmin_connect_enabled", str(current_user.id), db
         ),
     }
+
+
+@router.get("/backfill-progress")
+def get_backfill_progress(
+    current_user: Athlete = Depends(get_current_user),
+):
+    """
+    Return backfill progress for first-session UX.
+    """
+    safe_zero = {
+        "in_progress": False,
+        "activities_ingested": 0,
+        "health_records_ingested": 0,
+        "sweep_complete": False,
+        "findings_count": 0,
+    }
+    try:
+        client = get_redis_client()
+        if not client:
+            return safe_zero
+        data = client.hgetall(f"backfill_progress:{current_user.id}") or {}
+        if not data:
+            return safe_zero
+        activities = int(data.get("activities_ingested", "0") or 0)
+        health = int(data.get("health_records_ingested", "0") or 0)
+        sweep_complete = (data.get("sweep_complete", "false") == "true")
+        findings = int(data.get("findings_count", "0") or 0)
+        return {
+            "in_progress": bool(activities > 0 or health > 0) and not sweep_complete,
+            "activities_ingested": activities,
+            "health_records_ingested": health,
+            "sweep_complete": sweep_complete,
+            "findings_count": findings,
+        }
+    except Exception:
+        return safe_zero
 
 
 # ---------------------------------------------------------------------------

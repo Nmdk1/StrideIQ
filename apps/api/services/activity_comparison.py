@@ -14,10 +14,10 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import List, Optional, Dict, Any
 from uuid import UUID
-from sqlalchemy import func, and_, or_, case
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from models import Activity, ActivitySplit, Athlete
+from models import Activity, ActivitySplit
 
 
 @dataclass
@@ -445,8 +445,8 @@ class ActivityComparisonService:
         period2_activities = get_period_activities(period2_start, period2_end)
         
         return {
-            "period1": self._build_comparison_result(f"Period 1", period1_activities),
-            "period2": self._build_comparison_result(f"Period 2", period2_activities),
+            "period1": self._build_comparison_result("Period 1", period1_activities),
+            "period2": self._build_comparison_result("Period 2", period2_activities),
         }
     
     def _build_comparison_result(
@@ -643,7 +643,7 @@ class ActivityComparisonService:
                 "average_heartrate": split.average_heartrate,
                 "max_heartrate": split.max_heartrate,
                 "average_cadence": float(split.average_cadence) if split.average_cadence else None,
-                "gap_seconds_per_mile": float(split.gap_seconds_per_mile) if split.gap_seconds_per_mile else None,
+                "gap_s_per_km": round(float(split.gap_seconds_per_mile) * 1000 / 1609.34, 2) if split.gap_seconds_per_mile else None,
             })
         
         return {

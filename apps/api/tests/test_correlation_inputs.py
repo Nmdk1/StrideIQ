@@ -40,8 +40,11 @@ class TestPhase1GarminDay:
         assert len(inputs["garmin_sleep_score"]) >= 1
         assert inputs["garmin_sleep_score"][0][1] == 82.0
 
-    def test_garmin_body_battery_in_inputs(self, db_session, test_athlete):
-        """body_battery_end populates inputs['garmin_body_battery_end']."""
+    def test_garmin_body_battery_not_in_inputs(self, db_session, test_athlete):
+        """body_battery_end is a Garmin proprietary model output; per the
+        founder rule (real measured metrics only), it is not registered as a
+        correlation signal even when present on the GarminDay row.
+        """
         from models import GarminDay
         from services.correlation_engine import aggregate_daily_inputs
 
@@ -57,11 +60,12 @@ class TestPhase1GarminDay:
         start = end - timedelta(days=7)
         inputs = aggregate_daily_inputs(str(test_athlete.id), start, end, db_session)
 
-        assert "garmin_body_battery_end" in inputs
-        assert inputs["garmin_body_battery_end"][0][1] == 45.0
+        assert "garmin_body_battery_end" not in inputs
 
-    def test_garmin_stress_in_inputs(self, db_session, test_athlete):
-        """avg_stress populates inputs['garmin_avg_stress']."""
+    def test_garmin_stress_not_in_inputs(self, db_session, test_athlete):
+        """avg_stress / max_stress are Garmin proprietary scores — not
+        registered as correlation inputs.
+        """
         from models import GarminDay
         from services.correlation_engine import aggregate_daily_inputs
 
@@ -69,6 +73,7 @@ class TestPhase1GarminDay:
             athlete_id=test_athlete.id,
             calendar_date=date.today(),
             avg_stress=38,
+            max_stress=72,
         )
         db_session.add(gd)
         db_session.commit()
@@ -77,11 +82,11 @@ class TestPhase1GarminDay:
         start = end - timedelta(days=7)
         inputs = aggregate_daily_inputs(str(test_athlete.id), start, end, db_session)
 
-        assert "garmin_avg_stress" in inputs
-        assert inputs["garmin_avg_stress"][0][1] == 38.0
+        assert "garmin_avg_stress" not in inputs
+        assert "garmin_max_stress" not in inputs
 
     def test_garmin_no_data_returns_empty(self, db_session, test_athlete):
-        """No GarminDay rows → all garmin_* keys have empty lists."""
+        """No GarminDay rows → all measured garmin_* keys have empty lists."""
         from services.correlation_engine import aggregate_daily_inputs
 
         end = datetime.now(timezone.utc)
@@ -89,8 +94,8 @@ class TestPhase1GarminDay:
         inputs = aggregate_daily_inputs(str(test_athlete.id), start, end, db_session)
 
         for key in [
-            "garmin_sleep_score", "garmin_body_battery_end",
-            "garmin_avg_stress", "garmin_steps",
+            "garmin_sleep_score",
+            "garmin_steps",
         ]:
             assert key in inputs
             assert inputs[key] == []
@@ -104,7 +109,7 @@ class TestPhase1GarminDay:
             athlete_id=test_athlete.id,
             calendar_date=date.today(),
             sleep_score=None,
-            body_battery_end=55,
+            sleep_deep_s=600,
         )
         db_session.add(gd)
         db_session.commit()
@@ -114,7 +119,7 @@ class TestPhase1GarminDay:
         inputs = aggregate_daily_inputs(str(test_athlete.id), start, end, db_session)
 
         assert inputs["garmin_sleep_score"] == []
-        assert len(inputs["garmin_body_battery_end"]) == 1
+        assert len(inputs["garmin_sleep_deep_s"]) == 1
 
 
 # ── Phase 2: Activity-level ──
@@ -159,16 +164,16 @@ class TestPhase2ActivityLevel:
     def test_activity_multi_run_day_takes_longest(self, db_session, test_athlete):
         """Two runs on same day → longest run's values used."""
         from services.correlation_engine import aggregate_activity_level_inputs
-        now = datetime.now(timezone.utc)
+        morning = datetime(2026, 3, 10, 7, 0, tzinfo=timezone.utc)
         self._make_activity(
-            db_session, test_athlete, start_time=now, distance_m=3000,
+            db_session, test_athlete, start_time=morning, distance_m=3000,
             avg_cadence=170,
         )
         self._make_activity(
-            db_session, test_athlete, start_time=now + timedelta(hours=4),
+            db_session, test_athlete, start_time=morning + timedelta(hours=4),
             distance_m=10000, avg_cadence=180,
         )
-        end = now + timedelta(days=1)
+        end = morning + timedelta(days=1)
         start = end - timedelta(days=7)
         inputs = aggregate_activity_level_inputs(str(test_athlete.id), start, end, db_session)
         assert inputs["avg_cadence"][0][1] == 180.0
@@ -404,24 +409,25 @@ class TestPhase5TrainingPatterns:
 class TestPhaseIntegration:
 
     def test_friendly_names_cover_all_new_inputs(self):
-        """Every new input key has a FRIENDLY_NAMES entry."""
+        """Every measured (non-proprietary) input key has a FRIENDLY_NAMES entry."""
         from services.n1_insight_generator import FRIENDLY_NAMES
 
+        # Garmin proprietary model outputs (Body Battery, Training Effect,
+        # Stress Score, Body Battery Impact) are intentionally NOT in this
+        # list — see test_correlation_no_proprietary_signals for the contract.
         ALL_NEW_KEYS = [
-            # GarminDay
+            # GarminDay (measured-ish)
             "garmin_sleep_score", "garmin_sleep_deep_s", "garmin_sleep_rem_s",
-            "garmin_sleep_awake_s", "garmin_body_battery_end",
-            "garmin_avg_stress", "garmin_max_stress", "garmin_steps",
+            "garmin_sleep_awake_s", "garmin_steps",
             "garmin_active_time_s", "garmin_moderate_intensity_s",
             "garmin_vigorous_intensity_s", "garmin_hrv_5min_high",
             "garmin_min_hr", "garmin_vo2max",
-            # Activity
+            # Activity (measured)
             "dew_point_f", "heat_adjustment_pct", "temperature_f",
             "humidity_pct", "elevation_gain_m", "avg_cadence",
             "avg_stride_length_m", "avg_ground_contact_ms",
             "avg_vertical_oscillation_cm", "avg_vertical_ratio_pct",
-            "avg_power_w", "garmin_aerobic_te", "garmin_anaerobic_te",
-            "garmin_perceived_effort", "garmin_body_battery_impact",
+            "avg_power_w",
             "activity_intensity_score", "active_kcal", "run_start_hour",
             # Feedback
             "feedback_perceived_effort", "feedback_energy_pre",
@@ -440,14 +446,14 @@ class TestPhaseIntegration:
         assert missing == [], f"Missing FRIENDLY_NAMES: {missing}"
 
     def test_no_new_inputs_on_ban_list(self):
-        """No new input key appears in _VOICE_INTERNAL_METRICS."""
+        """No measured input key appears in _VOICE_INTERNAL_METRICS."""
         import importlib
 
         home_mod = importlib.import_module("routers.home")
         ban_list = getattr(home_mod, "_VOICE_INTERNAL_METRICS", [])
 
         ALL_NEW_KEYS = [
-            "garmin_sleep_score", "garmin_body_battery_end",
+            "garmin_sleep_score",
             "dew_point_f", "avg_cadence", "feedback_leg_feel",
             "sleep_quality_1_5", "days_since_quality",
         ]

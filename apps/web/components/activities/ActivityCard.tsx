@@ -12,6 +12,7 @@ import Link from 'next/link';
 import type { Activity } from '@/lib/api/types';
 import { useUnits } from '@/lib/context/UnitsContext';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { Dumbbell, Bike, Mountain, Footprints, StretchHorizontal } from 'lucide-react';
 
 interface ActivityCardProps {
   activity: Activity;
@@ -39,6 +40,14 @@ const WORKOUT_TYPE_COLORS: Record<string, string> = {
   marathon_pace: 'bg-yellow-600',
   progression_run: 'bg-blue-500',
   race: 'bg-yellow-500',
+};
+
+const SPORT_ICONS: Record<string, { icon: typeof Dumbbell; label: string }> = {
+  strength: { icon: Dumbbell, label: 'Strength' },
+  cycling: { icon: Bike, label: 'Cycling' },
+  hiking: { icon: Mountain, label: 'Hiking' },
+  walking: { icon: Footprints, label: 'Walking' },
+  flexibility: { icon: StretchHorizontal, label: 'Flexibility' },
 };
 
 const WORKOUT_TYPE_LABELS: Record<string, string> = {
@@ -132,6 +141,14 @@ export function ActivityCard({
               )}
             </Tooltip>
           )}
+          {activity.sport && activity.sport !== 'run' && SPORT_ICONS[activity.sport] && (() => {
+            const SportIcon = SPORT_ICONS[activity.sport!].icon;
+            return (
+              <div className="mt-1 p-1.5 rounded-lg bg-slate-700/50">
+                <SportIcon className="w-4 h-4 text-slate-300" />
+              </div>
+            );
+          })()}
           <div>
             <h3 className="font-semibold text-lg">{activity.resolved_title ?? activity.name}</h3>
             <p className="text-sm text-slate-400">
@@ -140,6 +157,11 @@ export function ActivityCard({
           </div>
         </div>
         <div className="flex gap-2">
+          {activity.sport && activity.sport !== 'run' && SPORT_ICONS[activity.sport] && (
+            <span className="px-2 py-1 bg-slate-600 rounded text-xs text-slate-200">
+              {SPORT_ICONS[activity.sport].label}
+            </span>
+          )}
           {activity.workout_type && (
             <span className={`px-2 py-1 rounded text-xs text-white ${WORKOUT_TYPE_COLORS[activity.workout_type] || 'bg-slate-600'}`}>
               {WORKOUT_TYPE_LABELS[activity.workout_type] || activity.workout_type}
@@ -161,10 +183,12 @@ export function ActivityCard({
           </div>
         )}
 
-        {activity.pace_per_mile && (
+        {activity.distance > 0 && activity.moving_time > 0 && (
           <div>
             <p className="text-xs text-slate-400">Pace</p>
-            <p className="font-semibold">{activity.pace_per_mile}</p>
+            <p className="font-semibold">
+              {formatPace(activity.moving_time / (activity.distance / 1000))}
+            </p>
           </div>
         )}
 

@@ -461,3 +461,29 @@ class TestQualityGate:
     def test_model_is_gemini_flash(self):
         """Build plan specifies Gemini Flash for narrations."""
         assert "flash" in NARRATOR_MODEL.lower()
+
+
+class TestLowRiskModelRouting:
+    def test_non_gemini_model_uses_central_llm_client(self, monkeypatch):
+        from services import adaptation_narrator as module
+
+        monkeypatch.setattr(
+            module.settings,
+            "ADAPTATION_NARRATOR_MODEL",
+            "kimi-k2-turbo-preview",
+            raising=False,
+        )
+        fake = {
+            "text": "Narration from centralized client.",
+            "input_tokens": 11,
+            "output_tokens": 7,
+            "latency_ms": 42,
+        }
+        monkeypatch.setattr(module, "call_llm", lambda **kwargs: fake)
+
+        narrator = AdaptationNarrator(gemini_client=None)
+        text, in_tok, out_tok, lat = narrator._call_llm("prompt")
+        assert text == "Narration from centralized client."
+        assert in_tok == 11
+        assert out_tok == 7
+        assert lat == 42

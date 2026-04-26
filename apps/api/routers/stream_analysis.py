@@ -17,8 +17,8 @@ Response shape (success):
 
 AC coverage: AC-1 (endpoint contract)
 """
-from dataclasses import asdict
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
@@ -29,7 +29,6 @@ from core.auth import get_current_user
 from models import Activity, ActivityStream, Athlete, PlannedWorkout
 from services.run_stream_analysis import (
     AthleteContext,
-    analyze_stream,
 )
 from services.stream_analysis_cache import get_or_compute_analysis
 
@@ -37,6 +36,48 @@ router = APIRouter(prefix="/v1/activities", tags=["stream-analysis"])
 
 # Max points returned in the stream array (LTTB downsampled if needed)
 MAX_STREAM_POINTS = 500
+GARMIN_PENDING_STALE_MINUTES = 30
+
+
+def _compute_grade_from_altitude(
+    alt_arr: List, vel_arr: List, time_arr: List
+) -> List:
+    """Derive grade (%) from altitude and velocity when grade_smooth is absent.
+
+    Uses a 10-second smoothing window to avoid GPS noise spikes.
+    grade = (elevation_change / horizontal_distance) * 100
+    """
+    n = len(alt_arr)
+    raw_grade = [None] * n
+    for i in range(1, n):
+        a0 = alt_arr[i - 1]
+        a1 = alt_arr[i]
+        t0 = time_arr[i - 1] if i - 1 < len(time_arr) else None
+        t1 = time_arr[i] if i < len(time_arr) else None
+        v = vel_arr[i] if i < len(vel_arr) else None
+        if a0 is None or a1 is None or t0 is None or t1 is None or v is None:
+            continue
+        dt = t1 - t0
+        if dt <= 0 or v <= 0.3:
+            continue
+        horiz_dist = v * dt
+        if horiz_dist < 0.5:
+            continue
+        raw_grade[i] = ((a1 - a0) / horiz_dist) * 100
+
+    # Smooth with a 10-second sliding window
+    window = 10
+    smoothed = [None] * n
+    for i in range(n):
+        vals = []
+        half = window // 2
+        for j in range(max(0, i - half), min(n, i + half + 1)):
+            if raw_grade[j] is not None:
+                vals.append(raw_grade[j])
+        if vals:
+            smoothed[i] = sum(vals) / len(vals)
+
+    return smoothed
 
 
 def _prepare_stream_points(
@@ -50,7 +91,7 @@ def _prepare_stream_points(
         heartrate → hr, velocity_smooth → pace (s/km), grade_smooth → grade
 
     Applies LTTB downsampling if point count exceeds max_points.
-    Includes effort from the analysis result.
+    Includes effort from the analysis result and lat/lng for map linking.
     """
     time_arr = stream_data.get("time", [])
     n = len(time_arr)
@@ -62,6 +103,11 @@ def _prepare_stream_points(
     alt_arr = stream_data.get("altitude")
     cad_arr = stream_data.get("cadence")
     grade_arr = stream_data.get("grade_smooth")
+    latlng_arr = stream_data.get("latlng")
+
+    # Compute grade from altitude + velocity when grade_smooth is missing
+    if not grade_arr and alt_arr and vel_arr and len(alt_arr) == n:
+        grade_arr = _compute_grade_from_altitude(alt_arr, vel_arr, time_arr)
 
     points = []
     for i in range(n):
@@ -103,6 +149,14 @@ def _prepare_stream_points(
             pt["effort"] = round(effort_intensity[i], 4)
         else:
             pt["effort"] = 0.0
+
+        # GPS coordinates for pace-colored map rendering
+        if latlng_arr and i < len(latlng_arr) and latlng_arr[i] is not None:
+            pt["lat"] = round(latlng_arr[i][0], 6)
+            pt["lng"] = round(latlng_arr[i][1], 6)
+        else:
+            pt["lat"] = None
+            pt["lng"] = None
 
         points.append(pt)
 
@@ -184,7 +238,7 @@ def get_stream_analysis(
         - 404 when activity not found or not owned by current user
         - 401 when not authenticated
     """
-    # --- Activity lookup + ownership check ---
+    # Single-activity lookup (stream analysis; typically run FIT/streams).
     activity = (
         db.query(Activity)
         .filter(Activity.id == activity_id)
@@ -203,6 +257,26 @@ def get_stream_analysis(
         return {"status": "unavailable"}
 
     if fetch_status in ("pending", "fetching", "failed", None):
+        # Garmin detail payloads are push-driven; if they never arrive, activities
+        # can remain pending indefinitely. Fail closed after a bounded window so
+        # the client does not show "Analyzing your run..." forever.
+        if str(getattr(activity, "provider", "") or "").lower() == "garmin":
+            stale_anchor = (
+                getattr(activity, "stream_fetch_attempted_at", None)
+                or getattr(activity, "start_time", None)
+            )
+            if stale_anchor:
+                stale_cutoff = datetime.now(timezone.utc) - timedelta(
+                    minutes=GARMIN_PENDING_STALE_MINUTES
+                )
+                if stale_anchor < stale_cutoff:
+                    stream_row = (
+                        db.query(ActivityStream)
+                        .filter(ActivityStream.activity_id == activity_id)
+                        .first()
+                    )
+                    if stream_row is None:
+                        return {"status": "unavailable"}
         return {"status": "pending"}
 
     # --- Load stream data ---
@@ -219,6 +293,8 @@ def get_stream_analysis(
         max_hr=getattr(current_user, "max_hr", None),
         resting_hr=getattr(current_user, "resting_hr", None),
         threshold_hr=getattr(current_user, "threshold_hr", None),
+        threshold_pace_per_km=getattr(current_user, "threshold_pace_per_km", None),
+        rpi=getattr(current_user, "rpi", None),
     )
 
     # --- Resolve linked planned workout (additive) ---

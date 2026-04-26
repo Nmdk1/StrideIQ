@@ -6,8 +6,7 @@ More accurate than approximation formulas.
 """
 import json
 import math
-from typing import Optional, Dict, List
-from sqlalchemy.orm import Session
+from typing import Optional, Dict
 
 from core.database import get_db_sync
 from models import CoachingKnowledgeEntry

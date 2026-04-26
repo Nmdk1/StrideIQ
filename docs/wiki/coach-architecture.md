@@ -1,0 +1,154 @@
+# AI Coach Architecture
+
+## Current State
+
+The AI coach is the primary conversational interface. Every athlete query routes through the `AICoach` class in `services/coaching/core.py` (legacy import path `services/ai_coach.py` is a 5-line shim that still re-exports `AICoach`). The production path is **universal Kimi**: `AICoach.chat` calls `_query_kimi_with_fallback()` -> `query_kimi_coach()` in `services/coaching/_llm.py`, which uses **`settings.COACH_CANARY_MODEL`** (default **`kimi-k2.6`** in `apps/api/core/config.py`). **Claude Sonnet 4.6** is the silent fallback (`query_opus`) on Kimi errors or missing `KIMI_API_KEY`. Chat availability now gates on any configured runtime route (Kimi, Sonnet, or Gemini) instead of requiring Gemini. **Gemini is not the primary chat path**, but `query_gemini()` remains a guardrail-retry fallback when a turn mismatch retry needs an LLM and Anthropic is unavailable.
+
+Coach Runtime V2 is protected by a shipped safety shell and now has its first packet-response slices. `services/coaching/runtime_v2.py` owns the fail-closed DB flag checks for `coach.runtime_v2.shadow` and `coach.runtime_v2.visible`, the runtime mode resolver (`off`, `shadow`, `visible`, `fallback`), consistency checks for runtime metadata, and the redacted `coach_runtime_v2_request` structured log event. Artifact 9 adds the athlete truth layer foundation: `models/athlete_facts.py` defines the single-row-per-athlete `athlete_facts` JSONB ledger and append-only `athlete_facts_audit`, while `services/coaching/ledger.py` owns fact reads, writes, corrections, confirmations, precedence, stale-field detection, and sensitive-field redaction. `services/coaching/runtime_v2_packet.py` owns deterministic same-turn extraction, the Artifact 5 mode classifier, authoritative `calendar_context`, `activity_evidence_state`, `training_adaptation_context`, and packet assembly for V2.0-a. `query_kimi_v2_packet()` in `services/coaching/_llm.py` is the V2 coach-response call: Kimi receives the assembled packet only and no tool definitions. `alembic/versions/coach_runtime_v2_001_seed_flags.py` seeds both flags disabled with `rollout_percentage=0` and `allowed_athlete_ids=[]`. With flags off, chat is pure V1. Shadow mode still serves V1 and does not make a second coach-response LLM call. Visible mode attempts the V2 packet path; packet invariant errors, empty V2 responses, V2 timeouts, provider errors, consent-disabled, no-LLM-configured, deterministic short-circuit, and budget-exceeded paths fall back to V1 with explicit runtime metadata. The umbrella log records packet latency, V2 LLM latency when available, mode telemetry, and deterministic-check status. The packet still uses a temporary deterministic `legacy_context_bridge` from `_build_athlete_state_for_opus()` until later Artifact 9 phases rewire packet assembly to `athlete_facts`, `recent_activities`, `recent_threads`, and populated `unknowns`. Founder-visible V2 and shadow remain disabled during the Artifact 9 build.
+
+The `AICoach` class is composed of seven mixins living alongside `core.py` in the `coaching/` package: `_context.py`, `_llm.py`, `_thread.py`, `_tools.py`, `_budget.py`, `_guardrails.py`, `_prescriptions.py`. Shared constants and the KB violation scanner live in `_constants.py`.
+
+## How It Works
+
+### Model Routing
+
+Routing lives on the `AICoach` class in `services/coaching/core.py`:
+
+- **`chat()`** — consent gate, budget check, then **`_query_kimi_with_fallback()`** (Kimi → Sonnet on failure)
+- **`get_model_for_query()`** — still logs “premium lane” for budgets; **does not** select Gemini for chat (commentary in code references Kimi universal path)
+- **Fallback chain:** Kimi (`COACH_CANARY_MODEL`) → Claude Sonnet 4.6 (on Kimi error / empty content / import or key failure)
+- **Model audit trail:** Assistant messages in `coach_chat` JSONB record the **`model`** string returned by the LLM path (e.g. `kimi-k2.6`, `claude-sonnet-4-6`, or deterministic shortcuts)
+
+### Budget & Caps
+
+Implemented in the `_budget.py` mixin (`check_budget`, `_is_founder`, `is_athlete_vip`). Documented in `docs/COACH_RUNTIME_CAP_CONFIG.md`:
+
+| Cap | Standard | VIP | Founder |
+|-----|----------|-----|---------|
+| Daily requests | 100 | 100 | Uncapped |
+| Daily opus requests | 50 | 100 | Uncapped |
+| Monthly tokens | 5,000,000 | 5,000,000 | Uncapped |
+| Monthly opus tokens | 5,000,000 | 5,000,000 | Uncapped |
+
+Since all traffic routes through the premium lane (Kimi primary = same budget flags as the historical “Opus” lane), the opus and overall caps are aligned at 5M. At Kimi rates ($0.383/M input, $1.72/M output) worst-case 5M tokens ≈ $4.59/user/month against $24.99/mo subscription revenue (18%). Realistic usage (~450K tokens) costs ~$0.84/month (3%). The `opus_*` column names are vestigial from Sonnet-era routing — semantic meaning is now "premium lane."
+
+- **`check_budget()`** — enforces caps per `CoachUsage` records
+- **`_is_founder()`** — `OWNER_ATHLETE_ID` env var bypasses all caps
+- **`is_athlete_vip()`** — checks `COACH_VIP_ATHLETE_IDS` env var + `athlete.is_coach_vip` DB flag
+- **Cost formula:** `(input_tokens * 0.0383 + output_tokens * 0.172) / 100` (Kimi rates)
+
+### Context Building
+
+Three context builders serve different surfaces:
+
+1. **`build_athlete_brief()`** in `services/coach_tools/brief.py` — comprehensive athlete context for coach chat. 14-day recent runs, identity, wellness, PBs, race predictions, fingerprint, weekly volume. Header instructs LLM to USE pre-computed relative labels verbatim.
+
+2. **`_build_athlete_context_for_chat()`** in `services/coaching/_context.py` — 7-day activity summary, 30-day stats, check-ins, Garmin watch data, planned workouts. All dates include `_relative_date()` labels.
+
+3. **`_build_athlete_state_for_opus()`** in `services/coaching/_context.py` — premium context with recent runs, latest check-in. Dates include relative labels. This athlete-state packet is now injected into both Kimi and Sonnet request messages by `services/coaching/_llm.py`, rather than being computed and dropped on the Kimi path.
+
+### System Prompt
+
+The system prompt assembled in `services/coaching/core.py` includes:
+
+- **Athlete calibration:** Adapts to experience level — experienced athletes don't get default conservatism
+- **Data verification discipline:** Must query actual data before making pace/split comparisons
+- **Fatigue threshold context:** During build phases, thresholds are context not warnings
+- **N=1 principles:** No population statistics, no template narratives
+- **Anti-hallucination:** Never infer from workout titles, never guess relative dates
+- **General knowledge allowed:** The hallucination rule applies to athlete-specific facts; standard sports science, supplement timing, and warmup protocols should be answered directly and labeled as general when athlete history is absent.
+- **Direct race-day voice:** Same-day race threads use execution mode, not planning mode: timeline, warmup, supplement/fueling timing when relevant, mile-by-mile effort cues, and a mental cue. The prompt now asks for the literal plain-text labels `Timeline:`, `Warmup:`, `Mile by mile:`, and `Cue:` on the first pass, forbids hedge voice such as "still aggressive", and directs the coach to reason from recent workout evidence when RPI pace models conflict with what the athlete actually ran.
+
+### Coach Tools
+
+The coach has access to ~27 tools defined in the `services/coach_tools/` package (split from the former 4.9K-line `coach_tools.py` god file into `brief.py`, `insights.py`, `activity.py`, `wellness.py`, `performance.py`, `plan.py`, `profile.py`, `load.py`, `race_strategy.py`, `training_block.py`, `_utils.py`):
+
+- `get_recent_runs()` — last N days of run activities. As of `fit_run_001`
+  every row also carries the FIT-derived metrics (`avg_power_w`,
+  `max_power_w`, `avg_stride_length_m`, `avg_ground_contact_ms`,
+  `avg_ground_contact_balance_pct`, `avg_vertical_oscillation_cm`,
+  `avg_vertical_ratio_pct`, `total_descent_m`, `moving_time_s`) when
+  present, plus a resolved `perceived_effort` envelope from
+  `services/effort_resolver.py` with `{rpe, source, feel_label, confidence}`.
+  The resolver enforces the founder rule: `ActivityFeedback.perceived_effort`
+  wins outright (`confidence: high`), Garmin self-eval is a fallback
+  (`confidence: low`), never blended.
+- `get_wellness_trends()` — 28-day check-in trends
+- `get_pb_patterns()` — personal best analysis
+- `build_athlete_brief()` — comprehensive context (includes Nutrition Snapshot: today's totals, goal, day tier, targets)
+- `get_nutrition_correlations()` — nutrition-related findings from the correlation engine
+- `get_nutrition_log()` — recent nutrition entries for an athlete. The response includes explicit coverage, today's logged-so-far totals, per-date additive totals, entry count, and evidence. Multiple same-date `daily` entries are additive partial logs, not replacements or complete-day totals.
+- `search_activities()` — explicit activity lookup by date/name/race/distance/sport/workout type. This exists so the coach can verify older races or athlete corrections without pretending `get_recent_runs()` is full-history search. Query construction is shared with the activities API via `services/activity_search.py`. As of Apr 25, 2026, structured-workout searches normalize variants like `16x400`, `16 x 400`, `16X400m`, and `400s`, then fall back to split-aware lookup when title text misses generic activity names like `Morning Run`.
+- `get_training_block_narrative()` — summarizes recent quality-session structure from `ActivitySplit` data. Generic activity names can still classify as speed/VO2/threshold work when laps show repeated work reps. Used by race-readiness and evidence-vs-zone conversations.
+- Activity data queries, plan data, correlation findings
+
+### Conversation Management
+
+- **`ConversationQualityManager`** — manages conversation flow and quality
+- **`MessageRouter`** — routes messages to appropriate handlers
+- **`CoachChat`** model — stores conversations with JSONB messages
+- **`AthleteFact` memory** — async fact extraction runs after saved coach turns and stores athlete-stated facts in `models/athlete.py`. `services/coaching/_context.py` now renders coaching-memory facts separately from generic facts: race psychology, injury context, invalid race anchors, training intent, fatigue strategy, sleep baseline, stress boundaries, coaching preference, and strength context are injected as coaching constraints rather than flat facts. This preserves the async contract: no synchronous `AthleteFact` writes during chat.
+- **Turn guard** (`services/turn_guard_monitor.py`) — prevents infinite loops
+- **Race strategy packet** (`services/coach_tools/race_strategy.py`) — deterministic coach tool for race-plan, pacing, and execution questions. It assembles target race details, current plan week, prior course/race activity from activity history, same-route history when available, recent race-relevant workouts, PBs, `PerformanceEvent`s, athlete race-result anchors, training load/recovery/pace context, and race-relevant `AthleteFact` memory. It explicitly marks unavailable fields such as future race-day weather instead of letting the model guess. Recent workouts are now ranked by race-specific evidence: split-confirmed quality sessions outrank broad easy-distance matches, the returned cap is 15, and rows carry `selection_reason`, `quality_rank`, `split_summary`, and `race_specificity`.
+- **Conversation outcome contract** (`services/coaching/_conversation_contract.py`) — lightweight classifier for `quick_check`, `decision_point`, `correction_dispute`, `emotional_load`, `race_strategy`, `race_day`, and related conversation types. The contract is injected into model context and then enforced post-response in `services/coaching/_guardrails.py`: contract failures trigger one targeted retry before the response is saved. Quick checks enforce a word cap, decision points require a tradeoff/default frame, correction/dispute turns require verification or athlete-stated labeling, emotional-load turns reject prying, race strategy must include objective, primary limiter, false limiter, pacing shape, course risk, cues, success definition beyond time, and post-race learning target, and race-day mode requires execution-specific guidance. Classification is thread-aware but bounded: same-day race context carries forward only into true race follow-ups such as supplement timing, packet pickup, warmup, target pace, or mile/split execution; unrelated nutrition, recovery, between-plan, and correction turns keep their own contract. Date/workout corrections after failed lookups become retrieval-repair turns instead of `general`.
+- **Contract smoke harness** (`services/coaching/_value_eval.py`) — deterministic scorer for the Phase 5 floor. Fixtures in `tests/fixtures/coach_value_cases.json` define required tools, required facts/phrases, forbidden claims, conversation contract expectations, and required dimensions: factual grounding, correction incorporation, decision clarity, athlete agency, N=1 specificity, emotional appropriateness, non-obvious usefulness, and evidence quality. `tests/test_coach_value_contract.py` verifies good answers pass and intentionally bad answers fail without live LLM calls. This harness proves contract compliance, not full coaching value.
+- **Real Coach Standard eval framework** (`services/coaching/_eval.py`) — Phase 8 evaluator for coaching usefulness above contract shape, extended for Artifact 7 replay-derived cases. `tests/fixtures/coach_eval_cases.json` stores 33 structured Phase 8 scenarios across daily training, workout execution, nutrition, recovery, between-plan maintenance, race planning, race day, post-run interpretation, correction/dispute, emotional/frustrated athlete, and injury/pain triage, plus the first `artifact7.v1` replay case for nutrition cheerleading on criticized intake. Each case carries expected coaching truths, required retrieved evidence, bad coaching patterns, `must_not` claims, a baseline answer, and severity. Missing `eval_schema_version` defaults to `phase8.v1`; `artifact7.v1` cases additionally require `baseline_voice`, `baseline_citation`, `artifact5_mode`, `source_replay_type`, and `failure_modes`, with citation validation against `docs/references/` and blocked `eyestone` / `mcmillan` voices until reference notes exist. `build_tier3_judge_payload()` includes Artifact 7 voice/citation/mode metadata and explicitly asks the judge to score `voice_alignment` for replay cases; `evaluate_tier3_judge_scores()` requires `voice_alignment` only for `artifact7.v1`, preserving the four-dimension Phase 8 Tier 3 contract. `tests/test_coach_real_standard.py` runs deterministic Tier 2 truth/evidence and Artifact 7 schema checks; `tests/test_coach_value_scoring.py` covers the Tier 3 judge payload and per-domain scoring scaffold.
+- **Trust/runtime metadata surface** (`routers/ai_coach.py`, `services/coaching/core.py`, `services/coaching/_thread.py`) — main coach responses now carry `tools_used`, `tool_count`, `conversation_contract`, `runtime_version`, `runtime_mode`, and `fallback_reason` through non-stream chat and stream `done` events. Persisted open-thread assistant messages store `runtime_metadata` alongside tool and contract metadata. This exposes what the coach checked and which runtime served the turn without parsing the prose `## Evidence` section. The frontend renders the tool metadata as "Checked" chips and keeps correction as an athlete-authored follow-up prompt.
+- **Coach Runtime V2 packet slice** (`services/coaching/runtime_v2_packet.py`, `services/coaching/_llm.py`, `services/coaching/core.py`) — visible-eligible turns now assemble `coach_runtime_v2.packet.v1`, classify the Artifact 5 mode with deterministic rules, extract same-turn athlete-stated overrides without an LLM, include authoritative `calendar_context`, `activity_evidence_state`, and `training_adaptation_context` blocks, and run Kimi through `query_kimi_v2_packet()` with no tool definitions. `activity_evidence_state` classifies recent runs from pace, duration, effort classifier output, race flags, split-derived execution quality, and same-turn corrections; source labels are not authoritative. `training_adaptation_context` separates hard stimulus from meaningful new fitness before a near target race, blocks confidence/control praise when execution quality is unknown or negative, and carries the ask-after-work instruction: do the evidence work first, then ask how it actually went. Successful turns persist `runtime_mode=visible` / `runtime_version=v2`; packet, timeout, empty-response, and provider failures demote to V1 fallback. V2 does not run V1's post-hoc conversation-contract/output validators on successful packet responses; quality behavior is enforced by packet structure plus Artifact 7 replay cases. Tests in `tests/test_coach_runtime_v2_shell.py` cover visible success, packet assembly fallback, timeout fallback, empty-response fallback, mode precedence, calendar context shape, temporal bridge quieting, activity effort/execution evidence, packet telemetry, and redacted runtime logs.
+
+### KB Violation Scanner
+
+`_check_kb_violations()` in `services/coaching/_constants.py` scans coach output against the 76-rule KB registry. Catches claims that violate known principles (e.g., citing population statistics, making directional claims without data). The same quality check now counts hedge phrases and logs `hedge_overload` when responses over-qualify instead of coaching directly.
+
+## Key Decisions
+
+- **Universal Kimi coach** (Apr 2026): Replaced per-tier Gemini/Sonnet routing for chat. All athletes share the same Kimi tool path; production default model id advanced to **`kimi-k2.6`** via `COACH_CANARY_MODEL` (was marketed as K2.5 during rollout).
+- **Caps recalibrated** (Apr 7, 2026): Raised from Sonnet-era levels (50K tokens/month) to Kimi-appropriate levels (2M standard, 5M VIP). No athlete should ever cap out — it's a product-killer.
+- **Date rendering fix** (Apr 7, 2026): All 7 date-emitting code paths now include pre-computed relative labels. `_relative_date()` precision extended to day-level through 30 days.
+- **Athlete calibration** (Apr 6, 2026): Coach prompt no longer defaults to conservatism regardless of athlete experience.
+- **Nutrition context** (Apr 9, 2026): `build_athlete_brief` now includes a Nutrition Snapshot section. Two new tools (`get_nutrition_correlations`, `get_nutrition_log`) let the coach query nutrition data on demand.
+- **FIT metrics + effort resolver in coach context** (Apr 19, 2026 — `fit_run_001` Phase 3): Every recent run row now carries power, running dynamics, true moving time, and a resolved perceived-effort envelope with provenance. The new `services/effort_resolver.py` is the single source of truth — athlete-provided RPE always wins over Garmin self-eval, never blended.
+- **Coach trust foundation slice** (Apr 24, 2026): Added `search_activities`, shared activity query construction, Kimi/Sonnet athlete-state injection, Gemini gate re-scope, additive nutrition evidence, and the conversation outcome contract skeleton.
+- **Conversation contract enforcement** (Apr 24, 2026): Turn guard now validates normalized model output against the conversation outcome contract and retries once with a targeted correction when the answer violates the expected shape. Tool-use validation recognizes race, nutrition, calendar-day, split, and activity-search tools as grounding tools so grounded answers do not raise false no-data warnings.
+- **N=1 coaching memory slice** (Apr 24, 2026): Fact extraction now recognizes coaching-memory types and the coach prompt renders them as constraints so future turns can respect boundaries, invalid anchors, race psychology, fatigue strategy, sleep baseline, and strength context.
+- **Race Strategist Mode foundation** (Apr 24, 2026): Added `get_race_strategy_packet` and stricter race-strategy contract enforcement. Kimi/Gemini prompt guidance now directs race strategy, race plan, pacing, and execution questions through the packet before answer generation.
+- **Coach Value Eval Harness** (Apr 24, 2026): Added deterministic Phase 5 value cases for older activity correction, additive nutrition totals, stress/food boundaries, aggressive 5K strategy, social-run efficiency context, and athlete-agency decision points. The harness scores behavior across the eight value dimensions and blocks regressions through required/forbidden assertions rather than exact prose snapshots.
+- **Frontend Trust UX foundation** (Apr 24, 2026): Chat API/SSE/history now expose lightweight trust metadata for tool usage and conversation contract. `/coach` renders checked-tool chips and a "That's wrong" affordance that pre-fills a verification prompt instead of creating an invisible backend correction workflow.
+- **Active-calorie finding suppression** (Apr 25, 2026): `services/intelligence/finding_eligibility.py` now treats `active_kcal` / daily active-calorie variants as passive load noise. The engine can retain those rows for internal audit, but athlete-facing coach and briefing surfaces must not narrate active-calorie burn as a causal limiter for efficiency.
+- **Phase 7 retrieval repair slice** (Apr 25, 2026): Coach activity retrieval now normalizes structured workout search variants, falls back to `ActivitySplit` structure when titles are generic, ranks race-packet workouts by quality/race specificity instead of raw recency, adds `get_training_block_narrative`, and makes conversation contract classification thread-aware for race-day follow-ups.
+- **Phase 7 behavior/voice slice** (Apr 25, 2026): Coach prompts now distinguish athlete-specific facts from general sports science, remove forced first-tool behavior for pure protocol questions, add direct voice/race-day execution/training-arc/zone-discrepancy directives, and expand the value harness with bicarb, race-day execution, and zone-vs-workout evidence cases.
+- **Phase 7 cleanup** (Apr 25, 2026): Race-day contract guidance is injected before the first Kimi turn so successful output does not depend on the retry path. The UI normalizer strips markdown bold from section labels, normalizes fragile Unicode punctuation to plain ASCII, and the legacy static coach instructions no longer say to trust pace models over actual workout evidence.
+- **Phase 8 Real Coach Standard** (Apr 25, 2026): Added the real-coach eval framework above the Phase 5 smoke harness. The case bank now requires coaching truths and evidence across 11 domains so race day is one domain rather than the whole product standard, and the Tier 3 scaffold can produce nightly/pre-deploy per-domain quality scores.
+- **Phase 8 live quality repair** (Apr 25, 2026): Production probes caught race-day thread context over-promoting unrelated prompts into `race_day`. The classifier now separates explicit same-day race messages from thread-carried follow-ups and gives `correction_dispute` priority for tactical corrections such as "that's not how 5Ks are raced."
+- **Structured workout verification escalation** (Apr 25, 2026): Production probes showed the coach could find a likely generic-titled workout but stop before rep-level verification. The prompt now requires `analyze_run_streams` or `get_mile_splits` after `search_activities` finds a likely structured workout without split proof, before the coach says it cannot verify the athlete's workout claim.
+- **Artifact 7 replay validator** (Apr 26, 2026): `_eval.py` now accepts explicit `eval_schema_version` values. Existing Phase 8 cases remain valid without the field; replay-derived `artifact7.v1` cases validate coach voice, reference citation, Artifact 5 mode, source replay type, failure-mode tags, and Tier 3 `voice_alignment` gating before they can enter the case bank.
+- **First Artifact 7 replay case** (Apr 26, 2026): Added `nutrition_cheerlead_sarcastic_intake`, a Green-anchored replay case that catches cheerleading on athlete-criticized intake. Raw Layer A source belongs under gitignored `docs/external-coach-references/`; only de-identified Layer B fixtures are committed.
+- **Coach Runtime V2 safety shell** (Apr 26, 2026): Added fail-closed runtime flags, DB seed migration, runtime mode resolver, response/history metadata, and fallback behavior around the existing V1 coach path. The visible flag cannot accidentally expose unfinished V2 behavior; until the V2 packet path exists, eligible visible requests fall back to V1 with explicit runtime metadata.
+- **Coach Runtime V2 first packet path** (Apr 26, 2026): Added deterministic packet assembly, same-turn extraction, Artifact 5 mode classification, a no-tools Kimi packet response call, timeout-specific fallback, packet/LLM telemetry, native calendar/race truth, and bridge de-authoring for visible-eligible founder testing. The LLM receives only the assembled packet and current message; dates/races/current-day facts come from `calendar_context`, not legacy bridge prose.
+- **V2 canary temporal replay** (Apr 26, 2026): Added `v2_canary_race_today_temporal_confusion`, an Artifact 7 replay case tagged `FM-003` / `FM-002` after founder visible canary caught V2 inventing a same-day race while the structured truth was an upcoming race six days away.
+- **V2 activity evidence repair** (Apr 26, 2026): After founder canary caught V2 flattening a hard day into "three easy runs" and inventing controlled/confident execution, founder-visible V2 was disabled while shadow stayed on. The packet now includes `activity_evidence_state` and `training_adaptation_context`, same-turn activity/execution overrides, split-derived execution quality, and explicit ask-after-work semantics. Added `v2_canary_activity_effort_flattened_fake_confidence` to Artifact 7 replay coverage.
+- **Artifact 9 athlete truth ledger** (Apr 26, 2026): Locked Artifact 9 replaces `legacy_context_bridge` as the primary athlete-state plan. Phase B1 adds the `athlete_facts` JSONB ledger, append-only audit table, and `services/coaching/ledger.py` service API. Later phases wire ledger facts, recent activities, recent threads, unknowns, and voice enforcement into the V2 packet before any founder canary.
+
+## Known Issues
+
+- **Two context builders** (`build_athlete_brief` and `_build_athlete_context_for_chat`) overlap significantly. Could be consolidated.
+
+## What's Next
+
+- Briefing-to-coach response loop: tappable emerging patterns → coach opens with pre-loaded finding context
+- Fact extraction from coach conversations feeds the limiter lifecycle classifier
+
+## Sources
+
+- `docs/COACH_RUNTIME_CAP_CONFIG.md` — canonical cap reference
+- `docs/specs/COACH_MODEL_ROUTING_RESET_SPEC.md` — routing architecture
+- `docs/specs/KIMI_K25_COMPARISON_SPEC.md` — Kimi adoption
+- `docs/BUILDER_INSTRUCTIONS_2026-03-08_FOUNDER_OPUS_ROUTING.md` — VIP routing
+- `apps/api/services/coaching/` — coach package (`core.py` + 7 mixins + `_constants.py`)
+- `apps/api/services/coaching/runtime_v2.py` — Coach Runtime V2 flag and runtime mode shell
+- `apps/api/services/coaching/runtime_v2_packet.py` — first V2 packet assembler and deterministic mode classifier
+- `apps/api/services/coach_tools/` — coach tool package by concern, including race strategy and training-block tools
+- `apps/api/alembic/versions/coach_runtime_v2_001_seed_flags.py` — V2 shadow/visible flag seed migration
+- `apps/api/tests/test_coach_runtime_v2_shell.py` — fail-closed flag, resolver, metadata, shadow, and fallback tests
+- `apps/api/tests/test_coach_phase7_retrieval.py` — DB-backed Phase 7 retrieval regression scenarios
+- `apps/api/services/ai_coach.py` — legacy 5-line shim (preserves `from services.ai_coach import AICoach`)

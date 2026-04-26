@@ -8,6 +8,7 @@ Covers:
 - Physiological guardrails (no intensity after long run / taper).
 - LLM error handling.
 """
+import os
 import pytest
 from datetime import date, datetime, timedelta, timezone
 from unittest.mock import MagicMock, patch
@@ -26,7 +27,20 @@ from services.workout_narrative_generator import (
     _is_too_similar,
     WorkoutNarrativeResult,
     SIMILARITY_THRESHOLD,
+    KILL_SWITCH_3B_ENV,
 )
+
+
+@pytest.fixture(autouse=True)
+def _kill_switch_off(monkeypatch):
+    """Ensure kill switch is off for all generator tests.
+
+    Patches the FeatureFlag DB lookup inside the generator to return None,
+    preventing a spurious .first() call from consuming DB mock side_effect slots.
+    """
+    monkeypatch.setenv(KILL_SWITCH_3B_ENV, "false")
+    with patch("services.workout_narrative_generator._is_3b_kill_switched", return_value=False):
+        yield
 
 
 # ---------------------------------------------------------------------------
@@ -73,19 +87,13 @@ def _make_activity(name="Morning Run", wtype="easy_run", dist_m=8000, dur_s=3000
     return a
 
 
-def _mock_llm_response(text="Great session focus today."):
-    """Build a mock Gemini client that returns the given text."""
-    client = MagicMock()
-    response = MagicMock()
-    candidate = MagicMock()
-    part = MagicMock()
-    part.text = text
-    candidate.content.parts = [part]
-    response.candidates = [candidate]
-    response.usage_metadata.prompt_token_count = 100
-    response.usage_metadata.candidates_token_count = 30
-    client.models.generate_content.return_value = response
-    return client
+def _patch_narrative_llm(monkeypatch, text="Great session focus today."):
+    """Patch _call_narrative_llm to return the given text without an LLM call."""
+    from services import workout_narrative_generator as module
+    monkeypatch.setattr(
+        module, "_call_narrative_llm",
+        lambda athlete_id, prompt: (text, 100, 30, 50),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -237,19 +245,19 @@ class TestPromptConstruction:
 
 class TestGenerateWorkoutNarrative:
 
-    def test_good_narrative_returned(self):
+    def test_good_narrative_returned(self, monkeypatch):
         """Good LLM output → narrative returned, not suppressed."""
         workout = _make_workout()
         db = MagicMock()
         db.query.return_value.filter.return_value.first.side_effect = [
-            workout, None, None,  # today, yesterday, readiness
+            workout, None, None,
         ]
         db.query.return_value.filter.return_value.order_by.return_value.limit.return_value.all.side_effect = [
-            [], [], [],  # recent, upcoming, recent_narratives
+            [], [], [],
         ]
 
-        client = _mock_llm_response("Focus on keeping your cadence relaxed through the first half.")
-        result = generate_workout_narrative(uuid4(), date.today(), db, gemini_client=client)
+        _patch_narrative_llm(monkeypatch, "Focus on keeping your cadence relaxed through the first half.")
+        result = generate_workout_narrative(uuid4(), date.today(), db)
 
         assert result.narrative is not None
         assert result.suppressed is False
@@ -263,7 +271,7 @@ class TestGenerateWorkoutNarrative:
         assert result.suppressed is True
         assert "context" in result.suppression_reason.lower() or "workout" in result.suppression_reason.lower()
 
-    def test_banned_metrics_suppressed(self):
+    def test_banned_metrics_suppressed(self, monkeypatch):
         """LLM output containing TSB → suppressed."""
         workout = _make_workout()
         db = MagicMock()
@@ -274,13 +282,13 @@ class TestGenerateWorkoutNarrative:
             [], [], [],
         ]
 
-        client = _mock_llm_response("Your TSB is -15 so take it easy today.")
-        result = generate_workout_narrative(uuid4(), date.today(), db, gemini_client=client)
+        _patch_narrative_llm(monkeypatch, "Your TSB is -15 so take it easy today.")
+        result = generate_workout_narrative(uuid4(), date.today(), db)
 
         assert result.suppressed is True
         assert "banned" in result.suppression_reason.lower() or "metric" in result.suppression_reason.lower()
 
-    def test_intensity_in_taper_suppressed(self):
+    def test_intensity_in_taper_suppressed(self, monkeypatch):
         """Intensity encouragement during taper → suppressed."""
         workout = _make_workout(phase="taper")
         db = MagicMock()
@@ -291,16 +299,19 @@ class TestGenerateWorkoutNarrative:
             [], [], [],
         ]
 
-        client = _mock_llm_response("Push hard on this one and attack the hills.")
-        result = generate_workout_narrative(uuid4(), date.today(), db, gemini_client=client)
+        _patch_narrative_llm(monkeypatch, "Push hard on this one and attack the hills.")
+        result = generate_workout_narrative(uuid4(), date.today(), db)
 
         assert result.suppressed is True
         assert "intensity" in result.suppression_reason.lower()
 
-    def test_similar_narrative_suppressed(self):
+    def test_similar_narrative_suppressed(self, monkeypatch):
         """Narrative >50% overlap with recent → suppressed."""
         workout = _make_workout()
         recent_text = "Keep the effort relaxed and steady on this easy run today."
+
+        narr_row = MagicMock()
+        narr_row.narration_text = recent_text
 
         db = MagicMock()
         db.query.return_value.filter.return_value.first.side_effect = [
@@ -308,34 +319,15 @@ class TestGenerateWorkoutNarrative:
         ]
         db.query.return_value.filter.return_value.order_by.return_value.limit.return_value.all.side_effect = [
             [], [],  # recent activities, upcoming
-        ]
-
-        # Mock recent narratives query
-        narr_row = MagicMock()
-        narr_row.narration_text = recent_text
-        db.query.return_value.filter.return_value.order_by.return_value.limit.return_value.all.side_effect = [
-            [], [],  # recent activities, upcoming
             [narr_row],  # recent narratives
         ]
 
-        # Regenerate exact same text
-        client = _mock_llm_response(recent_text)
-
-        # Need to reset the side_effect chain for the DB mocks
-        db2 = MagicMock()
-        db2.query.return_value.filter.return_value.first.side_effect = [
-            workout, None, None,
-        ]
-        db2.query.return_value.filter.return_value.order_by.return_value.limit.return_value.all.side_effect = [
-            [], [],  # recent activities, upcoming
-            [narr_row],  # recent narratives
-        ]
-
-        result = generate_workout_narrative(uuid4(), date.today(), db2, gemini_client=client)
+        _patch_narrative_llm(monkeypatch, recent_text)
+        result = generate_workout_narrative(uuid4(), date.today(), db)
         assert result.suppressed is True
         assert "similar" in result.suppression_reason.lower()
 
-    def test_llm_error_suppressed(self):
+    def test_llm_error_suppressed(self, monkeypatch):
         """LLM exception → suppressed, not 500."""
         workout = _make_workout()
         db = MagicMock()
@@ -346,11 +338,15 @@ class TestGenerateWorkoutNarrative:
             [], [],
         ]
 
-        result = generate_workout_narrative(uuid4(), date.today(), db, gemini_client=None)
+        from services import workout_narrative_generator as module
+        def _raise(*a, **kw):
+            raise RuntimeError("test error")
+        monkeypatch.setattr(module, "_call_narrative_llm", _raise)
+        result = generate_workout_narrative(uuid4(), date.today(), db)
         assert result.suppressed is True
-        assert "error" in result.suppression_reason.lower() or "client" in result.suppression_reason.lower()
+        assert "error" in result.suppression_reason.lower()
 
-    def test_empty_llm_response_suppressed(self):
+    def test_empty_llm_response_suppressed(self, monkeypatch):
         """Empty LLM response → suppressed."""
         workout = _make_workout()
         db = MagicMock()
@@ -361,6 +357,25 @@ class TestGenerateWorkoutNarrative:
             [], [],
         ]
 
-        client = _mock_llm_response("")
-        result = generate_workout_narrative(uuid4(), date.today(), db, gemini_client=client)
+        _patch_narrative_llm(monkeypatch, "")
+        result = generate_workout_narrative(uuid4(), date.today(), db)
         assert result.suppressed is True
+
+
+class TestModelRouting:
+    def test_routes_through_central_llm_client(self, monkeypatch):
+        from services import workout_narrative_generator as module
+
+        fake = {
+            "text": "Workout narrative from centralized client.",
+            "input_tokens": 9,
+            "output_tokens": 6,
+            "latency_ms": 35,
+        }
+        monkeypatch.setattr(module, "call_llm", lambda **kwargs: fake)
+
+        text, in_tok, out_tok, lat = module._call_narrative_llm(uuid4(), "prompt")
+        assert text == "Workout narrative from centralized client."
+        assert in_tok == 9
+        assert out_tok == 6
+        assert lat == 35

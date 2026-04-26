@@ -11,11 +11,9 @@ Based on Manifesto Section 2: Secondary Signals
 
 from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional, Tuple
-from decimal import Decimal
 from sqlalchemy.orm import Session
-from sqlalchemy import func, and_
 
-from models import Activity, DailyCheckin, ActivityFeedback, Athlete
+from models import Activity, DailyCheckin, Athlete
 
 import logging
 
@@ -51,6 +49,7 @@ def calculate_recovery_half_life(
     # Get hard sessions and subsequent easy sessions
     activities = db.query(Activity).filter(
         Activity.athlete_id == athlete_id,
+        Activity.sport == "run",
         Activity.start_time >= start_date,
         Activity.avg_hr.isnot(None)
     ).order_by(Activity.start_time).all()
@@ -64,7 +63,7 @@ def calculate_recovery_half_life(
         DailyCheckin.date >= start_date.date()
     ).all()
     
-    checkin_by_date = {c.date: c for c in checkins}
+    {c.date: c for c in checkins}
     
     # Find pairs of hard session followed by easy/rest days
     recovery_times = []
@@ -123,6 +122,7 @@ def calculate_durability_index(
     # Get activities for the period
     activities = db.query(Activity).filter(
         Activity.athlete_id == athlete_id,
+        Activity.sport == "run",
         Activity.start_time >= start_date,
         Activity.avg_hr.isnot(None),
         Activity.average_speed.isnot(None)
@@ -187,6 +187,7 @@ def calculate_consistency_index(
     # Count activities per week
     activities = db.query(Activity).filter(
         Activity.athlete_id == athlete_id,
+        Activity.sport == "run",
         Activity.start_time >= start_date
     ).all()
     
@@ -219,7 +220,6 @@ def update_athlete_metrics(db: Session, athlete_id: str) -> Dict[str, Optional[f
     Returns:
         Dict with calculated metrics
     """
-    from models import Athlete
     
     recovery_half_life = calculate_recovery_half_life(db, athlete_id)
     durability_index = calculate_durability_index(db, athlete_id)
@@ -267,6 +267,7 @@ def detect_false_fitness(
     
     activities = db.query(Activity).filter(
         Activity.athlete_id == athlete_id,
+        Activity.sport == "run",
         Activity.start_time >= start_date,
         Activity.avg_hr.isnot(None),
         Activity.average_speed.isnot(None)
@@ -318,6 +319,7 @@ def detect_masked_fatigue(
     
     activities = db.query(Activity).filter(
         Activity.athlete_id == athlete_id,
+        Activity.sport == "run",
         Activity.start_time >= start_date,
         Activity.avg_hr.isnot(None),
         Activity.average_speed.isnot(None)
@@ -385,6 +387,7 @@ def compute_recovery_curve(
         db.query(Activity)
         .filter(
             Activity.athlete_id == athlete_id,
+            Activity.sport == "run",
             Activity.start_time >= before_start,
             Activity.avg_hr.isnot(None),
         )

@@ -7,7 +7,13 @@ import { UnitsProvider } from '@/lib/context/UnitsContext'
 import { CompareProvider } from '@/lib/context/CompareContext'
 import { ConsentProvider } from '@/lib/context/ConsentContext'
 import { ConsentPrompt } from './components/ConsentPrompt'
-import { RuntoonSharePrompt } from '@/components/runtoon/RuntoonSharePrompt'
+// RuntoonSharePrompt was a global mobile auto-popup that polled
+// /v1/runtoon/pending every 10s and slid up a bottom sheet on every
+// recent run.  Phase 4 retired it: sharing is a pull action now,
+// surfaced via the Share button in the activity page chrome (which
+// opens ShareDrawer -> RuntoonCard).  Component file is preserved on
+// disk for reference and possible rollback; intentionally not imported.
+// import { RuntoonSharePrompt } from '@/components/runtoon/RuntoonSharePrompt'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { ImpersonationBanner } from '@/components/admin/ImpersonationBanner'
@@ -45,7 +51,8 @@ export const metadata: Metadata = {
     follow: true
   },
   metadataBase: new URL('https://strideiq.run'),
-  manifest: '/manifest.json',
+  // Query busts cached manifest (orientation / display changes) after deploy.
+  manifest: '/manifest.json?v=3',
   appleWebApp: {
     capable: true,
     statusBarStyle: 'black-translucent',
@@ -59,8 +66,6 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
-  maximumScale: 1,
-  userScalable: false,
   viewportFit: 'cover',
   themeColor: '#ea580c',
 }
@@ -84,7 +89,6 @@ export default function RootLayout({
                       <ImpersonationBanner />
                       <ClientShell>
                         <ConsentPrompt />
-                        <RuntoonSharePrompt />
                         <main className="pb-[76px] md:pb-0">{children}</main>
                       </ClientShell>
                     </TooltipProvider>

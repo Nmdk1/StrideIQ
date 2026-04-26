@@ -21,16 +21,15 @@ ADR-010: Training Stress Balance Enhancement
 """
 
 from datetime import datetime, timedelta, date
-from typing import List, Dict, Optional, Tuple
+from typing import List, Dict, Optional
 from uuid import UUID
 from dataclasses import dataclass
 from enum import Enum
 from sqlalchemy.orm import Session
-from sqlalchemy import func, and_
 import math
 import logging
 
-from models import Activity, Athlete, DailyCheckin
+from models import Activity, Athlete
 
 logger = logging.getLogger(__name__)
 
@@ -288,6 +287,14 @@ class TrainingLoadCalculator:
     # TSS CALCULATION
     # =========================================================================
     
+    _CROSS_TRAINING_IF: Dict[str, float] = {
+        "cycling": 0.70,
+        "walking": 0.50,
+        "hiking": 0.60,
+        "strength": 0.65,
+        "flexibility": 0.20,
+    }
+
     def calculate_workout_tss(
         self, 
         activity: Activity, 
@@ -295,7 +302,8 @@ class TrainingLoadCalculator:
     ) -> WorkoutStress:
         """
         Calculate TSS for a single workout.
-        Uses best available method based on data.
+        Routes to sport-specific methods: running gets pace-based rTSS,
+        cross-training gets hrTSS (if HR) or sport-specific duration estimates.
         """
         duration_s = activity.duration_s or 0
         duration_minutes = duration_s / 60
@@ -309,9 +317,13 @@ class TrainingLoadCalculator:
                 intensity_factor=0,
                 calculation_method="too_short"
             )
-        
-        # Try hrTSS first (most accurate for running)
-        # Use N=1 observed peak + resting HR from effort thresholds when athlete.max_hr is missing
+
+        sport = getattr(activity, "sport", "run") or "run"
+
+        if sport != "run":
+            return self._calculate_cross_training_tss(activity, athlete, duration_minutes, sport)
+
+        # Running path: try hrTSS first (most accurate)
         from services.effort_classification import get_effort_thresholds
         et = get_effort_thresholds(str(athlete.id), self.db)
         peak = et.get("observed_peak_hr")
@@ -329,6 +341,28 @@ class TrainingLoadCalculator:
         
         # Fall back to estimated TSS
         return self._estimate_tss(activity, athlete, duration_minutes)
+
+    def _calculate_cross_training_tss(
+        self,
+        activity: Activity,
+        athlete: Athlete,
+        duration_minutes: float,
+        sport: str,
+    ) -> WorkoutStress:
+        """TSS for non-run sports. Prefers hrTSS when HR data is available."""
+        if activity.avg_hr and athlete.max_hr and athlete.resting_hr:
+            return self._calculate_hr_tss(activity, athlete, duration_minutes)
+
+        default_if = self._CROSS_TRAINING_IF.get(sport, 0.60)
+        tss = (duration_minutes * default_if ** 2) / 60 * 100
+        return WorkoutStress(
+            activity_id=activity.id,
+            date=activity.start_time.date(),
+            tss=round(tss, 1),
+            duration_minutes=duration_minutes,
+            intensity_factor=round(default_if, 3),
+            calculation_method=f"estimated_{sport}",
+        )
     
     def _calculate_hr_tss(
         self, 
@@ -507,9 +541,6 @@ class TrainingLoadCalculator:
 
         Excludes duplicate activities (is_duplicate == True).
         """
-        from core.cache import get_cache, set_cache
-        from dataclasses import asdict
-        import json
 
         athlete = self.db.query(Athlete).filter(Athlete.id == athlete_id).first()
         if not athlete:
@@ -518,6 +549,7 @@ class TrainingLoadCalculator:
         activities = self.db.query(Activity).filter(
             Activity.athlete_id == athlete_id,
             Activity.is_duplicate == False,  # noqa: E712
+            Activity.sport.in_(["run", "cycling", "walking", "hiking", "strength", "flexibility"]),
         ).order_by(Activity.start_time).all()
 
         if not activities:
@@ -657,6 +689,7 @@ class TrainingLoadCalculator:
         activities = self.db.query(Activity).filter(
             Activity.athlete_id == athlete_id,
             Activity.is_duplicate == False,  # noqa: E712
+            Activity.sport.in_(["run", "cycling", "walking", "hiking", "strength", "flexibility"]),
             Activity.start_time >= datetime.combine(start_date, datetime.min.time()),
             Activity.start_time < datetime.combine(end_date + timedelta(days=1), datetime.min.time()),
         ).order_by(Activity.start_time).all()
@@ -1016,6 +1049,7 @@ class TrainingLoadCalculator:
         
         last_hard = self.db.query(Activity).filter(
             Activity.athlete_id == athlete_id,
+            Activity.sport == "run",
             Activity.start_time < datetime.combine(target_date, datetime.min.time()),
             Activity.workout_type.in_(hard_types)
         ).order_by(Activity.start_time.desc()).first()

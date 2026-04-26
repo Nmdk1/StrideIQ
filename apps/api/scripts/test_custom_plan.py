@@ -10,7 +10,7 @@ import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from datetime import date, timedelta
+from datetime import date
 from core.database import SessionLocal
 from models import Athlete
 from services.model_driven_plan_generator import generate_model_driven_plan
@@ -44,7 +44,7 @@ def main():
         
         days_between = (marathon_date - ten_mile_date).days
         
-        print(f"\n📅 RACE SCHEDULE")
+        print("\n📅 RACE SCHEDULE")
         print(f"  Goal Race: Marathon on {marathon_date.strftime('%B %d, %Y')} ({marathon_date.strftime('%A')})")
         print(f"  Tune-Up:   10 Mile Record Attempt on {ten_mile_date.strftime('%B %d, %Y')} ({ten_mile_date.strftime('%A')})")
         print(f"  Days Between: {days_between}")
@@ -59,7 +59,7 @@ def main():
             }
         ]
         
-        print(f"\n" + "=" * 70)
+        print("\n" + "=" * 70)
         print("GENERATING PLAN WITH TUNE-UP RACE")
         print("=" * 70)
         
@@ -71,13 +71,13 @@ def main():
             tune_up_races=tune_up_races
         )
         
-        print(f"\n📋 PLAN SUMMARY")
+        print("\n📋 PLAN SUMMARY")
         print(f"  Total weeks: {plan.total_weeks}")
         print(f"  Total miles: {plan.total_miles:.1f}")
         print(f"  Model: τ1={plan.tau1:.1f}d, τ2={plan.tau2:.1f}d ({plan.model_confidence})")
         
         # Find the weeks around the tune-up and marathon
-        print(f"\n📅 FINAL 3 WEEKS OF PLAN")
+        print("\n📅 FINAL 3 WEEKS OF PLAN")
         for week in plan.weeks[-3:]:
             print(f"\n  WEEK {week.week_number} ({week.phase})")
             print(f"  Week starts: {week.start_date}")
@@ -93,7 +93,7 @@ def main():
                     print(f"    {day.date} ({day.day_of_week}): REST")
         
         # Check that tune-up race is properly inserted
-        print(f"\n🏃 TUNE-UP RACE CHECK")
+        print("\n🏃 TUNE-UP RACE CHECK")
         tune_up_found = False
         for week in plan.weeks:
             for day in week.days:
@@ -112,7 +112,7 @@ def main():
             print(f"  ⚠️ Tune-up race on {ten_mile_date} NOT FOUND in plan!")
         
         # Check marathon is properly placed
-        print(f"\n🏁 MARATHON CHECK")
+        print("\n🏁 MARATHON CHECK")
         marathon_found = False
         for week in plan.weeks:
             for day in week.days:
@@ -126,7 +126,7 @@ def main():
             print(f"  ⚠️ Marathon on {marathon_date} NOT FOUND in plan!")
         
         # Show personalized insights including tune-up notes
-        print(f"\n💡 PERSONALIZED INSIGHTS")
+        print("\n💡 PERSONALIZED INSIGHTS")
         for note in (plan.counter_conventional_notes or []):
             print(f"  • {note}")
         

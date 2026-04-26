@@ -5,7 +5,7 @@
  * pending/fetching → spinner, failed → retry, unavailable → hidden, success → canvas.
  */
 import React from 'react';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { screen, fireEvent } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import {
   mockTier1Result,
@@ -14,6 +14,7 @@ import {
   generateTestStreamData,
   mockUnitsImperial,
 } from './rsi-fixtures';
+import { renderWithStreamHover } from '@/test-utils/renderWithStreamHover';
 
 import { RunShapeCanvas } from '@/components/activities/rsi/RunShapeCanvas';
 
@@ -39,7 +40,7 @@ describe('AC-10: Loading States', () => {
       refetch: jest.fn(),
     } as any);
 
-    render(<RunShapeCanvas activityId="test-123" />);
+    renderWithStreamHover(<RunShapeCanvas activityId="test-123" />);
 
     // RSI Layer 2: pulse dots instead of spinner (spec: "subtle pulse, NOT a spinner")
     const pulses = document.querySelectorAll('[class*="animate-pulse"]');
@@ -61,7 +62,7 @@ describe('AC-10: Loading States', () => {
       refetch: jest.fn(),
     } as any);
 
-    render(<RunShapeCanvas activityId="test-123" />);
+    renderWithStreamHover(<RunShapeCanvas activityId="test-123" />);
 
     expect(screen.getByText(/stream data unavailable/i)).toBeInTheDocument();
     expect(screen.getByText(/retry/i)).toBeInTheDocument();
@@ -75,7 +76,7 @@ describe('AC-10: Loading States', () => {
       refetch: jest.fn(),
     } as any);
 
-    render(<RunShapeCanvas activityId="test-123" />);
+    renderWithStreamHover(<RunShapeCanvas activityId="test-123" />);
 
     // Entire RSI canvas should NOT be in the document
     const canvas = document.querySelector('[data-testid="rsi-canvas"]');
@@ -93,7 +94,7 @@ describe('AC-10: Loading States', () => {
       refetch: jest.fn(),
     } as any);
 
-    render(<RunShapeCanvas activityId="test-123" />);
+    renderWithStreamHover(<RunShapeCanvas activityId="test-123" />);
 
     // Canvas container should be present
     const canvasContainer = document.querySelector('[data-testid="rsi-canvas"]') ||
@@ -110,7 +111,7 @@ describe('AC-10: Loading States', () => {
       refetch: mockRefetch,
     } as any);
 
-    render(<RunShapeCanvas activityId="test-123" />);
+    renderWithStreamHover(<RunShapeCanvas activityId="test-123" />);
 
     const retryButton = screen.getByText(/retry/i);
     fireEvent.click(retryButton);

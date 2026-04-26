@@ -188,22 +188,49 @@ class TestCrossProviderDedupLogic:
             "10mi Strava race must not match 1mi Garmin warmup"
         )
 
-    def test_time_window_boundary_exactly_one_hour_apart(self):
-        garmin_time = RUN_START
-        strava_start = RUN_START + timedelta(seconds=3600)
-        window_start = strava_start - timedelta(seconds=3600)
-        window_end = strava_start + timedelta(seconds=3600)
-        assert window_start <= garmin_time <= window_end, (
-            "1-hour-apart activity must fall within the dedup window"
+    def test_time_window_boundary_exactly_eight_hours_apart(self):
+        """Activity exactly TIME_WINDOW_S apart must still match."""
+        from services.activity_deduplication import TIME_WINDOW_S
+        garmin_dict = {"start_time": RUN_START, "distance_m": 8054.0, "avg_hr": None}
+        strava_dict = {
+            "start_time": RUN_START + timedelta(seconds=TIME_WINDOW_S),
+            "distance_m": 8054.0 * 1.02,
+            "avg_hr": None,
+        }
+        assert match_activities(garmin_dict, strava_dict), (
+            "Activity at exactly TIME_WINDOW_S boundary must match"
         )
 
     def test_time_window_outside_does_not_match(self):
-        garmin_time = RUN_START
-        strava_start = RUN_START + timedelta(seconds=3601)
-        window_start = strava_start - timedelta(seconds=3600)
-        window_end = strava_start + timedelta(seconds=3600)
-        assert not (window_start <= garmin_time <= window_end), (
-            "3601 s apart must fall outside the dedup window"
+        """Activity one second beyond TIME_WINDOW_S must not match."""
+        from services.activity_deduplication import TIME_WINDOW_S
+        garmin_dict = {"start_time": RUN_START, "distance_m": 8054.0, "avg_hr": None}
+        strava_dict = {
+            "start_time": RUN_START + timedelta(seconds=TIME_WINDOW_S + 1),
+            "distance_m": 8054.0 * 1.02,
+            "avg_hr": None,
+        }
+        assert not match_activities(garmin_dict, strava_dict), (
+            "Activity one second beyond TIME_WINDOW_S must NOT match"
+        )
+
+    def test_five_hour_garmin_strava_sync_delay_matches(self):
+        """
+        Garmin records at run-end; Strava receives the upload ~5h later.
+        This is the real-world pattern that the original 1-hour window missed.
+        """
+        garmin_dict = {
+            "start_time": RUN_START,
+            "distance_m": 16093.0,   # 10 miles
+            "avg_hr": 148,
+        }
+        strava_dict = {
+            "start_time": RUN_START + timedelta(hours=5),
+            "distance_m": 16093.0 * 1.01,
+            "avg_hr": 150,
+        }
+        assert match_activities(garmin_dict, strava_dict), (
+            "5-hour Garmin→Strava sync delay must be recognised as a duplicate"
         )
 
 
@@ -248,7 +275,9 @@ class TestStravaTasksCrossProviderDedup:
 
     def test_time_window_constant_matches_deduplication_service(self):
         from services.activity_deduplication import TIME_WINDOW_S
-        assert TIME_WINDOW_S == 3600
+        assert TIME_WINDOW_S == 28800, (
+            "TIME_WINDOW_S must be 28800 (8h) to cover Garmin→Strava sync delay"
+        )
 
     def test_dedup_logs_skip_with_correct_format(self):
         import inspect

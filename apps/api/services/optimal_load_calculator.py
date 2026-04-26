@@ -31,9 +31,7 @@ from sqlalchemy.orm import Session
 from services.individual_performance_model import (
     BanisterModel, 
     get_or_calibrate_model,
-    ModelConfidence,
-    DEFAULT_TAU1,
-    DEFAULT_TAU2
+    ModelConfidence
 )
 
 logger = logging.getLogger(__name__)
@@ -190,7 +188,8 @@ class OptimalLoadCalculator:
         current_atl: float,
         target_tsb: Optional[float] = None,
         max_weekly_tss: Optional[float] = None,
-        min_weekly_tss: Optional[float] = None
+        min_weekly_tss: Optional[float] = None,
+        race_distance: str = "marathon",
     ) -> LoadTrajectory:
         """
         Calculate optimal load trajectory to race day.
@@ -233,9 +232,13 @@ class OptimalLoadCalculator:
         
         # Calculate taper length from model
         taper_weeks = self._calculate_taper_weeks(model, current_ctl, current_atl, target_tsb)
+        # Clamp taper so short cycles don't become all-taper
+        taper_weeks = self._clamp_taper_weeks_for_cycle_length(weeks_to_race, taper_weeks)
         
         # Build phase weeks
         build_weeks = max(1, weeks_to_race - taper_weeks)
+        # Compute base weeks (0–2, distance-aware)
+        base_weeks = self._base_weeks_for_cycle(build_weeks, race_distance)
         
         # ========================================
         # CRITICAL: Calculate weeks BACKWARDS from race date
@@ -274,7 +277,7 @@ class OptimalLoadCalculator:
                 # Progressive build toward peak
                 progression = min(1.0, 0.8 + 0.05 * week_num)
                 weekly_tss = max_weekly_tss * progression
-                phase = TrainingPhase.BUILD if week_num > 2 else TrainingPhase.BASE
+                phase = TrainingPhase.BUILD if week_num > base_weeks else TrainingPhase.BASE
                 notes = []
             
             week_end = week_start + timedelta(days=6)
@@ -536,6 +539,35 @@ class OptimalLoadCalculator:
         
         return established_baseline
     
+    def _clamp_taper_weeks_for_cycle_length(self, weeks_to_race: int, taper_weeks: int) -> int:
+        """Prevent over-tapering when the race is close.
+
+        A 6-week plan must not have 3 taper weeks (= 50 % tapering).
+        """
+        weeks = max(1, int(weeks_to_race))
+        taper = max(1, int(taper_weeks))
+        if weeks <= 5:
+            return min(taper, 1)
+        if weeks <= 8:
+            return min(taper, 2)
+        return min(taper, 3)
+
+    def _base_weeks_for_cycle(self, build_weeks: int, race_distance: str = "marathon") -> int:
+        """Keep at least one build week (quality-capable) even in short cycles.
+
+        For speed-dominant events (5K/10K), skip the base phase entirely so the
+        athlete gets quality sessions from week 1; pure easy running for 2 weeks
+        is actively wrong for these distances.
+        """
+        if race_distance in ("5k", "10k"):
+            return 0
+        bw = max(1, int(build_weeks))
+        if bw <= 2:
+            return 0
+        if bw <= 4:
+            return 1
+        return 2
+
     def _calculate_taper_weeks(
         self,
         model: BanisterModel,
@@ -653,7 +685,7 @@ class OptimalLoadCalculator:
     ) -> LoadTrajectory:
         """Create minimal trajectory when race is very close."""
         today = date.today()
-        days_to_race = (race_date - today).days
+        (race_date - today).days
         
         # Just taper
         week = WeeklyLoadTarget(

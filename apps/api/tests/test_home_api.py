@@ -12,6 +12,7 @@ ADR-020: Home Experience Phase 1 Enhancement
 import pytest
 from datetime import date, timedelta
 from unittest.mock import MagicMock, patch
+from uuid import uuid4 as _uuid4
 from routers.home import (
     generate_why_context,
     generate_yesterday_insight,
@@ -60,37 +61,48 @@ class TestFormatPace:
 
 
 class TestGenerateTrajectory:
-    """Tests for trajectory sentence generation (ADR-020)."""
-    
+    """Tests for trajectory sentence generation (ADR-020).
+
+    All distance inputs are meters; the function formats to the athlete's
+    preferred unit system.
+    """
+
     def test_ahead_status(self):
-        result = generate_trajectory_sentence("ahead", 30, 40)
+        result = generate_trajectory_sentence("ahead", 48280, 64374, preferred_units="imperial")
         assert "Ahead of schedule" in result
         assert "30 mi done" in result
         assert "40 mi planned" in result
-    
+
     def test_on_track_status(self):
-        result = generate_trajectory_sentence("on_track", 20, 40)
+        result = generate_trajectory_sentence("on_track", 32187, 64374, preferred_units="imperial")
         assert "On track" in result
         assert "20 mi remaining" in result
-    
+
     def test_behind_status(self):
-        result = generate_trajectory_sentence("behind", 10, 40)
+        result = generate_trajectory_sentence("behind", 16093, 64374, preferred_units="imperial")
         assert "Behind schedule" in result
         assert "30 mi to go" in result
-    
+
     def test_no_plan_returns_none(self):
         result = generate_trajectory_sentence("no_plan", 0, 0)
         assert result is None
-    
+
     def test_no_plan_with_activities_includes_tsb(self):
         """No plan but has activities can include TSB context."""
         result = generate_trajectory_sentence(
-            "no_plan", 20, 0, 
-            activities_this_week=3, 
-            tsb_context="TSB +15. Good window."
+            "no_plan", 32187, 0,
+            activities_this_week=3,
+            tsb_context="TSB +15. Good window.",
+            preferred_units="imperial",
         )
         assert "20 mi across 3 runs" in result
         assert "TSB +15" in result
+
+    def test_metric_units(self):
+        result = generate_trajectory_sentence("ahead", 30000, 50000, preferred_units="metric")
+        assert "Ahead of schedule" in result
+        assert "30 km done" in result
+        assert "50 km planned" in result
 
 
 class TestGenerateWhyContext:
@@ -358,19 +370,18 @@ class TestGenerateYesterdayInsight:
         
         assert "HR ran high" in result
     
-    def test_fallback_to_distance_pace(self):
+    def test_fallback_to_avg_hr(self):
         activity = MagicMock()
         activity.shape_sentence = None
         activity.efficiency_score = None
-        activity.avg_hr = 150  # Neither low nor high
-        activity.distance_m = 8046.72  # 5 miles
-        activity.duration_s = 2400  # 40 minutes
-        activity.pace_variability = None  # Avoid MagicMock comparison issue
-        
+        activity.avg_hr = 150
+        activity.distance_m = 8046.72
+        activity.duration_s = 2400
+        activity.pace_variability = None
+
         result = generate_yesterday_insight(activity)
-        
-        assert "mi at" in result
-        assert "/mi" in result
+
+        assert "Avg HR 150" in result
 
 
 class TestWeekDayModel:
@@ -379,56 +390,56 @@ class TestWeekDayModel:
     def test_weekday_includes_activity_id_field(self):
         """WeekDay model has activity_id for linking to completed activities."""
         from routers.home import WeekDay
-        
+
         day = WeekDay(
             date="2026-01-30",
             day_abbrev="T",
             workout_type="easy",
-            distance_mi=5.0,
-            planned_distance_mi=5.0,
+            distance_m=8047,
+            planned_distance_m=8047,
             completed=True,
             is_today=False,
             activity_id="abc-123",
             workout_id="workout-456"
         )
-        
+
         assert day.activity_id == "abc-123"
         assert day.workout_id == "workout-456"
-        assert day.planned_distance_mi == 5.0
-    
+        assert day.planned_distance_m == 8047
+
     def test_weekday_allows_none_ids(self):
         """WeekDay model allows None for optional ID fields."""
         from routers.home import WeekDay
-        
+
         day = WeekDay(
             date="2026-01-30",
             day_abbrev="T",
             completed=False,
             is_today=True
         )
-        
+
         assert day.activity_id is None
         assert day.workout_id is None
-        assert day.planned_distance_mi is None
-    
+        assert day.planned_distance_m is None
+
     def test_weekday_completed_day_has_both_distances(self):
         """Completed day can have both actual and planned distances."""
         from routers.home import WeekDay
-        
+
         day = WeekDay(
             date="2026-01-30",
             day_abbrev="T",
             workout_type="easy",
-            distance_mi=5.2,  # Actual ran slightly more
-            planned_distance_mi=5.0,  # Originally planned
+            distance_m=8369,
+            planned_distance_m=8047,
             completed=True,
             is_today=False,
             activity_id="abc-123"
         )
-        
-        assert day.distance_mi == 5.2
-        assert day.planned_distance_mi == 5.0
-        assert day.distance_mi != day.planned_distance_mi  # Shows difference
+
+        assert day.distance_m == 8369
+        assert day.planned_distance_m == 8047
+        assert day.distance_m != day.planned_distance_m
 
 
 # ── ADR-17 Phase 2: Coach Noticed ───────────────────────────────────
@@ -437,39 +448,38 @@ class TestWeekDayModel:
 class TestComputeCoachNoticed:
     """Tests for ADR-17 Phase 2 coach_noticed waterfall."""
 
-    def test_coach_noticed_picks_fingerprint_finding(self):
+    @patch("routers.home.get_athlete_timezone_from_db", return_value=None)
+    def test_coach_noticed_picks_fingerprint_finding(self, _tz):
         """Priority 1: persisted fingerprint finding (times_confirmed >= 3)."""
-        from uuid import uuid4 as _uuid4
-
         finding = MagicMock()
+        finding.id = _uuid4()
         finding.input_name = "sleep_hours"
         finding.output_metric = "efficiency"
         finding.direction = "positive"
         finding.times_confirmed = 8
         finding.insight_text = "More sleep improves your next-day efficiency"
         finding.threshold_value = 6.2
+        finding.threshold_direction = "below"
         finding.asymmetry_ratio = 3.1
         finding.decay_half_life_days = 2.0
+        finding.time_lag_days = None
+        finding.sample_size = 25
 
         db = MagicMock()
-        query_chain = MagicMock()
-        query_chain.filter.return_value = query_chain
-        query_chain.order_by.return_value = query_chain
-        query_chain.limit.return_value = query_chain
-        query_chain.all.return_value = [finding]
-        db.query.return_value = query_chain
 
-        with patch("routers.home._is_finding_in_cooldown", return_value=False):
+        with patch(
+            "services.intelligence.finding_eligibility.select_eligible_findings",
+            return_value=[finding],
+        ), patch("routers.home._is_finding_in_cooldown", return_value=False):
             result = compute_coach_noticed(str(_uuid4()), db)
         assert result is not None
         assert result.source == "fingerprint"
         assert "sleep" in result.text.lower()
         assert result.ask_coach_query
 
-    def test_coach_noticed_skips_immature_findings(self):
+    @patch("routers.home.get_athlete_timezone_from_db", return_value=None)
+    def test_coach_noticed_skips_immature_findings(self, _tz):
         """Findings with times_confirmed < 3 are not surfaced."""
-        from uuid import uuid4 as _uuid4
-
         db = MagicMock()
         query_chain = MagicMock()
         query_chain.filter.return_value = query_chain
@@ -483,9 +493,10 @@ class TestComputeCoachNoticed:
             result = compute_coach_noticed(str(_uuid4()), db, hero_narrative=None)
         assert result is None
 
+    @patch("routers.home.get_athlete_timezone_from_db", return_value=None)
     @patch("services.insight_feed.build_insight_feed_cards", side_effect=Exception("nope"))
     @patch("services.home_signals.aggregate_signals", side_effect=Exception("nope"))
-    def test_coach_noticed_fallback_to_narrative(self, _s, _f):
+    def test_coach_noticed_fallback_to_narrative(self, _s, _f, _tz):
         """Priority 4: hero_narrative fallback when nothing else available."""
         db = MagicMock()
         query_chain = MagicMock()
@@ -496,15 +507,16 @@ class TestComputeCoachNoticed:
         db.query.return_value = query_chain
 
         result = compute_coach_noticed(
-            "athlete-1", db, hero_narrative="Your fitness is building steadily."
+            str(_uuid4()), db, hero_narrative="Your fitness is building steadily."
         )
         assert result is not None
         assert result.source == "narrative"
         assert result.text == "Your fitness is building steadily."
 
+    @patch("routers.home.get_athlete_timezone_from_db", return_value=None)
     @patch("services.insight_feed.build_insight_feed_cards", side_effect=Exception("nope"))
     @patch("services.home_signals.aggregate_signals", side_effect=Exception("nope"))
-    def test_coach_noticed_returns_none_when_nothing(self, _s, _f):
+    def test_coach_noticed_returns_none_when_nothing(self, _s, _f, _tz):
         """No data at all → None."""
         db = MagicMock()
         query_chain = MagicMock()
@@ -514,12 +526,13 @@ class TestComputeCoachNoticed:
         query_chain.all.return_value = []
         db.query.return_value = query_chain
 
-        result = compute_coach_noticed("athlete-1", db, hero_narrative=None)
+        result = compute_coach_noticed(str(_uuid4()), db, hero_narrative=None)
         assert result is None
 
+    @patch("routers.home.get_athlete_timezone_from_db", return_value=None)
     @patch("services.home_signals.aggregate_signals")
     @patch("services.correlation_engine.analyze_correlations")
-    def test_coach_noticed_picks_signal_when_no_correlation(self, mock_corr, mock_signals):
+    def test_coach_noticed_picks_signal_when_no_correlation(self, mock_corr, mock_signals, _tz):
         """Priority 2: top signal when no strong correlation exists."""
         mock_corr.return_value = {"correlations": []}
         mock_signal = MagicMock()
@@ -527,7 +540,13 @@ class TestComputeCoachNoticed:
         mock_signal.subtitle = "3 week improvement"
         mock_signals.return_value = MagicMock(signals=[mock_signal])
         db = MagicMock()
-        result = compute_coach_noticed("athlete-1", db)
+        query_chain = MagicMock()
+        query_chain.filter.return_value = query_chain
+        query_chain.order_by.return_value = query_chain
+        query_chain.limit.return_value = query_chain
+        query_chain.all.return_value = []
+        db.query.return_value = query_chain
+        result = compute_coach_noticed(str(_uuid4()), db)
         assert result is not None
         assert result.source == "signal"
         assert "Efficiency trending up" in result.text
@@ -539,7 +558,8 @@ class TestComputeCoachNoticed:
 class TestComputeRaceCountdown:
     """Tests for ADR-17 Phase 2 race_countdown computation."""
 
-    def test_race_countdown_with_plan(self):
+    @patch("routers.home.get_athlete_timezone_from_db", return_value=None)
+    def test_race_countdown_with_plan(self, _tz):
         """Returns countdown with all fields when plan has race data."""
         plan = MagicMock()
         plan.goal_race_name = "Boston Marathon"
@@ -548,7 +568,7 @@ class TestComputeRaceCountdown:
         plan.goal_race_distance_m = 42195.0
         db = MagicMock()
         with patch("services.race_predictor.predict_race_time", return_value=None):
-            result = compute_race_countdown(plan, "athlete-1", db)
+            result = compute_race_countdown(plan, str(_uuid4()), db)
         assert result is not None
         assert result.days_remaining == 30
         assert result.race_name == "Boston Marathon"
@@ -557,16 +577,17 @@ class TestComputeRaceCountdown:
 
     def test_race_countdown_no_plan(self):
         """Returns None when no active plan."""
-        result = compute_race_countdown(None, "athlete-1", MagicMock())
+        result = compute_race_countdown(None, str(_uuid4()), MagicMock())
         assert result is None
 
-    def test_race_countdown_past_race(self):
+    @patch("routers.home.get_athlete_timezone_from_db", return_value=None)
+    def test_race_countdown_past_race(self, _tz):
         """Returns None when race date has passed."""
         plan = MagicMock()
         plan.goal_race_date = date.today() - timedelta(days=5)
         plan.goal_race_name = "Old Race"
         db = MagicMock()
-        result = compute_race_countdown(plan, "athlete-1", db)
+        result = compute_race_countdown(plan, str(_uuid4()), db)
         assert result is None
 
     def test_race_countdown_no_race_date(self):
@@ -574,10 +595,11 @@ class TestComputeRaceCountdown:
         plan = MagicMock()
         plan.goal_race_date = None
         db = MagicMock()
-        result = compute_race_countdown(plan, "athlete-1", db)
+        result = compute_race_countdown(plan, str(_uuid4()), db)
         assert result is None
 
-    def test_race_countdown_no_goal_time(self):
+    @patch("routers.home.get_athlete_timezone_from_db", return_value=None)
+    def test_race_countdown_no_goal_time(self, _tz):
         """Countdown still works without goal_time — pace and time are None."""
         plan = MagicMock()
         plan.goal_race_name = "Local 10K"
@@ -586,7 +608,7 @@ class TestComputeRaceCountdown:
         plan.goal_race_distance_m = None
         db = MagicMock()
         with patch("services.race_predictor.predict_race_time", return_value=None):
-            result = compute_race_countdown(plan, "athlete-1", db)
+            result = compute_race_countdown(plan, str(_uuid4()), db)
         assert result is not None
         assert result.goal_time is None
         assert result.goal_pace is None

@@ -14,7 +14,6 @@ Usage (inside api container):
 from __future__ import annotations
 
 import os
-import sys
 
 import bcrypt
 from sqlalchemy import create_engine, text

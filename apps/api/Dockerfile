@@ -1,3 +1,6 @@
+# Build from repository root:
+#   docker build -f apps/api/Dockerfile .
+# Bundles workout fluency registry for plan_framework variant resolution in production.
 FROM python:3.11-slim
 
 WORKDIR /app
@@ -16,12 +19,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements and install Python dependencies
-COPY requirements.txt .
+COPY apps/api/requirements.txt .
 RUN pip install --upgrade pip setuptools wheel && \
     pip install --no-cache-dir -r requirements.txt
 
-# Copy application code
-COPY . .
+# Application code
+COPY apps/api/ .
+
+# Variant registry (path walk in workout_variant_dispatch finds /app/data/workout_variants/...)
+# Note: apps/api/ is already COPYed above, so data/ is included automatically.
 
 # Make migration script executable
 RUN chmod +x run_migrations.py

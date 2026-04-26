@@ -11,6 +11,9 @@ import React, { useState } from 'react';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { planService, type GeneratedPlan } from '@/lib/api/services/plans';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { useUnits } from '@/lib/context/UnitsContext';
+import { formatPaceTextForUnit } from '@/lib/utils/paceText';
+
 
 const DISTANCES = [
   { value: '5k', label: '5K' },
@@ -19,14 +22,24 @@ const DISTANCES = [
   { value: 'marathon', label: 'Marathon' },
 ];
 
-const TIERS = [
-  { value: 'builder', label: 'Building Up (20-35 mi/wk)' },
-  { value: 'low', label: 'Low Volume (35-45 mi/wk)' },
-  { value: 'mid', label: 'Mid Volume (45-60 mi/wk)' },
-  { value: 'high', label: 'High Volume (60+ mi/wk)' },
-];
+const TIERS_BY_UNIT: Record<'metric' | 'imperial', Array<{ value: string; label: string }>> = {
+  imperial: [
+    { value: 'builder', label: 'Building Up (20-35 mi/wk)' },
+    { value: 'low', label: 'Low Volume (35-45 mi/wk)' },
+    { value: 'mid', label: 'Mid Volume (45-60 mi/wk)' },
+    { value: 'high', label: 'High Volume (60+ mi/wk)' },
+  ],
+  metric: [
+    { value: 'builder', label: 'Building Up (32-56 km/wk)' },
+    { value: 'low', label: 'Low Volume (56-72 km/wk)' },
+    { value: 'mid', label: 'Mid Volume (72-97 km/wk)' },
+    { value: 'high', label: 'High Volume (97+ km/wk)' },
+  ],
+};
 
 export default function PlanPreviewPage() {
+  const { units, formatDistance } = useUnits();
+  const TIERS = TIERS_BY_UNIT[units];
   const [distance, setDistance] = useState('marathon');
   const [tier, setTier] = useState('mid');
   const [duration, setDuration] = useState(18);
@@ -172,12 +185,12 @@ export default function PlanPreviewPage() {
                   <div className="text-sm text-slate-400">Weeks</div>
                 </div>
                 <div className="bg-slate-900 rounded-lg p-4">
-                  <div className="text-3xl font-bold text-emerald-400">{preview.total_miles.toFixed(0)}</div>
-                  <div className="text-sm text-slate-400">Total Miles</div>
+                  <div className="text-3xl font-bold text-emerald-400">{formatDistance(preview.total_distance_m, 0)}</div>
+                  <div className="text-sm text-slate-400">Total</div>
                 </div>
                 <div className="bg-slate-900 rounded-lg p-4">
-                  <div className="text-3xl font-bold text-blue-400">{preview.peak_volume.toFixed(0)}</div>
-                  <div className="text-sm text-slate-400">Peak Miles/Week</div>
+                  <div className="text-3xl font-bold text-blue-400">{formatDistance(preview.peak_volume_m, 0)}</div>
+                  <div className="text-sm text-slate-400">Peak/Week</div>
                 </div>
                 <div className="bg-slate-900 rounded-lg p-4">
                   <div className="text-3xl font-bold text-orange-400">{preview.total_quality_sessions}</div>
@@ -235,7 +248,7 @@ export default function PlanPreviewPage() {
                 {Array.from({ length: preview.duration_weeks }, (_, i) => i + 1).map(week => {
                   const weekWorkouts = preview.workouts.filter(w => w.week === week);
                   const phase = preview.phases.find(p => p.weeks.includes(week));
-                  const volume = preview.weekly_volumes[week - 1] || 0;
+                  const volume = preview.weekly_volumes_m[week - 1] || 0;
                   
                   return (
                     <div key={week} className="bg-slate-800 border border-slate-700/50 rounded-xl overflow-hidden">
@@ -245,7 +258,7 @@ export default function PlanPreviewPage() {
                           <span className="text-slate-500 mx-2">•</span>
                           <span className="text-orange-400">{phase?.name}</span>
                         </div>
-                        <span className="text-slate-400">{volume.toFixed(0)} mi</span>
+                        <span className="text-slate-400">{formatDistance(volume, 0)}</span>
                       </div>
                       <div className="grid grid-cols-7 gap-1 p-2">
                         {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((day, dayIndex) => {
@@ -260,8 +273,8 @@ export default function PlanPreviewPage() {
                                   <div className="font-semibold truncate uppercase">
                                     {workout.workout_type.replace(/_/g, ' ')}
                                   </div>
-                                  {workout.distance_miles && (
-                                    <div className="opacity-75">{workout.distance_miles}mi</div>
+                                  {workout.distance_m && (
+                                    <div className="opacity-75">{formatDistance(workout.distance_m, 1)}</div>
                                   )}
                                 </div>
                               )}
@@ -269,7 +282,7 @@ export default function PlanPreviewPage() {
                               </TooltipTrigger>
                               {workout?.description ? (
                                 <TooltipContent side="top">
-                                  {workout.description}
+                                  {formatPaceTextForUnit(workout.description, units)}
                                 </TooltipContent>
                               ) : null}
                             </Tooltip>

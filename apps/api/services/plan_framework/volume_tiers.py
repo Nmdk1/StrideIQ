@@ -19,6 +19,7 @@ from uuid import UUID
 from datetime import datetime, timedelta
 
 from sqlalchemy.orm import Session
+from services.mileage_aggregation import get_canonical_run_activities
 
 from .constants import VolumeTier, Distance, VOLUME_TIER_THRESHOLDS
 
@@ -151,77 +152,99 @@ class VolumeTierClassifier:
         plan_weeks: int,
         taper_weeks: int = 2,
         cutback_frequency_override: int = None,
+        peak_volume_override: Optional[float] = None,
     ) -> list:
         """
         Calculate week-by-week volume targets.
-        
-        Returns list of target weekly volumes.
-        Uses safe progression: max 10% increase week-over-week.
-        
+
+        Returns list of target weekly volumes. Volume progresses toward the
+        target peak over the build phase using linear steps — no per-week
+        percentage cap. The athlete's history IS the safety guarantee.
+
+        peak_volume_override: When provided (N=1: athlete's actual history/
+            request), replaces the tier-table peak.  The plan reaches this
+            target over the build phase.  Session-level spike limits are
+            enforced separately by WorkoutScaler.
+
+        Returning athletes (starting_volume < 65% of peak) have early cutbacks
+        suppressed: they are ramping back to a load their body already knows,
+        not training at ceiling.  Normal periodization resumes once they reach
+        90% of peak.
+
         cutback_frequency_override: If provided (from athlete_plan_profile),
             overrides the tier default cutback frequency.
         """
         params = self.get_tier_params(tier, distance)
-        peak_volume = params["peak_weekly_miles"]
+        peak_volume = peak_volume_override if peak_volume_override is not None else params["peak_weekly_miles"]
         cutback_freq = cutback_frequency_override or params["cutback_frequency"]
         cutback_reduction = params["cutback_reduction"]
-        
-        # Build weeks (excluding taper)
+
         build_weeks = plan_weeks - taper_weeks
-        
-        # Calculate weekly increase (max 10% of current volume, or less to reach peak)
+
+        # Returning athlete: starting well below their target peak.
+        # Their ramp IS the re-adaptation stimulus — cutbacks serve athletes
+        # training at ceiling, not athletes rebuilding to a known prior load.
+        # Only applies when an explicit N=1 peak override is provided — standard
+        # tier-table plans always use full cutback structure.
+        is_returning = (
+            peak_volume_override is not None
+            and starting_volume < peak_volume * 0.65
+        )
+
         volumes = []
         current = starting_volume
-        
+
         for week in range(1, plan_weeks + 1):
-            # Taper phase — taper from ACTUAL achieved peak (max of build
-            # weeks so far), not the config ceiling.  Builder tier may
-            # never reach the config peak; tapering from it produces a
-            # volume that's paradoxically close to or above the actual peak.
+            # Taper phase — taper from ACTUAL achieved peak, not config ceiling.
             if week > build_weeks:
                 actual_peak = max(volumes) if volumes else peak_volume
                 taper_week = week - build_weeks
-                if taper_week == 1:
-                    # First taper week: 60% of actual peak
-                    volumes.append(round(actual_peak * 0.6, 1))
-                else:
-                    # Race week: 40% of actual peak
-                    volumes.append(round(actual_peak * 0.4, 1))
-            # Cutback week
-            elif week % cutback_freq == 0:
-                # Cutback week: reduce volume, but avoid extreme swings in the weekly targets.
-                # (We still reduce intensity separately via workout selection/scaling.)
-                # For BUILDER: use a gentle cutback (10%) — enough for the validation
-                # framework to detect recovery structure, while still prioritizing the
-                # consistent frequency/volume that builds early durability.
+                volumes.append(round(actual_peak * (0.6 if taper_week == 1 else 0.4), 1))
+                continue
+
+            # Should this week be a cutback?
+            would_be_cutback = (week % cutback_freq == 0)
+            # Suppress cutback while returning athlete is still below 90% of target.
+            cutback_suppressed = is_returning and (current < peak_volume * 0.90)
+
+            if would_be_cutback and not cutback_suppressed:
                 if tier == VolumeTier.BUILDER:
-                    cutback_volume = current * 0.90
-                    cutback_volume = math.floor(cutback_volume * 10) / 10.0
-                    volumes.append(cutback_volume)
-                    current = cutback_volume
-                    continue
-
-                effective_reduction = cutback_reduction
-                if tier == VolumeTier.LOW:
-                    effective_reduction = min(effective_reduction, 0.15)
-
-                cutback_volume = current * (1 - effective_reduction)
-                # Round DOWN to avoid floating-point edge cases tripping 10% tests.
-                cutback_volume = math.floor(cutback_volume * 10) / 10.0
-                volumes.append(cutback_volume)
-                # Important: treat the cutback as the new baseline so that the
-                # following build week doesn't appear as a pathological jump.
-                current = cutback_volume
-            # Build week
+                    cv = math.floor(current * 0.90 * 10) / 10.0
+                else:
+                    effective_reduction = min(cutback_reduction, 0.15) if tier == VolumeTier.LOW else cutback_reduction
+                    cv = math.floor(current * (1 - effective_reduction) * 10) / 10.0
+                volumes.append(cv)
+                current = cv
             else:
-                # Increase by up to 10%, but don't exceed peak
-                max_increase = current * 0.10
-                target = min(current + max_increase, peak_volume)
-                # Round DOWN to avoid floating-point edge cases tripping 10% tests.
-                target = math.floor(target * 10) / 10.0
+                # Build week: linear step toward peak distributed across the
+                # remaining non-taper, non-cutback weeks (including this one).
+                # Suppressed-cutback weeks are treated as build weeks.
+                remaining_build = sum(
+                    1 for w in range(week, build_weeks + 1)
+                    if not (w % cutback_freq == 0 and not (is_returning and current < peak_volume * 0.90))
+                )
+                remaining_build = max(1, remaining_build)
+                step = (peak_volume - current) / remaining_build
+
+                # Tier-specific absolute step ceiling for plans without an N=1
+                # history override.  An athlete with documented high-volume
+                # history (peak_volume_override provided) needs no cap — their
+                # body already adapted to that load.  A BUILDER with no prior
+                # high-volume history genuinely cannot safely spike large weekly
+                # jumps even if their tier table peak is 50+.
+                if peak_volume_override is None:
+                    tier_step_ceil = {
+                        VolumeTier.BUILDER: 4.0,
+                        VolumeTier.LOW: 6.0,
+                        VolumeTier.MID: 10.0,
+                    }.get(tier)
+                    if tier_step_ceil is not None:
+                        step = min(step, tier_step_ceil)
+
+                target = math.floor(min(current + max(step, 0.0), peak_volume) * 10) / 10.0
                 volumes.append(target)
-                current = target  # Update current for next week
-        
+                current = target
+
         return volumes
     
     def _get_actual_volume(self, athlete_id: UUID) -> Optional[float]:
@@ -230,17 +253,15 @@ class VolumeTierClassifier:
         """
         if not self.db:
             return None
-        
-        from models import Activity
-        
-        # Look at last 4 weeks
+
+        # Look at last 4 weeks (trusted duplicate flags path).
         four_weeks_ago = datetime.utcnow() - timedelta(days=28)
-        
-        activities = self.db.query(Activity).filter(
-            Activity.athlete_id == athlete_id,
-            Activity.sport == "run",
-            Activity.start_time >= four_weeks_ago
-        ).all()
+        activities, _ = get_canonical_run_activities(
+            athlete_id,
+            self.db,
+            start_time=four_weeks_ago,
+            require_trusted_duplicate_flags=True,
+        )
         
         if not activities:
             return None

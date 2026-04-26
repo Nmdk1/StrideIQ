@@ -31,6 +31,21 @@ jest.mock('@/lib/api/services/ai-coach', () => ({
   },
 }));
 
+jest.mock('@/lib/hooks/queries/progress', () => ({
+  useProgressSummary: () => ({ data: null }),
+}));
+
+// Coach page now consumes useUnits() for the "This week" volume render.
+// This test is purely about scroll DOM structure, so a static stub is enough.
+jest.mock('@/lib/context/UnitsContext', () => ({
+  useUnits: () => ({
+    units: 'imperial' as const,
+    formatDistance: (m: number, decimals = 1) => `${(m / 1609.344).toFixed(decimals)} mi`,
+    formatPace: (sPerKm: number) => `${Math.floor((sPerKm * 1.60934) / 60)}:00/mi`,
+    distanceUnitShort: 'mi',
+  }),
+}));
+
 import CoachPage from '@/app/coach/page';
 
 describe('Coach scroll layout regression', () => {

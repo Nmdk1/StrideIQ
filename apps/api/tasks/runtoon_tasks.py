@@ -47,6 +47,8 @@ RUNTOON_DAILY_CAP = 5
 RUNTOON_PER_ACTIVITY_CAP = 3
 RUNTOON_MIN_PHOTOS = 3
 
+FOUNDER_ATHLETE_ID = "4368ec7f-c30d-45ff-a6ee-58db7716be24"
+
 
 def _today_utc_start() -> datetime:
     """Return midnight UTC for today as a timezone-aware datetime."""
@@ -178,7 +180,7 @@ def _run_generation(
         )
         .scalar()
     ) or 0
-    if today_count >= RUNTOON_DAILY_CAP:
+    if today_count >= RUNTOON_DAILY_CAP and str(athlete_id) != FOUNDER_ATHLETE_ID:
         logger.info("runtoon: daily cap (%d) reached for athlete %s", RUNTOON_DAILY_CAP, athlete_id)
         return
 
@@ -225,7 +227,7 @@ def _run_generation(
         .scalar()
     ) or 0
 
-    if activity_count >= RUNTOON_PER_ACTIVITY_CAP:
+    if activity_count >= RUNTOON_PER_ACTIVITY_CAP and str(athlete_id) != FOUNDER_ATHLETE_ID:
         logger.info("runtoon: per-activity cap (%d) reached for activity %s", RUNTOON_PER_ACTIVITY_CAP, activity.id)
         return
 
@@ -347,6 +349,7 @@ def _run_generation(
         "average_hr": activity.avg_hr,
         "start_time": activity.start_time,
         "workout_type": activity.workout_type,
+        "total_elevation_gain": float(activity.total_elevation_gain) if activity.total_elevation_gain else 0,
         "name": getattr(activity, 'name', None),
         "shape_sentence": getattr(activity, 'shape_sentence', None),
         "athlete_title": getattr(activity, 'athlete_title', None),
@@ -424,6 +427,22 @@ def _run_generation(
             "attempt_number": attempt_number,
         })
         return
+
+    # -----------------------------------------------------------------------
+    # 13b. Overlay stats/caption/watermark onto the 1:1 image (Pillow)
+    # -----------------------------------------------------------------------
+    try:
+        final_bytes = runtoon_service.overlay_stats_1x1(
+            source_image_bytes=result.image_bytes,
+            stats_text=result.stats_text,
+            caption_text=result.caption_text,
+        )
+        result.image_bytes = final_bytes
+        logger.info("runtoon: 1:1 overlay applied for activity %s", act_snapshot["id"])
+    except Exception as overlay_err:
+        logger.warning(
+            "runtoon: 1:1 overlay failed (uploading raw image): %s", overlay_err
+        )
 
     # -----------------------------------------------------------------------
     # 14. Upload to R2

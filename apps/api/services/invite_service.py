@@ -14,6 +14,7 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
+from core.tier_utils import normalize_tier
 from models import InviteAllowlist, InviteAuditEvent
 
 
@@ -74,13 +75,16 @@ def create_invite(
         grant_tier: Optional subscription tier to grant on signup (e.g., "pro" for beta testers)
     """
     norm = normalize_email(email)
+    canonical_grant_tier: Optional[str] = None
+    if grant_tier is not None:
+        canonical_grant_tier = normalize_tier(grant_tier)
     inv = get_invite(db, norm)
     if inv:
         # idempotent: if already exists, re-activate unless used
         if inv.used_at is None:
             inv.is_active = True
             inv.note = note or inv.note
-            inv.grant_tier = grant_tier if grant_tier is not None else inv.grant_tier
+            inv.grant_tier = canonical_grant_tier if grant_tier is not None else inv.grant_tier
             inv.invited_by_athlete_id = invited_by_athlete_id
             inv.invited_at = datetime.now(timezone.utc)
             inv.revoked_at = None
@@ -91,7 +95,7 @@ def create_invite(
                 actor_athlete_id=invited_by_athlete_id,
                 action="invite.reactivated",
                 target_email=norm,
-                metadata={"grant_tier": grant_tier} if grant_tier else None,
+                metadata={"grant_tier": canonical_grant_tier} if grant_tier else None,
             )
         return inv
 
@@ -99,7 +103,7 @@ def create_invite(
         email=norm,
         is_active=True,
         note=note,
-        grant_tier=grant_tier,
+        grant_tier=canonical_grant_tier,
         invited_by_athlete_id=invited_by_athlete_id,
         invited_at=datetime.now(timezone.utc),
     )
@@ -111,7 +115,7 @@ def create_invite(
         actor_athlete_id=invited_by_athlete_id,
         action="invite.created",
         target_email=norm,
-        metadata={"grant_tier": grant_tier} if grant_tier else None,
+        metadata={"grant_tier": canonical_grant_tier} if grant_tier else None,
     )
     return inv
 

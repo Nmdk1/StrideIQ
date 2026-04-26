@@ -133,6 +133,7 @@ class TestLastRunWithStreams:
             distance_m=10000,
             avg_hr=145,
             stream_fetch_status="success",
+            run_shape={"summary": {"workout_classification": "tempo"}},
         )
         db_session.add(activity)
         db_session.commit()
@@ -198,6 +199,7 @@ class TestLastRunWithStreams:
         assert lr["average_hr"] == 145
         assert lr["pace_per_km"] is not None
         assert lr["pace_per_km"] > 0
+        assert lr["workout_classification"] == "tempo"
 
     def test_effort_values_are_valid_floats(
         self, client, test_athlete, db_session
@@ -278,6 +280,7 @@ class TestLastRunPendingStream:
         assert lr["tier_used"] is None
         assert lr["confidence"] is None
         assert lr["segments"] is None
+        assert lr["workout_classification"] is None
 
         # Metrics still available
         assert lr["distance_m"] == 8000

@@ -10,9 +10,18 @@
 
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
 
-import { useState } from 'react';
+import { Suspense, useEffect, useMemo, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useActivities, useActivitiesSummary } from '@/lib/hooks/queries/activities';
 import { ActivityCard } from '@/components/activities/ActivityCard';
+import {
+  ActivityFilterPanel,
+  EMPTY_FILTERS,
+  filtersToParams,
+  paramsToFilters,
+  isFiltersActive,
+  type ActivityFiltersState,
+} from '@/components/activities/ActivityFilterPanel';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { ErrorMessage } from '@/components/ui/ErrorMessage';
 import { UnitToggle } from '@/components/ui/UnitToggle';
@@ -22,10 +31,28 @@ import { ComparisonBasket } from '@/components/compare/ComparisonBasket';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Activity, BarChart3, Clock, Flame, Trophy, ChevronLeft, ChevronRight } from 'lucide-react';
-import type { ActivityListParams } from '@/lib/api/services/activities';
+import { Activity, BarChart3, Clock, Flame, Trophy, ChevronLeft, ChevronRight, Footprints, Layers } from 'lucide-react';
+import type { ActivityListParams, ActivitySummaryBucket } from '@/lib/api/services/activities';
+
+type SportView = 'running' | 'other' | 'combined';
+
+const SPORT_VIEW_OPTIONS: { value: SportView; label: string; icon: React.ReactNode }[] = [
+  { value: 'running',  label: 'Running', icon: <Footprints className="w-3.5 h-3.5" /> },
+  { value: 'other',    label: 'Other',   icon: <Activity className="w-3.5 h-3.5" /> },
+  { value: 'combined', label: 'All',     icon: <Layers className="w-3.5 h-3.5" /> },
+];
 
 export default function ActivitiesPage() {
+  // useSearchParams must be inside a Suspense boundary per Next.js 14
+  return (
+    <Suspense fallback={null}>
+      <ActivitiesPageInner />
+    </Suspense>
+  );
+}
+
+/** Exported for behavioral tests (sport view toggle + stat cards). */
+export function ActivitiesPageInner() {
   const { units, formatDistance, formatPace, distanceUnitShort, paceUnit } = useUnits();
   const { 
     isSelected, 
@@ -36,16 +63,59 @@ export default function ActivitiesPage() {
   } = useCompareSelection();
   
   const [selectionMode, setSelectionMode] = useState(false);
-  
+  const [sportView, setSportView] = useState<SportView>('running');
+  const router = useRouter();
+  const searchParams = useSearchParams();
+
   const [filters, setFilters] = useState<ActivityListParams>({
     limit: 20,
     offset: 0,
     sort_by: 'start_time',
     sort_order: 'desc',
   });
+  const [filterState, setFilterState] = useState<ActivityFiltersState>(EMPTY_FILTERS);
 
-  const { data: activities, isLoading, error } = useActivities(filters);
+  // Hydrate filter state from URL on first load (deep-link restore).
+  // We intentionally only run this on mount — subsequent URL changes are
+  // driven by user filter input, which already updates state directly.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (!searchParams) return;
+    const restored = paramsToFilters(searchParams);
+    setFilterState(restored);
+  }, []);
+
+  // Combine sort/pagination filters with the structural filter state
+  const combinedParams = useMemo<ActivityListParams>(() => {
+    const fp = filtersToParams(filterState);
+    return {
+      ...filters,
+      ...fp,
+      ...(fp.min_distance_m ? { min_distance_m: Number(fp.min_distance_m) } : {}),
+      ...(fp.max_distance_m ? { max_distance_m: Number(fp.max_distance_m) } : {}),
+      ...(fp.temp_min ? { temp_min: Number(fp.temp_min) } : {}),
+      ...(fp.temp_max ? { temp_max: Number(fp.temp_max) } : {}),
+      ...(fp.dew_min ? { dew_min: Number(fp.dew_min) } : {}),
+      ...(fp.dew_max ? { dew_max: Number(fp.dew_max) } : {}),
+      ...(fp.elev_gain_min ? { elev_gain_min: Number(fp.elev_gain_min) } : {}),
+      ...(fp.elev_gain_max ? { elev_gain_max: Number(fp.elev_gain_max) } : {}),
+    };
+  }, [filters, filterState]);
+
+  const { data: activities, isLoading, error } = useActivities(combinedParams);
   const { data: summary } = useActivitiesSummary(30);
+
+  // Sync filter state to URL — shareable, refresh-stable
+  useEffect(() => {
+    const sp = new URLSearchParams();
+    const fp = filtersToParams(filterState);
+    Object.entries(fp).forEach(([k, v]) => {
+      if (v != null) sp.set(k, String(v));
+    });
+    const qs = sp.toString();
+    const target = qs ? `/activities?${qs}` : '/activities';
+    router.replace(target, { scroll: false });
+  }, [filterState, router]);
 
   const handleToggleSelectionMode = () => {
     if (selectionMode && selectionCount === 0) {
@@ -60,24 +130,35 @@ export default function ActivitiesPage() {
     }
   };
 
-  // Calculate distance in user's preferred units
-  const getTotalDistance = () => {
+  // Pick the active stat-bucket. New API returns running/other/combined; old
+  // API only had top-level fields — fall back to those so this works during
+  // the deploy window where backend may be a step ahead/behind.
+  const activeBucket = useMemo(() => {
     if (!summary) return null;
-    // API returns miles, convert to meters then use formatDistance
-    const meters = summary.total_distance_miles * 1609.34;
-    return formatDistance(meters, 1);
+    const bucket = summary[sportView];
+    if (bucket) return bucket;
+    if (sportView === 'running') {
+      return {
+        total_activities: summary.total_activities,
+        total_distance_m: summary.total_distance_m,
+        total_duration_s: summary.total_duration_s,
+        avg_pace_s_per_km: summary.avg_pace_s_per_km,
+        race_count: summary.race_count,
+      };
+    }
+    return null;
+  }, [summary, sportView]);
+
+  const getTotalDistance = () => {
+    if (!activeBucket) return null;
+    return formatDistance(activeBucket.total_distance_m, 1);
   };
 
-  // Format average pace in user's preferred units
   const getAveragePace = () => {
-    if (!summary?.average_pace_per_mile) return 'N/A';
-    // Convert min/mile to seconds/km if metric
-    const paceMinPerMile = summary.average_pace_per_mile;
-    if (units === 'metric') {
-      const paceMinPerKm = paceMinPerMile / 1.60934;
-      return `${Math.floor(paceMinPerKm)}:${Math.round((paceMinPerKm % 1) * 60).toString().padStart(2, '0')}/km`;
-    }
-    return `${Math.floor(paceMinPerMile)}:${Math.round((paceMinPerMile % 1) * 60).toString().padStart(2, '0')}/mi`;
+    if (sportView !== 'running' || !activeBucket) return null;
+    const pace = (activeBucket as ActivitySummaryBucket).avg_pace_s_per_km;
+    if (!pace) return null;
+    return formatPace(pace);
   };
 
   const handleFilterChange = (newFilters: Partial<ActivityListParams>) => {
@@ -87,6 +168,13 @@ export default function ActivitiesPage() {
   const handlePageChange = (newOffset: number) => {
     setFilters((prev) => ({ ...prev, offset: newOffset }));
   };
+
+  const handleStructuralFilterChange = (next: ActivityFiltersState) => {
+    setFilterState(next);
+    setFilters((prev) => ({ ...prev, offset: 0 })); // any filter change resets pagination
+  };
+
+  const filtersActive = isFiltersActive(filterState);
 
   return (
     <ProtectedRoute>
@@ -144,14 +232,50 @@ export default function ActivitiesPage() {
           </div>
         </div>
 
-        {/* Summary Stats */}
+        {/* Sport view toggle — Running is canonical (default); Other / All
+            are explicit alternates so non-running activity is never silently
+            mixed into running totals. */}
         {summary && (
+          <div className="mb-3 inline-flex rounded-lg border border-slate-700 bg-slate-800/60 p-0.5 text-xs">
+            {SPORT_VIEW_OPTIONS.map((opt) => {
+              const isActive = sportView === opt.value;
+              return (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => {
+                    setSportView(opt.value);
+                    // Sync the list filter so the cards and the list agree.
+                    // 'combined' clears the sport filter (show everything).
+                    // 'other' clears sport (the sport-pills below are the
+                    // drill-down); 'running' pins sport=run.
+                    if (opt.value === 'running') handleFilterChange({ sport: 'run' });
+                    else handleFilterChange({ sport: undefined });
+                  }}
+                  aria-pressed={isActive}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md transition-colors ${
+                    isActive
+                      ? 'bg-orange-500 text-white'
+                      : 'text-slate-300 hover:text-white hover:bg-slate-700/60'
+                  }`}
+                >
+                  {opt.icon}
+                  {opt.label}
+                </button>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Summary Stats — sport-aware. Avg Pace is hidden for non-running
+            views (not a meaningful aggregate across walks + strength + cycling). */}
+        {summary && activeBucket && (
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
             <Card className="bg-slate-800 border-slate-700">
               <CardContent className="pt-4 pb-4">
                 <p className="text-xs text-slate-400 flex items-center gap-1.5 mb-1">
                   <Activity className="w-3.5 h-3.5 text-orange-500" />
-                  Total Distance
+                  {sportView === 'running' ? 'Running Distance' : sportView === 'other' ? 'Other Distance' : 'Total Distance'}
                 </p>
                 <p className="text-lg font-semibold">{getTotalDistance()}</p>
               </CardContent>
@@ -162,103 +286,150 @@ export default function ActivitiesPage() {
                   <Clock className="w-3.5 h-3.5 text-blue-500" />
                   Total Time
                 </p>
-                <p className="text-lg font-semibold">{summary.total_duration_hours.toFixed(1)} hrs</p>
+                <p className="text-lg font-semibold">{(activeBucket.total_duration_s / 3600).toFixed(1)} hrs</p>
               </CardContent>
             </Card>
-            <Card className="bg-slate-800 border-slate-700">
-              <CardContent className="pt-4 pb-4">
-                <p className="text-xs text-slate-400 flex items-center gap-1.5 mb-1">
-                  <Flame className="w-3.5 h-3.5 text-red-500" />
-                  Avg Pace
-                </p>
-                <p className="text-lg font-semibold">{getAveragePace()}</p>
-              </CardContent>
-            </Card>
+            {sportView === 'running' ? (
+              <Card className="bg-slate-800 border-slate-700">
+                <CardContent className="pt-4 pb-4">
+                  <p className="text-xs text-slate-400 flex items-center gap-1.5 mb-1">
+                    <Flame className="w-3.5 h-3.5 text-red-500" />
+                    Avg Pace
+                  </p>
+                  <p className="text-lg font-semibold">{getAveragePace() ?? 'N/A'}</p>
+                </CardContent>
+              </Card>
+            ) : (
+              <Card className="bg-slate-800 border-slate-700">
+                <CardContent className="pt-4 pb-4">
+                  <p className="text-xs text-slate-400 flex items-center gap-1.5 mb-1">
+                    <BarChart3 className="w-3.5 h-3.5 text-emerald-500" />
+                    Activities
+                  </p>
+                  <p className="text-lg font-semibold">{activeBucket.total_activities}</p>
+                </CardContent>
+              </Card>
+            )}
             <Card className="bg-slate-800 border-slate-700">
               <CardContent className="pt-4 pb-4">
                 <p className="text-xs text-slate-400 flex items-center gap-1.5 mb-1">
                   <Trophy className="w-3.5 h-3.5 text-yellow-500" />
-                  Races
+                  {sportView === 'running' ? 'Races' : 'Sports'}
                 </p>
-                <p className="text-lg font-semibold">{summary.race_count}</p>
+                <p className="text-lg font-semibold">
+                  {sportView === 'running'
+                    ? ((activeBucket as ActivitySummaryBucket).race_count ?? 0)
+                    : sportView === 'other'
+                      ? Object.keys(summary.other?.by_sport ?? {}).length
+                      : Object.keys(summary.activities_by_sport ?? {}).length}
+                </p>
               </CardContent>
             </Card>
           </div>
         )}
 
-        {/* Filters */}
-        <Card className="bg-slate-800 border-slate-700 mb-6">
-          <CardContent className="pt-4 pb-4">
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-              <div>
-                <label className="block text-sm font-medium mb-2 text-slate-400">Sort By</label>
-                <select
-                  value={filters.sort_by || 'start_time'}
-                  onChange={(e) =>
-                    handleFilterChange({
-                      sort_by: e.target.value as 'start_time' | 'distance_m' | 'duration_s',
-                    })
-                  }
-                  className="w-full px-3 py-2 bg-slate-900 border border-slate-600 rounded-lg text-white focus:border-orange-500 focus:outline-none"
-                >
-                  <option value="start_time">Date</option>
-                  <option value="distance_m">Distance</option>
-                  <option value="duration_s">Duration</option>
-                </select>
-              </div>
+        {/* When viewing "Other", expose a small sport breakdown so the athlete
+            can drill from sport into the filtered list in one tap. */}
+        {sportView === 'other' && summary?.other?.by_sport && Object.keys(summary.other.by_sport).length > 0 && (
+          <div className="mb-6 flex flex-wrap gap-2">
+            {Object.entries(summary.other.by_sport).map(([sport, bucket]) => (
+              <button
+                key={sport}
+                type="button"
+                onClick={() => handleFilterChange({ sport })}
+                className={`text-xs rounded-md border px-2.5 py-1 inline-flex items-center gap-1.5 capitalize ${
+                  filters.sport === sport
+                    ? 'border-orange-500 bg-orange-500/20 text-white'
+                    : 'border-slate-700 bg-slate-800/60 hover:bg-slate-700/60 text-slate-200'
+                }`}
+                aria-label={`Filter list to ${sport}`}
+                aria-pressed={filters.sport === sport}
+              >
+                <span className="font-semibold">{sport}</span>
+                <span className="text-slate-400">·</span>
+                <span className="tabular-nums">{bucket.total_activities}</span>
+                {bucket.total_distance_m > 0 && (
+                  <>
+                    <span className="text-slate-400">·</span>
+                    <span className="tabular-nums">
+                      {formatDistance(bucket.total_distance_m, 1)}
+                    </span>
+                  </>
+                )}
+              </button>
+            ))}
+          </div>
+        )}
 
-              <div>
-                <label className="block text-sm font-medium mb-2 text-slate-400">Order</label>
-                <select
-                  value={filters.sort_order || 'desc'}
-                  onChange={(e) =>
-                    handleFilterChange({
-                      sort_order: e.target.value as 'asc' | 'desc',
-                    })
-                  }
-                  className="w-full px-3 py-2 bg-slate-900 border border-slate-600 rounded-lg text-white focus:border-orange-500 focus:outline-none"
-                >
-                  <option value="desc">Newest First</option>
-                  <option value="asc">Oldest First</option>
-                </select>
-              </div>
+        {/* Brushable filter panel — see docs/specs/phase1_filters_design.md */}
+        <ActivityFilterPanel value={filterState} onChange={handleStructuralFilterChange} />
 
-              <div>
-                <label className="block text-sm font-medium mb-2 text-slate-400">Show</label>
-                <select
-                  value={filters.is_race === undefined ? 'all' : filters.is_race ? 'races' : 'training'}
-                  onChange={(e) => {
-                    const value = e.target.value;
-                    handleFilterChange({
-                      is_race: value === 'all' ? undefined : value === 'races',
-                    });
-                  }}
-                  className="w-full px-3 py-2 bg-slate-900 border border-slate-600 rounded-lg text-white focus:border-orange-500 focus:outline-none"
-                >
-                  <option value="all">All Activities</option>
-                  <option value="races">Races Only</option>
-                  <option value="training">Training Only</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium mb-2 text-slate-400">Per Page</label>
-                <select
-                  value={filters.limit || 20}
-                  onChange={(e) =>
-                    handleFilterChange({ limit: parseInt(e.target.value), offset: 0 })
-                  }
-                  className="w-full px-3 py-2 bg-slate-900 border border-slate-600 rounded-lg text-white focus:border-orange-500 focus:outline-none"
-                >
-                  <option value="10">10</option>
-                  <option value="20">20</option>
-                  <option value="50">50</option>
-                  <option value="100">100</option>
-                </select>
-              </div>
+        {/* Compact secondary controls (sort, race/training scope, page size) */}
+        <div className="flex flex-wrap items-end gap-3 mb-4 text-xs">
+          <div className="flex items-center gap-1.5">
+            <span className="text-slate-500 uppercase tracking-wide">Sort</span>
+            <select
+              value={filters.sort_by || 'start_time'}
+              onChange={(e) =>
+                handleFilterChange({
+                  sort_by: e.target.value as 'start_time' | 'distance_m' | 'duration_s',
+                })
+              }
+              className="bg-slate-900 border border-slate-700 rounded text-slate-200 px-2 py-1 focus:border-orange-500 focus:outline-none"
+            >
+              <option value="start_time">Date</option>
+              <option value="distance_m">Distance</option>
+              <option value="duration_s">Duration</option>
+            </select>
+            <select
+              value={filters.sort_order || 'desc'}
+              onChange={(e) =>
+                handleFilterChange({ sort_order: e.target.value as 'asc' | 'desc' })
+              }
+              className="bg-slate-900 border border-slate-700 rounded text-slate-200 px-2 py-1 focus:border-orange-500 focus:outline-none"
+            >
+              <option value="desc">Newest</option>
+              <option value="asc">Oldest</option>
+            </select>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <span className="text-slate-500 uppercase tracking-wide">Show</span>
+            <select
+              value={filters.is_race === undefined ? 'all' : filters.is_race ? 'races' : 'training'}
+              onChange={(e) => {
+                const value = e.target.value;
+                handleFilterChange({
+                  is_race: value === 'all' ? undefined : value === 'races',
+                });
+              }}
+              className="bg-slate-900 border border-slate-700 rounded text-slate-200 px-2 py-1 focus:border-orange-500 focus:outline-none"
+            >
+              <option value="all">All</option>
+              <option value="races">Races</option>
+              <option value="training">Training</option>
+            </select>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <span className="text-slate-500 uppercase tracking-wide">Per page</span>
+            <select
+              value={filters.limit || 20}
+              onChange={(e) =>
+                handleFilterChange({ limit: parseInt(e.target.value), offset: 0 })
+              }
+              className="bg-slate-900 border border-slate-700 rounded text-slate-200 px-2 py-1 focus:border-orange-500 focus:outline-none"
+            >
+              <option value="10">10</option>
+              <option value="20">20</option>
+              <option value="50">50</option>
+              <option value="100">100</option>
+            </select>
+          </div>
+          {filtersActive && activities && (
+            <div className="ml-auto text-slate-300 tabular-nums">
+              {activities.length}{activities.length === (filters.limit || 20) ? '+' : ''} match
             </div>
-          </CardContent>
-        </Card>
+          )}
+        </div>
 
         {/* Activities List */}
         {isLoading && (

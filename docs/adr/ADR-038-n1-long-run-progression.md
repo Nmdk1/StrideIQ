@@ -105,6 +105,8 @@ def _calculate_current_long_run(self, activities: List) -> Tuple[float, float]:
         miles = (a.distance_m or 0) / 1609.344
         
         # Long run threshold: 10+ miles OR 90+ minutes
+        # Note (Apr 2026): duration_min is a derived local variable (internal computation),
+        # not an API response field. Unchanged by the canonical units migration.
         duration_min = (a.duration_s or 0) / 60
         if miles >= 10 or duration_min >= 90:
             all_long_runs.append(miles)

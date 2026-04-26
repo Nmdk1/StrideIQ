@@ -6,36 +6,54 @@
  * Restructured around the Run Shape Canvas as the centerpiece.
  * Spec: docs/specs/RSI_WIRING_SPEC.md (Layer 2)
  *
- * Layout (top to bottom):
- *   1. Header (back + name + date)
- *   2. Run Shape Canvas (hero — full width)
- *   3. Coachable Moments (gated: confidence >= 0.8 AND moments.length > 0)
- *   4. Reflection Prompt (3-tap: harder | expected | easier)
- *   5. Metrics Ribbon (compact horizontal strip)
- *   6. Runtoon (always visible — CTA for photo upload if not set up)
- *   --- "Show details" collapsible below ---
- *   7. Plan Comparison (conditional — from stream analysis)
- *   8. "Why This Run?" + Context Analysis
- *   9. "Compare to Similar" (existing link)
+ * Runs: tabbed layout (Overview default) — see BUILDER_INSTRUCTIONS_2026-04-12_ACTIVITY_PAGE_TABBED_LAYOUT.md
  */
 
 import React, { useState, useRef, useEffect } from 'react';
-import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/lib/hooks/useAuth';
 import { useUnits } from '@/lib/context/UnitsContext';
 import { API_CONFIG } from '@/lib/api/config';
-import { RunShapeCanvas } from '@/components/activities/rsi/RunShapeCanvas';
 import { useStreamAnalysis, isAnalysisData } from '@/components/activities/rsi/hooks/useStreamAnalysis';
-import { CoachableMoments } from '@/components/activities/rsi/CoachableMoments';
-import { ReflectionPrompt } from '@/components/activities/ReflectionPrompt';
-import RunContextAnalysis from '@/components/activities/RunContextAnalysis';
-import { WorkoutTypeSelector } from '@/components/activities/WorkoutTypeSelector';
-import { WhyThisRun } from '@/components/activities/WhyThisRun';
-import { PerceptionPrompt } from '@/components/activities/PerceptionPrompt';
 import { GarminBadge } from '@/components/integrations/GarminBadge';
-import { RuntoonCard } from '@/components/activities/RuntoonCard';
+import { FeedbackModal } from '@/components/activities/feedback/FeedbackModal';
+import { ReflectPill } from '@/components/activities/feedback/ReflectPill';
+import { useFeedbackCompletion } from '@/components/activities/feedback/useFeedbackCompletion';
+import { useFeedbackTrigger } from '@/components/activities/feedback/useFeedbackTrigger';
+import { ShareButton } from '@/components/activities/share/ShareButton';
+import { ShareDrawer } from '@/components/activities/share/ShareDrawer';
+import { CyclingDetail, StrengthDetail, HikingDetail, FlexibilityDetail } from '@/components/activities/cross-training';
+import type { CrossTrainingActivity } from '@/components/activities/cross-training';
+import RouteContext from '@/components/activities/map/RouteContext';
+import { StreamHoverProvider } from '@/lib/context/StreamHoverContext';
+import { ActivityTabs, type ActivityTabId } from '@/components/activities/ActivityTabs';
+import { ActivitySplitsTabPanel } from '@/components/activities/ActivitySplitsTabPanel';
+import { GoingInStrip } from '@/components/activities/GoingInStrip';
+import { GoingInCard } from '@/components/activities/GoingInCard';
+import { FindingsCards } from '@/components/activities/FindingsCards';
+import { WhyThisRun } from '@/components/activities/WhyThisRun';
+import { RunIntelligence } from '@/components/activities/RunIntelligence';
+import { AnalysisTabPanel } from '@/components/activities/AnalysisTabPanel';
+import { ComparablesPanel } from '@/components/activities/ComparablesPanel';
+import { RunDetailsGrid } from '@/components/activities/RunDetailsGrid';
+import { GarminEffortFallback } from '@/components/activities/GarminEffortFallback';
+import dynamic from 'next/dynamic';
+
+// Canvas v2 hero — replaces the in-tab RunShapeCanvas + 2D map combo
+// for runs. Lazy-loaded so the ~700kB mapbox-gl chunk doesn't ship in
+// the main bundle and so non-run sports never load it at all.
+const CanvasV2 = dynamic(
+  () => import('@/components/canvas-v2/CanvasV2').then((m) => m.CanvasV2),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="rounded-2xl border border-slate-800/60 bg-slate-900/30 h-[520px] flex items-center justify-center text-sm text-slate-500">
+        Loading canvas…
+      </div>
+    ),
+  },
+);
 
 interface Activity {
   id: string;
@@ -52,6 +70,8 @@ interface Activity {
   average_temp_c: number | null;
   temperature_f: number | null;
   dew_point_f: number | null;
+  humidity_pct: number | null;
+  weather_condition: string | null;
   heat_adjustment_pct: number | null;
   strava_activity_id: string | null;
   provider: string | null;
@@ -76,15 +96,81 @@ interface Activity {
   shape_sentence: string | null;
   athlete_title: string | null;
   resolved_title: string | null;
+
+  // Pre-activity wellness
+  pre_sleep_h: number | null;
+  pre_sleep_score: number | null;
+  pre_resting_hr: number | null;
+  pre_recovery_hrv: number | null;
+  pre_overnight_hrv: number | null;
+
+  // Cross-training fields (non-run only)
+  strength_session_type?: string | null;
+  session_detail?: Record<string, unknown> | null;
+  tss?: number | null;
+  tss_method?: string | null;
+  intensity_factor?: number | null;
+  weekly_context?: { running_activities: number; cross_training_activities: number } | null;
+  exercise_sets?: Array<{
+    set_order: number;
+    exercise_name: string;
+    exercise_category: string;
+    movement_pattern: string;
+    muscle_group: string | null;
+    is_unilateral: boolean;
+    set_type: string;
+    reps: number | null;
+    weight_kg: number | null;
+    duration_s: number | null;
+    estimated_1rm_kg: number | null;
+  }>;
+
+  // Device-level metrics
+  steps: number | null;
+  active_kcal: number | null;
+  avg_cadence_device: number | null;
+  max_cadence: number | null;
+
+  // FIT-derived activity-level metrics (Phase 1).
+  // All nullable: present only when a FIT file landed and the athlete
+  // wears a sensor that records the metric.
+  total_descent_m: number | null;
+  avg_power_w: number | null;
+  max_power_w: number | null;
+  avg_stride_length_m: number | null;
+  avg_ground_contact_ms: number | null;
+  avg_ground_contact_balance_pct: number | null;
+  avg_vertical_oscillation_cm: number | null;
+  avg_vertical_ratio_pct: number | null;
+  // Garmin self-evaluation (low-confidence fallback only).
+  garmin_feel: string | null;
+  garmin_perceived_effort: number | null;
+
+  // GPS / map
+  gps_track: [number, number][] | null;
+  start_coords: [number, number] | null;
 }
 
-import type { Split } from '@/lib/types/splits';
+import type { Split, SplitsResponse } from '@/lib/types/splits';
 
 function normalizeCadenceToSpm(raw: number | null | undefined): number | null {
   if (raw === null || raw === undefined) return null;
   const v = Number(raw);
   if (!isFinite(v) || v <= 0) return null;
   return v < 120 ? v * 2 : v;
+}
+
+function maxGradeFromStream(
+  stream: { grade: number | null }[] | null | undefined,
+): number | null {
+  if (!stream || stream.length === 0) return null;
+  let max: number | null = null;
+  for (const p of stream) {
+    if (p.grade !== null && Number.isFinite(p.grade)) {
+      if (max === null || p.grade > max) max = p.grade;
+    }
+  }
+  return max;
 }
 
 export default function ActivityDetailPage() {
@@ -109,7 +195,7 @@ export default function ActivityDetailPage() {
     enabled: !authLoading && !!token && !!activityId,
   });
 
-  const { data: splits } = useQuery<Split[]>({
+  const { data: splitsResponse } = useQuery<SplitsResponse>({
     queryKey: ['activity-splits', activityId],
     queryFn: async () => {
       const res = await fetch(
@@ -118,11 +204,14 @@ export default function ActivityDetailPage() {
           headers: { Authorization: `Bearer ${token}` },
         }
       );
-      if (!res.ok) return [];
+      if (!res.ok) return { splits: [], interval_summary: null };
       return res.json();
     },
     enabled: !authLoading && !!token && !!activityId,
   });
+
+  const splits = splitsResponse?.splits ?? null;
+  const intervalSummary = splitsResponse?.interval_summary ?? null;
 
   const { data: findings } = useQuery<{ text: string; domain: string; confidence_tier: string; evidence_summary?: string | null }[]>({
     queryKey: ['activity-findings', activityId],
@@ -141,8 +230,31 @@ export default function ActivityDetailPage() {
   // Must be called before any conditional returns (React hooks rules)
   const streamAnalysis = useStreamAnalysis(activityId);
   const analysisData = isAnalysisData(streamAnalysis.data) ? streamAnalysis.data : null;
-  const [showSecondaryMetrics, setShowSecondaryMetrics] = useState(false);
-  const [showDetails, setShowDetails] = useState(false);
+  const [activeTab, setActiveTab] = useState<ActivityTabId>('splits');
+
+  // Feedback modal — required reflection (Phase 3).  Backend completion
+  // gates auto-open; localStorage prevents re-pop on refresh after a
+  // successful submit; the Reflect pill in the page chrome opens the modal
+  // for retroactive editing at any time.
+  const feedbackCompletion = useFeedbackCompletion(activityId);
+  const { shouldAutoOpen, markShown } = useFeedbackTrigger({
+    activityId,
+    startTime: activity?.start_time,
+    isComplete: feedbackCompletion.isComplete,
+    isLoading: feedbackCompletion.isLoading,
+  });
+  const [feedbackModalOpen, setFeedbackModalOpen] = useState(false);
+  // Phase 4: share drawer is *only* opened by an explicit chrome click.
+  // No auto-open, no nag, no global popup.
+  const [shareDrawerOpen, setShareDrawerOpen] = useState(false);
+  useEffect(() => {
+    if (shouldAutoOpen && !feedbackModalOpen) {
+      setFeedbackModalOpen(true);
+      markShown();
+    }
+  }, [shouldAutoOpen, feedbackModalOpen, markShown]);
+
+  const splitTableRowRefs = useRef<Map<number, HTMLTableRowElement>>(new Map());
 
   // Title editing
   const queryClient = useQueryClient();
@@ -248,10 +360,10 @@ export default function ActivityDetailPage() {
             <h2 className="text-xl font-bold text-red-400 mb-2">Activity Not Found</h2>
             <p className="text-slate-400">This activity could not be loaded.</p>
             <button
-              onClick={() => router.push('/dashboard')}
+              onClick={() => router.push('/home')}
               className="mt-4 px-4 py-2 bg-slate-800 text-white rounded hover:bg-slate-700 transition-colors"
             >
-              Back to Dashboard
+              Back to Home
             </button>
           </div>
         </div>
@@ -268,12 +380,6 @@ export default function ActivityDetailPage() {
       return `${hrs}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
     }
     return `${mins}:${secs.toString().padStart(2, '0')}`;
-  };
-
-  // Format minutes (from backend PlanComparison) to h:mm:ss display
-  const formatMinutesToDuration = (minutes: number): string => {
-    const totalSeconds = Math.round(minutes * 60);
-    return formatDuration(totalSeconds);
   };
 
   // Calculate pace in seconds/km from activity data
@@ -300,120 +406,133 @@ export default function ActivityDetailPage() {
 
   return (
     <div className="min-h-screen bg-slate-900 text-slate-100">
-      <div className="max-w-4xl mx-auto px-4 py-8">
-        {/* ── 1. Header ── */}
-        <div className="mb-6">
-          <button
-            onClick={() => router.back()}
-            className="text-slate-400 hover:text-white mb-4 flex items-center gap-2 transition-colors"
-          >
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-            </svg>
-            Back
-          </button>
-          
-          {isEditingTitle ? (
-            <div className="mb-1">
-              <input
-                ref={titleInputRef}
-                type="text"
-                value={editTitleValue}
-                onChange={(e) => setEditTitleValue(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') handleSaveTitle();
-                  if (e.key === 'Escape') handleCancelEdit();
-                }}
-                maxLength={200}
-                className="w-full text-2xl font-bold bg-slate-800 text-white border border-slate-600 rounded-lg px-3 py-1.5 focus:outline-none focus:border-emerald-500"
-              />
-              <div className="flex items-center gap-2 mt-2">
-                <button
-                  onClick={handleSaveTitle}
-                  disabled={titleMutation.isPending}
-                  className="px-3 py-1 text-sm bg-emerald-600 hover:bg-emerald-700 text-white rounded-md transition-colors disabled:opacity-50"
-                >
-                  Save
-                </button>
-                <button
-                  onClick={handleCancelEdit}
-                  className="px-3 py-1 text-sm text-slate-400 hover:text-white transition-colors"
-                >
-                  Cancel
-                </button>
-                {activity.athlete_title && activity.shape_sentence && (
+      <div className="max-w-7xl mx-auto px-4 py-8">
+        {/* ── 1. Header — compact: back + title + date on one row ── */}
+        <div className="mb-4">
+          <div className="flex items-center gap-3 mb-1">
+            <button
+              onClick={() => router.back()}
+              className="text-slate-400 hover:text-white transition-colors flex-shrink-0"
+            >
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+              </svg>
+            </button>
+            {isEditingTitle ? (
+              <div className="flex-1 min-w-0">
+                <input
+                  ref={titleInputRef}
+                  type="text"
+                  value={editTitleValue}
+                  onChange={(e) => setEditTitleValue(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') handleSaveTitle();
+                    if (e.key === 'Escape') handleCancelEdit();
+                  }}
+                  maxLength={200}
+                  className="w-full text-xl font-bold bg-slate-800 text-white border border-slate-600 rounded-lg px-3 py-1 focus:outline-none focus:border-emerald-500"
+                />
+                <div className="flex items-center gap-2 mt-1.5">
                   <button
-                    onClick={handleResetTitle}
-                    className="px-3 py-1 text-sm text-slate-500 hover:text-emerald-400 transition-colors ml-auto"
+                    onClick={handleSaveTitle}
+                    disabled={titleMutation.isPending}
+                    className="px-3 py-1 text-sm bg-emerald-600 hover:bg-emerald-700 text-white rounded-md transition-colors disabled:opacity-50"
                   >
-                    Reset to auto-detected
+                    Save
                   </button>
-                )}
+                  <button
+                    onClick={handleCancelEdit}
+                    className="px-3 py-1 text-sm text-slate-400 hover:text-white transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  {activity.athlete_title && activity.shape_sentence && (
+                    <button
+                      onClick={handleResetTitle}
+                      className="px-3 py-1 text-sm text-slate-500 hover:text-emerald-400 transition-colors ml-auto"
+                    >
+                      Reset to auto-detected
+                    </button>
+                  )}
+                </div>
               </div>
-            </div>
-          ) : (
-            <div className="group flex items-center gap-2 mb-1">
-              <h1 className="text-3xl font-bold text-white">{displayTitle}</h1>
-              <button
-                onClick={handleStartEdit}
-                className="text-slate-500 hover:text-emerald-400 transition-colors opacity-100 md:opacity-0 md:group-hover:opacity-100"
-                aria-label="Edit title"
-              >
-                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                </svg>
-              </button>
-            </div>
-          )}
-          <p className="text-slate-400 text-sm">
+            ) : (
+              <div className="group flex items-baseline gap-3 flex-1 min-w-0">
+                <h1 className="text-xl md:text-2xl font-bold text-white truncate">{displayTitle}</h1>
+                <button
+                  onClick={handleStartEdit}
+                  className="text-slate-500 hover:text-emerald-400 transition-colors opacity-100 md:opacity-0 md:group-hover:opacity-100 flex-shrink-0"
+                  aria-label="Edit title"
+                >
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                  </svg>
+                </button>
+                <span className="text-slate-500 text-sm whitespace-nowrap flex-shrink-0 hidden md:inline">
+                  {formatDate(activity.start_time)} at {formatTime(activity.start_time)}
+                </span>
+              </div>
+            )}
+            {activity.provider === 'garmin' && (
+              <GarminBadge deviceName={activity.device_name} size="md" className="flex-shrink-0" />
+            )}
+            {activity.sport_type === 'run' && (
+              <ReflectPill
+                isComplete={feedbackCompletion.isComplete}
+                isLoading={feedbackCompletion.isLoading}
+                onClick={() => setFeedbackModalOpen(true)}
+              />
+            )}
+            {activity.sport_type === 'run' && (
+              <ShareButton onClick={() => setShareDrawerOpen(true)} />
+            )}
+          </div>
+          <p className="text-slate-500 text-sm pl-8 md:hidden">
             {formatDate(activity.start_time)} at {formatTime(activity.start_time)}
           </p>
-          {activity.provider === 'garmin' && (
-            <GarminBadge deviceName={activity.device_name} size="md" className="mt-2" />
-          )}
         </div>
 
-        {/* ── 2. Run Shape Canvas (Hero) ── */}
-        <div className="mb-6">
-          <RunShapeCanvas activityId={activityId} splits={splits ?? null} provider={activity.provider} deviceName={activity.device_name} />
-        </div>
-
-        {/* ── 3. Coachable Moments (gated: confidence >= 0.8 AND moments.length > 0) ── */}
-        {analysisData && (
-          <CoachableMoments
-            moments={analysisData.moments}
-            confidence={analysisData.confidence}
-            className="mb-6"
-          />
-        )}
-        {/* AI derived-data attribution — required by Garmin API Brand Guidelines v2 §Combined/Derived Data */}
-        {analysisData && activity.provider === 'garmin' && (
-          <p className="text-xs text-slate-500 mb-4">
-            Insights derived in part from Garmin device-sourced data.
-          </p>
-        )}
-
-        {/* ── 4. Reflection Prompt (quick 3-tap) ── */}
-        <ReflectionPrompt activityId={activityId} className="mb-4" />
-
-        {/* ── 4b. Full Feedback: RPE, Leg Feel, Notes ── */}
-        <PerceptionPrompt
-          activityId={activityId}
-          className="mb-4"
-          workoutType={activity.workout_type ?? undefined}
-          expectedRpeRange={activity.expected_rpe_range ?? undefined}
-        />
-
-        {/* ── 4c. Workout Type (compact) ── */}
-        <div className="mb-6">
-          <WorkoutTypeSelector activityId={activityId} compact />
-        </div>
-
-        {/* ── 5. Metrics Ribbon (compact horizontal strip) ── */}
-        <div className="mb-6">
-          <div className="flex items-center gap-4 overflow-x-auto pb-1">
+        {/* ── Sport branching: non-run activities get dedicated layouts ── */}
+        {activity.sport_type && activity.sport_type !== 'run' ? (
+          <div className="mb-6">
+            {/* Map as hero for outdoor non-run sports */}
+            {activity.gps_track && activity.gps_track.length > 1 && (
+              <div className="mb-4">
+                <RouteContext
+                  activityId={activityId}
+                  track={activity.gps_track}
+                  startCoords={activity.start_coords}
+                  sportType={activity.sport_type}
+                  startTime={activity.start_time}
+                  accentColor={
+                    activity.sport_type === 'cycling' ? '#60a5fa' :
+                    activity.sport_type === 'walking' ? '#2dd4bf' :
+                    '#34d399'
+                  }
+                  weather={{
+                    temperature_f: activity.temperature_f,
+                    weather_condition: activity.weather_condition,
+                    humidity_pct: activity.humidity_pct,
+                    heat_adjustment_pct: activity.heat_adjustment_pct,
+                  }}
+                  distanceM={activity.distance_m}
+                  durationS={activity.moving_time_s || activity.elapsed_time_s}
+                  heatAdjustmentPct={activity.heat_adjustment_pct}
+                />
+              </div>
+            )}
+            {activity.sport_type === 'cycling' && <CyclingDetail activity={activity as unknown as CrossTrainingActivity} />}
+            {activity.sport_type === 'strength' && <StrengthDetail activity={activity as unknown as CrossTrainingActivity} />}
+            {(activity.sport_type === 'hiking' || activity.sport_type === 'walking') && <HikingDetail activity={activity as unknown as CrossTrainingActivity} />}
+            {activity.sport_type === 'flexibility' && <FlexibilityDetail activity={activity as unknown as CrossTrainingActivity} />}
+          </div>
+        ) : (
+        <StreamHoverProvider>
+        {/* ── 2. Stats Banner ── */}
+        <div className="mb-6 pb-5 border-b border-slate-700/40">
+          <div className="grid grid-cols-3 gap-x-6 gap-y-4 md:grid-cols-6 md:gap-x-8">
             <MetricPill label="Distance" value={formatDistance(activity.distance_m)} />
-            <MetricPill label="Duration" value={formatDuration(activity.moving_time_s)} />
+            <MetricPill label="Moving Time" value={formatDuration(activity.moving_time_s)} />
             <MetricPill
               label="Pace"
               value={formatPace(getPaceSecondsPerKm(activity.moving_time_s, activity.distance_m))}
@@ -437,139 +556,156 @@ export default function ActivityDetailPage() {
               unit="spm"
             />
           </div>
-          {/* Secondary metrics expand */}
-          <button
-            onClick={() => setShowSecondaryMetrics(!showSecondaryMetrics)}
-            className="text-xs text-slate-500 hover:text-slate-300 mt-2 transition-colors"
-          >
-            {showSecondaryMetrics ? 'Hide details ▲' : 'More details ▼'}
-          </button>
-          {showSecondaryMetrics && (
-            <div className="flex items-center gap-4 mt-2 overflow-x-auto pb-1">
-              <MetricPill label="Max HR" value={activity.max_hr?.toString() || '--'} unit="bpm" secondary />
-              <MetricPill label="Temp" value={activity.temperature_f?.toFixed(0) || '--'} unit="°F" secondary />
-              <MetricPill label="Workout" value={activity.workout_type?.replace(/_/g, ' ') || '--'} secondary />
-            </div>
-          )}
-          {/* Garmin attribution is shown above the fold in the header — not repeated here */}
-
           {activity.heat_adjustment_pct != null && activity.heat_adjustment_pct > 3 && (
-            <p className="text-xs text-amber-400/80 mt-2">
-              🌡️ Heat slowed this run ~{activity.heat_adjustment_pct.toFixed(1)}% — your effort was better than the pace shows
+            <p className="text-xs text-amber-400/80 mt-3">
+              Heat slowed this run ~{activity.heat_adjustment_pct.toFixed(1)}% — your effort was better than the pace shows
             </p>
           )}
         </div>
 
-        {/* ── 6. Runtoon (always visible — CTA drives discovery for new users) ── */}
-        <div className="mb-6">
-          <RuntoonCard activityId={activityId} />
+        <GoingInStrip
+          preRecoveryHrv={activity.pre_recovery_hrv}
+          preRestingHr={activity.pre_resting_hr}
+          preSleepH={activity.pre_sleep_h}
+        />
+
+        {/* ── Canvas v2 hero — always visible above tabs.
+              Replaces the in-tab RunShapeCanvas + 2D map combo for runs.
+              Phase 1 leaves the existing 6-tab structure intact; Phase 2
+              collapses to 3 tabs (Splits/Coach/Compare). ── */}
+        <div className="mb-5 -mx-4 sm:mx-0">
+          <CanvasV2
+            activityId={activityId}
+            chromeless
+            title={displayTitle}
+            subtitle={`${formatDate(activity.start_time)} at ${formatTime(activity.start_time)}`}
+            summary={{
+              cardiacDriftPct: analysisData?.drift?.cardiac_pct ?? null,
+              avgHrBpm: activity.average_hr ?? null,
+              avgCadenceSpm: normalizeCadenceToSpm(activity.average_cadence),
+              maxGradePct: maxGradeFromStream(analysisData?.stream),
+              totalMovingTimeS: activity.moving_time_s ?? activity.elapsed_time_s ?? null,
+            }}
+          />
         </div>
 
-        {/* ── Finding annotations ── */}
-        {findings && findings.length > 0 && (
-          <div className="mb-6 space-y-2">
-            {findings.map((f, i) => (
-              <div key={i} className="rounded-lg border border-slate-700/30 bg-slate-800/20 px-4 py-3">
-                <div className="flex items-start gap-2">
-                  <span className="text-sm flex-shrink-0">🔬</span>
-                  <div>
-                    <p className="text-sm text-slate-300">{f.text}</p>
-                    <p className="text-xs text-slate-500 mt-0.5">
-                      {f.confidence_tier === 'strong' ? 'Strong' : 'Confirmed'} · {f.domain.replace(/_/g, ' ')}
+        {/* Phase 2 (fit_run_001): self-suppressing FIT cards.  Renders only
+            when at least one Garmin running-dynamic / power metric is
+            populated. For runs / walks / hikes / cycles that DON'T have
+            FIT data (historical activities synced before the FIT pipeline
+            existed), we render a one-line note instead of disappearing —
+            so the gap is visible truth, not a missing feature. */}
+        <div className="mb-5">
+          <RunDetailsGrid
+            avgPowerW={activity.avg_power_w}
+            maxPowerW={activity.max_power_w}
+            avgStrideLengthM={activity.avg_stride_length_m}
+            avgGroundContactMs={activity.avg_ground_contact_ms}
+            avgGroundContactBalancePct={activity.avg_ground_contact_balance_pct}
+            avgVerticalOscillationCm={activity.avg_vertical_oscillation_cm}
+            avgVerticalRatioPct={activity.avg_vertical_ratio_pct}
+            totalDescentM={activity.total_descent_m}
+            showMissingNote={
+              ['run', 'running', 'walking', 'walk', 'hiking', 'hike', 'cycling', 'cycle'].includes(
+                (activity.sport_type || '').toLowerCase(),
+              )
+            }
+          />
+        </div>
+
+        <ActivityTabs
+          activeTab={activeTab}
+          onTabChange={setActiveTab}
+          panels={{
+            splits: (
+              <ActivitySplitsTabPanel
+                activityId={activityId}
+                gpsTrack={activity.gps_track}
+                startCoords={activity.start_coords}
+                sportType={activity.sport_type || 'run'}
+                startTime={activity.start_time}
+                distanceM={activity.distance_m}
+                durationS={activity.moving_time_s || activity.elapsed_time_s}
+                temperatureF={activity.temperature_f}
+                weatherCondition={activity.weather_condition}
+                humidityPct={activity.humidity_pct}
+                heatAdjustmentPct={activity.heat_adjustment_pct}
+                splits={splits}
+                intervalSummary={intervalSummary}
+                provider={activity.provider}
+                deviceName={activity.device_name}
+                stream={analysisData?.stream}
+                splitTableRowRefs={splitTableRowRefs}
+                showMap={false}
+              />
+            ),
+            // Coach absorbs the old Overview intelligence card, the Analysis
+            // tab, and the Context tab.  Order: brief first (what the coach
+            // says), then findings (what the engine found), then context
+            // (what was happening before the run), then deep analysis charts.
+            coach: (
+              <div className="space-y-6">
+                <GarminEffortFallback
+                  garminPerceivedEffort={activity.garmin_perceived_effort}
+                  garminFeel={activity.garmin_feel}
+                  athleteRpe={feedbackCompletion.feedback?.perceived_effort ?? null}
+                />
+                <RunIntelligence activityId={activityId} />
+                <FindingsCards findings={findings} />
+                <WhyThisRun activityId={activityId} />
+                <GoingInCard
+                  preRecoveryHrv={activity.pre_recovery_hrv}
+                  preOvernightHrv={activity.pre_overnight_hrv}
+                  preRestingHr={activity.pre_resting_hr}
+                  preSleepH={activity.pre_sleep_h}
+                  preSleepScore={activity.pre_sleep_score}
+                />
+                <AnalysisTabPanel
+                  drift={analysisData?.drift ?? null}
+                  planComparison={analysisData?.plan_comparison ?? null}
+                  stream={analysisData?.stream ?? null}
+                  effortIntensity={analysisData?.effort_intensity ?? null}
+                  movingTimeS={activity.moving_time_s}
+                />
+                {activity.narrative && (
+                  <div className="px-5 py-4 bg-slate-800/30 border border-slate-700/30 rounded-lg">
+                    <p className="text-sm text-slate-400 italic leading-relaxed">
+                      &ldquo;{activity.narrative}&rdquo;
                     </p>
                   </div>
-                </div>
+                )}
               </div>
-            ))}
-          </div>
-        )}
+            ),
+            compare: <ComparablesPanel activityId={activityId} />,
+          }}
+        />
 
-        {/* ── A6: Collapsible details (Plan Comparison through Narrative Context) ── */}
-        <div className="mb-6">
-          <button
-            onClick={() => setShowDetails((v) => !v)}
-            className="flex items-center gap-1.5 text-sm text-slate-400 hover:text-slate-200 transition-colors"
-            data-testid="show-details-toggle"
-          >
-            <svg
-              className={`w-3.5 h-3.5 transition-transform ${showDetails ? 'rotate-90' : ''}`}
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-            >
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-            </svg>
-            {showDetails ? 'Hide details' : 'Show details'}
-          </button>
-        </div>
+        {/* Phase 3: required feedback modal — runs only.  Auto-opens on
+            first device visit when feedback is incomplete and the activity
+            is recent; the Reflect pill in the page header opens it for
+            retroactive editing at any time. */}
+        <FeedbackModal
+          activityId={activityId}
+          open={feedbackModalOpen}
+          existingReflection={feedbackCompletion.reflection}
+          existingFeedback={feedbackCompletion.feedback}
+          existingWorkoutType={feedbackCompletion.workoutType}
+          onSaved={() => {
+            setFeedbackModalOpen(false);
+            feedbackCompletion.refetch();
+          }}
+        />
 
-        {showDetails && (
-          <>
-            {/* ── 7. Plan Comparison (conditional — from stream analysis) ── */}
-            {analysisData?.plan_comparison && (
-              <div className="mb-6 rounded-lg bg-slate-800/30 border border-slate-700/30 p-4">
-                <h3 className="text-sm font-medium text-slate-400 mb-3">Plan vs Actual</h3>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
-                  {analysisData.plan_comparison.planned_duration_min != null && analysisData.plan_comparison.actual_duration_min != null && (
-                    <PlanComparisonCell
-                      label="Duration"
-                      planned={formatMinutesToDuration(analysisData.plan_comparison.planned_duration_min)}
-                      actual={formatMinutesToDuration(analysisData.plan_comparison.actual_duration_min)}
-                    />
-                  )}
-                  {analysisData.plan_comparison.planned_distance_km != null && analysisData.plan_comparison.actual_distance_km != null && (
-                    <PlanComparisonCell
-                      label="Distance"
-                      planned={formatDistance(analysisData.plan_comparison.planned_distance_km * 1000)}
-                      actual={formatDistance(analysisData.plan_comparison.actual_distance_km * 1000)}
-                    />
-                  )}
-                  {analysisData.plan_comparison.planned_pace_s_km != null && analysisData.plan_comparison.actual_pace_s_km != null && (
-                    <PlanComparisonCell
-                      label="Pace"
-                      planned={formatPace(analysisData.plan_comparison.planned_pace_s_km)}
-                      actual={formatPace(analysisData.plan_comparison.actual_pace_s_km)}
-                    />
-                  )}
-                  {analysisData.plan_comparison.planned_interval_count != null && analysisData.plan_comparison.detected_work_count != null && (
-                    <PlanComparisonCell
-                      label="Intervals"
-                      planned={String(analysisData.plan_comparison.planned_interval_count)}
-                      actual={String(analysisData.plan_comparison.detected_work_count)}
-                    />
-                  )}
-                </div>
-              </div>
-            )}
+        {/* Phase 4: share drawer.  Hosts the runtoon (formerly always
+            on the page bottom) plus a placeholder for upcoming share
+            styles.  Opens only when the athlete taps Share. */}
+        <ShareDrawer
+          activityId={activityId}
+          open={shareDrawerOpen}
+          onClose={() => setShareDrawerOpen(false)}
+        />
 
-            {/* ── 8. "Why This Run?" + Context Analysis ── */}
-            <div className="mb-6">
-              <WhyThisRun activityId={activityId} className="mb-4" />
-              <RunContextAnalysis activityId={activityId} />
-            </div>
-
-            {/* ── 9. "Compare to Similar" ── */}
-            <div className="mb-6">
-              <Link
-                href={`/compare/context/${activityId}`}
-                className="inline-flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-orange-600 to-amber-600 hover:from-orange-500 hover:to-amber-500 text-white font-semibold rounded-lg shadow-lg shadow-orange-500/25 transition-all hover:shadow-orange-500/40 hover:scale-[1.02]"
-              >
-                Compare to Similar Runs
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                </svg>
-              </Link>
-            </div>
-
-            {/* ── Narrative Context (secondary — canvas is now the hero) ── */}
-            {activity.narrative && (
-              <div className="mb-6 px-4 py-3 bg-slate-800/30 border border-slate-700/30 rounded-lg">
-                <p className="text-sm text-slate-400 italic leading-relaxed">
-                  &ldquo;{activity.narrative}&rdquo;
-                </p>
-              </div>
-            )}
-          </>
+        </StreamHoverProvider>
         )}
       </div>
     </div>
@@ -587,44 +723,24 @@ function formatDeviceName(raw: string): string {
 
 // ============ Sub-Components ============
 
-/** Compact metric pill for the horizontal ribbon */
+
 function MetricPill({
   label,
   value,
   unit,
-  secondary = false,
 }: {
   label: string;
   value: string;
   unit?: string;
-  secondary?: boolean;
 }) {
   return (
-    <div className="flex-shrink-0">
-      <p className={`text-xs ${secondary ? 'text-slate-500' : 'text-slate-400'}`}>{label}</p>
-      <p className={`font-semibold whitespace-nowrap ${secondary ? 'text-sm text-slate-400' : 'text-base text-white'}`}>
+    <div className="min-w-0">
+      <p className="text-2xl md:text-3xl font-bold text-white tabular-nums leading-tight whitespace-nowrap">
         {value}
-        {unit && <span className="text-slate-500 text-xs font-normal ml-0.5">{unit}</span>}
+        {unit && <span className="text-slate-400 text-sm font-normal ml-1">{unit}</span>}
       </p>
+      <p className="text-[11px] text-slate-500 uppercase tracking-wide mt-0.5">{label}</p>
     </div>
   );
 }
 
-/** Plan comparison cell (planned vs actual) */
-function PlanComparisonCell({
-  label,
-  planned,
-  actual,
-}: {
-  label: string;
-  planned: string;
-  actual: string;
-}) {
-  return (
-    <div>
-      <p className="text-xs text-slate-500 mb-1">{label}</p>
-      <p className="text-sm text-white">{actual}</p>
-      <p className="text-xs text-slate-500">planned: {planned}</p>
-    </div>
-  );
-}

@@ -31,7 +31,7 @@ print()
 
 # Get open class standards (row 3)
 oc_row = df.iloc[3].tolist()
-print(f"Open class standards (seconds):")
+print("Open class standards (seconds):")
 print(f"  5K: {oc_row[col_5k]} seconds")
 print(f"  10K: {oc_row[col_10k]} seconds")
 print(f"  HM: {oc_row[col_hm]} seconds")
@@ -111,7 +111,7 @@ for i, age in enumerate(ages):
         age_std = open_std * time_mult
         time_seconds = 18*60 + 53
         pct = (age_std / time_seconds) * 100
-        print(f"Age 55, 5K 18:53:")
+        print("Age 55, 5K 18:53:")
         print(f"  WMA factor: {float(factor_5k):.4f}")
         print(f"  Time mult: {time_mult:.4f}")
         print(f"  Open std: {open_std:.1f}s = {open_std/60:.1f} min")
@@ -130,7 +130,7 @@ for i, age in enumerate(ages):
         age_std = open_std * time_mult
         time_seconds = 27*60 + 14
         pct = (age_std / time_seconds) * 100
-        print(f"Age 79, 5K 27:14:")
+        print("Age 79, 5K 27:14:")
         print(f"  WMA factor: {float(factor_5k):.4f}")
         print(f"  Time mult: {time_mult:.4f}")
         print(f"  Open std: {open_std:.1f}s = {open_std/60:.1f} min")

@@ -40,6 +40,7 @@ from services.home_briefing_cache import (
     _lock_key,
     acquire_task_lock,
     read_briefing_cache,
+    read_briefing_cache_with_meta,
     record_task_failure,
     release_task_lock,
     reset_circuit,
@@ -245,6 +246,304 @@ class TestDataFingerprint:
         fp2 = _build_data_fingerprint(str(test_athlete.id), db_session)
 
         assert fp1 == fp2
+
+    def test_fingerprint_changes_when_splits_land_after_initial_brief(
+        self, db_session, test_athlete
+    ):
+        """Regression for the founder's 2026-04-18 'continuous effort'
+        miss: Garmin uploaded the activity at 14:30, the briefing fired
+        at 15:20 before async split processing finished, and because
+        splits-presence wasn't part of the fingerprint the brief stayed
+        cached -- frozen with 'no workout structure' even after the
+        4 x 1mi split pattern was fully populated.
+
+        After fix: the moment splits arrive, the fingerprint flips,
+        invalidating the cached brief and triggering a fresh generation
+        with the structured workout context."""
+        from tasks.home_briefing_tasks import _build_data_fingerprint
+        from models import Activity, ActivitySplit
+
+        activity = Activity(
+            athlete_id=test_athlete.id,
+            name="Meridian - 2 x 2 x mile",
+            sport="run",
+            start_time=datetime.now(timezone.utc),
+            distance_m=13837,
+            duration_s=4626,
+        )
+        db_session.add(activity)
+        db_session.commit()
+
+        # Initial brief fingerprint -- splits not yet processed.
+        fp_before_splits = _build_data_fingerprint(str(test_athlete.id), db_session)
+
+        # Async split ingestion lands.
+        for i in range(1, 5):
+            db_session.add(ActivitySplit(
+                activity_id=activity.id,
+                split_number=i,
+                distance=1609.34,
+                elapsed_time=362,
+                average_heartrate=150,
+            ))
+        db_session.commit()
+
+        fp_after_splits = _build_data_fingerprint(str(test_athlete.id), db_session)
+        assert fp_before_splits != fp_after_splits, (
+            "fingerprint must change when splits arrive so the cached "
+            "'no workout structure' brief gets regenerated"
+        )
+
+    def test_fingerprint_changes_when_workout_type_lands_after_initial_brief(
+        self, db_session, test_athlete
+    ):
+        """Cycling-style: an unattributed activity gets workout_type set
+        later by athlete edit or auto-classifier. Briefing must regenerate
+        so 'easy run' gets re-described as 'tempo' (or whatever the new
+        type is)."""
+        from tasks.home_briefing_tasks import _build_data_fingerprint
+        from models import Activity
+
+        activity = Activity(
+            athlete_id=test_athlete.id,
+            name="Untagged session",
+            sport="run",
+            start_time=datetime.now(timezone.utc),
+            distance_m=10000,
+            duration_s=3600,
+        )
+        db_session.add(activity)
+        db_session.commit()
+
+        fp_before = _build_data_fingerprint(str(test_athlete.id), db_session)
+
+        activity.workout_type = "cruise_intervals"
+        db_session.commit()
+
+        fp_after = _build_data_fingerprint(str(test_athlete.id), db_session)
+        assert fp_before != fp_after, (
+            "fingerprint must change when workout_type lands so the "
+            "cached brief gets regenerated with the correct workout context"
+        )
+
+    def test_fingerprint_changes_when_run_shape_lands_after_initial_brief(
+        self, db_session, test_athlete
+    ):
+        """Same root cause as the splits-fingerprint test, different
+        signal: run_shape arrives separately from splits (the stream
+        analyzer writes it asynchronously). When it lands with a
+        structured classification like 'anomaly' or 'threshold_intervals'
+        the cached 'continuous run' brief must be invalidated."""
+        from tasks.home_briefing_tasks import _build_data_fingerprint
+        from models import Activity
+
+        activity = Activity(
+            athlete_id=test_athlete.id,
+            name="Threshold session",
+            sport="run",
+            start_time=datetime.now(timezone.utc),
+            distance_m=12000,
+            duration_s=3900,
+        )
+        db_session.add(activity)
+        db_session.commit()
+
+        fp_before = _build_data_fingerprint(str(test_athlete.id), db_session)
+
+        # Stream analyzer writes run_shape with a structured classification.
+        activity.run_shape = {"summary": {"workout_classification": "anomaly"}}
+        db_session.commit()
+
+        fp_after = _build_data_fingerprint(str(test_athlete.id), db_session)
+        assert fp_before != fp_after, (
+            "fingerprint must change when run_shape lands with a structured "
+            "workout_classification so the cached brief gets regenerated"
+        )
+
+
+class TestWorkoutStructurePromptHonesty:
+    """Regression for the founder's 2026-04-18 'continuous effort' miss.
+
+    The bug was two-fold:
+      1. fingerprint blindness (covered above)
+      2. the 'no workout structure' prompt branch told the LLM
+         'the analysis system EXAMINED the splits and determined this
+         was a CONTINUOUS run' -- a lie when splits weren't yet
+         processed at the time the brief was generated.
+
+    The athlete then read 'continuous run' about their interval workout
+    and lost trust.
+
+    The fix differentiates two states in the prompt:
+      A. splits_available=True + no structure detected
+         -> honest 'splits show no structured pattern' message
+      B. splits_available=False (or unknown)
+         -> honest 'split-level analysis not yet available, describe
+            with overall metrics only' (no false claim of inspection)
+    """
+
+    def test_splits_available_true_with_no_structure_says_no_pattern(self):
+        from routers.home import _render_workout_structure_block
+
+        text = _render_workout_structure_block({
+            "splits_available": True,
+            "workout_structure": None,
+        })
+        assert text, "must produce some prompt text"
+        # MUST tell the LLM not to invent structured-workout language.
+        lt = text.lower()
+        assert "intervals" in lt or "structured" in lt or "no" in lt
+        assert (
+            "no structured workout" in lt
+            or "no workout structure" in lt
+            or "continuous" in lt
+        )
+
+    def test_splits_unavailable_does_NOT_claim_inspection(self):
+        # Founder's 2026-04-18 case: brief fired BEFORE async split
+        # processing finished. Prompt must NOT say splits were examined.
+        from routers.home import _render_workout_structure_block
+
+        text = _render_workout_structure_block({
+            "splits_available": False,
+        })
+        assert text, "must produce some prompt text"
+        lt = text.lower()
+        assert "examined the splits" not in lt, (
+            "prompt must not lie about having inspected splits when they "
+            "weren't yet available -- this is what made the LLM call the "
+            "founder's interval workout 'a controlled continuous effort'"
+        )
+        assert "continuous run" not in lt, (
+            "prompt must not assert this was a continuous run when "
+            "split-level analysis has not yet completed"
+        )
+        # And it must still steer the LLM away from making up rep counts.
+        assert (
+            "not yet available" in lt
+            or "not available" in lt
+            or "overall metrics only" in lt
+        )
+
+    def test_splits_available_unset_treated_as_unavailable(self):
+        # Backward compat: callers that haven't been migrated to set
+        # splits_available must NOT trigger the 'examined the splits' lie.
+        from routers.home import _render_workout_structure_block
+
+        text = _render_workout_structure_block({
+            # splits_available key absent entirely
+        })
+        lt = (text or "").lower()
+        assert "examined the splits" not in lt
+        assert "continuous run" not in lt
+
+    def test_workout_structure_present_still_renders_structured_block(self):
+        # The happy path must still work -- this is the 80% of briefings
+        # the founder said are exceptional. Don't break it.
+        from routers.home import _render_workout_structure_block
+
+        text = _render_workout_structure_block({
+            "splits_available": True,
+            "workout_structure": "Warmup: 2.0mi at 8:15/mi\n  Work: 4 x 1mi at 6:03/mi",
+            "shape_classification": "anomaly",
+        })
+        assert "WORKOUT STRUCTURE" in text or "POSSIBLE WORKOUT STRUCTURE" in text
+        assert "1mi at 6:03/mi" in text
+
+
+class TestSplitsAvailableInBriefingPrompt:
+    """End-to-end: the briefing builder MUST tag today_completed with
+    splits_available so the prompt branches honestly. Regression case
+    for the timing race condition that caused the founder's brief to
+    be generated before async split processing landed."""
+
+    def test_splits_available_set_to_false_when_no_splits_yet(
+        self, db_session, test_athlete
+    ):
+        """Activity exists, but stream/split processing hasn't landed yet.
+        today_completed must say splits_available=False so the prompt
+        doesn't claim to have examined the splits."""
+        from tasks.home_briefing_tasks import _build_briefing_prompt
+        from models import Activity
+
+        activity = Activity(
+            athlete_id=test_athlete.id,
+            name="Just-uploaded run",
+            sport="run",
+            start_time=datetime.now(timezone.utc),
+            distance_m=14000,
+            duration_s=4600,
+        )
+        db_session.add(activity)
+        db_session.commit()
+
+        # Patch get_db_sync so the task uses our test session.
+        from contextlib import contextmanager
+        @contextmanager
+        def _ctx():
+            yield db_session
+
+        with patch("tasks.home_briefing_tasks.get_db_sync", _ctx):
+            result = _build_briefing_prompt(str(test_athlete.id), db_session)
+
+        assert result, "_build_briefing_prompt should return a tuple"
+        # The 4th element is checkin_data, but we want today_completed --
+        # find it by looking at the prompt itself: it must NOT contain the
+        # 'examined the splits' lie.
+        prompt = result[0] if result else ""
+        assert "examined the splits" not in prompt.lower(), (
+            "splits don't exist for this activity yet; prompt must not "
+            "claim they were examined. Founder's 2026-04-18 regression."
+        )
+
+    def test_splits_available_set_to_true_when_splits_present(
+        self, db_session, test_athlete
+    ):
+        from tasks.home_briefing_tasks import _build_briefing_prompt
+        from models import Activity, ActivitySplit
+
+        activity = Activity(
+            athlete_id=test_athlete.id,
+            name="Run with splits",
+            sport="run",
+            start_time=datetime.now(timezone.utc),
+            distance_m=10000,
+            duration_s=3000,
+        )
+        db_session.add(activity)
+        db_session.commit()
+
+        for i in range(1, 6):
+            db_session.add(ActivitySplit(
+                activity_id=activity.id,
+                split_number=i,
+                distance=2000,
+                elapsed_time=600,
+                average_heartrate=140,
+            ))
+        db_session.commit()
+
+        from contextlib import contextmanager
+        @contextmanager
+        def _ctx():
+            yield db_session
+
+        with patch("tasks.home_briefing_tasks.get_db_sync", _ctx):
+            result = _build_briefing_prompt(str(test_athlete.id), db_session)
+
+        assert result
+        prompt = result[0] if result else ""
+        # Splits exist + no structure detected -> the prompt may now make
+        # the (honest) claim that splits show no structured workout pattern.
+        # We don't assert the exact phrasing, only that the prompt is not
+        # the 'split data not yet available' fallback.
+        lt = prompt.lower()
+        assert (
+            "no structured workout" in lt
+            or "no workout structure" in lt
+            or "continuous" in lt
+            or "WORKOUT STRUCTURE" in prompt
+        )
 
 
 class TestDedupe:
@@ -637,45 +936,29 @@ class TestTriggers:
             assert result["status"] == "success"
 
     def test_trigger_plan_change_enqueues_refresh(self, db_session, test_athlete):
-        """Test 25: plan creation endpoint calls enqueue_briefing_refresh at runtime."""
+        """Test 25: v1 plan creation is frozen (410). PlanGenerator is not called."""
         from core.auth import get_current_user, get_current_athlete
         from core.database import get_db
         from main import app
         from fastapi.testclient import TestClient
 
-        mock_plan = MagicMock()
-        mock_plan.id = uuid4()
-        mock_plan.name = "Test Plan"
-        mock_plan.status = "active"
-        mock_plan.goal_race_name = "Marathon"
-        mock_plan.goal_race_date = date(2026, 6, 1)
-        mock_plan.goal_race_distance_m = 42195
-        mock_plan.goal_time_seconds = 14400
-        mock_plan.plan_start_date = date(2026, 2, 18)
-        mock_plan.plan_end_date = date(2026, 5, 31)
-        mock_plan.total_weeks = 15
-        mock_plan.weeks = []
-
         app.dependency_overrides[get_current_user] = lambda: test_athlete
         app.dependency_overrides[get_current_athlete] = lambda: test_athlete
         app.dependency_overrides[get_db] = lambda: db_session
         try:
-            with patch("tasks.home_briefing_tasks.enqueue_briefing_refresh") as mock_enqueue, \
-                 patch("routers.training_plans.PlanGenerator") as mock_gen_cls:
-                mock_enqueue.return_value = True
-                mock_gen_cls.return_value.generate_plan.return_value = mock_plan
-                with TestClient(app) as tc:
-                    response = tc.post("/v1/training-plans", json={
-                        "goal_race_name": "Marathon",
-                        "goal_race_date": "2026-06-01",
-                        "goal_race_distance_m": 42195,
-                        "goal_time_seconds": 14400,
-                        "plan_start_date": "2026-02-18",
-                    })
-                assert response.status_code == 201, (
-                    f"Plan creation failed: {response.status_code} {response.text}"
-                )
-                mock_enqueue.assert_called_once_with(str(test_athlete.id))
+            with TestClient(app) as tc:
+                response = tc.post("/v1/training-plans", json={
+                    "goal_race_name": "Marathon",
+                    "goal_race_date": "2026-06-01",
+                    "goal_race_distance_m": 42195,
+                    "goal_time_seconds": 14400,
+                    "plan_start_date": "2026-02-18",
+                })
+            assert response.status_code == 410, (
+                f"Expected 410 Gone (v1 plan creation frozen). Got: {response.status_code} {response.text}"
+            )
+            detail = response.json().get("detail", {})
+            assert detail.get("error_code") == "v1_plan_creation_frozen"
         finally:
             app.dependency_overrides.pop(get_current_user, None)
             app.dependency_overrides.pop(get_current_athlete, None)
@@ -858,7 +1141,7 @@ class TestCeleryTask:
         with patch("tasks.home_briefing_tasks._call_opus_briefing", return_value=None) as mock_opus, \
              patch("tasks.home_briefing_tasks._call_gemini_briefing", return_value=gemini_result) as mock_gemini, \
              patch("tasks.home_briefing_tasks._build_data_fingerprint", return_value="fp1"), \
-             patch("tasks.home_briefing_tasks._build_briefing_prompt", return_value=("prompt", {}, [], {}, {}, None)), \
+             patch("tasks.home_briefing_tasks._build_briefing_prompt", return_value=("prompt", {}, [], {}, {}, None, datetime.now(), None, None, None)), \
              patch("tasks.home_briefing_tasks.get_db_sync", return_value=MagicMock()), \
              patch("tasks.home_briefing_tasks.acquire_task_lock", return_value=True), \
              patch("tasks.home_briefing_tasks.release_task_lock"), \
@@ -873,13 +1156,13 @@ class TestCeleryTask:
             assert result["model"] == "gemini-2.5-flash"
 
     def test_celery_task_uses_opus_when_key_present(self, fake_redis):
-        """Test 31: with ANTHROPIC_API_KEY set, task tries Opus first and uses it on success."""
+        """Test 31: with ANTHROPIC_API_KEY set, task tries Sonnet (via _call_opus_briefing) first and uses it on success."""
         import os
-        opus_result = {"coach_noticed": "Opus insight", "morning_voice": "50 miles."}
+        opus_result = {"coach_noticed": "Sonnet insight", "morning_voice": "50 miles."}
         with patch("tasks.home_briefing_tasks._call_opus_briefing", return_value=opus_result) as mock_opus, \
              patch("tasks.home_briefing_tasks._call_gemini_briefing") as mock_gemini, \
              patch("tasks.home_briefing_tasks._build_data_fingerprint", return_value="fp1"), \
-             patch("tasks.home_briefing_tasks._build_briefing_prompt", return_value=("prompt", {}, [], {}, {}, None)), \
+             patch("tasks.home_briefing_tasks._build_briefing_prompt", return_value=("prompt", {}, [], {}, {}, None, datetime.now(), None, None, None)), \
              patch("tasks.home_briefing_tasks.get_db_sync", return_value=MagicMock()), \
              patch("tasks.home_briefing_tasks.acquire_task_lock", return_value=True), \
              patch("tasks.home_briefing_tasks.release_task_lock"), \
@@ -891,7 +1174,7 @@ class TestCeleryTask:
             result = generate_home_briefing_task(athlete_id=str(uuid4()))
             mock_opus.assert_called_once()
             mock_gemini.assert_not_called()
-            assert result["model"] == "claude-opus-4-6"
+            assert result["model"] == "claude-sonnet-4-6"
 
     def test_celery_task_handles_provider_failure(self, fake_redis):
         """Test 32: on failure: record failure, no cache written."""
@@ -906,6 +1189,115 @@ class TestCeleryTask:
         assert circuit_val is not None
         assert int(circuit_val) == 1
 
+    def test_celery_task_refreshes_cache_when_fingerprint_unchanged(self, fake_redis):
+        """Regression: unchanged fingerprint must refresh cache timestamp, not decay to missing."""
+        from datetime import datetime, timedelta, timezone
+        from services.home_briefing_cache import _cache_key, read_briefing_cache, BriefingState
+
+        athlete_id = str(uuid4())
+        payload = {
+            "coach_noticed": "Carry momentum from your latest run.",
+            "today_context": "Keep effort controlled.",
+            "week_assessment": "Stable trajectory this week.",
+            "morning_voice": "6.0 miles at 8:56/mi in your latest run.",
+            "workout_why": "Consistency compounds.",
+        }
+        fingerprint = "fp_same"
+
+        # Seed a stale entry that still exists in Redis.
+        stale_entry = {
+            "payload": payload,
+            "generated_at": (datetime.now(timezone.utc) - timedelta(minutes=20)).isoformat(),
+            "expires_at": (datetime.now(timezone.utc) + timedelta(minutes=40)).isoformat(),
+            "source_model": "claude-sonnet-4-6",
+            "version": 1,
+            "data_fingerprint": fingerprint,
+        }
+        fake_redis.setex(_cache_key(athlete_id), 3600, json.dumps(stale_entry))
+
+        with patch("tasks.home_briefing_tasks.acquire_task_lock", return_value=True), \
+             patch("tasks.home_briefing_tasks.release_task_lock"), \
+             patch("tasks.home_briefing_tasks.get_db_sync", return_value=MagicMock()), \
+             patch("tasks.home_briefing_tasks.get_redis_client", return_value=fake_redis), \
+             patch("tasks.home_briefing_tasks._build_data_fingerprint", return_value=fingerprint), \
+             patch("tasks.home_briefing_tasks._build_briefing_prompt", return_value=("prompt", {}, [], {}, {}, None, datetime.now(), None, None, None)) as mock_prompt, \
+             patch("tasks.home_briefing_tasks._call_llm_for_briefing", return_value=(payload, "claude-sonnet-4-6")) as mock_llm, \
+             patch("routers.home._valid_home_briefing_contract", return_value=True), \
+             patch("routers.home.validate_voice_output", return_value={"valid": True}), \
+             patch("routers.home.validate_sleep_claims", return_value={"valid": True}), \
+             patch("services.consent.has_ai_consent", return_value=True):
+            from tasks.home_briefing_tasks import generate_home_briefing_task
+            result = generate_home_briefing_task(athlete_id=athlete_id)
+
+        assert result["status"] == "success"
+        assert result["reason"] == "fingerprint_unchanged_cache_refreshed"
+        mock_prompt.assert_not_called()
+        mock_llm.assert_not_called()
+
+        refreshed_payload, refreshed_state = read_briefing_cache(athlete_id)
+        assert refreshed_state == BriefingState.FRESH
+        assert refreshed_payload is not None
+        assert refreshed_payload.get("morning_voice") == payload["morning_voice"]
+
+    def test_interim_fingerprint_match_forces_llm_regeneration(self, fake_redis):
+        """Regression: unchanged fingerprint must not pin deterministic interim text forever."""
+        from services.home_briefing_cache import _cache_key, read_briefing_cache_with_meta
+
+        athlete_id = str(uuid4())
+        fingerprint = "fp_interim_same"
+        interim_payload = {
+            "coach_noticed": "Latest run synced: 9.2 mi at 8:49/mi. Signals will refine.",
+            "today_context": "Sync completed.",
+            "week_assessment": "Data is current.",
+            "morning_voice": "Your home briefing is refreshed from synced activity data.",
+            "workout_why": "Fresh synced data keeps decisions anchored.",
+        }
+        llm_payload = {
+            "coach_noticed": "You handled yesterday's load well; keep today's effort controlled.",
+            "today_context": "Recovery and sleep quality are the biggest levers today.",
+            "week_assessment": "Your week is on track with stable load and good absorption.",
+            "morning_voice": "9.2 miles at 8:49/mi yesterday — keep today's run easy to lock in adaptation.",
+            "workout_why": "Easy aerobic work today preserves quality for your next key session.",
+        }
+
+        stale_interim_entry = {
+            "payload": interim_payload,
+            "generated_at": (datetime.now(timezone.utc) - timedelta(minutes=20)).isoformat(),
+            "expires_at": (datetime.now(timezone.utc) + timedelta(minutes=40)).isoformat(),
+            "source_model": "deterministic-fallback",
+            "briefing_source": "deterministic_fallback",
+            "briefing_is_interim": True,
+            "version": 1,
+            "data_fingerprint": fingerprint,
+        }
+        fake_redis.setex(_cache_key(athlete_id), 3600, json.dumps(stale_interim_entry))
+
+        with patch("tasks.home_briefing_tasks.acquire_task_lock", return_value=True), \
+             patch("tasks.home_briefing_tasks.release_task_lock"), \
+             patch("tasks.home_briefing_tasks.get_db_sync", return_value=MagicMock()), \
+             patch("tasks.home_briefing_tasks.get_redis_client", return_value=fake_redis), \
+             patch("tasks.home_briefing_tasks._build_data_fingerprint", return_value=fingerprint), \
+             patch("tasks.home_briefing_tasks._build_briefing_prompt", return_value=("prompt", {}, [], {}, {}, None, datetime.now(), None, None, None)) as mock_prompt, \
+             patch("tasks.home_briefing_tasks._call_llm_for_briefing", return_value=(llm_payload, "claude-sonnet-4-6")) as mock_llm, \
+             patch("routers.home._valid_home_briefing_contract", return_value=True), \
+             patch("routers.home.validate_voice_output", return_value={"valid": True}), \
+             patch("routers.home.validate_sleep_claims", return_value={"valid": True}), \
+             patch("services.consent.has_ai_consent", return_value=True):
+            from tasks.home_briefing_tasks import generate_home_briefing_task
+            result = generate_home_briefing_task(athlete_id=athlete_id)
+
+        assert result["status"] == "success"
+        assert result["model"] in ("claude-sonnet-4-6", "gemini-2.5-flash")
+        mock_prompt.assert_called_once()
+        mock_llm.assert_called_once()
+
+        refreshed_payload, refreshed_state, refreshed_meta = read_briefing_cache_with_meta(athlete_id)
+        assert refreshed_state == BriefingState.FRESH
+        assert refreshed_payload is not None
+        assert refreshed_payload.get("morning_voice") == llm_payload["morning_voice"]
+        assert refreshed_meta["briefing_is_interim"] is False
+        assert refreshed_meta["briefing_source"] == "llm"
+
     def test_celery_task_writes_deterministic_fallback_when_llm_unavailable(self, fake_redis):
         """LLM outage should still write a deterministic refreshed briefing."""
         athlete_id = str(uuid4())
@@ -915,8 +1307,8 @@ class TestCeleryTask:
              patch("tasks.home_briefing_tasks.release_task_lock"), \
              patch("tasks.home_briefing_tasks.get_db_sync", return_value=mock_db), \
              patch("tasks.home_briefing_tasks._build_data_fingerprint", return_value="fp1"), \
-             patch("tasks.home_briefing_tasks._build_briefing_prompt", return_value=("prompt", {}, [], {}, {}, None)), \
-             patch("tasks.home_briefing_tasks._call_llm_for_briefing", return_value=None), \
+             patch("tasks.home_briefing_tasks._build_briefing_prompt", return_value=("prompt", {}, [], {}, {}, None, datetime.now(), None, None, None)), \
+             patch("tasks.home_briefing_tasks._call_llm_for_briefing", return_value=(None, "claude-sonnet-4-6")), \
              patch("tasks.home_briefing_tasks._build_deterministic_briefing", return_value={
                  "coach_noticed": "Latest run synced: 6.0 mi at 8:56/mi.",
                  "today_context": "Sync completed.",
@@ -942,6 +1334,63 @@ class TestCeleryTask:
         assert acquire_task_lock(athlete_id) is False
 
         release_task_lock(athlete_id)
+
+    def test_fallback_sets_briefing_is_interim_true(self, fake_redis):
+        """Fallback writes interim=true and deterministic_fallback metadata."""
+        athlete_id = str(uuid4())
+        mock_db = MagicMock()
+
+        with patch("tasks.home_briefing_tasks.acquire_task_lock", return_value=True), \
+             patch("tasks.home_briefing_tasks.release_task_lock"), \
+             patch("tasks.home_briefing_tasks.get_db_sync", return_value=mock_db), \
+             patch("tasks.home_briefing_tasks._build_data_fingerprint", return_value="fp-fallback"), \
+             patch("tasks.home_briefing_tasks._build_briefing_prompt", return_value=("prompt", {}, [], {}, {}, None, datetime.now(), None, None, None)), \
+             patch("tasks.home_briefing_tasks._call_llm_for_briefing", return_value=(None, "claude-sonnet-4-6")), \
+             patch("tasks.home_briefing_tasks._build_deterministic_briefing", return_value={
+                 "coach_noticed": "Latest run synced.",
+                 "today_context": "Sync completed.",
+                 "week_assessment": "Data is current.",
+                 "morning_voice": "Briefing refreshed from synced data.",
+                 "workout_why": "Fresh data anchors decisions.",
+             }), \
+             patch("services.consent.has_ai_consent", return_value=True):
+            from tasks.home_briefing_tasks import generate_home_briefing_task
+            result = generate_home_briefing_task(athlete_id=athlete_id)
+
+        assert result["status"] == "degraded"
+        _payload, _state, meta = read_briefing_cache_with_meta(athlete_id)
+        assert meta["briefing_is_interim"] is True
+        assert meta["briefing_source"] == "deterministic_fallback"
+
+    def test_successful_llm_clears_briefing_is_interim(self, fake_redis):
+        """A successful grounded LLM write must clear interim metadata."""
+        athlete_id = str(uuid4())
+        mock_db = MagicMock()
+        llm_payload = {
+            "coach_noticed": "Strong consistency this week.",
+            "today_context": "Easy day to absorb yesterday's work.",
+            "week_assessment": "You're progressing on plan.",
+            "morning_voice": "48 miles across 6 runs this week.",
+            "workout_why": "Active recovery supports adaptation.",
+        }
+
+        with patch("tasks.home_briefing_tasks.acquire_task_lock", return_value=True), \
+             patch("tasks.home_briefing_tasks.release_task_lock"), \
+             patch("tasks.home_briefing_tasks.get_db_sync", return_value=mock_db), \
+             patch("tasks.home_briefing_tasks._build_data_fingerprint", return_value="fp-llm"), \
+             patch("tasks.home_briefing_tasks._build_briefing_prompt", return_value=("prompt", {}, [], {}, {}, None, datetime.now(), None, None, None)), \
+             patch("tasks.home_briefing_tasks._call_llm_for_briefing", return_value=(llm_payload, "claude-sonnet-4-6")), \
+             patch("routers.home._valid_home_briefing_contract", return_value=True), \
+             patch("routers.home.validate_voice_output", return_value={"valid": True}), \
+             patch("routers.home.validate_sleep_claims", return_value={"valid": True}), \
+             patch("services.consent.has_ai_consent", return_value=True):
+            from tasks.home_briefing_tasks import generate_home_briefing_task
+            result = generate_home_briefing_task(athlete_id=athlete_id)
+
+        assert result["status"] == "success"
+        _payload, _state, meta = read_briefing_cache_with_meta(athlete_id)
+        assert meta["briefing_is_interim"] is False
+        assert meta["briefing_source"] == "llm"
 
 
 class TestProviderTimeout:
@@ -1118,8 +1567,8 @@ class TestCacheWriteReliability:
              patch("tasks.home_briefing_tasks.release_task_lock"), \
              patch("tasks.home_briefing_tasks.get_db_sync", return_value=MagicMock()), \
              patch("tasks.home_briefing_tasks._build_data_fingerprint", return_value="fp1"), \
-             patch("tasks.home_briefing_tasks._build_briefing_prompt", return_value=("prompt", {}, [], {}, {})), \
-             patch("tasks.home_briefing_tasks._call_llm_for_briefing", return_value=payload), \
+             patch("tasks.home_briefing_tasks._build_briefing_prompt", return_value=("prompt", {}, [], {}, {}, None, datetime.now(), None, None, None)), \
+             patch("tasks.home_briefing_tasks._call_llm_for_briefing", return_value=(payload, "claude-sonnet-4-6")), \
              patch("tasks.home_briefing_tasks.record_task_failure"), \
              patch("routers.home._valid_home_briefing_contract", return_value=True), \
              patch("routers.home.validate_voice_output", return_value={"valid": True}), \

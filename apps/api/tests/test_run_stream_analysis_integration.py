@@ -184,6 +184,22 @@ class TestToolResponseEnvelope:
         assert "pace_pct" in drift
         assert "cadence_trend_bpm_per_km" in drift
 
+    def test_easy_activity_effort_distribution_is_not_hot_dominant(self, db_session, test_athlete, activity_with_stream):
+        """Integration: persisted athlete pace profile should keep easy runs out of hot dominance."""
+        from services.coach_tools import analyze_run_streams
+
+        test_athlete.rpi = 56.0
+        test_athlete.threshold_pace_per_km = 300.0
+        db_session.add(test_athlete)
+        db_session.commit()
+
+        result = analyze_run_streams(db_session, test_athlete.id, activity_id=str(activity_with_stream.id))
+        assert result["ok"] is True
+        effort = result["data"]["analysis"]["effort_intensity"]
+        assert len(effort) > 0
+        hot_ratio = sum(1 for v in effort if v >= 0.8) / len(effort)
+        assert hot_ratio < 0.10
+
 
 # ===========================================================================
 # ERROR PATHS — AC-7

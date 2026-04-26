@@ -17,7 +17,6 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response, StreamingResponse
 from sqlalchemy.orm import Session
 from uuid import UUID
-from typing import Optional
 
 from core.database import get_db
 from core.auth import get_current_user
@@ -46,8 +45,8 @@ def export_plan_pdf(
 
     Access rules (mirrors pace-access entitlement):
     - 404  plan missing or not owned by this athlete
-    - 403  owned but paces not unlocked (free tier, no purchase)
-    - 200  one-time purchaser, guided, or premium
+    - 403  owned but paces not unlocked (free tier)
+    - 200  subscriber / active subscription / admin-owner
 
     Returns a streaming application/pdf response.
     """
@@ -66,7 +65,7 @@ def export_plan_pdf(
     if not can_access_plan_paces(current_user, plan_id, db):
         raise HTTPException(
             status_code=403,
-            detail="Unlock this plan to export as PDF. Visit the plan page to purchase access.",
+            detail="PDF export requires an active paid subscription.",
         )
 
     # Fetch workouts ordered for consistent rendering
@@ -82,12 +81,13 @@ def export_plan_pdf(
     except RuntimeError as exc:
         logger.error("PDF generation failed for plan=%s: %s", plan_id, exc)
         raise HTTPException(status_code=503, detail="PDF generation is temporarily unavailable.")
-    except Exception as exc:
+    except Exception:
         logger.exception("Unexpected PDF generation error for plan=%s", plan_id)
         raise HTTPException(status_code=500, detail="Failed to generate PDF.")
 
     safe_name = sanitize_pdf_filename(plan.name or "training_plan")
-    filename = f"{safe_name}_{date.today().strftime('%Y%m%d')}.pdf"
+    from services.timezone_utils import get_athlete_timezone, athlete_local_today
+    filename = f"{safe_name}_{athlete_local_today(get_athlete_timezone(current_user)).strftime('%Y%m%d')}.pdf"
 
     logger.info(
         "PDF export: user=%s plan=%s bytes=%d",

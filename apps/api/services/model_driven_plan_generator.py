@@ -20,8 +20,6 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta, date
 from typing import List, Dict, Optional, Any
 from uuid import UUID
-from enum import Enum
-import math
 import logging
 
 from sqlalchemy.orm import Session
@@ -34,7 +32,6 @@ from services.individual_performance_model import (
 from services.optimal_load_calculator import (
     OptimalLoadCalculator,
     LoadTrajectory,
-    TaperPlan,
     WeeklyLoadTarget,
     TrainingPhase
 )
@@ -43,10 +40,11 @@ from services.race_predictor import (
     RacePrediction
 )
 from services.rpi_calculator import calculate_training_paces
+from services.mileage_aggregation import get_canonical_run_activities
 
 logger = logging.getLogger(__name__)
 
-import json
+import json  # noqa: E402
 
 
 # =============================================================================
@@ -375,7 +373,8 @@ class ModelDrivenPlanGenerator:
             athlete_id=athlete_id,
             race_date=race_date,
             current_ctl=current_ctl,
-            current_atl=current_atl
+            current_atl=current_atl,
+            race_distance=race_distance,
         )
 
         # Step 4: Get training paces
@@ -888,17 +887,15 @@ class ModelDrivenPlanGenerator:
             - training_patterns: detected patterns (e.g., "interval_saturday", "long_sunday")
             - is_returning_from_injury: Whether recent volume is much lower
         """
-        from models import Activity
-        from datetime import datetime
-        
         end_date = date.today()
         year_ago = end_date - timedelta(days=365)
-        
-        activities = self.db.query(Activity).filter(
-            Activity.athlete_id == athlete_id,
-            Activity.start_time >= datetime.combine(year_ago, datetime.min.time()),
-            Activity.sport.ilike("run")
-        ).order_by(Activity.start_time.desc()).all()
+
+        activities, _ = get_canonical_run_activities(
+            athlete_id,
+            self.db,
+            start_time=datetime.combine(year_ago, datetime.min.time()),
+            require_trusted_duplicate_flags=False,
+        )
         
         if not activities:
             return self._get_default_baseline()
@@ -1111,13 +1108,54 @@ class ModelDrivenPlanGenerator:
                 return f"{pace_dict}/mi" if not pace_dict.endswith("/mi") else pace_dict
             return None
         
-        return {
+        paces = {
             "e_pace": extract_pace("easy") or "9:00/mi",
             "m_pace": extract_pace("marathon") or "8:00/mi",
             "t_pace": extract_pace("threshold") or "7:15/mi",
             "i_pace": extract_pace("interval") or "6:30/mi",
             "r_pace": extract_pace("repetition") or "6:00/mi"
         }
+        return self._enforce_pace_order_strings(paces)
+
+    def _parse_mile_pace(self, pace: Optional[str]) -> Optional[int]:
+        if not pace:
+            return None
+        raw = str(pace).strip().replace("/mi", "")
+        parts = raw.split(":")
+        if len(parts) != 2:
+            return None
+        try:
+            minutes = int(parts[0])
+            seconds = int(parts[1])
+        except ValueError:
+            return None
+        if minutes < 0 or seconds < 0 or seconds >= 60:
+            return None
+        return minutes * 60 + seconds
+
+    def _fmt_mile_pace(self, sec: int) -> str:
+        minutes = max(0, int(sec)) // 60
+        seconds = max(0, int(sec)) % 60
+        return f"{minutes}:{seconds:02d}/mi"
+
+    def _enforce_pace_order_strings(self, paces: Dict[str, str]) -> Dict[str, str]:
+        out = dict(paces)
+        marathon = self._parse_mile_pace(out.get("m_pace"))
+        threshold = self._parse_mile_pace(out.get("t_pace"))
+        interval = self._parse_mile_pace(out.get("i_pace"))
+        repetition = self._parse_mile_pace(out.get("r_pace"))
+        if marathon is None or threshold is None or interval is None:
+            return out
+        if threshold >= marathon:
+            threshold = max(1, marathon - 2)
+            out["t_pace"] = self._fmt_mile_pace(threshold)
+        if interval >= threshold:
+            interval = max(1, threshold - 2)
+            out["i_pace"] = self._fmt_mile_pace(interval)
+        if repetition is not None and repetition >= interval:
+            repetition = max(1, interval - 2)
+            out["r_pace"] = self._fmt_mile_pace(repetition)
+        return out
     
     def _default_paces(self) -> Dict[str, str]:
         """Return default training paces."""
@@ -1234,9 +1272,9 @@ class ModelDrivenPlanGenerator:
             {"day": 1, "type": "easy", "tss_pct": 0.14},    # Easy (Tuesday)
             {"day": 2, "type": "easy", "tss_pct": 0.14},    # Easy (Wednesday) 
             {"day": 3, "type": "easy_strides", "tss_pct": 0.12},  # Easy + strides (Thursday) - NOT threshold
-            {"day": 4, "type": "easy", "tss_pct": 0.12},    # Easy (Friday)
-            {"day": 5, "type": "easy", "tss_pct": 0.18},    # Medium-long easy (Saturday)
-            {"day": 6, "type": "long", "tss_pct": 0.30},    # Long run easy (Sunday) - 30% max
+            {"day": 4, "type": "easy", "tss_pct": 0.14},    # Easy (Friday)
+            {"day": 5, "type": "easy", "tss_pct": 0.10},    # Easy (Saturday) — day before long; must stay easy
+            {"day": 6, "type": "long", "tss_pct": 0.36},    # Long run easy (Sunday) — base phase emphasizes aerobic
         ]
     
     def _get_build_week_structure(self) -> List[Dict]:
@@ -1259,8 +1297,8 @@ class ModelDrivenPlanGenerator:
             {"day": 2, "type": "easy", "tss_pct": 0.14},    # Easy (Wednesday) - pre-quality rest
             {"day": 3, "type": "quality", "tss_pct": 0.14}, # Threshold (Thursday) - single quality
             {"day": 4, "type": "easy", "tss_pct": 0.12},    # Easy (Friday) - recovery
-            {"day": 5, "type": "easy", "tss_pct": 0.16},    # Medium-long easy (Saturday)
-            {"day": 6, "type": "long", "tss_pct": 0.30},    # Long run (Sunday) - can have MP finish
+            {"day": 5, "type": "easy", "tss_pct": 0.12},    # Easy (Saturday) — day before long; must stay easy
+            {"day": 6, "type": "long", "tss_pct": 0.34},    # Long run (Sunday) - can have MP finish
         ]
     
     def _get_peak_week_structure(self) -> List[Dict]:
@@ -1282,7 +1320,7 @@ class ModelDrivenPlanGenerator:
             {"day": 2, "type": "easy", "tss_pct": 0.14},    # Easy (Wednesday) - pre-quality
             {"day": 3, "type": "quality", "tss_pct": 0.14}, # Race pace (Thursday)
             {"day": 4, "type": "easy", "tss_pct": 0.12},    # Easy (Friday) - recovery
-            {"day": 5, "type": "easy", "tss_pct": 0.16},    # Medium easy (Saturday) - pre-long run
+            {"day": 5, "type": "easy", "tss_pct": 0.12},    # Easy (Saturday) — day before long; must stay easy
             {"day": 6, "type": "long", "tss_pct": 0.30},    # Long run with MP (Sunday)
         ]
     
@@ -1305,23 +1343,46 @@ class ModelDrivenPlanGenerator:
             {"day": 6, "type": "long", "tss_pct": 0.32},         # Reduced long (Sunday)
         ]
     
-    def _get_race_week_structure(self) -> List[Dict]:
+    def _get_race_week_structure(self, race_day_of_week: int = 6) -> List[Dict]:
         """
         Get race week structure - ends with race day.
-        
+
+        race_day_of_week: 0=Mon … 6=Sun (default Sunday).
+        Days after the race become rest; the day before is a light shakeout.
+
         Race week is almost entirely easy/rest leading to race.
         
         Source: Standard taper protocol
         """
-        return [
-            {"day": 0, "type": "rest", "tss_pct": 0},       # Rest (Monday)
-            {"day": 1, "type": "easy", "tss_pct": 0.10},    # Short shake-out (Tuesday)
-            {"day": 2, "type": "sharpening", "tss_pct": 0.10},  # Light strides (Wednesday)
-            {"day": 3, "type": "easy", "tss_pct": 0.08},    # Easy short (Thursday)
-            {"day": 4, "type": "rest", "tss_pct": 0},       # Rest (Friday)
-            {"day": 5, "type": "shakeout", "tss_pct": 0.05},  # Optional shakeout (Saturday)
-            {"day": 6, "type": "race", "tss_pct": 0.67},    # RACE DAY (Sunday)
+        race_day = max(0, min(6, int(race_day_of_week)))
+        base = [
+            {"day": 0, "type": "rest",       "tss_pct": 0},
+            {"day": 1, "type": "easy",        "tss_pct": 0.10},
+            {"day": 2, "type": "sharpening",  "tss_pct": 0.10},
+            {"day": 3, "type": "easy",        "tss_pct": 0.08},
+            {"day": 4, "type": "rest",        "tss_pct": 0},
+            {"day": 5, "type": "shakeout",    "tss_pct": 0.05},
+            {"day": 6, "type": "race",        "tss_pct": 0.67},
         ]
+        if race_day == 6:
+            return base
+
+        # Adjust structure so race falls on race_day
+        adjusted = []
+        for entry in base:
+            d = entry["day"]
+            if d < race_day:
+                # Keep pre-race slots, but trim to days that fit
+                adjusted.append(entry)
+            elif d == race_day:
+                adjusted.append({**entry, "type": "race"})
+            else:
+                # Days after race day become rest
+                adjusted.append({"day": d, "type": "rest", "tss_pct": 0})
+        # Ensure the day immediately before race is a shakeout (if there's a slot)
+        if race_day > 0:
+            adjusted[race_day - 1] = {"day": race_day - 1, "type": "shakeout", "tss_pct": 0.05}
+        return adjusted
     
     def _distribute_tss_to_days(
         self,
@@ -1583,19 +1644,20 @@ class ModelDrivenPlanGenerator:
             return legacy
         
         elif workout_type == "long":
-            # ========================================
-            # CRITICAL: Use athlete's ACTUAL baseline, not fixed caps
-            # A 55-70 mpw runner should do 18-22 mile long runs, not 10-15!
-            # ========================================
-            
             # Get distance-specific caps as FALLBACK only
-            caps = LONG_RUN_CAPS.get(race_distance, LONG_RUN_CAPS["marathon"])
-            
+            caps = dict(LONG_RUN_CAPS.get(race_distance, LONG_RUN_CAPS["marathon"]))
+
+            # High-volume athletes targeting shorter distances still need long aerobic runs
+            athlete_weekly = baseline.get("weekly_miles", 40)
+            athlete_peak_long = baseline.get("peak_long_run_miles", caps["peak"])
+            if athlete_weekly >= 55 and race_distance in ("5k", "10k"):
+                caps["max"] = min(18.0, max(caps["max"], athlete_peak_long))
+            elif athlete_weekly >= 45 and race_distance == "half_marathon":
+                caps["max"] = min(20.0, max(caps["max"], athlete_peak_long))
+
             # Use athlete's established long run distances
             athlete_typical_long = baseline.get("long_run_miles", caps["peak"])
-            athlete_peak_long = baseline.get("peak_long_run_miles", athlete_typical_long)
-            athlete_weekly = baseline.get("weekly_miles", 40)
-            
+
             # Long run target based on weekly volume (25-30% for most, up to 35% for marathon)
             # For a 53 mpw runner: 15-19 miles typical
             # For a 70 mpw runner: 18-24 miles
@@ -1643,8 +1705,11 @@ class ModelDrivenPlanGenerator:
             else:
                 miles = typical_long_target * 0.80
             
-            # Apply minimum floor
-            miles = max(miles, caps["min"])
+            # Apply minimum floor, but don't exceed 32% of weekly volume.
+            # Prevents hardcoded minimums (e.g. 14mi for marathon) from being
+            # imposed on low-volume comeback runners who can't safely support them.
+            volume_aware_min = min(float(caps["min"]), athlete_weekly * 0.32)
+            miles = max(miles, volume_aware_min)
             
             if phase == TrainingPhase.BUILD and race_distance in ("marathon", "half_marathon"):
                 # ========================================
@@ -1697,8 +1762,8 @@ class ModelDrivenPlanGenerator:
                         f"hold pace on tired legs - exactly what you'll face in the race. "
                         f"Your {proven_mp:.0f}mi @ MP history shows you can handle {mp_miles}mi in build phase."
                         if proven_mp > 0 else
-                        f"Marathon pace at the END of a long run when fatigued teaches your body to "
-                        f"hold pace on tired legs - exactly what you'll face in the race."
+                        "Marathon pace at the END of a long run when fatigued teaches your body to "
+                        "hold pace on tired legs - exactly what you'll face in the race."
                     )
                 )
             elif phase == TrainingPhase.PEAK and race_distance in ("marathon", "half_marathon"):
@@ -1897,20 +1962,20 @@ class ModelDrivenPlanGenerator:
                         # Determine effort description based on purpose
                         if tr_purpose == "threshold":
                             description = (
-                                f"Race this HARD - it's your final threshold before the marathon. "
-                                f"This is your last quality effort. Run for a PR."
+                                "Race this HARD - it's your final threshold before the marathon. "
+                                "This is your last quality effort. Run for a PR."
                             )
                             intensity = "race"
                         elif tr_purpose == "sharpening":
                             description = (
-                                f"Controlled effort - stay relaxed, don't empty the tank. "
-                                f"Use as a dress rehearsal for race day routines."
+                                "Controlled effort - stay relaxed, don't empty the tank. "
+                                "Use as a dress rehearsal for race day routines."
                             )
                             intensity = "moderate"
                         else:  # tune_up, fitness_check
                             description = (
-                                f"Tune-up race. Run comfortably hard but save something. "
-                                f"Focus on feeling good, not crushing it."
+                                "Tune-up race. Run comfortably hard but save something. "
+                                "Focus on feeling good, not crushing it."
                             )
                             intensity = "moderate"
                         

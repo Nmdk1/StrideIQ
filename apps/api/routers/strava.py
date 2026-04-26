@@ -8,15 +8,13 @@ Scopes requested: read,read_all,activity:read_all,profile:read_all
 See services/strava_service.py for scope documentation.
 """
 import logging
-import traceback
 from datetime import datetime, timezone
+
+import requests
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import RedirectResponse
+from sqlalchemy import func
 from sqlalchemy.orm import Session
-from sqlalchemy import func, text
-import requests
-
-logger = logging.getLogger(__name__)
 
 from core.database import get_db
 from core.auth import get_current_user
@@ -25,10 +23,7 @@ from models import Athlete, Activity, ActivitySplit
 from services.strava_service import (
     get_auth_url,
     exchange_code_for_token,
-    poll_activities,
-    get_activity_laps,
     get_activity_details,
-    ensure_fresh_token,
     StravaOAuthCapacityError,
 )
 from services.performance_engine import (
@@ -37,6 +32,8 @@ from services.performance_engine import (
     detect_race_candidate,
 )
 from services.oauth_state import create_oauth_state, verify_oauth_state
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/v1/strava", tags=["strava"])
 
@@ -118,10 +115,23 @@ def get_strava_status(
     Get Strava connection status for current user.
     """
     is_connected = bool(current_user.strava_access_token)
+    # An athlete has "previously connected" Strava if a Strava athlete id was ever
+    # captured. We retain strava_athlete_id on disconnect for audit, so this stays
+    # truthy even after the user disconnects.
+    previously_connected = current_user.strava_athlete_id is not None
+    # Garmin is the primary ingestion source; Strava is the fallback. If Garmin is
+    # actively connected we don't need Strava at all and should not nag the
+    # athlete to reconnect it.
+    garmin_connected = bool(
+        getattr(current_user, "garmin_connected", False)
+        and getattr(current_user, "garmin_oauth_access_token", None)
+    )
     last_sync = current_user.last_strava_sync.isoformat() if current_user.last_strava_sync else None
-    
+
     return {
         "connected": is_connected,
+        "previously_connected": previously_connected,
+        "garmin_connected": garmin_connected,
         "strava_athlete_id": current_user.strava_athlete_id,
         "last_sync": last_sync,
     }
@@ -400,14 +410,50 @@ def strava_callback(
                 token_data["expires_at"], tz=timezone.utc
             )
         
-        # Store athlete timezone from Strava profile
+        # Store athlete timezone from Strava profile.
+        # Only write when the athlete has no timezone yet — Strava's account
+        # timezone field reflects the device TZ at account creation and can
+        # be stale/wrong years later.  GPS inference (infer_and_persist_athlete_timezone)
+        # and manual DB corrections are always more reliable; don't clobber them.
         strava_timezone = athlete_info.get("timezone")
         if strava_timezone:
             # Strava returns e.g. "(GMT-05:00) America/New_York" — extract IANA part
             if " " in strava_timezone:
                 strava_timezone = strava_timezone.split(" ", 1)[-1]
-            athlete.timezone = strava_timezone
-        
+            from services.timezone_utils import is_valid_iana_timezone
+            if is_valid_iana_timezone(strava_timezone):
+                if not athlete.timezone:
+                    # First OAuth — set timezone from Strava.
+                    athlete.timezone = strava_timezone
+                    logger.info(
+                        "Strava OAuth: set timezone=%s for athlete %s (was unset)",
+                        strava_timezone, athlete.id,
+                    )
+                elif athlete.timezone != strava_timezone:
+                    # Already has a timezone that differs from Strava — log and keep.
+                    logger.info(
+                        "Strava OAuth: athlete %s already has timezone=%s; "
+                        "Strava returned %s — keeping existing (may differ due to stale Strava account settings)",
+                        athlete.id, athlete.timezone, strava_timezone,
+                    )
+
+                # Country-aware unit default: if the athlete has not yet made
+                # an explicit choice, derive their default unit system from
+                # the timezone we just learned. US athletes get imperial,
+                # everyone else gets metric. A subsequent Settings toggle
+                # will pin `preferred_units_set_explicitly = True` and this
+                # block becomes a no-op forever after.
+                if not getattr(athlete, "preferred_units_set_explicitly", False):
+                    from services.units_default import derive_default_units
+                    derived = derive_default_units(strava_timezone)
+                    if derived != athlete.preferred_units:
+                        logger.info(
+                            "Strava OAuth: deriving preferred_units=%s for athlete %s "
+                            "from timezone=%s (was %s, no explicit override)",
+                            derived, athlete.id, strava_timezone, athlete.preferred_units,
+                        )
+                        athlete.preferred_units = derived
+
         db.commit()
         db.refresh(athlete)
 
@@ -589,7 +635,7 @@ def backfill_activity_names(
     if not current_user.strava_access_token:
         raise HTTPException(status_code=400, detail="Strava not connected")
     
-    # Find activities missing names
+    # All-sport maintenance: Strava rows missing titles.
     activities_missing_names = db.query(Activity).filter(
         Activity.athlete_id == current_user.id,
         Activity.provider == "strava",

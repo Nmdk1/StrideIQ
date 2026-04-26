@@ -1,16 +1,17 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+from math import ceil
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 from pydantic import BaseModel, Field
 
 from core.auth import get_current_active_user
 from core.database import get_db
-from core.tier_utils import normalize_tier
-from models import Athlete, Subscription
+from models import Activity, Athlete, AthleteFact, CorrelationFinding, Subscription
 from services.stripe_service import StripeService, process_stripe_event
 
 
@@ -36,7 +37,12 @@ def start_trial(
     if getattr(current_user, "trial_started_at", None) is not None:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Trial already used")
 
-    if getattr(current_user, "subscription_tier", "free") in getattr(Athlete, "PAID_TIERS", set()):
+    # Paid-tier gate: rely on the canonical tier hierarchy rather than a
+    # magic attribute on the Athlete model.  Athlete.PAID_TIERS was never
+    # defined, so getattr(..., set()) silently let every paid subscriber
+    # through — regression surfaced by test_trial_denied_if_already_paid_tier.
+    from core.tier_utils import tier_satisfies
+    if tier_satisfies(getattr(current_user, "subscription_tier", "free"), "subscriber"):
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Already has paid access")
 
     existing_sub = db.query(Subscription).filter(Subscription.athlete_id == current_user.id).first()
@@ -66,20 +72,15 @@ class CheckoutRequest(BaseModel):
     Old shape (still accepted):
         {"billing_period": "annual"}
 
-    New shape:
-        {"tier": "guided", "billing_period": "monthly"}
-        {"tier": "premium", "billing_period": "annual"}
-
-    If ``tier`` is omitted, defaults to "premium" to preserve existing behavior.
+    Monetization reset:
+    - Single paid subscriber tier.
+    - ``tier`` is accepted for backward compatibility and ignored.
     """
     billing_period: str = Field(
         default="annual",
         description="'annual' or 'monthly'",
     )
-    tier: Optional[str] = Field(
-        default=None,
-        description="'guided' or 'premium'. Defaults to 'premium' if omitted.",
-    )
+    tier: Optional[str] = Field(default=None, description="Deprecated, ignored.")
 
 
 @router.post("/checkout")
@@ -87,22 +88,18 @@ def create_checkout(
     request: CheckoutRequest = None,
     current_user: Athlete = Depends(get_current_active_user),
 ):
-    """Create a Stripe Checkout Session for a subscription tier.
+    """Create a Stripe Checkout Session for the paid subscription tier.
 
-    Backward-compatible: old clients sending only ``billing_period`` receive
-    a premium checkout session (unchanged behavior).
+    Monetization reset behavior:
+    - All subscriptions checkout into a single paid tier (subscriber/StrideIQ).
+    - Deprecated ``tier`` request value is accepted for backward compatibility.
     """
     billing_period = (request.billing_period if request else "annual") or "annual"
     if billing_period not in ("annual", "monthly"):
         raise HTTPException(status_code=400, detail="billing_period must be 'annual' or 'monthly'")
 
-    raw_tier = (request.tier if request else None) or "premium"
-    canonical_tier = normalize_tier(raw_tier)
-    if canonical_tier not in ("guided", "premium"):
-        raise HTTPException(
-            status_code=400,
-            detail="tier must be 'guided' or 'premium'",
-        )
+    # Deprecated field handling: accepted but ignored.
+    canonical_tier = "subscriber"
 
     try:
         url = StripeService().create_checkout_session(
@@ -118,6 +115,136 @@ def create_checkout(
         raise HTTPException(status_code=500, detail="Failed to create checkout session")
 
     return {"url": url, "tier": canonical_tier, "billing_period": billing_period}
+
+
+class TrialCheckoutRequest(BaseModel):
+    """Request body for a trial checkout (CC collection with 30-day free trial)."""
+    billing_period: str = Field(
+        default="monthly",
+        description="'annual' or 'monthly'",
+    )
+
+
+@router.post("/checkout/trial")
+def create_trial_checkout(
+    request: TrialCheckoutRequest = None,
+    current_user: Athlete = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    """Create a Stripe Checkout Session with a 30-day free trial.
+
+    Collects CC upfront. Stripe auto-bills at day 30 unless cancelled.
+    The athlete can cancel anytime via the Customer Portal.
+    """
+    billing_period = (request.billing_period if request else "monthly") or "monthly"
+    if billing_period not in ("annual", "monthly"):
+        raise HTTPException(status_code=400, detail="billing_period must be 'annual' or 'monthly'")
+
+    from core.tier_utils import tier_satisfies
+    if tier_satisfies(current_user.subscription_tier, "subscriber"):
+        raise HTTPException(
+            status_code=409,
+            detail="Already has a paid subscription. Use /v1/billing/portal to manage.",
+        )
+
+    from sqlalchemy import func
+    active_sub_exists = db.query(func.count(Subscription.id)).filter(
+        Subscription.athlete_id == current_user.id,
+        func.lower(Subscription.status).in_(["active", "trialing"]),
+    ).scalar() > 0
+    if active_sub_exists:
+        raise HTTPException(
+            status_code=409,
+            detail="Already has an active Stripe subscription. Use /v1/billing/portal to manage.",
+        )
+
+    try:
+        from core.config import settings as _settings
+        base = getattr(_settings, "WEB_APP_BASE_URL", "https://strideiq.run").rstrip("/")
+        url = StripeService().create_trial_checkout_session(
+            athlete=current_user,
+            billing_period=billing_period,
+            success_url=f"{base}/discover?trial=started",
+            cancel_url=f"{base}/onboarding?trial=skipped",
+        )
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception:
+        raise HTTPException(status_code=500, detail="Failed to create trial checkout session")
+
+    return {
+        "url": url,
+        "billing_period": billing_period,
+        "trial_days": 30,
+        "amount_due_today": "$0.00",
+    }
+
+
+class TrialStatusResponse(BaseModel):
+    has_trial: bool
+    trial_days_remaining: int
+    trial_ends_at: Optional[datetime] = None
+    subscription_status: Optional[str] = None
+    subscription_tier: str = "free"
+    facts_learned: int
+    findings_discovered: int
+    activities_analyzed: int
+
+
+@router.get("/trial/status", response_model=TrialStatusResponse)
+def get_trial_status(
+    current_user: Athlete = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    """Return trial countdown and learned-value counts for lockout/banner UX."""
+    now = datetime.now(timezone.utc)
+    trial_ends_at = getattr(current_user, "trial_ends_at", None)
+    has_trial = bool(getattr(current_user, "trial_started_at", None))
+    days_remaining = 0
+    if trial_ends_at is not None:
+        remaining_seconds = (trial_ends_at - now).total_seconds()
+        if remaining_seconds > 0:
+            days_remaining = max(0, int(ceil(remaining_seconds / 86400)))
+
+    facts_learned = (
+        db.query(func.count(AthleteFact.id))
+        .filter(AthleteFact.athlete_id == current_user.id)
+        .scalar()
+        or 0
+    )
+    findings_discovered = (
+        db.query(func.count(CorrelationFinding.id))
+        .filter(
+            CorrelationFinding.athlete_id == current_user.id,
+            CorrelationFinding.is_active.is_(True),
+        )
+        .scalar()
+        or 0
+    )
+    activities_analyzed = (
+        db.query(func.count(Activity.id))
+        .filter(Activity.athlete_id == current_user.id)
+        .scalar()
+        or 0
+    )
+
+    sub = db.query(Subscription).filter(
+        Subscription.athlete_id == current_user.id,
+    ).order_by(Subscription.id.desc()).first()
+    subscription_status = (sub.status if sub else None)
+
+    return TrialStatusResponse(
+        has_trial=has_trial,
+        trial_days_remaining=max(0, int(days_remaining)),
+        trial_ends_at=trial_ends_at,
+        subscription_status=subscription_status,
+        subscription_tier=getattr(current_user, "subscription_tier", "free") or "free",
+        facts_learned=max(0, int(facts_learned)),
+        findings_discovered=max(0, int(findings_discovered)),
+        activities_analyzed=max(0, int(activities_analyzed)),
+    )
 
 
 class PlanCheckoutRequest(BaseModel):

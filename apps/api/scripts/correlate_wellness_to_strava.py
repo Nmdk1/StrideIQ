@@ -12,7 +12,6 @@ import os
 import sys
 import json
 from datetime import datetime, timedelta
-from pathlib import Path
 from collections import defaultdict
 
 # Add parent for imports
@@ -53,7 +52,7 @@ def load_strava_activities(session, athlete_identifier: str) -> list:
     """), {"identifier": athlete_identifier}).fetchone()
     
     if not result:
-        print(f"Athlete not found: {athlete_email}")
+        print(f"Athlete not found: {athlete_identifier}")
         return []
     
     athlete_id = result[0]
@@ -109,7 +108,6 @@ def load_strava_activities(session, athlete_identifier: str) -> list:
 def classify_run(activity: dict) -> str:
     """Classify run type based on pace, HR, and distance (no activity name available)."""
     distance = activity.get('distance_km', 0)
-    duration = activity.get('duration_min', 0)
     avg_hr = activity.get('avg_hr', 0)
     pace = activity.get('pace_min_km', 10)
     
@@ -324,7 +322,7 @@ def main():
         if abs(diff_pct) > 3:
             print(f"\n** SIGNAL DETECTED: HRV appears to affect efficiency by ~{abs(diff_pct):.0f}%")
         else:
-            print(f"\n** NO MEANINGFUL SIGNAL: Difference is negligible")
+            print("\n** NO MEANINGFUL SIGNAL: Difference is negligible")
     
     # === GOOD vs POOR SLEEP ===
     print("\n" + "="*70)

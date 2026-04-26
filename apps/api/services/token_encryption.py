@@ -14,7 +14,6 @@ from cryptography.fernet import Fernet
 from typing import Optional
 import os
 import logging
-from core.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -111,7 +110,7 @@ class TokenEncryption:
             base64.b64decode(token)
             # If it decodes successfully and is reasonably long, likely encrypted
             return len(token) > 20
-        except:
+        except Exception:
             return False
 
 

@@ -12,9 +12,13 @@ import { useRouter } from 'next/navigation';
 import { useQueryClient } from '@tanstack/react-query';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { planService } from '@/lib/api/services/plans';
+import { ApiClientError } from '@/lib/api/client';
 import { useAuth } from '@/lib/context/AuthContext';
+import { useUnits } from '@/lib/context/UnitsContext';
 import { parseTimeToSeconds } from '@/lib/utils/time';
 import { calendarKeys } from '@/lib/hooks/queries/calendar';
+
+const M_PER_MI = 1609.344;
 
 type Step = 'plan-type' | 'distance' | 'race-date' | 'current-fitness' | 'availability' | 'recent-race' | 'experience' | 'review' | 'model-driven-form' | 'model-driven-preview' | 'constraint-aware-form' | 'constraint-aware-tune-up' | 'constraint-aware-preview';
 
@@ -32,8 +36,8 @@ interface PlanFormData {
   distance: string;
   race_date: string;
   race_name: string;
-  current_weekly_miles: number;
-  longest_recent_run: number;
+  current_weekly_m: number;
+  longest_recent_run_m: number;
   days_per_week: number;
   recent_race_distance?: string;
   recent_race_time?: string;
@@ -41,6 +45,9 @@ interface PlanFormData {
   injury_history: string;
   goal_time_seconds?: number;
   tune_up_races: TuneUpRace[];
+  target_peak_weekly_m?: number;
+  target_peak_weekly_min_m?: number;
+  target_peak_weekly_max_m?: number;
 }
 
 interface ModelDrivenPreview {
@@ -64,12 +71,157 @@ interface ModelDrivenPreview {
   };
 }
 
-const DISTANCES = [
-  { value: 'marathon', label: 'Marathon', subtitle: '26.2 miles', icon: '🏃' },
-  { value: 'half_marathon', label: 'Half Marathon', subtitle: '13.1 miles', icon: '🏃' },
-  { value: '10k', label: '10K', subtitle: '6.2 miles', icon: '🏃' },
-  { value: '5k', label: '5K', subtitle: '3.1 miles', icon: '🏃' },
-];
+type PlanCreateError = {
+  message: string;
+  isUpgrade?: boolean;
+  safeBoundsMiles?: { min: number; max: number };
+  recommendedPeakMiles?: number;
+  // Optional debug context (technical reasons) that we keep available but
+  // do not render to the athlete unless they expand the details disclosure.
+  reasons?: string[];
+};
+
+function formatPlanCreateError(err: unknown): PlanCreateError {
+  if (err instanceof ApiClientError) {
+    if (err.status === 403) {
+      return {
+        message: 'Personalized training plans are a premium feature. Upgrade to unlock N=1 plan generation built from your actual training data.',
+        isUpgrade: true,
+      };
+    }
+    const detail = (err.data as { detail?: unknown } | undefined)?.detail;
+    if (detail && typeof detail === 'object') {
+      const payload = detail as {
+        error_code?: string;
+        reasons?: string[];
+        next_action?: string;
+        display_message?: string;
+        suggested_safe_bounds?: { weekly_miles?: { min?: number; max?: number } };
+        safe_bounds_km?: { weekly_miles?: { min?: number; max?: number } };
+        recommended_peak_weekly_miles?: number;
+      };
+      if (payload.error_code === 'readiness_gate_blocked') {
+        const display = (payload.display_message || '').trim();
+        const message = display
+          ? display
+          : "Your training history doesn't yet support this race distance. Build a longer long-run, then come back, or pick a shorter goal distance.";
+        return { message };
+      }
+      if (payload.error_code === 'quality_gate_failed') {
+        const display = (payload.display_message || '').trim();
+        const reasons = Array.isArray(payload.reasons) ? payload.reasons : [];
+        const message = display
+          ? display
+          : reasons.length > 0
+            ? `We caught a plan quality issue:\n${reasons.map((r, i) => `${i + 1}. ${r}`).join('\n')}`
+            : 'We caught a plan quality issue. Please adjust your inputs and try again.';
+        const weekly = payload.suggested_safe_bounds?.weekly_miles;
+        const safeBoundsMiles =
+          typeof weekly?.min === 'number' && typeof weekly?.max === 'number'
+            ? { min: weekly.min, max: weekly.max }
+            : undefined;
+        const recommendedPeakMiles =
+          typeof payload.recommended_peak_weekly_miles === 'number'
+            ? payload.recommended_peak_weekly_miles
+            : safeBoundsMiles
+              ? Math.round(((safeBoundsMiles.min + safeBoundsMiles.max) / 2) * 10) / 10
+              : undefined;
+        return {
+          message,
+          safeBoundsMiles,
+          recommendedPeakMiles,
+          reasons,
+        };
+      }
+      return { message: `Request failed (${err.status}).` };
+    }
+    return { message: err.message };
+  }
+  return { message: err instanceof Error ? err.message : 'Failed to create plan' };
+}
+
+interface PlanCreateErrorBannerProps {
+  error: PlanCreateError;
+  formatDistance: (meters: number | null | undefined, decimals?: number) => string;
+  onAcceptSafeRange?: (recommendedPeakMiles: number) => void;
+}
+
+function PlanCreateErrorBanner({ error, formatDistance, onAcceptSafeRange }: PlanCreateErrorBannerProps) {
+  if (error.isUpgrade) {
+    return (
+      <div className="mt-4 p-5 bg-gradient-to-r from-amber-900/40 to-amber-800/20 border border-amber-600/50 rounded-lg">
+        <p className="text-amber-200 text-sm font-medium mb-3">{error.message}</p>
+        <a
+          href="/#pricing"
+          className="inline-block px-5 py-2.5 bg-amber-500 hover:bg-amber-400 text-slate-900 font-semibold rounded-lg text-sm transition-colors"
+        >
+          View Plans &amp; Upgrade
+        </a>
+      </div>
+    );
+  }
+
+  const safe = error.safeBoundsMiles;
+  const recommendedMiles = error.recommendedPeakMiles;
+  const showSafeRange = !!safe && !!onAcceptSafeRange && typeof recommendedMiles === 'number';
+
+  const formatBoundsLabel = () => {
+    if (!safe) return null;
+    const minM = safe.min * M_PER_MI;
+    const maxM = safe.max * M_PER_MI;
+    return `${formatDistance(minM, 0)}-${formatDistance(maxM, 0)}/week`;
+  };
+
+  const formatRecommended = () => {
+    if (typeof recommendedMiles !== 'number') return null;
+    return `${formatDistance(recommendedMiles * M_PER_MI, 0)}/week`;
+  };
+
+  return (
+    <div className="mt-4 p-4 bg-red-900/40 border border-red-700/60 rounded-lg text-sm">
+      <p className="text-red-200 whitespace-pre-line">{error.message}</p>
+      {safe && (
+        <p className="text-red-100/80 mt-2">
+          Safe range from your training history: <span className="font-semibold">{formatBoundsLabel()}</span>
+        </p>
+      )}
+      {showSafeRange && (
+        <button
+          type="button"
+          onClick={() => onAcceptSafeRange!(recommendedMiles!)}
+          className="mt-3 inline-block px-5 py-2.5 bg-emerald-500 hover:bg-emerald-400 text-slate-900 font-semibold rounded-lg text-sm transition-colors"
+        >
+          Use safe range ({formatRecommended()})
+        </button>
+      )}
+      {error.reasons && error.reasons.length > 0 && (
+        <details className="mt-3 text-xs text-red-200/70">
+          <summary className="cursor-pointer hover:text-red-200">Show technical details</summary>
+          <ul className="mt-2 ml-4 list-disc space-y-1">
+            {error.reasons.map((r, i) => (
+              <li key={i}>{r}</li>
+            ))}
+          </ul>
+        </details>
+      )}
+    </div>
+  );
+}
+
+const DISTANCES_BY_UNIT: Record<'metric' | 'imperial', Array<{ value: string; label: string; subtitle: string; icon: string }>> = {
+  imperial: [
+    { value: 'marathon', label: 'Marathon', subtitle: '26.2 miles', icon: '🏃' },
+    { value: 'half_marathon', label: 'Half Marathon', subtitle: '13.1 miles', icon: '🏃' },
+    { value: '10k', label: '10K', subtitle: '6.2 miles', icon: '🏃' },
+    { value: '5k', label: '5K', subtitle: '3.1 miles', icon: '🏃' },
+  ],
+  metric: [
+    { value: 'marathon', label: 'Marathon', subtitle: '42.2 km', icon: '🏃' },
+    { value: 'half_marathon', label: 'Half Marathon', subtitle: '21.1 km', icon: '🏃' },
+    { value: '10k', label: '10K', subtitle: '10 km', icon: '🏃' },
+    { value: '5k', label: '5K', subtitle: '5 km', icon: '🏃' },
+  ],
+};
 
 const EXPERIENCE_LEVELS = [
   { value: 'beginner', label: 'New to Racing', description: 'This is my first structured training plan' },
@@ -81,10 +233,15 @@ export default function CreatePlanPage() {
   const router = useRouter();
   const queryClient = useQueryClient();
   const { user, isAuthenticated: authAuthenticated } = useAuth();
+  const { units, formatDistance } = useUnits();
+  const isMetric = units === 'metric';
+  const distanceUnitShort = isMetric ? 'km' : 'mi';
+  const distanceUnitLong = isMetric ? 'kilometers' : 'miles';
+  const DISTANCES = DISTANCES_BY_UNIT[units];
   const [step, setStep] = useState<Step>('plan-type');
   const [isLoading, setIsLoading] = useState(false);
   const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<PlanCreateError | null>(null);
   const [modelPreview, setModelPreview] = useState<ModelDrivenPreview | null>(null);
   const [modelPlanResult, setModelPlanResult] = useState<import('@/lib/api/services/plans').ModelDrivenPlanResponse | null>(null);
   
@@ -93,13 +250,17 @@ export default function CreatePlanPage() {
     distance: '',
     race_date: '',
     race_name: '',
-    current_weekly_miles: 30,
-    longest_recent_run: 10,
+    current_weekly_m: 48280,
+    longest_recent_run_m: 16093,
     days_per_week: 6,
     experience_level: 'intermediate',
     injury_history: '',
     tune_up_races: [],
+    target_peak_weekly_m: undefined,
+    target_peak_weekly_min_m: undefined,
+    target_peak_weekly_max_m: undefined,
   });
+  const [goalTimeDisplay, setGoalTimeDisplay] = useState('');
   const [constraintAwareResult, setConstraintAwareResult] = useState<import('@/lib/api/services/plans').ConstraintAwarePlanResponse | null>(null);
   const [constraintAwarePreview, setConstraintAwarePreview] = useState<import('@/lib/api/services/plans').ConstraintAwarePreview | null>(null);
   
@@ -125,9 +286,10 @@ export default function CreatePlanPage() {
   
   // Determine volume tier based on current miles
   const getVolumeTier = () => {
-    if (formData.current_weekly_miles < 35) return 'builder';
-    if (formData.current_weekly_miles < 45) return 'low';
-    if (formData.current_weekly_miles < 60) return 'mid';
+    const weeklyMi = formData.current_weekly_m / M_PER_MI;
+    if (weeklyMi < 35) return 'builder';
+    if (weeklyMi < 45) return 'low';
+    if (weeklyMi < 60) return 'mid';
     return 'high';
   };
   
@@ -148,33 +310,39 @@ export default function CreatePlanPage() {
       
     } catch (err) {
       console.error('[Plan Create] Error creating model-driven plan:', err);
-      const errorMessage = err instanceof Error ? err.message : 'Failed to create plan';
-      setError(errorMessage);
+      setError(formatPlanCreateError(err));
     } finally {
       setIsLoading(false);
     }
   };
 
   // Handle constraint-aware plan creation
-  const handleConstraintAwareSubmit = async () => {
+  const handleConstraintAwareSubmit = async (overrides?: { target_peak_weekly_m?: number }) => {
     setIsLoading(true);
     setError(null);
-    
+
     try {
-      // First get preview to show fitness bank
       const preview = await planService.previewConstraintAware(
         formData.race_date,
         formData.distance
       );
       setConstraintAwarePreview(preview);
-      
-      // Then create the full plan
+
+      const peakM = overrides?.target_peak_weekly_m
+        ?? formData.target_peak_weekly_m
+        ?? undefined;
+
       const result = await planService.createConstraintAware({
         race_date: formData.race_date,
         race_distance: formData.distance,
         goal_time_seconds: formData.goal_time_seconds,
         race_name: formData.race_name || undefined,
         tune_up_races: formData.tune_up_races.length > 0 ? formData.tune_up_races : undefined,
+        target_peak_weekly_m: peakM,
+        target_peak_weekly_range:
+          formData.target_peak_weekly_min_m && formData.target_peak_weekly_max_m
+            ? { min: formData.target_peak_weekly_min_m, max: formData.target_peak_weekly_max_m }
+            : undefined,
       });
       
       setConstraintAwareResult(result);
@@ -182,8 +350,7 @@ export default function CreatePlanPage() {
       
     } catch (err) {
       console.error('[Plan Create] Error creating constraint-aware plan:', err);
-      const errorMessage = err instanceof Error ? err.message : 'Failed to create plan';
-      setError(errorMessage);
+      setError(formatPlanCreateError(err));
     } finally {
       setIsLoading(false);
     }
@@ -203,7 +370,7 @@ export default function CreatePlanPage() {
       router.push('/calendar');
     } catch (err) {
       console.error('[Plan Create] Error applying to calendar:', err);
-      setError('Failed to apply plan to calendar');
+      setError({ message: 'Failed to apply plan to calendar' });
     } finally {
       setIsLoading(false);
     }
@@ -249,12 +416,12 @@ export default function CreatePlanPage() {
       router.push('/calendar');
     } catch (err) {
       console.error('[Plan Create] Error applying to calendar:', err);
-      setError('Failed to apply plan to calendar');
+      setError({ message: 'Failed to apply plan to calendar' });
     } finally {
       setIsLoading(false);
     }
   };
-  
+
   const handleSubmit = async () => {
     setIsLoading(true);
     setError(null);
@@ -293,7 +460,7 @@ export default function CreatePlanPage() {
           race_date: formData.race_date,
           race_name: formData.race_name || undefined,
           days_per_week: formData.days_per_week,
-          current_weekly_miles: formData.current_weekly_miles,
+          current_weekly_m: formData.current_weekly_m,
           recent_race_distance: formData.recent_race_distance,
           recent_race_time_seconds: raceTimeSeconds ?? undefined,
         });
@@ -328,15 +495,27 @@ export default function CreatePlanPage() {
       
     } catch (err) {
       console.error('[Plan Create] Error creating plan:', err);
-      const errorMessage = err instanceof Error ? err.message : 'Failed to create plan';
-      setError(errorMessage);
+      setError(formatPlanCreateError(err));
       // Stay on page - don't redirect
       return;
     } finally {
       setIsLoading(false);
     }
   };
-  
+
+  const acceptSafeRangeAndResubmit = (recommendedPeakMiles: number) => {
+    const peakM = recommendedPeakMiles * M_PER_MI;
+    setFormData((prev) => ({ ...prev, target_peak_weekly_m: peakM }));
+    setError(null);
+    if (formData.planType === 'constraint-aware') {
+      void handleConstraintAwareSubmit({ target_peak_weekly_m: peakM });
+    } else if (formData.planType === 'model-driven') {
+      void handleModelDrivenSubmit();
+    } else {
+      void handleSubmit();
+    }
+  };
+
   const nextStep = () => {
     // Different flows for each plan type
     if (formData.planType === 'model-driven') {
@@ -640,13 +819,15 @@ export default function CreatePlanPage() {
               </div>
               
               {error && (
-                <div className="mt-4 p-4 bg-red-900/50 border border-red-700 rounded-lg text-red-400">
-                  {error}
-                </div>
+                <PlanCreateErrorBanner
+                  error={error}
+                  formatDistance={formatDistance}
+                  onAcceptSafeRange={acceptSafeRangeAndResubmit}
+                />
               )}
             </div>
           )}
-          
+
           {/* Model-Driven Preview */}
           {step === 'model-driven-preview' && modelPlanResult && (
             <div>
@@ -715,8 +896,10 @@ export default function CreatePlanPage() {
                     <div className="text-xs text-slate-500">weeks</div>
                   </div>
                   <div className="bg-slate-900 rounded-lg p-3 text-center">
-                    <div className="text-xl font-bold text-white">{Math.round(modelPlanResult.summary.total_miles)}</div>
-                    <div className="text-xs text-slate-500">total miles</div>
+                    <div className="text-xl font-bold text-white">
+                      {formatDistance(modelPlanResult.summary.total_distance_m, 0)}
+                    </div>
+                    <div className="text-xs text-slate-500">total</div>
                   </div>
                   <div className="bg-slate-900 rounded-lg p-3 text-center">
                     <div className="text-xl font-bold text-white">{Math.round(modelPlanResult.summary.total_tss)}</div>
@@ -786,6 +969,67 @@ export default function CreatePlanPage() {
                     className="w-full px-4 py-3 bg-slate-900 border border-slate-700/50 rounded-lg text-white placeholder-slate-500"
                   />
                 </div>
+
+                {/* Goal Time */}
+                <div>
+                  <label className="block text-sm font-medium text-slate-400 mb-2">Goal Time (optional)</label>
+                  <input
+                    type="text"
+                    value={goalTimeDisplay}
+                    onChange={(e) => {
+                      const raw = e.target.value;
+                      setGoalTimeDisplay(raw);
+                      const secs = parseTimeToSeconds(raw);
+                      setFormData({ ...formData, goal_time_seconds: secs ?? undefined });
+                    }}
+                    placeholder={formData.distance === 'marathon' || formData.distance === 'half_marathon' ? 'e.g. 1:45:00' : 'e.g. 55:00'}
+                    className="w-full px-4 py-3 bg-slate-900 border border-slate-700/50 rounded-lg text-white placeholder-slate-500"
+                  />
+                  <div className="text-xs text-slate-500 mt-2">
+                    {formData.goal_time_seconds
+                      ? `${Math.floor(formData.goal_time_seconds / 3600) > 0 ? Math.floor(formData.goal_time_seconds / 3600) + 'h ' : ''}${Math.floor((formData.goal_time_seconds % 3600) / 60)}m ${formData.goal_time_seconds % 60}s — we'll set your training paces from this.`
+                      : 'Enter H:MM:SS or MM:SS. Used to calculate your training paces.'}
+                  </div>
+                </div>
+
+                {/* Athlete peak weekly volume override */}
+                {(() => {
+                  const peakDisplay =
+                    formData.target_peak_weekly_m !== undefined
+                      ? formatDistance(formData.target_peak_weekly_m, 0).replace(/[^\d.]/g, '')
+                      : '';
+                  const peakMin = isMetric ? 25000 : 16093;
+                  const peakMax = isMetric ? 515000 : 321869;
+                  const peakPlaceholder = isMetric ? 'e.g. 110' : 'e.g. 68';
+                  return (
+                    <div>
+                      <label className="block text-sm font-medium text-slate-400 mb-2">
+                        Peak Weekly Volume Override (optional, {distanceUnitLong})
+                      </label>
+                      <input
+                        type="number"
+                        min={isMetric ? 16 : 10}
+                        max={isMetric ? 320 : 200}
+                        value={peakDisplay}
+                        onChange={(e) => {
+                          const raw = e.target.value;
+                          if (!raw) {
+                            setFormData({ ...formData, target_peak_weekly_m: undefined });
+                            return;
+                          }
+                          const display = Number(raw);
+                          const meters = isMetric ? display * 1000 : display * M_PER_MI;
+                          setFormData({ ...formData, target_peak_weekly_m: meters });
+                        }}
+                        placeholder={peakPlaceholder}
+                        className="w-full px-4 py-3 bg-slate-900 border border-slate-700/50 rounded-lg text-white placeholder-slate-500"
+                      />
+                      <div className="text-xs text-slate-500 mt-2">
+                        If outside safety/plausibility bounds, we clamp and show the exact reason.
+                      </div>
+                    </div>
+                  );
+                })()}
               </div>
             </div>
           )}
@@ -878,9 +1122,11 @@ export default function CreatePlanPage() {
               </div>
               
               {error && (
-                <div className="mt-4 p-4 bg-red-900/50 border border-red-700 rounded-lg text-red-400">
-                  {error}
-                </div>
+                <PlanCreateErrorBanner
+                  error={error}
+                  formatDistance={formatDistance}
+                  onAcceptSafeRange={acceptSafeRangeAndResubmit}
+                />
               )}
             </div>
           )}
@@ -892,22 +1138,101 @@ export default function CreatePlanPage() {
               <p className="text-slate-400 text-sm mb-6">
                 Built from your data. Not a template.
               </p>
-              
+
               <div className="space-y-4">
+                {(() => {
+                  const warnings = constraintAwareResult.warnings || [];
+                  if (warnings.length === 0) return null;
+                  const peakM = constraintAwareResult.soft_gate_applied_peak_weekly_m;
+                  const requestedM =
+                    constraintAwareResult.soft_gate_requested_peak_weekly_m;
+                  const fmtPeak = (m: number | null | undefined) =>
+                    m == null ? null : `${formatDistance(m, 1)}/wk`;
+                  const cappedFromTo = warnings.find((w) =>
+                    w.startsWith('capped_requested_peak_to_safe_range:'),
+                  );
+                  const autoTuned = warnings.find((w) =>
+                    w.startsWith('auto_tuned_peak_to_safe_range:'),
+                  );
+                  const droppedRange = warnings.find((w) =>
+                    w.startsWith('dropped_requested_range_to_safe_peak:'),
+                  );
+                  const safeRangeBreach = warnings.find((w) =>
+                    w.startsWith('safe_range_regen_still_outside_band'),
+                  );
+                  const heading = safeRangeBreach
+                    ? 'Your plan is built — here is what we noticed'
+                    : 'We adjusted your peak weekly volume';
+                  let body: React.ReactNode = null;
+                  if (cappedFromTo) {
+                    body = (
+                      <>
+                        You asked for a peak of <strong>{fmtPeak(requestedM)}</strong>.
+                        That is higher than your training history supports right now, so
+                        we capped this plan at <strong>{fmtPeak(peakM)}</strong>. The
+                        plan you are seeing uses that safer peak. If you still want the
+                        higher volume, change the peak in the form and re-generate.
+                      </>
+                    );
+                  } else if (droppedRange) {
+                    body = (
+                      <>
+                        You asked for a peak weekly volume range. Your training history
+                        does not support the top of that range, so we built this plan at
+                        a single safer peak of <strong>{fmtPeak(peakM)}</strong>.
+                        Use this plan as-is, or set a specific peak in the form and
+                        re-generate.
+                      </>
+                    );
+                  } else if (autoTuned) {
+                    body = (
+                      <>
+                        We picked a peak of <strong>{fmtPeak(peakM)}</strong> based
+                        on what your training history supports. You can override this
+                        manually from the form if you want a different peak.
+                      </>
+                    );
+                  } else if (safeRangeBreach) {
+                    body = (
+                      <>
+                        {constraintAwareResult.soft_gate_display_message ||
+                          "We built this plan, but the math suggests it is pushing the edge of what your training history supports. Use it as-is, or adjust your peak from the form."}
+                      </>
+                    );
+                  } else {
+                    return null;
+                  }
+                  return (
+                    <div
+                      role="status"
+                      data-testid="soft-gate-warning"
+                      className="rounded-xl border border-amber-500/40 bg-amber-900/20 p-4"
+                    >
+                      <div className="text-sm font-semibold text-amber-200">{heading}</div>
+                      <p className="mt-1 text-sm text-amber-100/90">{body}</p>
+                    </div>
+                  );
+                })()}
                 {/* Fitness Bank Summary */}
                 <div className="bg-gradient-to-r from-emerald-900/50 to-teal-900/50 rounded-xl p-5 border border-emerald-500/30">
                   <div className="text-sm text-emerald-300 mb-2">Your Fitness Bank</div>
                   <div className="grid grid-cols-3 gap-4">
                     <div>
-                      <div className="text-2xl font-bold text-white">{constraintAwareResult.fitness_bank.peak.weekly_miles.toFixed(0)}</div>
-                      <div className="text-xs text-slate-400">peak mpw</div>
+                      <div className="text-2xl font-bold text-white">
+                        {formatDistance(constraintAwareResult.fitness_bank.peak.weekly_m, 0)}
+                      </div>
+                      <div className="text-xs text-slate-400">peak weekly</div>
                     </div>
                     <div>
-                      <div className="text-2xl font-bold text-white">{constraintAwareResult.fitness_bank.peak.long_run.toFixed(0)}</div>
+                      <div className="text-2xl font-bold text-white">
+                        {formatDistance(constraintAwareResult.fitness_bank.peak.long_run_m, 0)}
+                      </div>
                       <div className="text-xs text-slate-400">longest run</div>
                     </div>
                     <div>
-                      <div className="text-2xl font-bold text-white">{constraintAwareResult.fitness_bank.peak.mp_long_run.toFixed(0)}</div>
+                      <div className="text-2xl font-bold text-white">
+                        {formatDistance(constraintAwareResult.fitness_bank.peak.mp_long_run_m, 0)}
+                      </div>
                       <div className="text-xs text-slate-400">proven @MP</div>
                     </div>
                   </div>
@@ -922,12 +1247,53 @@ export default function CreatePlanPage() {
                 <div className="bg-slate-900 rounded-xl p-5">
                   <div className="text-sm text-slate-400 mb-1">Predicted Finish</div>
                   <div className="text-3xl font-bold text-white">
-                    {constraintAwareResult.prediction.time || 'N/A'}
+                    {constraintAwareResult.prediction.scenarios?.base?.time || constraintAwareResult.prediction.time || 'N/A'}
                   </div>
                   <div className="text-sm text-slate-400 mt-1">
                     {constraintAwareResult.prediction.confidence_interval}
                   </div>
+                  {constraintAwareResult.prediction.uncertainty_reason && (
+                    <div className="text-xs text-amber-400 mt-2">
+                      {constraintAwareResult.prediction.uncertainty_reason}
+                    </div>
+                  )}
+                  {constraintAwareResult.prediction.rationale_tags?.length > 0 && (
+                    <div className="flex flex-wrap gap-2 mt-3">
+                      {constraintAwareResult.prediction.rationale_tags.map((tag) => (
+                        <span
+                          key={tag}
+                          className="px-2 py-1 rounded bg-slate-800 text-slate-300 text-xs"
+                        >
+                          {tag.replace('_', ' ')}
+                        </span>
+                      ))}
+                    </div>
+                  )}
                 </div>
+
+                {/* Scenario Predictions */}
+                {constraintAwareResult.prediction.scenarios && (
+                  <div className="bg-slate-900 rounded-xl p-5">
+                    <div className="text-sm text-slate-400 mb-3">Prediction Scenarios</div>
+                    <div className="grid grid-cols-3 gap-3">
+                      <div className="rounded-lg border border-slate-700/50 p-3">
+                        <div className="text-xs text-slate-500">Conservative</div>
+                        <div className="text-lg font-bold text-white">{constraintAwareResult.prediction.scenarios.conservative.time}</div>
+                        <div className="text-xs text-slate-400">{constraintAwareResult.prediction.scenarios.conservative.confidence}</div>
+                      </div>
+                      <div className="rounded-lg border border-emerald-700/50 p-3 bg-emerald-900/10">
+                        <div className="text-xs text-slate-500">Base</div>
+                        <div className="text-lg font-bold text-emerald-300">{constraintAwareResult.prediction.scenarios.base.time}</div>
+                        <div className="text-xs text-slate-400">{constraintAwareResult.prediction.scenarios.base.confidence}</div>
+                      </div>
+                      <div className="rounded-lg border border-slate-700/50 p-3">
+                        <div className="text-xs text-slate-500">Aggressive</div>
+                        <div className="text-lg font-bold text-white">{constraintAwareResult.prediction.scenarios.aggressive.time}</div>
+                        <div className="text-xs text-slate-400">{constraintAwareResult.prediction.scenarios.aggressive.confidence}</div>
+                      </div>
+                    </div>
+                  </div>
+                )}
                 
                 {/* Model Parameters */}
                 <div className="bg-slate-900 rounded-xl p-5">
@@ -960,14 +1326,36 @@ export default function CreatePlanPage() {
                     <div className="text-xs text-slate-500">weeks</div>
                   </div>
                   <div className="bg-slate-900 rounded-lg p-3 text-center">
-                    <div className="text-xl font-bold text-white">{Math.round(constraintAwareResult.summary.total_miles)}</div>
-                    <div className="text-xs text-slate-500">total miles</div>
+                    <div className="text-xl font-bold text-white">
+                      {formatDistance(constraintAwareResult.summary.total_distance_m, 0)}
+                    </div>
+                    <div className="text-xs text-slate-500">total</div>
                   </div>
                   <div className="bg-slate-900 rounded-lg p-3 text-center">
-                    <div className="text-xl font-bold text-white">{Math.round(constraintAwareResult.summary.peak_miles)}</div>
+                    <div className="text-xl font-bold text-white">
+                      {formatDistance(constraintAwareResult.summary.peak_distance_m, 0)}
+                    </div>
                     <div className="text-xs text-slate-500">peak week</div>
                   </div>
                 </div>
+
+                {/* Volume contract */}
+                {constraintAwareResult.volume_contract && (
+                  <div className="bg-slate-900 rounded-xl p-5">
+                    <div className="text-sm text-slate-400 mb-2">Volume Contract</div>
+                    <div className="text-sm text-slate-300">
+                      Band: {formatDistance(constraintAwareResult.volume_contract.band_min_m, 0)} - {formatDistance(constraintAwareResult.volume_contract.band_max_m, 0)}/wk
+                    </div>
+                    <div className="text-xs text-slate-500 mt-1">
+                      Source: {constraintAwareResult.volume_contract.source.replace('_', ' ')} | Peak confidence: {constraintAwareResult.volume_contract.peak_confidence}
+                    </div>
+                    {constraintAwareResult.volume_contract.clamped && (
+                      <div className="text-xs text-amber-400 mt-2">
+                        {constraintAwareResult.volume_contract.clamp_reason || 'Requested override was clamped for safety.'}
+                      </div>
+                    )}
+                  </div>
+                )}
                 
                 {/* Personalized Insights */}
                 {constraintAwareResult.personalization.notes.length > 0 && (
@@ -988,7 +1376,9 @@ export default function CreatePlanPage() {
                     {constraintAwareResult.weeks.map((week, i) => (
                       <div key={i} className="flex justify-between text-sm">
                         <span className="text-slate-300">Week {week.week}: {week.theme.replace('_', ' ')}</span>
-                        <span className="text-slate-500">{week.total_miles.toFixed(0)}mi</span>
+                        <span className="text-slate-500">
+                          {formatDistance(week.total_distance_m, 0)}
+                        </span>
                       </div>
                     ))}
                   </div>
@@ -1066,59 +1456,80 @@ export default function CreatePlanPage() {
           )}
           
           {/* Current Fitness */}
-          {step === 'current-fitness' && (
-            <div>
-              <h2 className="text-xl font-bold text-white mb-4">What is your current fitness level?</h2>
-              <div className="space-y-6">
-                <div>
-                  <label className="block text-sm font-medium text-slate-400 mb-2">
-                    Current Weekly Mileage: <span className="text-white">{formData.current_weekly_miles} miles</span>
-                  </label>
-                  <input
-                    type="range"
-                    min="10"
-                    max="100"
-                    step="5"
-                    value={formData.current_weekly_miles}
-                    onChange={(e) => setFormData({ ...formData, current_weekly_miles: Number(e.target.value) })}
-                    className="w-full"
-                  />
-                  <div className="flex justify-between text-xs text-slate-500 mt-1">
-                    <span>10 mi</span>
-                    <span>50 mi</span>
-                    <span>100 mi</span>
+          {step === 'current-fitness' && (() => {
+            const mPerUnit = isMetric ? 1000 : M_PER_MI;
+            const weeklyDisplay = Math.round(formData.current_weekly_m / mPerUnit);
+            const weeklyMin = isMetric ? 16 : 10;
+            const weeklyMax = isMetric ? 160 : 100;
+            const weeklyStep = 5;
+            const weeklyMid = isMetric ? 80 : 50;
+
+            const longRunDisplay = Math.round(formData.longest_recent_run_m / mPerUnit);
+            const longMin = isMetric ? 5 : 3;
+            const longMax = isMetric ? 35 : 22;
+            const longStep = 1;
+            const longMid = isMetric ? 20 : 12;
+
+            return (
+              <div>
+                <h2 className="text-xl font-bold text-white mb-4">What is your current fitness level?</h2>
+                <div className="space-y-6">
+                  <div>
+                    <label className="block text-sm font-medium text-slate-400 mb-2">
+                      Current Weekly Volume: <span className="text-white">{weeklyDisplay} {distanceUnitShort}</span>
+                    </label>
+                    <input
+                      type="range"
+                      min={weeklyMin}
+                      max={weeklyMax}
+                      step={weeklyStep}
+                      value={weeklyDisplay}
+                      onChange={(e) => {
+                        const display = Number(e.target.value);
+                        setFormData({ ...formData, current_weekly_m: display * mPerUnit });
+                      }}
+                      className="w-full"
+                    />
+                    <div className="flex justify-between text-xs text-slate-500 mt-1">
+                      <span>{weeklyMin} {distanceUnitShort}</span>
+                      <span>{weeklyMid} {distanceUnitShort}</span>
+                      <span>{weeklyMax} {distanceUnitShort}</span>
+                    </div>
                   </div>
-                </div>
-                
-                <div>
-                  <label className="block text-sm font-medium text-slate-400 mb-2">
-                    Longest Run in Past Month: <span className="text-white">{formData.longest_recent_run} miles</span>
-                  </label>
-                  <input
-                    type="range"
-                    min="3"
-                    max="22"
-                    step="1"
-                    value={formData.longest_recent_run}
-                    onChange={(e) => setFormData({ ...formData, longest_recent_run: Number(e.target.value) })}
-                    className="w-full"
-                  />
-                  <div className="flex justify-between text-xs text-slate-500 mt-1">
-                    <span>3 mi</span>
-                    <span>12 mi</span>
-                    <span>22 mi</span>
+
+                  <div>
+                    <label className="block text-sm font-medium text-slate-400 mb-2">
+                      Longest Run in Past Month: <span className="text-white">{longRunDisplay} {distanceUnitShort}</span>
+                    </label>
+                    <input
+                      type="range"
+                      min={longMin}
+                      max={longMax}
+                      step={longStep}
+                      value={longRunDisplay}
+                      onChange={(e) => {
+                        const display = Number(e.target.value);
+                        setFormData({ ...formData, longest_recent_run_m: display * mPerUnit });
+                      }}
+                      className="w-full"
+                    />
+                    <div className="flex justify-between text-xs text-slate-500 mt-1">
+                      <span>{longMin} {distanceUnitShort}</span>
+                      <span>{longMid} {distanceUnitShort}</span>
+                      <span>{longMax} {distanceUnitShort}</span>
+                    </div>
                   </div>
-                </div>
-                
-                <div className="p-4 bg-slate-900 rounded-lg">
-                  <div className="text-sm text-slate-400">Your Volume Tier</div>
-                  <div className="text-xl font-bold text-orange-400 capitalize">
-                    {getVolumeTier().replace('_', ' ')}
+
+                  <div className="p-4 bg-slate-900 rounded-lg">
+                    <div className="text-sm text-slate-400">Your Volume Tier</div>
+                    <div className="text-xl font-bold text-orange-400 capitalize">
+                      {getVolumeTier().replace('_', ' ')}
+                    </div>
                   </div>
                 </div>
               </div>
-            </div>
-          )}
+            );
+          })()}
           
           {/* Availability */}
           {step === 'availability' && (
@@ -1373,9 +1784,11 @@ export default function CreatePlanPage() {
               </div>
               
               {error && (
-                <div className="mt-4 p-4 bg-red-900/50 border border-red-700 rounded-lg text-red-400">
-                  {error}
-                </div>
+                <PlanCreateErrorBanner
+                  error={error}
+                  formatDistance={formatDistance}
+                  onAcceptSafeRange={acceptSafeRangeAndResubmit}
+                />
               )}
             </div>
           )}
@@ -1424,7 +1837,7 @@ export default function CreatePlanPage() {
             </button>
           ) : step === 'constraint-aware-tune-up' ? (
             <button
-              onClick={handleConstraintAwareSubmit}
+              onClick={() => handleConstraintAwareSubmit()}
               disabled={isLoading || !formData.distance || !formData.race_date}
               className="px-8 py-3 bg-gradient-to-r from-emerald-600 to-teal-600 rounded-lg font-semibold text-white disabled:opacity-50 flex items-center gap-2"
             >

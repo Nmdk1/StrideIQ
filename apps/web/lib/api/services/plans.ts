@@ -19,8 +19,8 @@ export interface PlanPhase {
 
 export interface WorkoutSegment {
   name: string;
-  distance_miles?: number;
-  duration_minutes?: number;
+  distance_m?: number;
+  duration_s?: number;
   pace_description: string;
 }
 
@@ -34,8 +34,8 @@ export interface GeneratedWorkout {
   description: string;
   phase: string;
   phase_name: string;
-  distance_miles: number;
-  duration_minutes: number;
+  distance_m: number;
+  duration_s: number;
   pace_description: string;
   segments?: WorkoutSegment[];
   option: 'A' | 'B';
@@ -54,9 +54,9 @@ export interface GeneratedPlan {
   race_date?: string;
   phases: PlanPhase[];
   workouts: GeneratedWorkout[];
-  weekly_volumes: number[];
-  peak_volume: number;
-  total_miles: number;
+  weekly_volumes_m: number[];
+  peak_volume_m: number;
+  total_distance_m: number;
   total_quality_sessions: number;
 }
 
@@ -80,7 +80,7 @@ export interface SemiCustomPlanRequest {
   distance: string;
   race_date: string;
   days_per_week: number;
-  current_weekly_miles: number;
+  current_weekly_m: number;
   recent_race_distance?: string;
   recent_race_time_seconds?: number;  // Seconds, not string
   race_name?: string;
@@ -91,8 +91,8 @@ export interface CustomPlanRequest {
   race_date: string;
   race_name?: string;
   days_per_week: number;
-  current_weekly_miles?: number;
-  current_long_run_miles?: number;
+  current_weekly_m?: number;
+  current_long_run_m?: number;
   recent_race_distance?: string;
   recent_race_time_seconds?: number;
   goal_time_seconds?: number;
@@ -124,27 +124,32 @@ export interface ConstraintAwarePlanRequest {
   goal_time_seconds?: number;
   tune_up_races?: TuneUpRace[];
   race_name?: string;
+  target_peak_weekly_m?: number;
+  target_peak_weekly_range?: { min: number; max: number };
 }
 
 export interface FitnessBank {
   peak: {
-    weekly_miles: number;
-    monthly_miles: number;
-    long_run: number;
-    mp_long_run: number;
+    weekly_m: number;
+    monthly_m: number;
+    long_run_m: number;
+    mp_long_run_m: number;
     ctl: number;
   };
   current: {
-    weekly_miles: number;
+    weekly_m: number;
     ctl: number;
     atl: number;
+    long_run_m: number;
+    avg_long_run_m: number;
+    quality_sessions_28d: number;
   };
   best_rpi: number;
   races: Array<{
     date: string;
     distance: string;
     finish_time: number;
-    pace_per_mile: number;
+    pace_s_per_km: number;
     rpi: number;
     conditions: string | null;
   }>;
@@ -181,15 +186,43 @@ export interface ConstraintAwarePlanResponse {
   prediction: {
     time: string;
     confidence_interval: string;
+    uncertainty_reason?: string | null;
+    rationale_tags: string[];
+    scenarios: {
+      conservative: { time: string; confidence: 'low' | 'medium' | 'high' };
+      base: { time: string; confidence: 'low' | 'medium' | 'high' };
+      aggressive: { time: string; confidence: 'low' | 'medium' | 'high' };
+    };
   };
+  volume_contract: {
+    band_min_m: number;
+    band_max_m: number;
+    source: 'trusted_recent_band' | 'trusted_peak' | 'athlete_override';
+    peak_confidence: 'high' | 'medium' | 'low';
+    requested_peak_m?: number | null;
+    applied_peak_m?: number | null;
+    clamped?: boolean;
+    clamp_reason?: string | null;
+  };
+  quality_gate_fallback?: boolean;
+  quality_gate_reasons?: string[];
+  warnings?: string[];
+  soft_gate_applied_peak_weekly_m?: number | null;
+  soft_gate_requested_peak_weekly_m?: number | null;
+  soft_gate_display_message?: string | null;
+  soft_gate_reasons?: string[];
+  soft_gate_safe_bounds_km?: {
+    weekly_miles?: { min?: number | null; max?: number | null };
+    long_run_miles?: { min?: number | null; max?: number | null };
+  } | null;
   personalization: {
     notes: string[];
     tune_up_races: TuneUpRace[];
   };
   summary: {
     total_weeks: number;
-    total_miles: number;
-    peak_miles: number;
+    total_distance_m: number;
+    peak_distance_m: number;
   };
   weeks: Array<{
     week: number;
@@ -200,13 +233,13 @@ export interface ConstraintAwarePlanResponse {
       workout_type: string;
       name: string;
       description: string;
-      target_miles: number;
+      target_distance_m: number;
       intensity: string;
       paces: Record<string, string>;
       notes: string[];
       tss: number;
     }>;
-    total_miles: number;
+    total_distance_m: number;
     notes: string[];
   }>;
   generated_at: string;
@@ -280,7 +313,7 @@ export interface ModelDrivenPlanResponse {
     end_date: string;
     phase: string;
     target_tss: number;
-    target_miles: number;
+    target_distance_m: number;
     is_cutback: boolean;
     notes: string[];
     days: Array<{
@@ -290,7 +323,7 @@ export interface ModelDrivenPlanResponse {
       name: string;
       description: string;
       target_tss: number;
-      target_miles: number | null;
+      target_distance_m: number | null;
       target_pace: string | null;
       intensity: string;
       notes: string[];
@@ -298,7 +331,7 @@ export interface ModelDrivenPlanResponse {
   }>;
   summary: {
     total_weeks: number;
-    total_miles: number;
+    total_distance_m: number;
     total_tss: number;
   };
   generated_at: string;
@@ -319,9 +352,9 @@ export const planService = {
   /**
    * Get volume tier classification for current weekly miles
    */
-  async classifyTier(weeklyMiles: number, distance: string = 'marathon') {
+  async classifyTier(weeklyMeters: number, distance: string = 'marathon') {
     return apiClient.get<{ tier: string; label: string; range: string }>(
-      `/v2/plans/classify-tier?weekly_miles=${weeklyMiles}&distance=${distance}`
+      `/v2/plans/classify-tier?current_weekly_m=${weeklyMeters}&distance=${distance}`
     );
   },
 
@@ -389,7 +422,7 @@ export const planService = {
   },
 
   /**
-   * Create a constraint-aware plan (Elite tier only)
+   * Create a constraint-aware plan (paid subscription required)
    * Uses the Fitness Bank Framework (ADR-030, ADR-031):
    * - Analyzes full training history
    * - Detects constraints (injury, reduced volume)

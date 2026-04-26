@@ -16,6 +16,18 @@ from models import Athlete, NutritionEntry, Activity
 client = TestClient(app)
 
 
+# Nutrition POST/PUT enforces a 60-day backlog window (routers.nutrition
+# MAX_BACKLOG_DAYS). Hardcoded 2024 dates that were valid when this file
+# was written now exceed that window. We anchor every date to "today" via
+# _d(offset_days) so the suite stays evergreen.
+TODAY = date.today()
+
+
+def _d(offset_days: int = 0) -> str:
+    """Return an ISO-8601 date string `offset_days` ago (within backlog)."""
+    return (TODAY - timedelta(days=offset_days)).isoformat()
+
+
 def get_auth_headers(athlete):
     """Generate auth headers for test athlete"""
     token = create_access_token({"sub": str(athlete.id)})
@@ -99,7 +111,7 @@ class TestCreateNutritionEntry:
         headers = get_auth_headers(test_athlete)
         entry_data = {
             "athlete_id": str(test_athlete.id),
-            "date": "2024-01-15",
+            "date": _d(15),
             "entry_type": "daily",
             "calories": 2000.0,
             "protein_g": 150.0,
@@ -123,7 +135,7 @@ class TestCreateNutritionEntry:
         headers = get_auth_headers(test_athlete)
         entry_data = {
             "athlete_id": str(test_athlete.id),
-            "date": "2024-01-15",
+            "date": _d(15),
             "entry_type": "pre_activity",
             "activity_id": str(test_activity.id),
             "calories": 300.0,
@@ -144,7 +156,7 @@ class TestCreateNutritionEntry:
         headers = get_auth_headers(test_athlete)
         entry_data = {
             "athlete_id": str(test_athlete.id),
-            "date": "2024-01-15",
+            "date": _d(15),
             "entry_type": "during_activity",
             "activity_id": str(test_activity.id),
             "calories": 200.0,
@@ -164,7 +176,7 @@ class TestCreateNutritionEntry:
         headers = get_auth_headers(test_athlete)
         entry_data = {
             "athlete_id": str(test_athlete.id),
-            "date": "2024-01-15",
+            "date": _d(15),
             "entry_type": "post_activity",
             "activity_id": str(test_activity.id),
             "calories": 400.0,
@@ -185,7 +197,7 @@ class TestCreateNutritionEntry:
         headers = get_auth_headers(test_athlete)
         entry_data = {
             "athlete_id": str(test_athlete.id),
-            "date": "2024-01-15",
+            "date": _d(15),
             "entry_type": "daily",
             "activity_id": str(test_activity.id),  # Should fail
             "calories": 2000.0
@@ -200,7 +212,7 @@ class TestCreateNutritionEntry:
         headers = get_auth_headers(test_athlete)
         entry_data = {
             "athlete_id": str(test_athlete.id),
-            "date": "2024-01-15",
+            "date": _d(15),
             "entry_type": "pre_activity",
             # Missing activity_id - should fail
             "calories": 300.0
@@ -208,14 +220,15 @@ class TestCreateNutritionEntry:
         
         response = client.post("/v1/nutrition", json=entry_data, headers=headers)
         assert response.status_code == 400
-        assert "activity_id is required" in response.json()["detail"]
+        assert "activity_id required" in response.json()["detail"]
+        assert "pre_activity" in response.json()["detail"]
     
     def test_create_with_invalid_activity_id(self, test_athlete):
         """Test creating entry with non-existent activity ID"""
         headers = get_auth_headers(test_athlete)
         entry_data = {
             "athlete_id": str(test_athlete.id),
-            "date": "2024-01-15",
+            "date": _d(15),
             "entry_type": "pre_activity",
             "activity_id": str(uuid4()),  # Non-existent
             "calories": 300.0
@@ -229,7 +242,7 @@ class TestCreateNutritionEntry:
         headers = get_auth_headers(test_athlete)
         entry_data = {
             "athlete_id": str(test_athlete.id),
-            "date": "2024-01-15",
+            "date": _d(15),
             "entry_type": "invalid_type",
             "calories": 2000.0
         }
@@ -242,7 +255,7 @@ class TestCreateNutritionEntry:
         headers = get_auth_headers(test_athlete)
         entry_data = {
             "athlete_id": str(test_athlete.id),
-            "date": "2024-01-16",
+            "date": _d(14),
             "entry_type": "daily",
             "calories": 2200.5,
             "protein_g": 165.3,
@@ -272,7 +285,7 @@ class TestGetNutritionEntries:
         """Test getting all entries for an athlete"""
         headers = get_auth_headers(test_athlete)
         # Create multiple entries
-        dates = ["2024-01-15", "2024-01-20", "2024-01-25"]
+        dates = [_d(15), _d(10), _d(5)]
         for entry_date in dates:
             entry_data = {
                 "athlete_id": str(test_athlete.id),
@@ -289,12 +302,12 @@ class TestGetNutritionEntries:
         data = response.json()
         assert len(data) == 3
         # Should be ordered by date descending
-        assert data[0]["date"] == "2024-01-25"
+        assert data[0]["date"] == _d(5)
     
     def test_get_with_date_filter(self, test_athlete):
         """Test getting entries with date range filter"""
         headers = get_auth_headers(test_athlete)
-        dates = ["2024-02-15", "2024-02-20", "2024-02-25", "2024-03-01"]
+        dates = [_d(45), _d(40), _d(35), _d(30)]
         for entry_date in dates:
             entry_data = {
                 "athlete_id": str(test_athlete.id),
@@ -306,7 +319,7 @@ class TestGetNutritionEntries:
         
         # Filter by date range
         response = client.get(
-            f"/v1/nutrition?athlete_id={test_athlete.id}&start_date=2024-02-20&end_date=2024-02-25",
+            f"/v1/nutrition?athlete_id={test_athlete.id}&start_date={_d(40)}&end_date={_d(35)}",
             headers=headers
         )
         
@@ -320,7 +333,7 @@ class TestGetNutritionEntries:
         # Create entries of different types
         daily_entry = {
             "athlete_id": str(test_athlete.id),
-            "date": "2024-03-15",
+            "date": _d(25),
             "entry_type": "daily",
             "calories": 2000.0
         }
@@ -328,7 +341,7 @@ class TestGetNutritionEntries:
         
         pre_activity_entry = {
             "athlete_id": str(test_athlete.id),
-            "date": "2024-03-15",
+            "date": _d(25),
             "entry_type": "pre_activity",
             "activity_id": str(test_activity.id),
             "calories": 300.0
@@ -337,7 +350,7 @@ class TestGetNutritionEntries:
         
         daily_entry2 = {
             "athlete_id": str(test_athlete.id),
-            "date": "2024-03-16",
+            "date": _d(24),
             "entry_type": "daily",
             "calories": 2100.0
         }
@@ -360,7 +373,7 @@ class TestGetNutritionEntries:
         # Create entry linked to activity
         entry_data = {
             "athlete_id": str(test_athlete.id),
-            "date": "2024-04-15",
+            "date": _d(20),
             "entry_type": "pre_activity",
             "activity_id": str(test_activity.id),
             "calories": 300.0
@@ -396,7 +409,7 @@ class TestGetNutritionEntryById:
         headers = get_auth_headers(test_athlete)
         entry_data = {
             "athlete_id": str(test_athlete.id),
-            "date": "2024-05-15",
+            "date": _d(17),
             "entry_type": "daily",
             "calories": 2000.0,
             "notes": "Test entry"
@@ -431,7 +444,7 @@ class TestUpdateNutritionEntry:
         # Create entry
         entry_data = {
             "athlete_id": str(test_athlete.id),
-            "date": "2024-06-15",
+            "date": _d(12),
             "entry_type": "daily",
             "calories": 2000.0
         }
@@ -441,7 +454,7 @@ class TestUpdateNutritionEntry:
         # Update entry
         update_data = {
             "athlete_id": str(test_athlete.id),
-            "date": "2024-06-15",
+            "date": _d(12),
             "entry_type": "daily",
             "calories": 2200.0,
             "protein_g": 150.0,
@@ -461,7 +474,7 @@ class TestUpdateNutritionEntry:
         fake_id = uuid4()
         update_data = {
             "athlete_id": str(test_athlete.id),
-            "date": "2024-06-15",
+            "date": _d(12),
             "entry_type": "daily",
             "calories": 2000.0
         }
@@ -478,7 +491,7 @@ class TestDeleteNutritionEntry:
         headers = get_auth_headers(test_athlete)
         entry_data = {
             "athlete_id": str(test_athlete.id),
-            "date": "2024-07-15",
+            "date": _d(8),
             "entry_type": "daily",
             "calories": 2000.0
         }
@@ -509,7 +522,7 @@ class TestNutritionEdgeCases:
         headers = get_auth_headers(test_athlete)
         entry_data = {
             "athlete_id": str(test_athlete.id),
-            "date": "2024-08-15",
+            "date": _d(6),
             "entry_type": "daily",
             "calories": 0.0
         }
@@ -521,7 +534,7 @@ class TestNutritionEdgeCases:
         headers = get_auth_headers(test_athlete)
         entry_data = {
             "athlete_id": str(test_athlete.id),
-            "date": "2024-08-16",
+            "date": _d(7),
             "entry_type": "daily",
             "calories": -100.0
         }
@@ -534,7 +547,7 @@ class TestNutritionEdgeCases:
         headers = get_auth_headers(test_athlete)
         entry_data = {
             "athlete_id": str(test_athlete.id),
-            "date": "2024-08-17",
+            "date": _d(9),
             "entry_type": "daily",
             "calories": 10000.0,
             "protein_g": 500.0
@@ -550,7 +563,7 @@ class TestNutritionEdgeCases:
         # Create first entry
         entry1 = {
             "athlete_id": str(test_athlete.id),
-            "date": "2024-08-18",
+            "date": _d(11),
             "entry_type": "daily",
             "calories": 1000.0,
             "notes": "Breakfast"
@@ -561,7 +574,7 @@ class TestNutritionEdgeCases:
         # Create second entry same date (should be allowed - multiple meals per day)
         entry2 = {
             "athlete_id": str(test_athlete.id),
-            "date": "2024-08-18",
+            "date": _d(11),
             "entry_type": "daily",
             "calories": 1000.0,
             "notes": "Dinner"
@@ -590,7 +603,7 @@ class TestNutritionEdgeCases:
         headers = get_auth_headers(test_athlete)
         entry_data = {
             "athlete_id": str(test_athlete.id),
-            "date": "2024-08-19",
+            "date": _d(13),
             "entry_type": "daily",
             "calories": 2000.0,
             "notes": "Test with émojis 🍎 and 中文"
@@ -605,7 +618,7 @@ class TestNutritionEdgeCases:
         headers = get_auth_headers(test_athlete)
         entry_data = {
             "athlete_id": str(test_athlete.id),
-            "date": "2024-08-20",
+            "date": _d(16),
             "entry_type": "daily",
             "calories": 2000.0,
             "timing": "2024-08-20T12:30:00Z"

@@ -35,8 +35,10 @@ NARRATION_QUALITY_WINDOW_DAYS = 28
 
 # Tiers that qualify for each feature.
 # Must stay aligned with the router tier checks in routers/insights.py.
-TIERS_3B = {"premium"}
-TIERS_3C = {"guided", "premium", "elite", "pro"}
+# Includes both canonical ("subscriber") and legacy ("premium", "guided", etc.)
+# tier names since athlete rows may carry either form.
+TIERS_3B = {"subscriber", "premium"}
+TIERS_3C = {"subscriber", "guided", "premium", "elite", "pro"}
 
 # Kill-switch env var (also checked via FeatureFlag table)
 KILL_SWITCH_3B_ENV = "STRIDEIQ_3B_KILL_SWITCH"
@@ -186,7 +188,7 @@ def get_3b_eligibility(
             evidence={"kill_switch": True},
         )
 
-    # Tier gate
+    # Tier gate — active trial counts as paid
     athlete = _get_athlete(athlete_id, db)
     if athlete is None:
         return EligibilityResult(
@@ -194,11 +196,14 @@ def get_3b_eligibility(
             reason="Athlete not found.",
             evidence={"athlete_id": str(athlete_id)},
         )
-    if athlete.subscription_tier not in TIERS_3B:
+    if not athlete.has_active_subscription:
         return EligibilityResult(
             eligible=False,
-            reason=f"Workout narratives require premium tier. Current: {athlete.subscription_tier}.",
-            evidence={"tier": athlete.subscription_tier, "required": sorted(TIERS_3B)},
+            reason=f"Workout narratives require a paid subscription or active trial. Current tier: {athlete.subscription_tier}.",
+            evidence={
+                "tier": athlete.subscription_tier,
+                "trial_ends_at": str(getattr(athlete, "trial_ends_at", None)),
+            },
         )
 
     # History sufficiency
@@ -282,7 +287,7 @@ def get_3c_eligibility(
             evidence={"kill_switch": True},
         )
 
-    # Tier gate
+    # Tier gate — active trial counts as paid
     athlete = _get_athlete(athlete_id, db)
     if athlete is None:
         return EligibilityResult(
@@ -290,11 +295,14 @@ def get_3c_eligibility(
             reason="Athlete not found.",
             evidence={"athlete_id": str(athlete_id)},
         )
-    if athlete.subscription_tier not in TIERS_3C:
+    if not athlete.has_active_subscription:
         return EligibilityResult(
             eligible=False,
-            reason=f"N=1 insights require guided, premium, elite, or pro tier. Current: {athlete.subscription_tier}.",
-            evidence={"tier": athlete.subscription_tier, "required": sorted(TIERS_3C)},
+            reason=f"N=1 insights require a paid subscription or active trial. Current tier: {athlete.subscription_tier}.",
+            evidence={
+                "tier": athlete.subscription_tier,
+                "trial_ends_at": str(getattr(athlete, "trial_ends_at", None)),
+            },
         )
 
     # History sufficiency (production time OR synced history)

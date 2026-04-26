@@ -31,8 +31,8 @@ services:
 
   api:
     build:
-      context: ./apps/api
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: apps/api/Dockerfile
     container_name: running_app_api
     env_file:
       - .env
@@ -59,7 +59,8 @@ services:
 
   worker:
     build:
-      context: ./apps/api
+      context: .
+      dockerfile: apps/api/Dockerfile
     container_name: running_app_worker
     env_file:
       - .env

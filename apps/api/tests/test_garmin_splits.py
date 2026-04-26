@@ -10,6 +10,7 @@ Tests for Garmin ActivitySplit creation (builder note: BUILDER_NOTE_2026-02-25_G
   6. _ingest_activity_detail_item is idempotent (re-ingest replaces splits, not appends)
   7. _ingest_activity_detail_item creates splits from samples when no laps in payload
   8. Source contract: no raw Garmin field names in garmin_webhook_tasks.py
+  9. GAP uses net elevation change, not cumulative positive deltas (GPS noise fix)
 """
 
 import sys
@@ -309,6 +310,7 @@ class TestIngestActivityDetailCreatesSplits:
         mock_activity.start_time = datetime(2026, 2, 25, 8, 0, 0, tzinfo=timezone.utc)
         mock_activity.stream_fetch_status = None
         mock_activity.garmin_activity_id = 12345678
+        mock_activity.sport = "run"
 
         mock_db = MagicMock()
 
@@ -355,6 +357,7 @@ class TestIngestActivityDetailIdempotentSplits:
         mock_activity.start_time = datetime(2026, 2, 25, 8, 0, 0, tzinfo=timezone.utc)
         mock_activity.stream_fetch_status = None
         mock_activity.garmin_activity_id = 12345678
+        mock_activity.sport = "run"
 
         delete_called = {"n": 0}
         mock_db = MagicMock()
@@ -399,6 +402,7 @@ class TestIngestActivityDetailSampleFallbackWhenNoLaps:
         mock_activity.start_time = datetime(2026, 2, 25, 8, 0, 0, tzinfo=timezone.utc)
         mock_activity.stream_fetch_status = None
         mock_activity.garmin_activity_id = 12345678
+        mock_activity.sport = "run"
 
         mock_db = MagicMock()
 
@@ -440,6 +444,7 @@ class TestIngestActivityDetailSampleFallbackWhenNoLaps:
         mock_activity.start_time = datetime(2026, 2, 25, 8, 0, 0, tzinfo=timezone.utc)
         mock_activity.stream_fetch_status = None
         mock_activity.garmin_activity_id = 99999
+        mock_activity.sport = "run"
 
         mock_db = MagicMock()
 
@@ -496,3 +501,149 @@ class TestGarminSourceContract:
             f"Raw Garmin field names found in garmin_webhook_tasks.py "
             f"(source contract violation): {violations}"
         )
+
+
+# ===========================================================================
+# Test 9 — GAP uses net elevation change, not cumulative positive deltas
+# ===========================================================================
+class TestGAPNetElevationChange:
+    """
+    Regression tests for the GPS-noise GAP inflation bug.
+
+    Root cause: _compute_elevation_gain summed all positive deltas from noisy
+    GPS samples, inflating gross gain by 3-5x on flat segments and producing
+    a phantom uphill grade.  Fix: use net change (last - first elevation).
+
+    Reference: flat 4-mile run showing GAP 7:59-7:39 vs Garmin 8:29-8:46.
+    """
+
+    def test_flat_lap_with_noisy_samples_produces_near_zero_gain(self):
+        """
+        Noisy GPS samples on a flat segment must not inflate elevation gain.
+
+        Old behaviour (cumulative positive deltas): 10 samples oscillating
+        ±1m around 100m would accumulate ~5m of phantom gain.
+        New behaviour (net change): start=100m, end=101m → net gain = 1m.
+        """
+        from services.garmin_adapter import _compute_elevation_gain
+
+        # Simulate GPS noise: oscillates around 100m, net rise of 1m
+        samples = [
+            {"elevationInMeters": 100.0},
+            {"elevationInMeters": 101.2},
+            {"elevationInMeters": 99.8},
+            {"elevationInMeters": 101.5},
+            {"elevationInMeters": 100.3},
+            {"elevationInMeters": 101.0},  # end ≈ 101m
+        ]
+        gain = _compute_elevation_gain(samples)
+        # Net change = 101.0 - 100.0 = 1.0m.  Old code would return ~3.6m.
+        assert gain == pytest.approx(1.0, abs=0.1)
+
+    def test_net_downhill_returns_negative(self):
+        """Net downhill lap returns a negative value (used as downhill grade)."""
+        from services.garmin_adapter import _compute_elevation_gain
+
+        samples = [
+            {"elevationInMeters": 110.0},
+            {"elevationInMeters": 108.0},
+            {"elevationInMeters": 106.0},
+            {"elevationInMeters": 104.0},
+            {"elevationInMeters": 102.0},
+        ]
+        gain = _compute_elevation_gain(samples)
+        assert gain == pytest.approx(-8.0, abs=0.1)
+
+    def test_truly_flat_lap_returns_zero_gain(self):
+        """All samples at same elevation → 0.0 net change."""
+        from services.garmin_adapter import _compute_elevation_gain
+
+        samples = [{"elevationInMeters": 100.0} for _ in range(5)]
+        gain = _compute_elevation_gain(samples)
+        assert gain == 0.0
+
+    def test_single_sample_returns_none(self):
+        """< 2 samples → None (can't compute a change)."""
+        from services.garmin_adapter import _compute_elevation_gain
+
+        gain = _compute_elevation_gain([{"elevationInMeters": 100.0}])
+        assert gain is None
+
+    def test_gap_on_flat_split_is_close_to_raw_pace(self):
+        """
+        A near-flat lap (net 1m gain over 1 mile) should produce GAP within
+        ~5 seconds of raw pace.  The old code produced GAP 45-65 sec faster
+        than actual pace on flat segments due to GPS noise inflation.
+        """
+        from services.garmin_adapter import adapt_activity_detail_laps
+
+        # 1 lap, 8:43 pace (523s/mile), samples with net +1m elevation
+        laps = [{
+            "startTimeInSeconds": 0,
+            "totalDistanceInMeters": 1609.34,
+            "timerDurationInSeconds": 523,
+        }]
+        # Net gain of 1m over ~10 samples (noisy GPS around 100m baseline)
+        samples = [
+            {"startTimeInSeconds": i * 52, "elevationInMeters": 100.0 + (0.1 if i % 2 == 0 else -0.05)}
+            for i in range(10)
+        ]
+        samples[-1]["elevationInMeters"] = 101.0  # net +1m
+
+        raw_detail = {"activityId": 1, "laps": laps, "samples": samples}
+        result = adapt_activity_detail_laps(raw_detail, samples)
+
+        assert len(result) == 1
+        gap = result[0]["gap_seconds_per_mile"]
+        raw_pace = 523.0
+        # GAP should be within 10s of raw pace for a nearly flat segment
+        assert gap is not None
+        assert abs(gap - raw_pace) < 10, (
+            f"GAP {gap:.1f}s/mi is too far from raw pace {raw_pace}s/mi "
+            f"for a flat segment — GPS noise inflation still present"
+        )
+
+    def test_gap_on_uphill_split_is_faster_than_raw_pace(self):
+        """Net +20m elevation over 1 mile → GAP faster than raw pace."""
+        from services.garmin_adapter import adapt_activity_detail_laps
+
+        laps = [{
+            "startTimeInSeconds": 0,
+            "totalDistanceInMeters": 1609.34,
+            "timerDurationInSeconds": 540,
+        }]
+        samples = [
+            {"startTimeInSeconds": i * 54, "elevationInMeters": 100.0 + i * 2.0}
+            for i in range(11)  # 0 → 120m over 10 steps, net +20m
+        ]
+        samples[-1]["elevationInMeters"] = 120.0
+
+        raw_detail = {"activityId": 1, "laps": laps, "samples": samples}
+        result = adapt_activity_detail_laps(raw_detail, samples)
+
+        gap = result[0]["gap_seconds_per_mile"]
+        assert gap is not None
+        assert gap < 540, "Uphill GAP should be faster than raw pace"
+
+    def test_gap_on_downhill_split_is_slower_than_raw_pace(self):
+        """Net -20m elevation over 1 mile → GAP slower than raw pace."""
+        from services.garmin_adapter import adapt_activity_detail_laps
+
+        laps = [{
+            "startTimeInSeconds": 0,
+            "totalDistanceInMeters": 1609.34,
+            "timerDurationInSeconds": 540,
+        }]
+        samples = [
+            {"startTimeInSeconds": i * 54, "elevationInMeters": 120.0 - i * 2.0}
+            for i in range(11)
+        ]
+        samples[-1]["elevationInMeters"] = 100.0
+
+        raw_detail = {"activityId": 1, "laps": laps, "samples": samples}
+        result = adapt_activity_detail_laps(raw_detail, samples)
+
+        gap = result[0]["gap_seconds_per_mile"]
+        assert gap is not None
+        assert gap > 540, "Downhill GAP should be slower than raw pace"
+

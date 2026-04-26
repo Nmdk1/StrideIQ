@@ -28,7 +28,7 @@ age_standard = open_standard * age_factor
 age_graded_time = time_seconds / age_factor
 performance_pct = (age_standard / time_seconds) * 100
 
-print(f"Our Results:")
+print("Our Results:")
 print(f"  WMA Factor: {wma_factor:.4f}")
 print(f"  Time Mult: {age_factor:.4f}")
 print(f"  Open Standard: {open_standard:.0f}s = {int(open_standard//60)}:{int(open_standard%60):02d}")
@@ -52,7 +52,7 @@ wma_factor = 1 / age_factor
 age_standard = open_standard * age_factor
 performance_pct = (age_standard / time_seconds) * 100
 
-print(f"Our Results:")
+print("Our Results:")
 print(f"  WMA Factor: {wma_factor:.4f}")
 print(f"  Performance: {performance_pct:.2f}%")
 print()
@@ -76,7 +76,7 @@ age_standard = open_standard * age_factor
 age_graded_time = time_seconds / age_factor
 performance_pct = (age_standard / time_seconds) * 100
 
-print(f"Our Results:")
+print("Our Results:")
 print(f"  WMA Factor: {wma_factor:.4f}")
 print(f"  Time Mult: {age_factor:.4f}")
 print(f"  Open Standard: {open_standard:.0f}s = {int(open_standard//60)}:{int(open_standard%60):02d}")

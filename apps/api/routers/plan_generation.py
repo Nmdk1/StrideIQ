@@ -5,32 +5,93 @@ New plan generation system using the modular framework.
 
 Endpoints for:
 - Standard plans (free, fixed templates)
-- Semi-custom plans ($5, personalized)
+- Semi-custom plans (subscriber personalization)
 - Custom plans (subscription)
 - Plan previews (for review before purchase)
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 from pydantic import BaseModel, Field, ConfigDict
 from typing import List, Optional, Dict, Any
 from uuid import UUID
 from datetime import date, datetime, timedelta
+import re
 
 from core.database import get_db
 from core.auth import get_current_athlete, get_current_athlete_optional
 from models import Athlete, TrainingPlan, PlannedWorkout
+from services.timezone_utils import get_athlete_timezone, athlete_local_today
 
 from services.plan_framework import (
-    PlanGenerator,
-    GeneratedPlan,
     VolumeTierClassifier,
-    PaceEngine,
-    PlanTier,
-    VolumeTier,
     Distance,
 )
+
+_MI_TO_M = 1609.344
+
+
+def _weeks_to_meters(weeks: list) -> list:
+    m = _MI_TO_M
+    out = []
+    for w in weeks:
+        w = dict(w)
+        if "total_miles" in w:
+            w["total_distance_m"] = round(w.pop("total_miles") * m, 0)
+        if "days" in w:
+            days = []
+            for d in w["days"]:
+                d = dict(d)
+                if "target_miles" in d:
+                    d["target_distance_m"] = round(d.pop("target_miles") * m, 0)
+                days.append(d)
+            w["days"] = days
+        out.append(w)
+    return out
+
+
+def _volume_contract_to_meters(vc: Dict[str, Any]) -> Dict[str, Any]:
+    m = _MI_TO_M
+    out = dict(vc)
+    for k in ("band_min", "band_max", "applied_peak", "requested_peak"):
+        v = out.pop(k, None)
+        if v is not None:
+            out[f"{k}_m"] = round(float(v) * m, 0)
+    return out
+
+
+def _fitness_bank_to_meters(fb: Dict[str, Any]) -> Dict[str, Any]:
+    m = _MI_TO_M
+    out = dict(fb)
+    if "peak" in out:
+        p = dict(out["peak"])
+        out["peak"] = {
+            "weekly_m": round(p.pop("weekly_miles", 0) * m, 0),
+            "monthly_m": round(p.pop("monthly_miles", 0) * m, 0),
+            "long_run_m": round(p.pop("long_run", 0) * m, 0),
+            "mp_long_run_m": round(p.pop("mp_long_run", 0) * m, 0),
+            **{k: v for k, v in p.items()},
+        }
+    if "current" in out:
+        c = dict(out["current"])
+        out["current"] = {
+            "weekly_m": round(c.pop("weekly_miles", 0) * m, 0),
+            "long_run_m": round(c.pop("long_run", 0) * m, 0),
+            "avg_long_run_m": round(c.pop("avg_long_run", 0) * m, 0),
+            **{k: v for k, v in c.items()},
+        }
+    if "volume_contract" in out:
+        vc = dict(out["volume_contract"])
+        out["volume_contract"] = {
+            "recent_8w_median_weekly_m": round(vc.pop("recent_8w_median_weekly_miles", 0) * m, 0),
+            "recent_16w_p90_weekly_m": round(vc.pop("recent_16w_p90_weekly_miles", 0) * m, 0),
+            "recent_8w_p75_long_run_m": round(vc.pop("recent_8w_p75_long_run_miles", 0) * m, 0),
+            "recent_16w_p50_long_run_m": round(vc.pop("recent_16w_p50_long_run_miles", 0) * m, 0),
+            "last_complete_week_m": round(vc.pop("last_complete_week_miles", 0) * m, 0),
+            **{k: v for k, v in vc.items()},
+        }
+    return out
 from services.plan_framework.feature_flags import FeatureFlagService
 from services.plan_framework.entitlements import EntitlementsService
 from services.plan_audit import (
@@ -68,7 +129,7 @@ class SemiCustomPlanRequest(BaseModel):
     race_name: Optional[str] = Field(None, description="Goal race name (e.g., 'Boston Marathon')")
     
     # Current fitness
-    current_weekly_miles: float = Field(..., ge=10, le=150, description="Current weekly mileage")
+    current_weekly_m: float = Field(..., ge=16000, le=240000, description="Current weekly volume in meters")
     
     # For pace calculation
     recent_race_distance: Optional[str] = Field(None, description="Recent race distance")
@@ -82,7 +143,7 @@ class SemiCustomPlanRequest(BaseModel):
 
 
 class CustomPlanRequest(BaseModel):
-    """Request for a fully custom plan (subscription required)."""
+    """Request for a fully custom plan (subscriber access required)."""
     distance: str
     race_date: date
     days_per_week: int = Field(6, ge=4, le=7)
@@ -91,8 +152,8 @@ class CustomPlanRequest(BaseModel):
     race_name: Optional[str] = Field(None, description="Goal race name (e.g., 'Boston Marathon')")
 
     # Fitness
-    current_weekly_miles: Optional[float] = Field(None, ge=10, le=150)
-    current_long_run_miles: Optional[float] = None
+    current_weekly_m: Optional[float] = Field(None, ge=16000, le=240000)
+    current_long_run_m: Optional[float] = None
 
     # Paces
     recent_race_distance: Optional[str] = None
@@ -114,7 +175,7 @@ class CustomPlanRequest(BaseModel):
 
 class VolumeTierRequest(BaseModel):
     """Request for volume tier classification."""
-    current_weekly_miles: float = Field(..., ge=0, le=200)
+    current_weekly_m: float = Field(..., ge=0, le=320000)
     goal_distance: str
 
 
@@ -137,9 +198,9 @@ class PlanPreview(BaseModel):
     phases: List[Dict[str, Any]]
     workouts: List[Dict[str, Any]]
     
-    weekly_volumes: List[float]
-    peak_volume: float
-    total_miles: float
+    weekly_volumes_m: List[float]
+    peak_volume_m: float
+    total_distance_m: float
     total_quality_sessions: int
 
 
@@ -147,10 +208,10 @@ class VolumeTierResult(BaseModel):
     """Result of volume tier classification."""
     tier: str
     tier_description: str
-    min_weekly_miles: float
-    max_weekly_miles: float
-    peak_weekly_miles: float
-    long_run_peak_miles: float
+    min_weekly_m: float
+    max_weekly_m: float
+    peak_weekly_m: float
+    long_run_peak_m: float
     cutback_frequency: int
 
 
@@ -171,6 +232,54 @@ class EntitlementsResponse(BaseModel):
 
 
 # ============ Endpoints ============
+
+
+def _has_paid_subscription_access(athlete: Optional[Athlete]) -> bool:
+    """Canonical paid-access check for plan pace/modification/model gates.
+
+    Two-tier model: paid access is subscription-backed only.
+    """
+    if athlete is None:
+        return False
+    if getattr(athlete, "role", None) in ("admin", "owner"):
+        return True
+    if getattr(athlete, "has_active_subscription", False):
+        return True
+
+    tier_raw = str(getattr(athlete, "subscription_tier", "") or "").strip().lower()
+    return tier_raw == "subscriber"
+
+
+def _extract_first_pace_seconds(text: Optional[str]) -> Optional[int]:
+    if not text:
+        return None
+    match = re.search(r"(\d+):(\d{2})", str(text))
+    if not match:
+        return None
+    return int(match.group(1)) * 60 + int(match.group(2))
+
+
+def _model_driven_plan_has_pace_order_violation(plan) -> bool:
+    marathon = None
+    threshold = None
+    interval = None
+    for week in getattr(plan, "weeks", []):
+        for day in getattr(week, "days", []):
+            wt = str(getattr(day, "workout_type", "") or "").lower()
+            pace_sec = _extract_first_pace_seconds(getattr(day, "target_pace", None))
+            if pace_sec is None:
+                continue
+            if wt in ("race", "race_pace"):
+                marathon = pace_sec if marathon is None else min(marathon, pace_sec)
+            elif wt in ("threshold", "threshold_intervals"):
+                threshold = pace_sec if threshold is None else min(threshold, pace_sec)
+            elif wt in ("intervals", "repetitions", "sharpening"):
+                interval = pace_sec if interval is None else min(interval, pace_sec)
+    if marathon is not None and threshold is not None and threshold >= marathon:
+        return True
+    if threshold is not None and interval is not None and interval >= threshold:
+        return True
+    return False
 
 @router.get("/entitlements", response_model=EntitlementsResponse)
 async def get_entitlements(
@@ -208,8 +317,9 @@ async def classify_volume_tier(
     """
     classifier = VolumeTierClassifier(db)
     
+    MI_PER_M = 1 / 1609.344
     tier = classifier.classify(
-        current_weekly_miles=request.current_weekly_miles,
+        current_weekly_miles=request.current_weekly_m * MI_PER_M,
         goal_distance=request.goal_distance,
     )
     
@@ -219,10 +329,10 @@ async def classify_volume_tier(
     return VolumeTierResult(
         tier=tier.value,
         tier_description=description,
-        min_weekly_miles=params["min_weekly_miles"],
-        max_weekly_miles=params["max_weekly_miles"],
-        peak_weekly_miles=params["peak_weekly_miles"],
-        long_run_peak_miles=params["long_run_peak_miles"],
+        min_weekly_m=round(params["min_weekly_miles"] * 1609.344),
+        max_weekly_m=round(params["max_weekly_miles"] * 1609.344),
+        peak_weekly_m=round(params["peak_weekly_miles"] * 1609.344),
+        long_run_peak_m=round(params["long_run_peak_miles"] * 1609.344),
         cutback_frequency=params["cutback_frequency"],
     )
 
@@ -233,49 +343,8 @@ async def preview_standard_plan(
     athlete: Optional[Athlete] = Depends(get_current_athlete_optional),
     db: Session = Depends(get_db),
 ):
-    """
-    Generate a preview of a standard plan.
-
-    Public endpoint — no auth required.  Paces are blurred for unauthenticated
-    users and free-tier athletes.  Guided/Premium athletes see full paces.
-    """
-    # Validate inputs
-    try:
-        Distance(request.distance)
-    except ValueError:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Invalid distance: {request.distance}. Must be one of: 5k, 10k, half_marathon, marathon"
-        )
-    
-    try:
-        VolumeTier(request.volume_tier)
-    except ValueError:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Invalid volume_tier: {request.volume_tier}. Must be one of: builder, low, mid, high"
-        )
-    
-    # Generate plan
-    from core.tier_utils import tier_satisfies as _ts
-    generator = PlanGenerator(db)
-    plan = generator.generate_standard(
-        distance=request.distance,
-        duration_weeks=request.duration_weeks,
-        tier=request.volume_tier,
-        days_per_week=request.days_per_week,
-        start_date=request.start_date,
-    )
-
-    show_paces = (
-        athlete is not None
-        and (
-            getattr(athlete, "role", None) in ("admin", "owner")
-            or getattr(athlete, "has_active_subscription", False)
-            or _ts(getattr(athlete, "subscription_tier", None), "guided")
-        )
-    )
-    return _plan_to_preview(plan, show_paces=show_paces)
+    """Deprecated — use /constraint-aware/preview instead."""
+    raise HTTPException(status_code=501, detail="Standard plan generation removed. Use /v2/plans/constraint-aware instead.")
 
 
 @router.post("/standard", response_model=Dict[str, Any])
@@ -284,27 +353,8 @@ async def create_standard_plan(
     athlete: Athlete = Depends(get_current_athlete),
     db: Session = Depends(get_db),
 ):
-    """
-    Create and save a standard plan for the authenticated athlete.
-    """
-    # Generate plan
-    generator = PlanGenerator(db)
-    plan = generator.generate_standard(
-        distance=request.distance,
-        duration_weeks=request.duration_weeks,
-        tier=request.volume_tier,
-        days_per_week=request.days_per_week,
-        start_date=request.start_date or date.today(),
-    )
-    
-    # Save to database
-    saved_plan = _save_plan(db, athlete.id, plan, race_name=request.race_name)
-    
-    return {
-        "success": True,
-        "plan_id": str(saved_plan.id),
-        "message": f"Created {request.duration_weeks}-week {request.distance} plan",
-    }
+    """Deprecated — use /constraint-aware instead."""
+    raise HTTPException(status_code=501, detail="Standard plan generation removed. Use /v2/plans/constraint-aware instead.")
 
 
 @router.post("/semi-custom/preview", response_model=PlanPreview)
@@ -313,45 +363,8 @@ async def preview_semi_custom_plan(
     athlete: Athlete = Depends(get_current_athlete_optional),
     db: Session = Depends(get_db),
 ):
-    """
-    Generate a preview of a semi-custom plan.
-
-    Includes personalized paces if race time provided.
-    Authentication optional. Paces shown only for Guided/Premium athletes;
-    blurred for free/unauthenticated users.
-    """
-    from core.tier_utils import tier_satisfies as _ts
-
-    # Calculate duration from race date
-    today = date.today()
-    if request.race_date <= today:
-        raise HTTPException(status_code=400, detail="Race date must be in the future")
-    
-    days_to_race = (request.race_date - today).days
-    duration_weeks = min(24, max(4, days_to_race // 7))
-    
-    # Generate plan
-    generator = PlanGenerator(db)
-    plan = generator.generate_semi_custom(
-        distance=request.distance,
-        duration_weeks=duration_weeks,
-        current_weekly_miles=request.current_weekly_miles,
-        days_per_week=request.days_per_week,
-        race_date=request.race_date,
-        recent_race_distance=request.recent_race_distance,
-        recent_race_time_seconds=request.recent_race_time_seconds,
-        athlete_id=athlete.id if athlete else None,
-    )
-
-    show_paces = (
-        athlete is not None
-        and (
-            getattr(athlete, "role", None) in ("admin", "owner")
-            or getattr(athlete, "has_active_subscription", False)
-            or _ts(getattr(athlete, "subscription_tier", None), "guided")
-        )
-    )
-    return _plan_to_preview(plan, show_paces=show_paces)
+    """Deprecated — use /constraint-aware/preview instead."""
+    raise HTTPException(status_code=501, detail="Semi-custom plan generation removed. Use /v2/plans/constraint-aware instead.")
 
 
 @router.post("/semi-custom", response_model=Dict[str, Any])
@@ -360,53 +373,8 @@ async def create_semi_custom_plan(
     athlete: Athlete = Depends(get_current_athlete),
     db: Session = Depends(get_db),
 ):
-    """
-    Create and save a semi-custom plan.
-    
-    Requires payment ($5).
-    """
-    # Check entitlements
-    flags = FeatureFlagService(db)
-    entitlements = EntitlementsService(db, flags)
-    access = entitlements.check_plan_access(athlete, "semi_custom", request.distance, 18)
-    
-    if not access.allowed:
-        raise HTTPException(
-            status_code=403,
-            detail={
-                "reason": access.reason,
-                "price": access.price,
-                "upgrade_path": access.upgrade_path,
-            }
-        )
-    
-    # Calculate duration
-    today = date.today()
-    days_to_race = (request.race_date - today).days
-    duration_weeks = min(24, max(4, days_to_race // 7))
-    
-    # Generate plan
-    generator = PlanGenerator(db)
-    plan = generator.generate_semi_custom(
-        distance=request.distance,
-        duration_weeks=duration_weeks,
-        current_weekly_miles=request.current_weekly_miles,
-        days_per_week=request.days_per_week,
-        race_date=request.race_date,
-        recent_race_distance=request.recent_race_distance,
-        recent_race_time_seconds=request.recent_race_time_seconds,
-        athlete_id=athlete.id,
-    )
-    
-    # Save to database
-    saved_plan = _save_plan(db, athlete.id, plan, race_name=request.race_name)
-    
-    return {
-        "success": True,
-        "plan_id": str(saved_plan.id),
-        "message": f"Created personalized {duration_weeks}-week {request.distance} plan",
-        "rpi": plan.rpi,
-    }
+    """Deprecated — use /constraint-aware instead."""
+    raise HTTPException(status_code=501, detail="Semi-custom plan generation removed. Use /v2/plans/constraint-aware instead.")
 
 
 @router.post("/custom", response_model=Dict[str, Any])
@@ -415,60 +383,8 @@ async def create_custom_plan(
     athlete: Athlete = Depends(get_current_athlete),
     db: Session = Depends(get_db),
 ):
-    """
-    Create a fully custom plan using all athlete data.
-    
-    Requires subscription.
-    Uses:
-    - Auto-detected volume from Strava history
-    - Calculated paces from best recent efforts
-    - Training history patterns
-    """
-    # Check entitlements
-    flags = FeatureFlagService(db)
-    entitlements = EntitlementsService(db, flags)
-    access = entitlements.check_plan_access(athlete, "custom", request.distance, 18)
-    
-    if not access.allowed:
-        raise HTTPException(
-            status_code=403,
-            detail={
-                "reason": access.reason,
-                "upgrade_path": access.upgrade_path,
-            }
-        )
-    
-    # Collect athlete preferences
-    preferences = {
-        "preferred_quality_day": request.preferred_quality_day,
-        "preferred_long_run_day": request.preferred_long_run_day,
-        "injury_history": request.injury_history,
-        "goal_time_seconds": request.goal_time_seconds,
-    }
-    
-    # Generate plan
-    generator = PlanGenerator(db)
-    plan = generator.generate_custom(
-        distance=request.distance,
-        race_date=request.race_date,
-        days_per_week=request.days_per_week,
-        athlete_id=athlete.id,
-        athlete_preferences=preferences,
-        recent_race_distance=request.recent_race_distance,
-        recent_race_time_seconds=request.recent_race_time_seconds,
-    )
-    
-    # Save to database
-    saved_plan = _save_plan(db, athlete.id, plan, race_name=request.race_name)
-    
-    return {
-        "success": True,
-        "plan_id": str(saved_plan.id),
-        "message": f"Created fully custom {plan.duration_weeks}-week {request.distance} plan",
-        "rpi": plan.rpi,
-        "detected_weekly_miles": plan.weekly_volumes[0] if plan.weekly_volumes else None,
-        "peak_miles": plan.peak_volume,
-    }
+    """Deprecated — use /constraint-aware instead."""
+    raise HTTPException(status_code=501, detail="Custom plan generation removed. Use /v2/plans/constraint-aware instead.")
 
 
 @router.get("/options")
@@ -498,7 +414,7 @@ async def get_plan_options():
         ],
         "tiers": [
             {"value": "standard", "label": "Standard", "price": 0, "description": "Fixed template, effort descriptions"},
-            {"value": "semi_custom", "label": "Semi-Custom", "price": 5, "description": "Personalized paces, fitted to race date"},
+            {"value": "semi_custom", "label": "Semi-Custom", "price": "subscription", "description": "Personalized paces, fitted to race date"},
             {"value": "custom", "label": "Custom", "price": "subscription", "description": "Full personalization, dynamic adaptation"},
         ],
     }
@@ -506,13 +422,14 @@ async def get_plan_options():
 
 # ============ Helper Functions ============
 
-def _plan_to_preview(plan: GeneratedPlan, show_paces: bool = False) -> PlanPreview:
-    """Convert GeneratedPlan to preview response.
+def _plan_to_preview(plan, show_paces: bool = False) -> PlanPreview:
+    """Convert a generated plan to preview response (legacy, pending N=1 engine).
 
     ``show_paces`` controls whether pace_description is included in workout
-    dicts.  Defaults to False (blurred) — callers must explicitly opt in by
-    checking the athlete's tier or purchase status.
+    dicts. Defaults to False — callers must explicitly opt in by
+    checking athlete entitlements.
     """
+    _MI_TO_M = 1609.344
     return PlanPreview(
         plan_tier=plan.plan_tier.value,
         distance=plan.distance,
@@ -543,18 +460,19 @@ def _plan_to_preview(plan: GeneratedPlan, show_paces: bool = False) -> PlanPrevi
                 "description": w.description,
                 "phase": w.phase,
                 "phase_name": w.phase_name,
-                "distance_miles": w.distance_miles,
-                "duration_minutes": w.duration_minutes,
+                "distance_m": round(w.distance_miles * _MI_TO_M, 0) if w.distance_miles else None,
+                "duration_s": (w.duration_minutes * 60) if w.duration_minutes else None,
                 "pace_description": w.pace_description if show_paces else None,
                 "segments": w.segments,
                 "option": w.option,
+                "workout_variant_id": w.workout_variant_id,
                 "has_option_b": w.option_b is not None,
             }
             for w in plan.workouts
         ],
-        weekly_volumes=plan.weekly_volumes,
-        peak_volume=plan.peak_volume,
-        total_miles=plan.total_miles,
+        weekly_volumes_m=[round(v * _MI_TO_M, 0) for v in plan.weekly_volumes],
+        peak_volume_m=round(plan.peak_volume * _MI_TO_M, 0),
+        total_distance_m=round(plan.total_miles * _MI_TO_M, 0),
         total_quality_sessions=plan.total_quality_sessions,
     )
 
@@ -562,7 +480,7 @@ def _plan_to_preview(plan: GeneratedPlan, show_paces: bool = False) -> PlanPrevi
 def _save_plan(
     db: Session,
     athlete_id: UUID,
-    plan: GeneratedPlan,
+    plan,
     race_name: Optional[str] = None,
 ) -> TrainingPlan:
     """Save generated plan to database."""
@@ -621,6 +539,7 @@ def _save_plan(
             target_duration_minutes=workout.duration_minutes,
             target_distance_km=round(workout.distance_miles * 1.609, 2) if workout.distance_miles else None,
             segments=workout.segments,
+            workout_variant_id=workout.workout_variant_id,
             coach_notes=workout.pace_description,
         )
         db.add(db_workout)
@@ -797,12 +716,11 @@ async def withdraw_from_plan(
     # Archive the plan
     plan.status = "archived"
     
-    # Mark all future planned workouts as cancelled
-    today = date.today()
+    today = athlete_local_today(get_athlete_timezone(athlete))
     db.query(PlannedWorkout).filter(
         PlannedWorkout.plan_id == plan_id,
         PlannedWorkout.scheduled_date >= today,
-        PlannedWorkout.completed == False,
+        PlannedWorkout.completed.is_(False),
     ).update({"skipped": True})
     
     db.commit()
@@ -840,8 +758,7 @@ async def pause_plan(
     # Pause the plan
     plan.status = "paused"
     
-    # Calculate current week for reference
-    today = date.today()
+    today = athlete_local_today(get_athlete_timezone(athlete))
     current_workout = db.query(PlannedWorkout).filter(
         PlannedWorkout.plan_id == plan_id,
         PlannedWorkout.scheduled_date <= today,
@@ -919,7 +836,7 @@ async def change_race_date(
     if plan.status not in ("active", "paused"):
         raise HTTPException(status_code=400, detail=f"Cannot modify plan with status: {plan.status}")
     
-    today = date.today()
+    today = athlete_local_today(get_athlete_timezone(athlete))
     if request.new_race_date <= today:
         raise HTTPException(status_code=400, detail="New race date must be in the future")
     
@@ -1013,8 +930,8 @@ async def get_plan(
     Get full plan details.
 
     Returns the plan with all weeks and workouts.  Pace target fields
-    (coach_notes) are nulled for free athletes who have not purchased this
-    plan.  Plan structure (workout type, title, description, distance) is
+    (coach_notes) are hidden for ineligible tiers. Plan structure
+    (workout type, title, description, distance) is
     always returned.
     """
     from core.pace_access import can_access_plan_paces
@@ -1050,8 +967,8 @@ async def get_plan(
             "title": w.title,
             "description": w.description,
             "phase": w.phase,
-            "target_distance_km": w.target_distance_km,
-            "target_duration_minutes": w.target_duration_minutes,
+            "target_distance_m": round(w.target_distance_km * 1000, 0) if w.target_distance_km else None,
+            "target_duration_s": (w.target_duration_minutes * 60) if w.target_duration_minutes else None,
             "coach_notes": w.coach_notes if show_paces else None,
             "completed": w.completed,
             "skipped": w.skipped,
@@ -1212,8 +1129,8 @@ async def adjust_week_load(
     week_workouts = db.query(PlannedWorkout).filter(
         PlannedWorkout.plan_id == plan_id,
         PlannedWorkout.week_number == request.week_number,
-        PlannedWorkout.completed == False,
-        PlannedWorkout.skipped == False,
+        PlannedWorkout.completed.is_(False),
+        PlannedWorkout.skipped.is_(False),
     ).all()
     
     if not week_workouts:
@@ -1348,8 +1265,8 @@ async def get_week_workouts(
                 "workout_type": w.workout_type,
                 "title": w.title,
                 "description": w.description,
-                "target_distance_km": w.target_distance_km,
-                "target_duration_minutes": w.target_duration_minutes,
+                "target_distance_m": round(w.target_distance_km * 1000, 0) if w.target_distance_km else None,
+                "target_duration_s": (w.target_duration_minutes * 60) if w.target_duration_minutes else None,
                 "coach_notes": w.coach_notes if show_paces else None,
                 "completed": w.completed,
                 "skipped": w.skipped,
@@ -1362,27 +1279,11 @@ async def get_week_workouts(
 # ============ Full Workout Control (Paid Tier) ============
 
 def _check_paid_tier(athlete: Athlete, db: Session) -> bool:
-    """Check if athlete has paid tier access for plan modifications (guided+).
+    """Check if athlete has paid-tier access for plan modifications.
 
-    Uses the canonical tier hierarchy from core.tier_utils so that legacy tier
-    names (pro, elite, subscription) are normalised correctly.  Falls back to a
-    DB check for athletes who paid for a semi-custom/custom plan before the
-    subscription model existed.
+    Two-tier model: paid access maps to active subscription/subscriber only.
     """
-    from core.tier_utils import tier_satisfies
-
-    if tier_satisfies(athlete.subscription_tier, "guided"):
-        return True
-
-    # Legacy fallback: athletes who bought a semi-custom or custom plan
-    # before the subscription model existed retain workout-control access.
-    from models import TrainingPlan
-    paid_plan = db.query(TrainingPlan).filter(
-        TrainingPlan.athlete_id == athlete.id,
-        TrainingPlan.generation_method.in_(["semi_custom", "custom", "framework_v2"]),
-    ).first()
-
-    return paid_plan is not None
+    return _has_paid_subscription_access(athlete)
 
 
 @router.post("/{plan_id}/workouts/{workout_id}/move")
@@ -1542,11 +1443,11 @@ async def update_workout(
 
     if request.title is not None:
         workout.title = normalize_text(request.title)
-        changes.append(f"title updated")
+        changes.append("title updated")
     
     if request.description is not None:
         workout.description = normalize_text(request.description)
-        changes.append(f"description updated")
+        changes.append("description updated")
     
     if request.target_distance_km is not None:
         old_dist = workout.target_distance_km
@@ -1556,12 +1457,12 @@ async def update_workout(
     
     if request.target_duration_minutes is not None:
         workout.target_duration_minutes = request.target_duration_minutes
-        changes.append(f"duration updated")
+        changes.append("duration updated")
         structural_changed = True
     
     if request.coach_notes is not None:
         workout.coach_notes = normalize_text(request.coach_notes)
-        changes.append(f"notes updated")
+        changes.append("notes updated")
 
     # Always normalize existing fields too (fix mojibake already stored).
     normalize_workout_text_fields(workout)
@@ -1596,8 +1497,8 @@ async def update_workout(
             "id": str(workout.id),
             "title": workout.title,
             "workout_type": workout.workout_type,
-            "target_distance_km": workout.target_distance_km,
-            "target_duration_minutes": workout.target_duration_minutes,
+            "target_distance_m": round(workout.target_distance_km * 1000, 0) if workout.target_distance_km else None,
+            "target_duration_s": (workout.target_duration_minutes * 60) if workout.target_duration_minutes else None,
             "coach_notes": workout.coach_notes,
             "description": workout.description,
         },
@@ -1882,7 +1783,7 @@ async def create_model_driven_plan(
     3. Personalize taper based on pre-race fingerprint
     4. Predict race time from fitness trajectory
     
-    ELITE TIER ONLY. Rate limited to 5 requests/day.
+    Paid subscription required. Rate limited to 5 requests/day.
     """
     import logging
     from datetime import datetime
@@ -1896,27 +1797,28 @@ async def create_model_driven_plan(
         raise HTTPException(
             status_code=403,
             detail={
-                "reason": "Model-driven plans require Elite subscription",
+                "reason": "Model-driven plans require an active paid subscription",
                 "upgrade_path": "/pricing"
             }
         )
     
-    # Check tier
-    if athlete.subscription_tier not in ("elite", "premium", "guided"):
+    # Check paid entitlement
+    if not _has_paid_subscription_access(athlete):
         raise HTTPException(
             status_code=403,
             detail={
-                "reason": "Model-driven plans require Elite subscription",
+                "reason": "Model-driven plans require an active paid subscription",
                 "upgrade_path": "/pricing"
             }
         )
     
-    # Check rate limit
-    if not _check_rate_limit(str(athlete.id)):
-        raise HTTPException(
-            status_code=429,
-            detail="Rate limit exceeded. Maximum 5 model-driven plans per day."
-        )
+    # Check rate limit (admin/owner exempt)
+    if getattr(athlete, "role", None) not in ("admin", "owner"):
+        if not _check_rate_limit(str(athlete.id)):
+            raise HTTPException(
+                status_code=429,
+                detail="Rate limit exceeded. Maximum 5 model-driven plans per day."
+            )
     
     # Validate inputs
     valid_distances = ["5k", "10k", "half_marathon", "marathon"]
@@ -1926,7 +1828,7 @@ async def create_model_driven_plan(
             detail=f"Invalid race_distance. Must be one of: {', '.join(valid_distances)}"
         )
     
-    today = date.today()
+    today = athlete_local_today(get_athlete_timezone(athlete))
     if request.race_date <= today:
         raise HTTPException(
             status_code=400,
@@ -1981,6 +1883,14 @@ async def create_model_driven_plan(
             goal_time_seconds=request.goal_time_seconds,
             tune_up_races=tune_ups
         )
+        if _model_driven_plan_has_pace_order_violation(plan):
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "error_code": "pace_order_invariant_failed",
+                    "reason": "Generated plan violates pace-order contract (interval<threshold<marathon).",
+                },
+            )
         
         # Save plan to database
         saved_plan = _save_model_driven_plan(db, athlete.id, plan)
@@ -2012,11 +1922,11 @@ async def create_model_driven_plan(
                 "notes": plan.counter_conventional_notes,
                 "summary": plan.personalization_summary
             },
-            "weeks": [w.to_dict() for w in plan.weeks],
+            "weeks": _weeks_to_meters([w.to_dict() for w in plan.weeks]),
             "summary": {
                 "total_weeks": plan.total_weeks,
-                "total_miles": round(plan.total_miles, 1),
-                "total_tss": round(plan.total_tss, 0)
+                "total_distance_m": round(plan.total_miles * 1609.344, 0),
+                "total_tss": round(plan.total_tss, 0),
             },
             "generated_at": plan.created_at.isoformat()
         }
@@ -2101,6 +2011,45 @@ class ConstraintAwarePlanRequest(BaseModel):
     goal_time_seconds: Optional[int] = Field(None, ge=600, description="Goal race time in seconds")
     tune_up_races: Optional[List[TuneUpRace]] = Field(None, description="Tune-up races before goal race")
     race_name: Optional[str] = Field(None, description="Goal race name")
+    target_peak_weekly_m: Optional[float] = Field(None, ge=16000, le=320000, description="Optional athlete-requested peak weekly volume in meters")
+    target_peak_weekly_range: Optional[Dict[str, float]] = Field(None, description="Optional athlete-requested peak weekly volume range in meters")
+    taper_weeks: Optional[int] = Field(None, ge=1, le=3, description="Taper length: 1, 2, or 3 weeks. Auto-selected by distance if omitted.")
+
+
+_PHASE_TO_BUILD_CONTEXT: Dict[str, str] = {
+    "rebuild": "durability_rebuild",
+    "base": "base_building",
+    "build": "full_featured_healthy",
+    "peak": "peak_fitness",
+    "race": "race_specific",
+    "taper": "minimal_sharpen",
+    "recovery": "durability_rebuild",
+}
+
+
+def _resolve_variant_for_constraint_workout(
+    workout_type: str,
+    phase: str,
+    week_number: int,
+    total_weeks: int,
+    race_distance: str,
+    title: str,
+) -> Optional[str]:
+    """Map a constraint-aware workout to its best registry variant id."""
+    try:
+        from services.plan_framework.variant_selector import select_variant
+    except ImportError:
+        return None
+
+    build_context_tag = _PHASE_TO_BUILD_CONTEXT.get(phase, "full_featured_healthy")
+    return select_variant(
+        workout_type=workout_type,
+        build_context_tag=build_context_tag,
+        week_in_phase=week_number,
+        total_phase_weeks=total_weeks,
+        distance=race_distance,
+        title=title,
+    )
 
 
 def _save_constraint_aware_plan(
@@ -2111,7 +2060,6 @@ def _save_constraint_aware_plan(
 ) -> TrainingPlan:
     """Save constraint-aware plan to database with all workouts."""
     from models import TrainingPlan, PlannedWorkout
-    from datetime import datetime
     
     # Distance mapping
     DISTANCE_METERS = {
@@ -2153,7 +2101,20 @@ def _save_constraint_aware_plan(
         plan_end_date=plan.race_date,
         total_weeks=plan.total_weeks,
         baseline_rpi=fb.get("best_rpi") if isinstance(fb, dict) else None,
-        baseline_weekly_volume_km=round(fb.get("peak", {}).get("weekly_miles", 0) * 1.609, 1) if isinstance(fb, dict) else None,
+        baseline_weekly_volume_km=(
+            round(
+                float(
+                    (fb.get("volume_contract", {}) or {}).get("recent_8w_median_weekly_miles")
+                    or (fb.get("current", {}) or {}).get("weekly_miles")
+                    or (fb.get("peak", {}) or {}).get("weekly_miles")
+                    or 0
+                )
+                * 1.609,
+                1,
+            )
+            if isinstance(fb, dict)
+            else None
+        ),
         plan_type=plan.race_distance,
         generation_method="constraint_aware",
     )
@@ -2161,14 +2122,55 @@ def _save_constraint_aware_plan(
     db.add(db_plan)
     db.flush()  # Get the plan ID
     
+    # Pre-compute phase-local progression (week_in_phase / total_phase_weeks)
+    # so variant_selector gets phase-local inputs, not global plan position.
+    _phase_map = {
+        "rebuild_easy": "rebuild",
+        "rebuild_strides": "rebuild",
+        "build_t": "build",
+        "build_mp": "build",
+        "build_mixed": "build",
+        "recovery": "recovery",
+        "peak": "peak",
+        "sharpen": "peak",
+        "taper_1": "taper",
+        "taper_2": "taper",
+        "tune_up": "race",
+        "race": "race",
+    }
+    _week_phases: List[str] = []
+    for w in plan.weeks:
+        tv = w.theme.value if hasattr(w.theme, 'value') else str(w.theme)
+        _week_phases.append(_phase_map.get(tv, "build"))
+
+    _phase_spans: Dict[str, int] = {}
+    for ph in _week_phases:
+        _phase_spans[ph] = _phase_spans.get(ph, 0) + 1
+
+    _phase_counter: Dict[str, int] = {}
+
     # Create planned workouts from weeks
-    for week in plan.weeks:
+    seen_workout_dates: set = set()  # guard against duplicate-date workouts
+    for week_idx, week in enumerate(plan.weeks):
+        phase = _week_phases[week_idx]
+        _phase_counter[phase] = _phase_counter.get(phase, 0) + 1
+        week_in_phase = _phase_counter[phase]
+        total_phase_weeks = _phase_spans[phase]
+
         for day in week.days:
             if day.workout_type == "rest":
                 continue  # Don't store rest days
             
-            # Calculate date for this day
-            workout_date = week.start_date + timedelta(days=day.day_of_week)
+            # Calculate date for this day.
+            # day_of_week is an absolute weekday (0=Monday … 6=Sunday).
+            # week.start_date may not be a Monday (plan_start = race_date minus N
+            # weeks, which can land on any day).  Normalise to the Monday of the
+            # week so that the arithmetic works correctly for any start day.
+            week_monday = week.start_date - timedelta(days=week.start_date.weekday())
+            workout_date = week_monday + timedelta(days=day.day_of_week)
+            if workout_date in seen_workout_dates:
+                continue  # Skip duplicate dates (can arise from race/tune-up injection)
+            seen_workout_dates.add(workout_date)
             
             # Build coach notes from paces and notes
             coach_notes_parts = []
@@ -2178,25 +2180,16 @@ def _save_constraint_aware_plan(
             if day.notes:
                 coach_notes_parts.extend(day.notes)
             coach_notes = " | ".join(coach_notes_parts) if coach_notes_parts else None
-            
-            # Map intensity to phase for display
-            phase_map = {
-                "rebuild_easy": "rebuild",
-                "rebuild_strides": "rebuild", 
-                "build_t": "build",
-                "build_mp": "build",
-                "build_mixed": "build",
-                "recovery": "recovery",
-                "peak": "peak",
-                "sharpen": "peak",
-                "taper_1": "taper",
-                "taper_2": "taper",
-                "tune_up": "race",
-                "race": "race"
-            }
-            theme_val = week.theme.value if hasattr(week.theme, 'value') else str(week.theme)
-            phase = phase_map.get(theme_val, "build")
-            
+
+            variant_id = _resolve_variant_for_constraint_workout(
+                day.workout_type,
+                phase,
+                week_in_phase,
+                total_phase_weeks,
+                plan.race_distance,
+                day.name or "",
+            )
+
             db_workout = PlannedWorkout(
                 plan_id=db_plan.id,
                 athlete_id=athlete_id,
@@ -2204,12 +2197,14 @@ def _save_constraint_aware_plan(
                 week_number=week.week_number,
                 day_of_week=day.day_of_week,
                 workout_type=day.workout_type,
-                title=day.name,
+                title=day.name or f"{day.workout_type.replace('_', ' ').title()}",
                 description=day.description,
                 phase=phase,
+                phase_week=week_in_phase,
                 target_duration_minutes=int(day.tss_estimate / 0.8) if day.tss_estimate else None,
                 target_distance_km=round(day.target_miles * 1.609, 2) if day.target_miles else None,
                 coach_notes=coach_notes,
+                workout_variant_id=variant_id,
             )
             db.add(db_workout)
     
@@ -2221,6 +2216,8 @@ def _save_constraint_aware_plan(
 @router.post("/constraint-aware", response_model=Dict[str, Any])
 async def create_constraint_aware_plan(
     request: ConstraintAwarePlanRequest,
+    dry_run: bool = False,
+    engine: Optional[str] = None,
     athlete: Athlete = Depends(get_current_athlete),
     db: Session = Depends(get_db),
 ):
@@ -2235,7 +2232,7 @@ async def create_constraint_aware_plan(
     5. Prescribe specific workouts ("2x3mi @ 6:25" not "threshold work")
     6. Handle tune-up races with proper coordination
     
-    ELITE TIER ONLY. Rate limited to 5 requests/day.
+    Paid subscription required. Rate limited to 5 requests/day.
     
     Key Features:
     - Respects your detected training patterns (Sunday long runs, Thursday quality)
@@ -2251,31 +2248,38 @@ async def create_constraint_aware_plan(
     
     # Check feature flag
     flags = FeatureFlagService(db)
-    if not flags.is_enabled("plan.model_driven_generation", athlete):
+    flag_ok = flags.is_enabled("plan.model_driven_generation", athlete)
+    logger.info("constraint-aware gate: athlete=%s tier=%s flag=%s has_active=%s role=%s",
+                athlete.id, athlete.subscription_tier, flag_ok,
+                athlete.has_active_subscription, athlete.role)
+    if not flag_ok:
         raise HTTPException(
             status_code=403,
             detail={
-                "reason": "Constraint-aware plans require Elite subscription",
-                "upgrade_path": "/pricing"
+                "reason": "Constraint-aware plans require an active paid subscription",
+                "upgrade_path": "/pricing",
+                "gate": "feature_flag",
             }
         )
     
-    # Check tier
-    if athlete.subscription_tier not in ("elite", "premium", "guided"):
+    # Check paid entitlement
+    if not _has_paid_subscription_access(athlete):
         raise HTTPException(
             status_code=403,
             detail={
-                "reason": "Constraint-aware plans require Elite subscription",
-                "upgrade_path": "/pricing"
+                "reason": "Constraint-aware plans require an active paid subscription",
+                "upgrade_path": "/pricing",
+                "gate": "paid_entitlement",
             }
         )
     
-    # Check rate limit
-    if not _check_rate_limit(str(athlete.id)):
-        raise HTTPException(
-            status_code=429,
-            detail="Rate limit exceeded. Maximum 5 plans per day."
-        )
+    # Check rate limit (admin/owner exempt)
+    if getattr(athlete, "role", None) not in ("admin", "owner"):
+        if not _check_rate_limit(str(athlete.id)):
+            raise HTTPException(
+                status_code=429,
+                detail="Rate limit exceeded. Maximum 5 plans per day."
+            )
     
     # Validate inputs
     valid_distances = ["5k", "10k", "10_mile", "half_marathon", "half", "marathon"]
@@ -2285,7 +2289,7 @@ async def create_constraint_aware_plan(
             detail=f"Invalid race_distance. Must be one of: {', '.join(valid_distances)}"
         )
     
-    today = date.today()
+    today = athlete_local_today(get_athlete_timezone(athlete))
     if request.race_date <= today:
         raise HTTPException(
             status_code=400,
@@ -2328,39 +2332,204 @@ async def create_constraint_aware_plan(
                 "purpose": tr.purpose
             })
     
+    # Safety gate: beginners without completed intake cannot generate plans.
+    # For athletes with no synced history, the intake questionnaire IS the
+    # athlete profile. Generating without it is irresponsible.
+    try:
+        from services.intake_context import get_intake_context
+        intake = get_intake_context(athlete.id, db)
+        from services.fitness_bank import get_fitness_bank as _peek_bank
+        _bank = _peek_bank(athlete.id, db)
+        has_synced_history = (_bank.recent_16w_run_count or 0) >= 10
+        if not has_synced_history and not intake.has_minimum_for_plan:
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "error_code": "intake_required",
+                    "reason": (
+                        "We need more information about you before we can build a safe plan. "
+                        "Please complete your profile in Settings."
+                    ),
+                    "missing_stages": [
+                        s for s, done in [
+                            ("basic_profile", intake.basic_profile_completed),
+                            ("goals", intake.goals_completed),
+                        ] if not done
+                    ],
+                },
+            )
+    except HTTPException:
+        raise
+    except Exception as ex:
+        logger.warning("intake safety gate check failed, proceeding: %s", ex)
+
+    # ── V2 Engine Path ──────────────────────────────────────────────
+    _MI_PER_M = 1 / 1609.344
+    _target_peak_miles = round(request.target_peak_weekly_m * _MI_PER_M, 1) if request.target_peak_weekly_m else None
+
+    if engine == "v2" and getattr(athlete, "role", None) in ("admin", "owner"):
+        try:
+            from services.plan_engine_v2.router_adapter import generate_and_save_v2
+            return generate_and_save_v2(
+                athlete_id=athlete.id,
+                db=db,
+                race_date=request.race_date,
+                race_distance=request.race_distance.lower(),
+                race_name=request.race_name,
+                goal_time_seconds=request.goal_time_seconds,
+                tune_up_races=request.tune_up_races,
+                target_peak_weekly_miles=_target_peak_miles,
+                taper_weeks=request.taper_weeks,
+                dry_run=dry_run,
+                preferred_units=getattr(athlete, "preferred_units", "imperial"),
+            )
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error("V2 plan generation failed for %s: %s", athlete.id, e)
+            import traceback
+            traceback.print_exc()
+            raise HTTPException(status_code=500, detail=f"V2 plan generation failed: {str(e)}")
+
+    # ── V1 Engine Path (default) ────────────────────────────────────
     # Generate plan using Constraint-Aware Planner
     try:
         from services.constraint_aware_planner import generate_constraint_aware_plan
+        from services.plan_quality_gate import evaluate_constraint_aware_plan
         
+        _target_range_miles = (
+            {"min": request.target_peak_weekly_range["min"] * _MI_PER_M,
+             "max": request.target_peak_weekly_range["max"] * _MI_PER_M}
+            if request.target_peak_weekly_range else None
+        )
         plan = generate_constraint_aware_plan(
             athlete_id=athlete.id,
             race_date=request.race_date,
             race_distance=request.race_distance.lower(),
             db=db,
             goal_time=str(request.goal_time_seconds) if request.goal_time_seconds else None,
-            tune_up_races=tune_ups
+            tune_up_races=tune_ups,
+            target_peak_weekly_miles=_target_peak_miles,
+            target_peak_weekly_range=_target_range_miles,
+            taper_weeks=request.taper_weeks,
         )
+        # Pace coherence is enforced at the source: every pace in this plan
+        # comes from calculate_paces_from_rpi(athlete.best_rpi) (Daniels VDOT
+        # zones), which is internally ordered by physics. There is no
+        # per-route repair pass because there is no inversion to repair.
+        # See ADR-040 (unified pace source) and apps/api/services/
+        # workout_prescription.py::_enforce_pace_order_contract for the
+        # source-of-truth contract.
+
+        gate = evaluate_constraint_aware_plan(plan)
+        # The quality gate is advisory, not a hard wall. The Athlete Trust
+        # Safety Contract says "the athlete decides, the system informs". When
+        # the gate fails we ALWAYS regenerate at the safe-range midpoint and
+        # ALWAYS return a plan with a transparent warning describing what was
+        # adjusted. We never 422 the athlete out of getting a plan.
+        soft_gate_warnings: List[str] = []
+        soft_gate_applied_peak_miles: Optional[float] = None
+        soft_gate_requested_peak_miles: Optional[float] = None
+        soft_gate_display_message: Optional[str] = None
+        soft_gate_reasons: List[str] = []
+        soft_gate_safe_bounds_km: Optional[Dict[str, Any]] = None
+        if not gate.passed:
+            band_fallback_peak = float((plan.volume_contract or {}).get("band_max") or 0) * 0.95
+            gate_weekly = (gate.suggested_safe_bounds or {}).get("weekly_miles") or {}
+            gate_midpoint = None
+            try:
+                if gate_weekly.get("min") is not None and gate_weekly.get("max") is not None:
+                    gate_midpoint = (float(gate_weekly["min"]) + float(gate_weekly["max"])) / 2.0
+            except (TypeError, ValueError):
+                gate_midpoint = None
+            fallback_peak = gate_midpoint if (gate_midpoint and gate_midpoint > 0) else band_fallback_peak
+
+            soft_gate_requested_peak_miles = _target_peak_miles
+            soft_gate_display_message = gate.display_message
+            soft_gate_reasons = list(gate.reasons or [])
+            soft_gate_safe_bounds_km = gate.safe_bounds_km
+
+            # Track whether the athlete supplied a range so we can surface that
+            # we dropped it when capping. Range intent is structurally
+            # incompatible with a single-peak cap, so the cap wins, but the
+            # athlete needs to know.
+            had_range = request.target_peak_weekly_range is not None
+
+            # Always cap at the safe-range midpoint on the second pass — even
+            # if the athlete supplied an explicit peak. We surface what we did
+            # in the warnings so the athlete can re-request the original peak
+            # manually if they choose to override our recommendation.
+            if fallback_peak > 0:
+                fallback_requested_peak = round(fallback_peak, 1)
+                soft_gate_applied_peak_miles = round(fallback_peak, 1)
+            else:
+                # Gate gave us no usable safe bounds. Fall back to the athlete's
+                # original input so they at least get the plan they asked for,
+                # gate-flagged. Better than no plan.
+                fallback_requested_peak = _target_peak_miles
+            plan = generate_constraint_aware_plan(
+                athlete_id=athlete.id,
+                race_date=request.race_date,
+                race_distance=request.race_distance.lower(),
+                db=db,
+                goal_time=str(request.goal_time_seconds) if request.goal_time_seconds else None,
+                tune_up_races=tune_ups,
+                target_peak_weekly_miles=fallback_requested_peak,
+                target_peak_weekly_range=None,
+                quality_gate_fallback=True,
+                quality_gate_reasons=gate.reasons,
+                taper_weeks=request.taper_weeks,
+            )
+            second_gate = evaluate_constraint_aware_plan(plan)
+            if soft_gate_applied_peak_miles is not None:
+                if soft_gate_requested_peak_miles is not None:
+                    soft_gate_warnings.append(
+                        "capped_requested_peak_to_safe_range:"
+                        f"{soft_gate_requested_peak_miles}->"
+                        f"{soft_gate_applied_peak_miles}"
+                    )
+                elif had_range:
+                    soft_gate_warnings.append(
+                        "dropped_requested_range_to_safe_peak:"
+                        f"{soft_gate_applied_peak_miles}"
+                    )
+                else:
+                    soft_gate_warnings.append(
+                        "auto_tuned_peak_to_safe_range:"
+                        f"{soft_gate_applied_peak_miles}"
+                    )
+            if not second_gate.passed:
+                # Even the safe-range regen tripped the gate. Return the plan
+                # anyway with a "best effort" warning so the athlete can still
+                # see and use it. The gate is advisory, not a wall.
+                soft_gate_warnings.append("safe_range_regen_still_outside_band")
+                if second_gate.display_message and not soft_gate_display_message:
+                    soft_gate_display_message = second_gate.display_message
+                soft_gate_reasons.extend(
+                    r for r in (second_gate.reasons or []) if r not in soft_gate_reasons
+                )
         
-        # Save plan to database
-        saved_plan = _save_constraint_aware_plan(db, athlete.id, plan, race_name=request.race_name)
-        
-        # Record rate limit
-        _record_rate_limit(str(athlete.id))
-        
-        # Log success
+        # Save plan to database (skip in dry_run mode for smoke testing)
+        plan_id = None
+        if not dry_run:
+            saved_plan = _save_constraint_aware_plan(db, athlete.id, plan, race_name=request.race_name)
+            _record_rate_limit(str(athlete.id))
+            plan_id = str(saved_plan.id)
+
         gen_time = (datetime.now() - start_time).total_seconds()
-        logger.info(f"Constraint-aware plan generated for {athlete.id} in {gen_time:.2f}s, saved as {saved_plan.id}")
+        logger.info(f"Constraint-aware plan generated for {athlete.id} in {gen_time:.2f}s{' (dry_run)' if dry_run else f', saved as {plan_id}'}")
         
         # Convert to response
         return {
             "success": True,
-            "plan_id": str(saved_plan.id),
+            "plan_id": plan_id,
+            "dry_run": dry_run,
             "race": {
                 "date": plan.race_date.isoformat(),
                 "distance": plan.race_distance,
                 "name": request.race_name
             },
-            "fitness_bank": plan.fitness_bank,
+            "fitness_bank": _fitness_bank_to_meters(plan.fitness_bank),
             "model": {
                 "confidence": plan.model_confidence,
                 "tau1": round(plan.tau1, 1),
@@ -2369,22 +2538,72 @@ async def create_constraint_aware_plan(
             },
             "prediction": {
                 "time": plan.predicted_time,
-                "confidence_interval": plan.prediction_ci
+                "confidence_interval": plan.prediction_ci,
+                "uncertainty_reason": plan.prediction_uncertainty_reason,
+                "rationale_tags": plan.prediction_rationale_tags,
+                "scenarios": plan.prediction_scenarios,
             },
+            "volume_contract": _volume_contract_to_meters(plan.volume_contract or {}),
+            "quality_gate_fallback": plan.quality_gate_fallback,
+            "quality_gate_reasons": plan.quality_gate_reasons,
+            "warnings": soft_gate_warnings,
+            "soft_gate_applied_peak_weekly_m": round(soft_gate_applied_peak_miles * 1609.344, 0) if soft_gate_applied_peak_miles is not None else None,
+            "soft_gate_requested_peak_weekly_m": round(soft_gate_requested_peak_miles * 1609.344, 0) if soft_gate_requested_peak_miles is not None else None,
+            "soft_gate_display_message": soft_gate_display_message,
+            "soft_gate_reasons": soft_gate_reasons,
+            "soft_gate_safe_bounds_km": soft_gate_safe_bounds_km,
             "personalization": {
                 "notes": plan.counter_conventional_notes,
                 "tune_up_races": plan.tune_up_races
             },
             "summary": {
                 "total_weeks": plan.total_weeks,
-                "total_miles": round(plan.total_miles, 1),
-                "peak_miles": round(max(w.total_miles for w in plan.weeks), 1) if plan.weeks else 0
+                "total_distance_m": round(plan.total_miles * 1609.344, 0),
+                "peak_distance_m": round(max(w.total_miles for w in plan.weeks) * 1609.344, 0) if plan.weeks else 0,
             },
-            "weeks": [w.to_dict() for w in plan.weeks],
+            "weeks": _weeks_to_meters([w.to_dict() for w in plan.weeks]),
             "generated_at": datetime.now().isoformat()
         }
         
+    except HTTPException:
+        raise
     except Exception as e:
+        # Readiness gate is a real safety constraint (athlete physically not
+        # ready for this distance), not a system bug. Return a structured 422
+        # the UI can render as a clear, actionable banner — never a 500 with a
+        # raw error string. Frontend formatPlanCreateError handles the
+        # `readiness_gate_blocked` error_code shape.
+        from services.plan_framework.n1_engine import ReadinessGateError
+        if isinstance(e, ReadinessGateError):
+            distance_label = (request.race_distance or "").replace("_", " ").title() or "this distance"
+            required_lr_mi = 12 if request.race_distance.lower() == "marathon" else 8
+            display_message = (
+                f"Your training history doesn't yet support a {distance_label} program. "
+                f"To start safely you need a long run of at least {required_lr_mi} miles "
+                f"in the past 4 weeks (or proven lifetime evidence of running that distance). "
+                f"Build to a {required_lr_mi}-mile long run, then come back — or pick a shorter "
+                f"goal distance and we'll build you a plan today."
+            )
+            suggested_alternatives: List[str] = []
+            if request.race_distance.lower() == "marathon":
+                suggested_alternatives = ["half_marathon", "10k"]
+            elif request.race_distance.lower() == "half_marathon":
+                suggested_alternatives = ["10k", "5k"]
+            logger.info(
+                "readiness gate refused for athlete=%s race_distance=%s: %s",
+                athlete.id, request.race_distance, str(e),
+            )
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "error_code": "readiness_gate_blocked",
+                    "display_message": display_message,
+                    "reason": str(e),
+                    "race_distance": request.race_distance,
+                    "required_long_run_miles": required_lr_mi,
+                    "suggested_alternatives": suggested_alternatives,
+                },
+            )
         logger.error(f"Constraint-aware plan generation failed for {athlete.id}: {e}")
         import traceback
         traceback.print_exc()
@@ -2415,8 +2634,7 @@ async def preview_constraint_aware_plan(
     # Get fitness bank
     bank = get_fitness_bank(athlete.id, db)
     
-    # Calculate weeks to race
-    today = date.today()
+    today = athlete_local_today(get_athlete_timezone(athlete))
     weeks_to_race = (race_date - today).days // 7
     
     # Generate narratives (ADR-033)

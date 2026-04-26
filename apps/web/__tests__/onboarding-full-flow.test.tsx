@@ -1,9 +1,22 @@
 import React from 'react';
-import { render, screen, act } from '@testing-library/react';
+import { render, screen, act, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 jest.mock('@/components/auth/ProtectedRoute', () => ({
   ProtectedRoute: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+}));
+
+// ConnectStravaStage now reads useUnits() to render the saved pace
+// profile in the athlete's preferred units; stub it to keep this flow
+// test focused on stage transitions rather than provider plumbing.
+jest.mock('@/lib/context/UnitsContext', () => ({
+  useUnits: () => ({
+    units: 'imperial',
+    setUnits: () => {},
+    distanceUnitShort: 'mi',
+    formatDistance: (m: number) => `${(m / 1609.344).toFixed(1)} mi`,
+    formatPace: (s: number) => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, '0')}/mi`,
+  }),
 }));
 
 const push = jest.fn();
@@ -63,7 +76,7 @@ jest.mock('@/lib/api/services/garmin', () => ({
 
 jest.mock('@/lib/hooks/queries/garmin', () => ({
   useGarminStatus: () => ({
-    data: { connected: false, garmin_user_id: null, last_sync: null },
+    data: { connected: false, garmin_user_id: null, last_sync: null, garmin_connect_available: false },
     isLoading: false,
     refetch: jest.fn(),
   }),
@@ -71,7 +84,11 @@ jest.mock('@/lib/hooks/queries/garmin', () => ({
 
 jest.mock('@/lib/hooks/queries/onboarding', () => ({
   useOnboardingStatus: () => ({
-    data: { strava_connected: false, ingestion_state: null, last_sync: null },
+    data: {
+      strava_connected: true,
+      ingestion_state: { last_index_status: null },
+      last_sync: null,
+    },
     isLoading: false,
     error: null,
   }),
@@ -95,6 +112,20 @@ jest.mock('@/lib/context/ConsentContext', () => ({
 import OnboardingPage from '@/app/onboarding/page';
 
 describe('Onboarding full flow (skip Strava)', () => {
+  beforeEach(() => {
+    push.mockClear();
+    mockUser.onboarding_completed = false;
+    mockUser.onboarding_stage = 'initial';
+    localStorage.setItem('auth_token', 'test-token');
+    global.fetch = jest.fn(() =>
+      Promise.resolve({
+        ok: false,
+        status: 400,
+        json: async () => ({}),
+      } as Response),
+    );
+  });
+
   test('progresses through stages and completes', async () => {
     const authMod = require('@/lib/api/services/auth');
     authMod.__mocks.updateProfile = authMod.authService.updateProfile;
@@ -108,60 +139,42 @@ describe('Onboarding full flow (skip Strava)', () => {
       render(<OnboardingPage />);
     });
 
-    // Initial stage
-    expect(await screen.findByText("Let's Start")).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: "Let's Start" })).toBeInTheDocument();
     await act(async () => {
       await user.click(screen.getByRole('button', { name: 'Next' }));
     });
 
-    // Basic profile stage -> skip
-    expect(await screen.findByText('Basic Profile')).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'About You' })).toBeInTheDocument();
     await act(async () => {
       await user.click(screen.getByRole('button', { name: 'Skip' }));
     });
 
-    // Goals stage -> load + next (saves intake)
-    expect(await screen.findByText('Interview')).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Interview' })).toBeInTheDocument();
     await act(async () => {
       await user.click(screen.getByRole('button', { name: 'Next' }));
     });
 
-    // Consent AI stage -> skip
     expect(await screen.findByRole('heading', { name: 'AI Coaching Insights' })).toBeInTheDocument();
     await act(async () => {
       await user.click(screen.getByRole('button', { name: 'Skip for now' }));
     });
 
-    // Connect stage -> continue without connecting
     expect(await screen.findByRole('heading', { name: 'Connect Your Watch' })).toBeInTheDocument();
-    // Trust contract: explicit "no paces yet" if no recent race/time trial was provided
     expect(await screen.findByText(/No prescriptive paces yet/i)).toBeInTheDocument();
+
     await act(async () => {
-      await user.click(screen.getByRole('button', { name: 'Continue Without Connecting' }));
+      await user.click(screen.getByRole('button', { name: 'Continue' }));
     });
 
-    // Nutrition stage -> skip
-    expect(await screen.findByText('Nutrition')).toBeInTheDocument();
-    await act(async () => {
-      await user.click(screen.getByRole('button', { name: 'Skip' }));
+    await waitFor(() => {
+      expect(mockUser.onboarding_completed).toBe(true);
+    });
+    await waitFor(() => {
+      expect(push).toHaveBeenCalledWith('/home');
     });
 
-    // Work stage -> complete setup
-    expect(await screen.findByText('Work Patterns')).toBeInTheDocument();
-    await act(async () => {
-      await user.click(screen.getByRole('button', { name: 'Complete Setup' }));
-    });
-
-    // Persisted stage updates
-    expect(mockUser.onboarding_stage).toBe('complete');
-    expect(mockUser.onboarding_completed).toBe(true);
-    expect(push).toHaveBeenCalledWith('/dashboard');
-
-    // Calls: we should have saved intake once
     expect(onboardingMod.__mocks.getIntake).toHaveBeenCalledWith('goals');
     expect(onboardingMod.__mocks.saveIntake).toHaveBeenCalled();
-    // And updated profile multiple times
     expect(authMod.__mocks.updateProfile).toHaveBeenCalled();
   });
 });
-

@@ -12,8 +12,19 @@ export const metadata: Metadata = {
     canonical: 'https://strideiq.run/tools/training-pace-calculator',
   },
   openGraph: {
+    title: 'Training Pace Calculator - Running Pace Zones from Race Time',
+    description:
+      'Free training pace calculator. Enter any race result to get your personalized Easy, Marathon, Threshold, Interval, and Repetition pace zones. Based on Daniels/Gilbert exercise science equations.',
     url: 'https://strideiq.run/tools/training-pace-calculator',
+    siteName: 'StrideIQ',
+    type: 'website',
     images: [{ url: '/og-image.png', width: 1200, height: 630, alt: 'StrideIQ Training Pace Calculator' }],
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'Training Pace Calculator - Running Pace Zones from Race Time',
+    description:
+      'Free training pace calculator with Daniels/Gilbert pace zones — easy through repetition paces from any race result.',
   },
 }
 
@@ -86,7 +97,15 @@ export default function TrainingPaceCalculatorPage() {
         {/* Answer capsule */}
         <div className="bg-orange-500/10 border border-orange-500/30 rounded-xl p-5 mb-6">
           <p className="text-slate-200 leading-relaxed">
-            <strong className="text-orange-400">Quick answer:</strong> Enter a recent race time and distance below. The calculator applies the Daniels/Gilbert oxygen cost equations to derive your VDOT — your current running fitness score — and outputs your five training pace zones in both min/mile and min/km.
+            <strong className="text-orange-400">Quick answer:</strong> Enter a recent race time and distance below. The calculator applies the Daniels/Gilbert oxygen cost equations to derive your Running Performance Index (RPI) — your current aerobic fitness score — and outputs your five training pace zones in both min/mile and min/km.
+          </p>
+        </div>
+
+        {/* RPI / VDOT reconciliation — for readers arriving via "VDOT" search queries */}
+        <div className="bg-slate-800/60 border border-slate-700/50 rounded-xl p-5 mb-10 text-sm">
+          <p className="text-slate-300 leading-relaxed">
+            <strong className="text-slate-200">RPI and VDOT are the same math.</strong>{" "}
+            Daniels and Gilbert&apos;s 1979 oxygen cost equations produce a number that is publicly known as <strong>VDOT</strong>. StrideIQ surfaces it as <strong>RPI (Running Performance Index)</strong> — same math, same training zones, a name StrideIQ stands behind. The calculator above uses these equations directly. If you arrived here looking for a VDOT calculator, you are in the right place.
           </p>
         </div>
 
@@ -100,10 +119,10 @@ export default function TrainingPaceCalculatorPage() {
           <h2 className="text-2xl font-bold mb-4">How the training pace calculator works</h2>
           <div className="prose prose-invert prose-slate max-w-none space-y-4 text-slate-300">
             <p>
-              The calculator uses the <strong>Daniels/Gilbert VDOT system</strong> — a measure of your current aerobic capacity derived from race performance rather than a lab test. The underlying oxygen cost equations were published in peer-reviewed exercise physiology research in 1979 and remain the gold standard for running pace prescription.
+              The calculator uses the <strong>Daniels/Gilbert oxygen cost equations</strong> — a measure of your current aerobic capacity derived from race performance rather than a lab test. The equations were published in peer-reviewed exercise physiology research in 1979 and remain the gold standard for running pace prescription. StrideIQ expresses the result as an <strong>RPI (Running Performance Index)</strong> score.
             </p>
             <p>
-              Your race time and distance are converted to a VDOT score. Each VDOT score maps to five training intensity zones: Easy (E), Marathon (M), Threshold (T), Interval (I), and Repetition (R). These zones correspond to distinct physiological targets — aerobic base building, lactate threshold development, VO2max stimulus, and neuromuscular speed.
+              Your race time and distance are converted to an RPI score. Each RPI score maps to five training intensity zones: Easy (E), Marathon (M), Threshold (T), Interval (I), and Repetition (R). These zones correspond to distinct physiological targets — aerobic base building, lactate threshold development, VO2max stimulus, and neuromuscular speed.
             </p>
             <p>
               The <strong>Easy pace</strong> range is wide intentionally — it&apos;s the zone for most of your weekly volume. Running too fast on easy days is the most common training mistake. The <strong>Threshold pace</strong> (tempo pace) should feel comfortably hard — you could hold it for 20 minutes in a race but not much longer. <strong>Interval pace</strong> is close to your 3K–5K race pace.
@@ -177,6 +196,12 @@ export default function TrainingPaceCalculatorPage() {
             </Link>
             <Link href="/tools/heat-adjusted-pace" className="px-4 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700/50 rounded-lg text-sm text-slate-200 transition-colors">
               Heat-Adjusted Pace →
+            </Link>
+            <Link href="/tools/race-equivalency/10k-to-half-marathon" className="px-4 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700/50 rounded-lg text-sm text-slate-200 transition-colors">
+              Race Equivalency →
+            </Link>
+            <Link href="/tools/boston-qualifying" className="px-4 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700/50 rounded-lg text-sm text-slate-200 transition-colors">
+              Boston Qualifying Times →
             </Link>
             <Link href="/tools" className="px-4 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700/50 rounded-lg text-sm text-slate-200 transition-colors">
               All Tools →

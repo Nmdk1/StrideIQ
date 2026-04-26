@@ -19,7 +19,10 @@ from core.database import get_db_sync
 from tasks import celery_app
 from models import AthleteDataImportJob
 from services.ingestion_state import mark_index_error, mark_index_finished, mark_index_started
-from services.provider_import.garmin_di_connect import import_garmin_di_connect_summaries
+from services.provider_import.garmin_di_connect import (
+    import_garmin_di_connect_summaries,
+    import_garmin_di_connect_wellness,
+)
 
 
 IMPORTS_DIRNAME = "imports"
@@ -117,6 +120,8 @@ def process_athlete_data_import_job(job_id: str) -> Dict[str, Any]:
 
         if job.provider == "garmin":
             stats = import_garmin_di_connect_summaries(db, athlete_id=job.athlete_id, extracted_root_dir=extracted_root)
+            wellness_stats = import_garmin_di_connect_wellness(db, athlete_id=job.athlete_id, extracted_root_dir=extracted_root)
+            stats["wellness"] = wellness_stats
         else:
             raise ValueError("unsupported_provider")
 

@@ -1,9 +1,9 @@
 /**
  * Register Page
  *
- * Handles registration with optional tier-intent carry-through.
- * If ?tier=guided|premium&period=monthly|annual is present, the athlete is
- * redirected to /settings?upgrade=<tier>&period=<period> after signup instead
+ * Handles registration with optional upgrade-intent carry-through.
+ * If ?tier=premium&period=monthly|annual is present, the athlete is
+ * redirected to /settings?upgrade=premium&period=<period> after signup instead
  * of the standard /onboarding flow.  Invalid or missing tier params fall back
  * to /onboarding — no redirect loop is possible.
  */
@@ -17,28 +17,20 @@ import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { ErrorMessage } from '@/components/ui/ErrorMessage';
 import Link from 'next/link';
 
-const VALID_TIERS = ['guided', 'premium'] as const;
-type ValidTier = (typeof VALID_TIERS)[number];
-
-const TIER_LABELS: Record<ValidTier, string> = {
-  guided: 'Guided ($15/mo)',
-  premium: 'Premium ($25/mo)',
-};
-
-function parseTierIntent(
+function parseUpgradeIntent(
   tier: string | null,
   period: string | null,
-): { tier: ValidTier; period: string } | null {
-  if (!tier || !VALID_TIERS.includes(tier as ValidTier)) return null;
+): { period: string } | null {
+  if (!tier || tier === 'free') return null;
   const safePeriod = period === 'monthly' ? 'monthly' : 'annual';
-  return { tier: tier as ValidTier, period: safePeriod };
+  return { period: safePeriod };
 }
 
 function RegisterForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const raceCode = searchParams.get('code');
-  const tierIntent = parseTierIntent(
+  const upgradeIntent = parseUpgradeIntent(
     searchParams.get('tier'),
     searchParams.get('period'),
   );
@@ -73,8 +65,8 @@ function RegisterForm() {
         display_name: displayName || undefined,
         race_code: raceCode || undefined,
       });
-      if (tierIntent) {
-        router.push(`/settings?upgrade=${tierIntent.tier}&period=${tierIntent.period}`);
+      if (upgradeIntent) {
+        router.push(`/settings?upgrade=premium&period=${upgradeIntent.period}`);
       } else {
         router.push('/onboarding');
       }
@@ -112,11 +104,11 @@ function RegisterForm() {
             </div>
           )}
 
-          {tierIntent && (
+          {upgradeIntent && (
             <div className="mb-4 p-3 bg-orange-900/20 border border-orange-700/40 rounded-lg text-sm text-orange-300">
-              You&apos;re signing up for the{' '}
-              <span className="font-semibold">{TIER_LABELS[tierIntent.tier]}</span>{' '}
-              plan — you&apos;ll be redirected to subscribe right after.
+              You&apos;re signing up for{' '}
+              <span className="font-semibold">StrideIQ ($24.99/mo)</span>{' '}
+              — you&apos;ll be redirected to subscribe right after.
             </div>
           )}
 

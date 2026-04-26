@@ -3,6 +3,7 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import WMACalculator from '@/app/components/tools/WMACalculator'
 import { JsonLd } from '@/components/seo/JsonLd'
+import { SignupCtaLink } from '@/components/tools/SignupCtaLink'
 import ageGradingData from '@/data/age-grading-tables.json'
 
 const DISTANCE_CONFIG: Record<string, {
@@ -142,8 +143,17 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
       canonical: `https://strideiq.run/tools/age-grading-calculator/${config.slug}`,
     },
     openGraph: {
+      title: config.title,
+      description: config.description,
       url: `https://strideiq.run/tools/age-grading-calculator/${config.slug}`,
+      siteName: 'StrideIQ',
+      type: 'website',
       images: [{ url: '/og-image.png', width: 1200, height: 630, alt: config.title }],
+    },
+    twitter: {
+      card: 'summary_large_image',
+      title: config.title,
+      description: config.description,
     },
   }
 }
@@ -296,9 +306,9 @@ export default function AgeGradingDistancePage({ params }: Props) {
               <Link href="/tools" className="px-5 py-2.5 bg-slate-800 hover:bg-slate-700 border border-slate-700/50 rounded-lg text-slate-200 font-semibold text-sm transition-colors">
                 Try the free calculators
               </Link>
-              <Link href="/register" className="px-5 py-2.5 bg-orange-600 hover:bg-orange-500 text-white rounded-lg font-semibold text-sm shadow-lg shadow-orange-500/20 transition-colors">
+              <SignupCtaLink className="px-5 py-2.5 bg-orange-600 hover:bg-orange-500 text-white rounded-lg font-semibold text-sm shadow-lg shadow-orange-500/20 transition-colors" telemetry={{ cta: 'age_grade_distance_hook' }}>
                 Start free trial
-              </Link>
+              </SignupCtaLink>
             </div>
           </div>
         </section>
@@ -333,6 +343,24 @@ export default function AgeGradingDistancePage({ params }: Props) {
               ))}
             <Link href="/tools/age-grading-calculator" className="px-4 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700/50 rounded-lg text-sm text-slate-200 transition-colors">
               Full Calculator &rarr;
+            </Link>
+          </div>
+        </section>
+
+        <section className="border-t border-slate-800 pt-8">
+          <h2 className="text-xl font-bold mb-4">Other running calculators</h2>
+          <div className="flex flex-wrap gap-3">
+            <Link href="/tools/training-pace-calculator" className="px-4 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700/50 rounded-lg text-sm text-slate-200 transition-colors">
+              Training Pace Calculator &rarr;
+            </Link>
+            <Link href="/tools/race-equivalency" className="px-4 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700/50 rounded-lg text-sm text-slate-200 transition-colors">
+              Race Equivalency &rarr;
+            </Link>
+            <Link href="/tools/boston-qualifying" className="px-4 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700/50 rounded-lg text-sm text-slate-200 transition-colors">
+              Boston Qualifying Times &rarr;
+            </Link>
+            <Link href="/tools/heat-adjusted-pace" className="px-4 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700/50 rounded-lg text-sm text-slate-200 transition-colors">
+              Heat-Adjusted Pace &rarr;
             </Link>
           </div>
         </section>

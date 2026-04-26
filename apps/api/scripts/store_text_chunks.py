@@ -7,7 +7,6 @@ for later AI extraction. This allows us to store content without needing
 AI API keys immediately.
 """
 import sys
-import os
 import json
 from pathlib import Path
 
@@ -71,7 +70,7 @@ def store_text_chunks(text_file: str, source: str, methodology: str, source_type
         
         db.commit()
         print(f"✅ Stored {stored_count} chunks in knowledge base")
-        print(f"✅ Ready for AI extraction when API keys are available")
+        print("✅ Ready for AI extraction when API keys are available")
         
     except Exception as e:
         print(f"❌ Error: {e}")

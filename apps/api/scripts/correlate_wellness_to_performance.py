@@ -12,7 +12,6 @@ import json
 from datetime import datetime, timedelta
 from pathlib import Path
 from collections import defaultdict
-import math
 
 
 def load_garmin_data(filepath: str) -> dict:
@@ -110,7 +109,7 @@ def parse_activities(raw_activities: list) -> list:
                 'name': activity.get('activityName', ''),
             })
             
-        except Exception as e:
+        except Exception:
             continue
     
     # Sort by date

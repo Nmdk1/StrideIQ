@@ -142,15 +142,25 @@ def test_phase7_e2e_garmin_upload_job_worker_and_idempotent_reimport(monkeypatch
 
         db.refresh(job)
         assert job.status == "success"
-        assert (job.stats or {}).get("activities_inserted") == 1
+        # Multi-sport ingest: both the run and the cycling activity are inserted.
+        # (Pre-fix behavior dropped non-runs at the importer level — the fix in
+        # services/provider_import/garmin_di_connect.py replaces the run-only
+        # filter with a canonical sport map and accepts cycling/walking/hiking/
+        # strength/flexibility. See test_garmin_di_connect_importer.py for the
+        # dedicated regression coverage.)
+        assert (job.stats or {}).get("activities_inserted") == 2
         assert (job.stats or {}).get("activities_parsed") == 2
 
-        count = (
+        inserted = (
             db.query(Activity)
             .filter(Activity.athlete_id == athlete.id, Activity.provider == "garmin")
-            .count()
+            .all()
         )
-        assert count == 1
+        assert len(inserted) == 2
+        sports = sorted(a.sport for a in inserted)
+        assert sports == ["cycling", "run"], (
+            f"expected one run + one cycling, got sports={sports}"
+        )
 
         # --- Upload same file again (job 2) ---
         resp2 = client.post(
@@ -180,7 +190,7 @@ def test_phase7_e2e_garmin_upload_job_worker_and_idempotent_reimport(monkeypatch
             .filter(Activity.athlete_id == athlete.id, Activity.provider == "garmin")
             .count()
         )
-        assert count2 == 1
+        assert count2 == 2
 
     finally:
         # Best-effort cleanup (this test uses SessionLocal and would otherwise leave rows behind).

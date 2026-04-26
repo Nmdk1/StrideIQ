@@ -80,7 +80,7 @@ def backfill_all_missing_splits():
                 laps = get_activity_laps(athlete, strava_activity_id) or []
                 
                 if not laps:
-                    print(f"  ⚠️  No lap data available")
+                    print("  ⚠️  No lap data available")
                     skipped += 1
                     continue
                 
@@ -115,7 +115,7 @@ def backfill_all_missing_splits():
                 import traceback
                 traceback.print_exc()
         
-        print(f"\n✅ Backfill complete!")
+        print("\n✅ Backfill complete!")
         print(f"   Successful: {successful}")
         print(f"   Failed: {failed}")
         print(f"   Skipped (no data): {skipped}")

@@ -18,6 +18,7 @@ import {
   ResponsiveContainer,
 } from 'recharts';
 import type { EfficiencyTrendPoint } from '@/lib/api/services/analytics';
+import { useUnits } from '@/lib/context/UnitsContext';
 
 interface EfficiencyChartProps {
   data: EfficiencyTrendPoint[];
@@ -32,7 +33,8 @@ export function EfficiencyChart({
   rollingWindow = '60d',
   className = '',
 }: EfficiencyChartProps) {
-  // Format data for Recharts
+  const { formatPace } = useUnits();
+
   const chartData = data.map((point) => ({
     date: new Date(point.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' }),
     fullDate: point.date,
@@ -42,7 +44,7 @@ export function EfficiencyChart({
     rolling60d: point.rolling_60d_avg,
     rolling90d: point.rolling_90d_avg,
     rolling120d: point.rolling_120d_avg,
-    pace: point.pace_per_mile,
+    pace: point.pace_s_per_km,
     hr: point.avg_hr,
     annotations: point.annotations || [],
   }));
@@ -74,10 +76,7 @@ export function EfficiencyChart({
             <p>
               <span className="text-slate-400">Pace:</span>{' '}
               <span className="text-white">
-                {Math.floor(data.pace)}:{Math.round((data.pace % 1) * 60)
-                  .toString()
-                  .padStart(2, '0')}
-                /mi
+                {formatPace(data.pace)}
               </span>
             </p>
             <p>

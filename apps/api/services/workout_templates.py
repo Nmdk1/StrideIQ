@@ -353,9 +353,9 @@ def assess_data_sufficiency(
     
     Determines whether to use cold-start, learning, or calibrated mode.
     """
-    from models import Activity, ActivityFeedback, Athlete
+    from models import Activity, ActivityFeedback
     from sqlalchemy import func
-    from datetime import datetime, timedelta, timezone
+    from datetime import datetime, timezone
     
     # Get activity counts
     total_activities = db.query(Activity).filter(
@@ -541,7 +541,6 @@ class WorkoutSelector:
         Returns:
             WorkoutSelectionResult with selected template and full audit trail
         """
-        import random
         
         athlete_facilities = athlete_facilities or []
         
@@ -813,7 +812,7 @@ class WorkoutSelector:
         
         learnings = self.db.query(AthleteLearning).filter(
             AthleteLearning.athlete_id == athlete_id,
-            AthleteLearning.is_active == True
+            AthleteLearning.is_active
         ).all()
         
         result: Dict[str, List[str]] = {

@@ -4,8 +4,8 @@ Training Availability Service
 Provides slot counting logic and grid operations for training availability.
 """
 from sqlalchemy.orm import Session
-from typing import Dict, List, Tuple
-from models import TrainingAvailability, Athlete
+from typing import Dict, List
+from models import TrainingAvailability
 
 # Day names for display
 DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']

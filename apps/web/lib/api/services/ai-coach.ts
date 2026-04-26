@@ -8,6 +8,7 @@ import { API_CONFIG } from '../config';
 export interface ChatRequest {
   message: string;
   include_context?: boolean;
+  finding_id?: string;
 }
 
 export interface ChatResponse {
@@ -22,6 +23,9 @@ export interface ChatResponse {
   used_baseline?: boolean;
   baseline_needed?: boolean;
   rebuild_plan_prompt?: boolean;
+  tools_used?: string[];
+  tool_count?: number;
+  conversation_contract?: string | null;
 }
 
 export interface Suggestion {
@@ -43,6 +47,9 @@ export interface ThreadMessage {
   content: string;
   proposal?: unknown;
   created_at?: string | null;
+  tools_used?: string[];
+  tool_count?: number;
+  conversation_contract?: string | null;
 }
 
 export interface HistoryResponse {
@@ -80,6 +87,9 @@ export const aiCoachService = {
         used_baseline?: boolean;
         baseline_needed?: boolean;
         rebuild_plan_prompt?: boolean;
+        tools_used?: string[];
+        tool_count?: number;
+        conversation_contract?: string | null;
       }) => void;
       signal?: AbortSignal;
     }
@@ -118,6 +128,9 @@ export const aiCoachService = {
         used_baseline: r.used_baseline,
         baseline_needed: r.baseline_needed,
         rebuild_plan_prompt: r.rebuild_plan_prompt,
+        tools_used: r.tools_used,
+        tool_count: r.tool_count,
+        conversation_contract: r.conversation_contract,
       });
       return;
     }
@@ -160,6 +173,9 @@ export const aiCoachService = {
           used_baseline: obj.used_baseline as boolean | undefined,
           baseline_needed: obj.baseline_needed as boolean | undefined,
           rebuild_plan_prompt: obj.rebuild_plan_prompt as boolean | undefined,
+          tools_used: Array.isArray(obj.tools_used) ? obj.tools_used as string[] : undefined,
+          tool_count: obj.tool_count as number | undefined,
+          conversation_contract: obj.conversation_contract as string | null | undefined,
         });
       }
     };

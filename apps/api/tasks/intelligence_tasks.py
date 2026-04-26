@@ -116,6 +116,7 @@ def _run_intelligence_for_athlete(
         target_date=target_date,
         db=db,
     )
+    readiness_calc.persist(readiness_result, db)
 
     # Step 2: Intelligence
     engine = DailyIntelligenceEngine()
@@ -132,6 +133,20 @@ def _run_intelligence_for_athlete(
         target_date=target_date,
         intel_result=intel_result,
         readiness_result=readiness_result,
+        db=db,
+    )
+
+    # Step 3B: Workout narrative (Phase 3B)
+    workout_narrative_stats = _generate_workout_narrative_if_eligible(
+        athlete_id=athlete_id,
+        target_date=target_date,
+        db=db,
+    )
+
+    # Step 3C: Adaptive Re-Plan trigger check (N1 Phase 4)
+    _check_adaptive_replan(
+        athlete_id=athlete_id,
+        target_date=target_date,
         db=db,
     )
 
@@ -161,6 +176,7 @@ def _run_intelligence_for_athlete(
         "self_regulation_logged": intel_result.self_regulation_logged,
         "rules_fired": [i.rule_id for i in intel_result.insights],
         **narration_stats,
+        **workout_narrative_stats,
     }
 
 
@@ -333,6 +349,144 @@ def _persist_narration(
         logger.warning(f"Could not update InsightLog with narration: {e}")
 
 
+def _generate_workout_narrative_if_eligible(
+    athlete_id: UUID,
+    target_date: date,
+    db: Session,
+) -> Dict:
+    """Generate a Phase 3B workout narrative if the athlete qualifies.
+
+    Checks eligibility, calls the generator, persists the NarrationLog,
+    and computes a scalar quality score for the quality gate.
+    """
+    stats = {
+        "workout_narrative_generated": False,
+        "workout_narrative_suppressed": False,
+    }
+
+    try:
+        from services.phase3_eligibility import get_3b_eligibility
+        elig = get_3b_eligibility(athlete_id, db, as_of=target_date)
+        if not elig.eligible:
+            return stats
+
+        from services.workout_narrative_generator import generate_workout_narrative
+        result = generate_workout_narrative(athlete_id, target_date, db)
+
+        if result.suppressed:
+            stats["workout_narrative_suppressed"] = True
+        else:
+            stats["workout_narrative_generated"] = True
+
+        _persist_workout_narrative(athlete_id, target_date, result, elig, db)
+
+    except Exception as e:
+        logger.warning(
+            f"Workout narrative failed for {athlete_id}: {e}", exc_info=True,
+        )
+
+    return stats
+
+
+def _persist_workout_narrative(
+    athlete_id: UUID,
+    target_date: date,
+    result,
+    eligibility,
+    db: Session,
+) -> None:
+    """Persist a workout narrative result to NarrationLog."""
+    from models import NarrationLog
+    import uuid as _uuid
+
+    qs = result.quality_score or {}
+    criteria = ["contextual", "non_repetitive", "physiologically_sound", "tone_rules_ok"]
+    passed = sum(1 for c in criteria if qs.get(c, False))
+    score = passed / len(criteria) if criteria else 0.0
+
+    log = NarrationLog(
+        id=_uuid.uuid4(),
+        athlete_id=athlete_id,
+        trigger_date=target_date,
+        rule_id="WORKOUT_NARRATIVE",
+        narration_text=result.narrative,
+        prompt_used=result.prompt_used,
+        suppressed=result.suppressed,
+        suppression_reason=result.suppression_reason,
+        model_used=result.model_used,
+        input_tokens=result.input_tokens,
+        output_tokens=result.output_tokens,
+        latency_ms=result.latency_ms,
+        ground_truth={
+            "eligibility": {
+                "eligible": eligibility.eligible,
+                "provisional": eligibility.provisional,
+                "reason": eligibility.reason,
+            },
+            "suppression_reason": result.suppression_reason,
+            "quality_score": qs,
+        },
+        factually_correct=qs.get("contextual"),
+        no_raw_metrics=qs.get("tone_rules_ok"),
+        actionable_language=qs.get("physiologically_sound"),
+        criteria_passed=passed,
+        score=score if not result.suppressed else None,
+    )
+    db.add(log)
+
+
+def _check_adaptive_replan(
+    athlete_id: UUID,
+    target_date: date,
+    db: Session,
+) -> None:
+    """Check if an adaptation proposal should be created for this athlete."""
+    try:
+        from models import TrainingPlan, PlanAdaptationProposal
+        from services.plan_framework.adaptive_replanner import (
+            check_adaptation_triggers,
+            generate_adaptation_proposal,
+        )
+
+        plan = (
+            db.query(TrainingPlan)
+            .filter(
+                TrainingPlan.athlete_id == athlete_id,
+                TrainingPlan.status == "active",
+            )
+            .first()
+        )
+        if not plan:
+            return
+
+        trigger = check_adaptation_triggers(athlete_id, plan.id, target_date, db)
+        if not trigger:
+            return
+
+        proposal_data = generate_adaptation_proposal(
+            athlete_id, plan.id, trigger, target_date, db,
+        )
+        if not proposal_data:
+            return
+
+        import uuid as _uuid
+        db.add(PlanAdaptationProposal(
+            id=_uuid.uuid4(),
+            **proposal_data,
+        ))
+        db.flush()
+        logger.info(
+            "adaptive_replanner: created proposal for athlete %s (trigger=%s)",
+            athlete_id, trigger.trigger_type,
+        )
+
+    except Exception as exc:
+        logger.warning(
+            "Adaptive replan check failed for %s: %s", athlete_id, exc,
+            exc_info=True,
+        )
+
+
 def _get_gemini_client():
     """Get a Gemini client instance, or None if unavailable."""
     import os
@@ -369,7 +523,7 @@ def run_morning_intelligence(self: Task, force_athlete_id: Optional[str] = None)
     Returns:
         Summary dict with processed athletes and any errors.
     """
-    db: Session = next(get_db_sync())
+    db: Session = get_db_sync()
     utc_now = datetime.now(timezone.utc)
     today = utc_now.date()
 
@@ -476,7 +630,7 @@ def run_intelligence_for_athlete_task(
         athlete_id: UUID string
         target_date: ISO date string (defaults to today UTC)
     """
-    db: Session = next(get_db_sync())
+    db: Session = get_db_sync()
 
     try:
         from uuid import UUID as UUID_type
@@ -506,7 +660,7 @@ def refresh_living_fingerprint(self: Task) -> Dict:
     new activity data in the last 24h, persist updated findings, and
     log the results.
     """
-    db: Session = next(get_db_sync())
+    db: Session = get_db_sync()
     try:
         from models import Athlete, Activity
         from services.race_input_analysis import mine_race_inputs
@@ -573,6 +727,9 @@ def refresh_living_fingerprint(self: Task) -> Dict:
                     'athlete_id': str(aid),
                     'error': str(e),
                 })
+
+        from tasks.beat_startup_dispatch import record_task_run
+        record_task_run("beat:last_run:refresh_living_fingerprint")
 
         return {'refreshed': len(results), 'results': results}
     finally:

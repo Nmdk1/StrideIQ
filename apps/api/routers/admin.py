@@ -13,12 +13,14 @@ from uuid import UUID
 from datetime import datetime, timedelta, date
 from datetime import timezone
 
+from core.config import settings
 from core.database import get_db
 from core.auth import require_admin, require_owner, require_permission, deny_impersonation_mutation
 from models import (
     Athlete,
     Activity,
     ActivitySplit,
+    AthleteFact,
     NutritionEntry,
     WorkPattern,
     BodyComposition,
@@ -51,7 +53,6 @@ from models import (
     AdminAuditEvent,
     WorkoutSelectionAuditEvent,
 )
-from schemas import AthleteResponse
 from pydantic import BaseModel, Field
 from services.plan_framework.feature_flags import FeatureFlagService
 import logging
@@ -97,9 +98,9 @@ class ThreeDSelectionModeRequest(BaseModel):
 class InviteCreateRequest(BaseModel):
     email: str
     note: Optional[str] = None
-    grant_tier: Optional[Literal["free", "pro"]] = Field(
+    grant_tier: Optional[Literal["free", "subscriber", "pro", "guided", "premium", "elite"]] = Field(
         default=None, 
-        description="Subscription tier to grant on signup (e.g., 'pro' for beta testers)"
+        description="Subscription tier to grant on signup (normalized to two-tier contract)"
     )
 
 
@@ -109,7 +110,9 @@ class InviteRevokeRequest(BaseModel):
 
 
 class CompAccessRequest(BaseModel):
-    tier: Literal["free", "pro", "guided", "premium", "elite"] = Field(..., description="Subscription tier to set")
+    tier: Literal["free", "subscriber", "pro", "guided", "premium", "elite"] = Field(
+        ..., description="Subscription tier to set"
+    )
     reason: Optional[str] = Field(default=None, description="Why this comp was granted (audited)")
 
 
@@ -135,6 +138,10 @@ class ResetPasswordRequest(BaseModel):
 class RetryIngestionRequest(BaseModel):
     reason: Optional[str] = Field(default=None, description="Why this retry was performed (audited)")
     pages: int = Field(default=5, ge=1, le=50, description="Strava index backfill pages (bounded)")
+
+
+class DeepBackfillRequest(BaseModel):
+    reason: Optional[str] = Field(default=None, description="Why deep backfill was queued (audited)")
 
 
 class BlockUserRequest(BaseModel):
@@ -647,7 +654,7 @@ def create_invite_endpoint(
     Create or re-activate an invite allowlist entry.
     Admin/owner only.
     
-    Use grant_tier="pro" to give beta testers automatic pro access on signup.
+    Use grant_tier="subscriber" (or any paid legacy alias) to grant paid access on signup.
     """
     from services.invite_service import create_invite
 
@@ -938,6 +945,12 @@ def get_user(
         },
         "is_blocked": bool(getattr(user, "is_blocked", False)),
         "is_coach_vip": bool(getattr(user, "is_coach_vip", False)),
+        "admin_tier_override": getattr(user, "admin_tier_override", None),
+        "admin_tier_override_set_at": (
+            user.admin_tier_override_set_at.isoformat()
+            if getattr(user, "admin_tier_override_set_at", None) else None
+        ),
+        "admin_tier_override_reason": getattr(user, "admin_tier_override_reason", None),
         "created_at": user.created_at.isoformat(),
         "onboarding_completed": user.onboarding_completed,
         "onboarding_stage": user.onboarding_stage,
@@ -1107,8 +1120,18 @@ def comp_access(
     if not target:
         raise HTTPException(status_code=404, detail="User not found")
 
+    from core.tier_utils import normalize_tier
+
     old_tier = target.subscription_tier
-    target.subscription_tier = request.tier
+    canonical_tier = normalize_tier(request.tier)
+    target.subscription_tier = canonical_tier
+
+    # Set override fields — prevents Stripe sync from reverting this comp.
+    from datetime import datetime, timezone
+    target.admin_tier_override = canonical_tier
+    target.admin_tier_override_set_at = datetime.now(timezone.utc)
+    target.admin_tier_override_set_by = current_user.id
+    target.admin_tier_override_reason = request.reason
     db.add(target)
 
     from services.admin_audit import record_admin_audit_event
@@ -1132,6 +1155,59 @@ def comp_access(
             "id": str(target.id),
             "email": target.email,
             "subscription_tier": target.subscription_tier,
+            "admin_tier_override": target.admin_tier_override,
+            "admin_tier_override_set_at": target.admin_tier_override_set_at.isoformat() if target.admin_tier_override_set_at else None,
+        },
+    }
+
+
+@router.post("/users/{user_id}/comp/clear-override")
+def clear_comp_override(
+    user_id: UUID,
+    http_request: Request,
+    _: None = Depends(deny_impersonation_mutation("billing.comp")),
+    current_user: Athlete = Depends(require_permission("billing.comp")),
+    db: Session = Depends(get_db),
+):
+    """
+    Clear an active admin tier override, restoring Stripe authority over
+    subscription_tier on the next sync/webhook cycle.
+    """
+    target = db.query(Athlete).filter(Athlete.id == user_id).first()
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    if not getattr(target, "admin_tier_override", None):
+        raise HTTPException(status_code=409, detail="No active override to clear")
+
+    old_override = target.admin_tier_override
+    target.admin_tier_override = None
+    target.admin_tier_override_set_at = None
+    target.admin_tier_override_set_by = None
+    target.admin_tier_override_reason = None
+    db.add(target)
+
+    from services.admin_audit import record_admin_audit_event
+    record_admin_audit_event(
+        db,
+        request=http_request,
+        actor=current_user,
+        action="billing.comp.clear_override",
+        target_athlete_id=str(target.id),
+        reason="Admin cleared comp override — Stripe authority restored",
+        payload={"cleared_override": old_override},
+    )
+
+    db.commit()
+    db.refresh(target)
+
+    return {
+        "success": True,
+        "user": {
+            "id": str(target.id),
+            "email": target.email,
+            "subscription_tier": target.subscription_tier,
+            "admin_tier_override": None,
         },
     }
 
@@ -1354,6 +1430,74 @@ def retry_ingestion(
     return {"success": True, "queued": True, "index_task_id": index_task.id, "sync_task_id": sync_task.id}
 
 
+@router.post("/users/{user_id}/garmin/deep-backfill")
+def enqueue_garmin_deep_backfill(
+    user_id: UUID,
+    request: DeepBackfillRequest,
+    http_request: Request,
+    _: None = Depends(deny_impersonation_mutation("garmin.deep_backfill")),
+    current_user: Athlete = Depends(require_permission("ingestion.retry")),
+    db: Session = Depends(get_db),
+):
+    """
+    Support action: enqueue deep Garmin backfill for an existing connected user.
+    """
+    target = db.query(Athlete).filter(Athlete.id == user_id).first()
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+    if not bool(getattr(target, "garmin_connected", False)):
+        raise HTTPException(status_code=400, detail="Garmin not connected")
+
+    from tasks.garmin_webhook_tasks import request_deep_garmin_backfill_task
+    from services.admin_audit import record_admin_audit_event
+
+    task = request_deep_garmin_backfill_task.apply_async(
+        args=[str(target.id)],
+        kwargs={"target_days_back": 730},
+    )
+    record_admin_audit_event(
+        db,
+        request=http_request,
+        actor=current_user,
+        action="garmin.deep_backfill",
+        target_athlete_id=str(target.id),
+        reason=request.reason,
+        payload={"target_days_back": 730, "task_id": task.id},
+    )
+    db.commit()
+    return {"success": True, "queued": True, "task_id": task.id}
+
+
+@router.post("/users/{user_id}/wellness-backfill")
+def backfill_wellness_stamps(
+    user_id: UUID,
+    http_request: Request,
+    _: None = Depends(deny_impersonation_mutation("wellness.backfill")),
+    current_user: Athlete = Depends(require_permission("ingestion.retry")),
+    db: Session = Depends(get_db),
+):
+    """Backfill pre-activity wellness stamps from GarminDay history."""
+    target = db.query(Athlete).filter(Athlete.id == user_id).first()
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    from services.wellness_stamp import backfill_wellness_for_athlete
+    from services.admin_audit import record_admin_audit_event
+
+    result = backfill_wellness_for_athlete(str(target.id), db)
+    record_admin_audit_event(
+        db,
+        request=http_request,
+        actor=current_user,
+        action="wellness.backfill",
+        target_athlete_id=str(target.id),
+        reason="backfill wellness stamps",
+        payload=result,
+    )
+    db.commit()
+    return {"success": True, **result}
+
+
 @router.post("/users/{user_id}/plans/starter/regenerate")
 def regenerate_starter_plan(
     user_id: UUID,
@@ -1390,7 +1534,8 @@ def regenerate_starter_plan(
     )
     before = {"active_plan_ids": [str(p.id) for p in existing], "active_plan_generation_methods": [p.generation_method for p in existing]}
 
-    today = date.today()
+    from services.timezone_utils import get_athlete_timezone, athlete_local_today
+    today = athlete_local_today(get_athlete_timezone(target))
     archived_ids: List[str] = []
     for p in existing:
         p.status = "archived"
@@ -1400,46 +1545,25 @@ def regenerate_starter_plan(
         db.query(PlannedWorkout).filter(
             PlannedWorkout.plan_id == p.id,
             PlannedWorkout.scheduled_date >= today,
-            PlannedWorkout.completed == False,
+            PlannedWorkout.completed.is_(False),
         ).update({"skipped": True})
 
     db.commit()
 
-    # Create new starter plan from intake (best-effort deterministic).
-    from services.starter_plan import ensure_starter_plan
+    # Starter plan generation removed — N=1 engine pending.
     from services.admin_audit import record_admin_audit_event
-
-    created = ensure_starter_plan(db, athlete=target)
-    if not created:
-        record_admin_audit_event(
-            db,
-            request=http_request,
-            actor=current_user,
-            action="plan.starter.regenerate.failed",
-            target_athlete_id=str(target.id),
-            reason=request.reason,
-            payload={"before": before, "after": {"archived_plan_ids": archived_ids}, "error": "ensure_starter_plan returned None"},
-        )
-        db.commit()
-        raise HTTPException(status_code=500, detail="Failed to regenerate starter plan")
-
-    after = {
-        "archived_plan_ids": archived_ids,
-        "new_plan_id": str(created.id),
-        "new_generation_method": getattr(created, "generation_method", None),
-    }
 
     record_admin_audit_event(
         db,
         request=http_request,
         actor=current_user,
-        action="plan.starter.regenerate",
+        action="plan.starter.regenerate.skipped",
         target_athlete_id=str(target.id),
         reason=request.reason,
-        payload={"before": before, "after": after},
+        payload={"before": before, "after": {"archived_plan_ids": archived_ids}, "note": "starter_plan removed, N=1 engine pending"},
     )
     db.commit()
-    return {"success": True, **after}
+    raise HTTPException(status_code=501, detail="Starter plan generation removed. N=1 engine pending.")
 
 
 @router.post("/users/{user_id}/block")
@@ -1653,7 +1777,6 @@ def start_impersonation(
         raise HTTPException(status_code=404, detail="User not found")
 
     from core.security import create_access_token, decode_access_token
-    from core.config import settings
     from datetime import timedelta, datetime, timezone
 
     ttl_min = int(getattr(settings, "IMPERSONATION_TOKEN_TTL_MINUTES", 20))
@@ -1743,7 +1866,7 @@ def get_system_health(
         Athlete.created_at >= datetime.now() - timedelta(days=30)
     ).count()
     
-    # Activity counts
+    # Activity counts (all-sport platform totals for admin dashboard).
     total_activities = db.query(Activity).count()
     recent_activities = db.query(Activity).filter(
         Activity.start_time >= datetime.now() - timedelta(days=7)
@@ -1799,12 +1922,20 @@ def get_site_metrics(
         NutritionEntry.date >= cutoff_date.date()
     ).scalar()
     
-    # Average activities per user
-    avg_activities = db.query(
-        func.avg(func.count(Activity.id))
-    ).filter(
-        Activity.start_time >= cutoff_date
-    ).group_by(Activity.athlete_id).scalar() or 0
+    # Average activities per user — use subquery to avoid nested aggregate
+    from sqlalchemy import text as sa_text
+    avg_row = db.execute(
+        sa_text(
+            "SELECT AVG(cnt) FROM ("
+            "  SELECT COUNT(*) AS cnt"
+            "  FROM activity"
+            "  WHERE start_time >= :cutoff"
+            "  GROUP BY athlete_id"
+            ") sub"
+        ),
+        {"cutoff": cutoff_date},
+    ).scalar()
+    avg_activities = avg_row or 0
     
     return {
         "period_days": days,
@@ -2183,7 +2314,7 @@ def list_race_promo_codes(
     """List all race promo codes with usage stats."""
     query = db.query(RacePromoCode)
     if not include_inactive:
-        query = query.filter(RacePromoCode.is_active == True)
+        query = query.filter(RacePromoCode.is_active.is_(True))
     
     codes = query.order_by(RacePromoCode.created_at.desc()).all()
     
@@ -2289,6 +2420,7 @@ async def admin_classify_all(
 
     classifier = WorkoutClassifierService(db)
 
+    # All-sport batch classify (≥1 km, unclassified); not "running mileage" aggregation.
     activities = db.query(Activity).filter(
         Activity.workout_type.is_(None),
         Activity.distance_m >= 1000,
@@ -2373,4 +2505,114 @@ def set_race_forecast(
         logger.warning("Failed to record admin audit for race forecast (non-blocking)")
 
     return {"status": "ok", "key": key, "payload": payload}
+
+
+# --- Training Context Injection (Manual Fingerprint Override) ---
+
+class TrainingContextRequest(BaseModel):
+    athlete_id: UUID
+    fact_key: str = Field(..., min_length=1, max_length=120,
+                          description="Snake_case key (e.g. primary_loop_elevation)")
+    fact_value: str = Field(..., min_length=1, max_length=500,
+                           description="Context value")
+    numeric_value: Optional[float] = None
+    fact_type: str = Field(default="training_context",
+                           description="One of: training_context, preference, life_context")
+    reason: Optional[str] = Field(None, max_length=500,
+                                  description="Why this context is being set (audited)")
+
+
+@router.post("/users/{user_id}/context")
+def inject_training_context(
+    user_id: UUID,
+    request: TrainingContextRequest,
+    http_request: Request,
+    _: None = Depends(deny_impersonation_mutation("athlete.context.set")),
+    current_user: Athlete = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """Inject a training context fact directly into an athlete's fingerprint.
+
+    No coach chat required.  Used for confounding variable context,
+    route profiles, and other N=1 signals the founder knows directly.
+
+    Example: Larry's hilly loop context that explains cadence/efficiency
+    correlations, or an athlete's preference for consecutive training days.
+    """
+    if request.athlete_id != user_id:
+        raise HTTPException(status_code=400, detail="athlete_id must match user_id")
+
+    athlete = db.query(Athlete).filter(Athlete.id == user_id).first()
+    if not athlete:
+        raise HTTPException(status_code=404, detail="Athlete not found")
+
+    valid_types = {"training_context", "preference", "life_context"}
+    if request.fact_type not in valid_types:
+        raise HTTPException(
+            status_code=400,
+            detail=f"fact_type must be one of: {', '.join(sorted(valid_types))}",
+        )
+
+    existing = (
+        db.query(AthleteFact)
+        .filter(
+            AthleteFact.athlete_id == user_id,
+            AthleteFact.fact_key == request.fact_key,
+            AthleteFact.is_active == True,  # noqa: E712
+        )
+        .first()
+    )
+
+    before = {}
+    if existing:
+        before = {
+            "fact_key": existing.fact_key,
+            "fact_value": existing.fact_value,
+            "fact_type": existing.fact_type,
+        }
+        existing.is_active = False
+        existing.superseded_at = datetime.now(timezone.utc)
+
+    new_fact = AthleteFact(
+        athlete_id=user_id,
+        fact_type=request.fact_type,
+        fact_key=request.fact_key,
+        fact_value=request.fact_value,
+        numeric_value=request.numeric_value,
+        confidence="admin_injected",
+        source_chat_id=None,
+        source_excerpt=f"Admin context injection by {current_user.email}: {request.reason or 'no reason given'}",
+        temporal=False,
+        is_active=True,
+    )
+    db.add(new_fact)
+    db.commit()
+
+    after = {
+        "fact_key": request.fact_key,
+        "fact_value": request.fact_value,
+        "fact_type": request.fact_type,
+        "numeric_value": request.numeric_value,
+    }
+
+    try:
+        from services.admin_audit import record_admin_audit_event
+        record_admin_audit_event(
+            db,
+            request=http_request,
+            actor=current_user,
+            action="athlete.context.inject",
+            target_athlete_id=str(user_id),
+            reason=request.reason,
+            payload={"before": before, "after": after},
+        )
+    except Exception:
+        logger.warning("Failed to record admin audit for context injection (non-blocking)")
+
+    return {
+        "status": "ok",
+        "fact_id": str(new_fact.id),
+        "superseded": bool(before),
+        "fact": after,
+    }
 

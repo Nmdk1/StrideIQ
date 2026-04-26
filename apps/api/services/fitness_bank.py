@@ -9,14 +9,23 @@ Key Principle: The athlete's history IS the data. Generic plans fail because
 they ignore what the athlete has already proven they can do.
 """
 
-from dataclasses import dataclass, field
-from datetime import date, datetime, timedelta
+from dataclasses import dataclass
+from datetime import date, timedelta
 from enum import Enum
 from typing import List, Dict, Optional, Tuple
 from uuid import UUID
 import logging
 
 from sqlalchemy.orm import Session
+from services.mileage_aggregation import (
+    compute_peak_and_current_weekly_miles,
+    compute_recent_weekly_band,
+    get_canonical_run_activities,
+)
+from services.race_signal_contract import (
+    activity_is_authoritative_race,
+    normalize_distance_alias,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -116,7 +125,24 @@ class FitnessBank:
     weeks_to_80pct_ctl: int              # Weeks to recover 80% of peak CTL
     weeks_to_race_ready: int             # Weeks to be competitive
     sustainable_peak_weekly: float        # What they can sustain for 4+ weeks
-    
+    recent_quality_sessions_28d: int = 0
+    recent_8w_median_weekly_miles: float = 0.0
+    recent_16w_p90_weekly_miles: float = 0.0
+    recent_8w_p75_long_run_miles: float = 0.0
+    recent_16w_p50_long_run_miles: float = 0.0
+    recent_16w_run_count: int = 0
+    last_complete_week_miles: float = 0.0
+    peak_confidence: str = "medium"
+
+    # Long-run capability evidence.
+    # True ONLY when the athlete has at least one real activity >= 12mi in
+    # their full history. Distinguishes "we have evidence of distance capacity"
+    # from "peak_long_run_miles is a synthetic default for plan-sizing".
+    # Used by the readiness gate (n1_engine) to safely bypass the marathon
+    # 12mi minimum for ultra runners whose recent training long-run window
+    # filtered out their >24mi sessions as suspected races.
+    long_run_capability_proven: bool = False
+
     def to_dict(self) -> Dict:
         return {
             "athlete_id": self.athlete_id,
@@ -132,9 +158,10 @@ class FitnessBank:
                 "ctl": round(self.current_ctl, 0),
                 "atl": round(self.current_atl, 0),
                 "long_run": round(self.current_long_run_miles, 1),
-                "avg_long_run": round(self.average_long_run_miles, 1)
+                "avg_long_run": round(self.average_long_run_miles, 1),
+                "quality_sessions_28d": int(self.recent_quality_sessions_28d),
             },
-            "best_rpi": round(self.best_rpi, 1),
+            "best_rpi": round(self.best_rpi, 1) if self.best_rpi is not None else None,
             "races": [r.to_dict() for r in self.race_performances[:5]],
             "tau1": round(self.tau1, 1),
             "tau2": round(self.tau2, 1),
@@ -148,7 +175,17 @@ class FitnessBank:
                 "weeks_to_80pct": self.weeks_to_80pct_ctl,
                 "weeks_to_race_ready": self.weeks_to_race_ready,
                 "sustainable_peak": round(self.sustainable_peak_weekly, 0)
-            }
+            },
+            "volume_contract": {
+                "recent_8w_median_weekly_miles": round(self.recent_8w_median_weekly_miles, 1),
+                "recent_16w_p90_weekly_miles": round(self.recent_16w_p90_weekly_miles, 1),
+                "recent_8w_p75_long_run_miles": round(self.recent_8w_p75_long_run_miles, 1),
+                "recent_16w_p50_long_run_miles": round(self.recent_16w_p50_long_run_miles, 1),
+                "recent_16w_run_count": int(self.recent_16w_run_count),
+                "last_complete_week_miles": round(self.last_complete_week_miles, 1),
+                "peak_confidence": self.peak_confidence,
+            },
+            "long_run_capability_proven": bool(self.long_run_capability_proven),
         }
 
 
@@ -194,7 +231,6 @@ def calculate_rpi(distance_m: float, time_seconds: int) -> float:
 
 def rpi_equivalent_time(rpi: float, distance_m: float) -> int:
     """Calculate equivalent time for a distance given RPI."""
-    import math
     
     # Binary search for time that gives this RPI at this distance
     low, high = 60, 36000  # 1 min to 10 hours
@@ -261,6 +297,15 @@ def _fitness_bank_to_dict(bank: "FitnessBank") -> dict:
         "weeks_to_80pct_ctl": bank.weeks_to_80pct_ctl,
         "weeks_to_race_ready": bank.weeks_to_race_ready,
         "sustainable_peak_weekly": bank.sustainable_peak_weekly,
+        "recent_quality_sessions_28d": bank.recent_quality_sessions_28d,
+        "recent_8w_median_weekly_miles": bank.recent_8w_median_weekly_miles,
+        "recent_16w_p90_weekly_miles": bank.recent_16w_p90_weekly_miles,
+        "recent_8w_p75_long_run_miles": bank.recent_8w_p75_long_run_miles,
+        "recent_16w_p50_long_run_miles": bank.recent_16w_p50_long_run_miles,
+        "recent_16w_run_count": bank.recent_16w_run_count,
+        "last_complete_week_miles": bank.last_complete_week_miles,
+        "peak_confidence": bank.peak_confidence,
+        "long_run_capability_proven": bool(bank.long_run_capability_proven),
     }
 
 
@@ -310,6 +355,15 @@ def _fitness_bank_from_dict(d: dict) -> "FitnessBank":
         weeks_to_80pct_ctl=int(d["weeks_to_80pct_ctl"]),
         weeks_to_race_ready=int(d["weeks_to_race_ready"]),
         sustainable_peak_weekly=float(d["sustainable_peak_weekly"]),
+        recent_quality_sessions_28d=int(d.get("recent_quality_sessions_28d", 0)),
+        recent_8w_median_weekly_miles=float(d.get("recent_8w_median_weekly_miles", 0.0)),
+        recent_16w_p90_weekly_miles=float(d.get("recent_16w_p90_weekly_miles", 0.0)),
+        recent_8w_p75_long_run_miles=float(d.get("recent_8w_p75_long_run_miles", 0.0)),
+        recent_16w_p50_long_run_miles=float(d.get("recent_16w_p50_long_run_miles", 0.0)),
+        recent_16w_run_count=int(d.get("recent_16w_run_count", 0)),
+        last_complete_week_miles=float(d.get("last_complete_week_miles", 0.0)),
+        peak_confidence=str(d.get("peak_confidence", "medium")),
+        long_run_capability_proven=bool(d.get("long_run_capability_proven", False)),
     )
 
 
@@ -355,15 +409,25 @@ class FitnessBankCalculator:
             except Exception:
                 pass  # Cache corruption — recompute
 
-        from models import Activity
         from services.individual_performance_model import get_or_calibrate_model
         from services.training_load import TrainingLoadCalculator
-        
-        # Get all running activities (full history)
-        activities = self.db.query(Activity).filter(
-            Activity.athlete_id == athlete_id,
-            Activity.sport.ilike("run")
-        ).order_by(Activity.start_time.desc()).all()
+
+        # Use trusted DB duplicate flags.  The retroactive scanner (duplicate_scanner.py)
+        # and the live ingestion path (strava_tasks.py / garmin tasks) both maintain
+        # is_duplicate correctly with an 8-hour cross-provider window.
+        activities, dedupe_meta = get_canonical_run_activities(
+            athlete_id,
+            self.db,
+            require_trusted_duplicate_flags=True,
+        )
+        if dedupe_meta.get("dedupe_pairs_collapsed", 0) > 0:
+            logger.warning(
+                "FitnessBank fallback dedupe used for athlete %s: collapsed=%s source=%s output=%s",
+                athlete_id,
+                dedupe_meta["dedupe_pairs_collapsed"],
+                dedupe_meta["source_count"],
+                dedupe_meta["output_count"],
+            )
         
         if not activities:
             return self._default_fitness_bank(str(athlete_id))
@@ -400,20 +464,31 @@ class FitnessBankCalculator:
         
         # Calculate peak capabilities
         peaks = self._calculate_peak_capabilities(activities)
+        canonical_peak_weekly, canonical_current_weekly, last_complete_week = compute_peak_and_current_weekly_miles(activities)
+        recent_8w_median, recent_16w_p90 = compute_recent_weekly_band(activities)
+        if canonical_peak_weekly > 0:
+            peaks["peak_weekly"] = canonical_peak_weekly
+        peak_confidence = self._assess_peak_confidence(
+            peak_weekly=peaks["peak_weekly"],
+            recent_8w_median=recent_8w_median,
+            recent_16w_p90=recent_16w_p90,
+            dedupe_meta=dedupe_meta,
+        )
         
         # Extract race performances
+        self._sync_anchor_from_authoritative_race_signals(athlete_id=athlete_id, activities=activities)
         races = self._extract_race_performances(activities)
         best_rpi, best_race = self._find_best_race(races)
         
-        # Calculate current weekly volume
-        current_weekly = self._calculate_current_weekly(activities)
+        # Calculate current weekly volume from canonical utility
+        current_weekly = canonical_current_weekly
         
         # Determine experience level
         experience = self._determine_experience(peaks, races)
         
         # Detect constraints
         constraint_type, constraint_details, is_returning = self._detect_constraint(
-            peaks, current_weekly, activities
+            peaks, current_weekly, activities, races
         )
         
         # Detect training patterns
@@ -435,6 +510,8 @@ class FitnessBankCalculator:
         
         # Calculate current and average long run (ADR-038: N=1 long run progression)
         current_long, average_long = self._calculate_current_long_run(activities)
+        p75_long_8w, p50_long_16w, run_count_16w = self._calculate_recent_long_run_floor_metrics(activities)
+        recent_quality_sessions = self._calculate_recent_quality_sessions(activities)
         
         result = FitnessBank(
             athlete_id=str(athlete_id),
@@ -444,6 +521,7 @@ class FitnessBankCalculator:
             peak_mp_long_run_miles=peaks["peak_mp_long_run"],
             peak_threshold_miles=peaks["peak_threshold"],
             peak_ctl=peaks["peak_ctl"],
+            long_run_capability_proven=peaks.get("long_run_capability_proven", False),
             race_performances=races,
             best_rpi=best_rpi,
             best_race=best_race,
@@ -464,14 +542,49 @@ class FitnessBankCalculator:
             typical_rest_days=patterns.get("rest_days", []),
             weeks_to_80pct_ctl=weeks_to_80pct,
             weeks_to_race_ready=weeks_to_race,
-            sustainable_peak_weekly=sustainable
+            sustainable_peak_weekly=sustainable,
+            recent_quality_sessions_28d=recent_quality_sessions,
+            recent_8w_median_weekly_miles=recent_8w_median,
+            recent_16w_p90_weekly_miles=recent_16w_p90,
+            recent_8w_p75_long_run_miles=p75_long_8w,
+            recent_16w_p50_long_run_miles=p50_long_16w,
+            recent_16w_run_count=run_count_16w,
+            last_complete_week_miles=last_complete_week,
+            peak_confidence=peak_confidence,
         )
+
+        # Apply athlete overrides.  These take absolute precedence —
+        # the athlete knows context the algorithm can't see.
+        result = self._apply_overrides(athlete_id, result)
+
         try:
             set_cache(_cache_key, _fitness_bank_to_dict(result), ttl=900)
         except Exception:
             pass  # Non-critical — cache write failure must not break the response
         return result
-    
+
+    def _apply_overrides(self, athlete_id: UUID, bank: FitnessBank) -> FitnessBank:
+        """Apply athlete-specified overrides to the computed fitness bank."""
+        try:
+            from models import AthleteOverride
+            row = self.db.query(AthleteOverride).filter(
+                AthleteOverride.athlete_id == athlete_id
+            ).first()
+            if row is None:
+                return bank
+            if row.peak_weekly_miles is not None:
+                logger.info("Override: peak_weekly_miles %.1f → %.1f", bank.peak_weekly_miles, row.peak_weekly_miles)
+                bank.peak_weekly_miles = row.peak_weekly_miles
+            if row.peak_long_run_miles is not None:
+                logger.info("Override: peak_long_run_miles %.1f → %.1f", bank.peak_long_run_miles, row.peak_long_run_miles)
+                bank.peak_long_run_miles = row.peak_long_run_miles
+            if row.rpi is not None:
+                logger.info("Override: best_rpi %.2f → %.2f", bank.best_rpi, row.rpi)
+                bank.best_rpi = row.rpi
+        except Exception as ex:
+            logger.warning("Could not apply athlete overrides: %s", ex)
+        return bank
+
     def _calculate_peak_capabilities(self, activities: List) -> Dict:
         """Calculate peak capabilities from all activities."""
         
@@ -525,6 +638,14 @@ class FitnessBankCalculator:
         peak_long = max(long_runs) if long_runs else 15.0
         peak_mp_long = max(mp_long_runs) if mp_long_runs else 0.0
         peak_threshold = max(threshold_sessions) if threshold_sessions else 6.0
+
+        # Long-run capability: proven only by an actual run >= 12mi in history.
+        # `long_runs` already filters to miles >= 13 (line above), so any
+        # entry counts. This signal exists because peak_long_run_miles defaults
+        # to 15.0 when there is zero long-run history, and that synthetic
+        # value must NOT satisfy the readiness gate. See readiness_gate
+        # bypass in services/plan_framework/n1_engine.py.
+        long_run_capability_proven = bool(long_runs)
         
         # Peak CTL (approximate from TSS)
         if weekly_tss:
@@ -541,11 +662,12 @@ class FitnessBankCalculator:
             "peak_long_run": peak_long,
             "peak_mp_long_run": peak_mp_long,
             "peak_threshold": peak_threshold,
-            "peak_ctl": peak_ctl
+            "peak_ctl": peak_ctl,
+            "long_run_capability_proven": long_run_capability_proven,
         }
     
     def _extract_race_performances(self, activities: List) -> List[RacePerformance]:
-        """Extract all race performances from activities."""
+        """Extract race performances from authoritative race signals only."""
         races = []
         
         for a in activities:
@@ -555,43 +677,14 @@ class FitnessBankCalculator:
             if duration_sec <= 0 or miles <= 0:
                 continue
             
+            if not activity_is_authoritative_race(a):
+                continue
+
             pace = (duration_sec / 60) / miles
             name_lower = (a.name or "").lower()
-            
-            # Detect race by various signals
-            is_race = False
-            distance_type = None
+            distance_type = self._infer_distance_type(miles)
             conditions = None
-            
-            # By exact distance
-            if 3.0 <= miles <= 3.2:
-                is_race = True
-                distance_type = "5k"
-            elif 6.0 <= miles <= 6.4 and pace < 8.0:
-                is_race = True
-                distance_type = "10k"
-            elif 9.8 <= miles <= 10.2 and pace < 8.0:
-                is_race = True
-                distance_type = "10_mile"
-            elif 13.0 <= miles <= 13.3:
-                is_race = True
-                distance_type = "half"
-            elif 26.0 <= miles <= 26.5:
-                is_race = True
-                distance_type = "marathon"
-            
-            # By name keywords
-            if any(kw in name_lower for kw in ["race", "pr", "pb", "record"]):
-                is_race = True
-                if not distance_type:
-                    distance_type = self._infer_distance_type(miles)
-            
-            # By workout type
-            if a.workout_type and "race" in a.workout_type.lower():
-                is_race = True
-                if not distance_type:
-                    distance_type = self._infer_distance_type(miles)
-            
+
             # Check for condition notes
             if "limp" in name_lower or "injured" in name_lower:
                 conditions = "limping"
@@ -600,7 +693,7 @@ class FitnessBankCalculator:
             elif "hill" in name_lower:
                 conditions = "hilly"
             
-            if is_race and distance_type:
+            if distance_type:
                 rpi = calculate_rpi(a.distance_m, duration_sec)
                 
                 # Adjust confidence based on conditions
@@ -643,30 +736,136 @@ class FitnessBankCalculator:
             return "marathon"
     
     def _find_best_race(self, races: List[RacePerformance]) -> Tuple[float, Optional[RacePerformance]]:
-        """Find best RPI from races, weighted by confidence and recency."""
+        """
+        Return the athlete's peak proven RPI and the race that established it.
+
+        Uses the highest confidence-adjusted RPI from races in the last 24 months.
+        Returns (0.0, None) when no valid races exist — the planner derives paces
+        from the athlete's goal time instead; prescribing wrong paces is worse
+        than prescribing no paces.
+        """
         if not races:
-            return 45.0, None
-        
-        # Weight by recency and confidence
+            return 0.0, None
+
         today = date.today()
-        weighted_races = []
-        
-        for r in races:
-            days_ago = (today - r.date).days
-            recency_weight = max(0.5, 1.0 - (days_ago / 365))  # Decay over year
-            
-            # Adjust RPI by confidence (limping = actual fitness higher)
-            adjusted_rpi = r.rpi * r.confidence
-            
-            weighted_races.append((adjusted_rpi * recency_weight, r))
-        
-        # Sort by weighted RPI
-        weighted_races.sort(key=lambda x: x[0], reverse=True)
-        
-        best_race = weighted_races[0][1]
-        
-        # Return the actual (unadjusted) best RPI from recent good races
-        return best_race.rpi * best_race.confidence, best_race
+        cutoff = today - timedelta(days=730)  # 24-month window
+
+        valid = [
+            r for r in races
+            if r.rpi >= 15.0
+            and r.confidence >= 0.5
+            and r.date >= cutoff
+        ]
+
+        if not valid:
+            valid = [r for r in races if r.rpi >= 15.0 and r.confidence >= 0.5]
+
+        if not valid:
+            return 0.0, None
+
+        best_race = max(valid, key=lambda r: r.rpi * r.confidence)
+        return best_race.rpi, best_race
+
+    def _sync_anchor_from_authoritative_race_signals(self, athlete_id: UUID, activities: List) -> None:
+        """
+        Upsert one AthleteRaceResultAnchor row per distance key from authoritative races.
+
+        WS-A spec: store the best result for each distance independently (10K, HM, marathon, etc.)
+        so that pace prescriptions for each distance use the athlete's actual PR for that distance.
+
+        Selection policy (per-distance schema):
+        1) for each distance_key, prefer the fastest (lowest time_seconds) authoritative result,
+        2) tie-break by confidence, then most recent date,
+        3) never replace user/admin-entered anchors unless new evidence is strictly better.
+        """
+        from models import AthleteRaceResultAnchor
+
+        candidates: Dict[str, list] = {}
+        for a in activities:
+            if not activity_is_authoritative_race(a):
+                continue
+            duration_sec = int(getattr(a, "duration_s", 0) or 0)
+            distance_m = int(getattr(a, "distance_m", 0) or 0)
+            if duration_sec <= 0 or distance_m <= 0:
+                continue
+            miles = distance_m / 1609.344
+            distance_key = normalize_distance_alias(self._infer_distance_type(miles))
+            race_date = a.start_time.date() if getattr(a, "start_time", None) is not None else None
+            confidence = self._anchor_candidate_confidence(a)
+            rpi = calculate_rpi(distance_m, duration_sec)
+            candidates.setdefault(distance_key, []).append(
+                {
+                    "distance_key": distance_key,
+                    "distance_meters": distance_m,
+                    "time_seconds": duration_sec,
+                    "race_date": race_date,
+                    "confidence": confidence,
+                    "rpi": rpi,
+                }
+            )
+
+        if not candidates:
+            return
+
+        existing_rows = {
+            r.distance_key: r
+            for r in self.db.query(AthleteRaceResultAnchor)
+            .filter(AthleteRaceResultAnchor.athlete_id == athlete_id)
+            .all()
+        }
+
+        for distance_key, dist_candidates in candidates.items():
+            qualified = [c for c in dist_candidates if c["confidence"] >= 0.7]
+            if not qualified:
+                continue
+            best = sorted(
+                qualified,
+                key=lambda c: (
+                    c["time_seconds"],          # fastest time is best (ascending)
+                    -(c["confidence"]),          # higher confidence breaks ties (descending)
+                ),
+            )[0]
+
+            current = existing_rows.get(distance_key)
+            if current is None:
+                new_row = AthleteRaceResultAnchor(
+                    athlete_id=athlete_id,
+                    distance_key=best["distance_key"],
+                    distance_meters=best["distance_meters"],
+                    time_seconds=best["time_seconds"],
+                    race_date=best["race_date"],
+                    source="import",
+                )
+                self.db.add(new_row)
+            elif self._should_replace_existing_anchor(current, best):
+                current.distance_key = best["distance_key"]
+                current.distance_meters = best["distance_meters"]
+                current.time_seconds = best["time_seconds"]
+                current.race_date = best["race_date"]
+                if current.source not in ("user", "admin"):
+                    current.source = "import"
+
+        self.db.flush()
+
+    def _anchor_candidate_confidence(self, activity) -> float:
+        if bool(getattr(activity, "user_verified_race", False)):
+            return 1.0
+        if str(getattr(activity, "workout_type", "") or "").strip().lower() in ("race", "race_effort"):
+            return max(0.8, float(getattr(activity, "race_confidence", 0.0) or 0.0))
+        return float(getattr(activity, "race_confidence", 0.0) or 0.0)
+
+    def _should_replace_existing_anchor(self, existing, candidate: Dict[str, object]) -> bool:
+        existing_distance_m = int(getattr(existing, "distance_meters", 0) or 0)
+        existing_time = int(getattr(existing, "time_seconds", 0) or 0)
+        if existing_distance_m <= 0 or existing_time <= 0:
+            return True
+
+        existing_rpi = calculate_rpi(existing_distance_m, existing_time)
+        candidate_rpi = float(candidate["rpi"])
+        existing_source = str(getattr(existing, "source", "") or "").strip().lower()
+        if existing_source in ("user", "admin"):
+            return candidate_rpi > existing_rpi + 0.15
+        return candidate_rpi >= existing_rpi - 0.1
     
     def _calculate_current_weekly(self, activities: List) -> float:
         """Calculate current weekly mileage (last 4 weeks average)."""
@@ -696,7 +895,7 @@ class FitnessBankCalculator:
         
         Returns:
             Tuple of (current_long_run, average_long_run):
-            - current_long_run: Max long run in last 4 weeks
+            - current_long_run: Max long run in last 4 weeks (non-race, ≤24mi)
             - average_long_run: Average of all long runs >= 10mi (or 90+ min)
         """
         today = date.today()
@@ -706,16 +905,30 @@ class FitnessBankCalculator:
         all_long_runs = []
         
         for a in activities:
+            # Exclude race activities — a goal race is not a training long run.
+            # Parity with load_context.py:is_activity_excluded_as_race_for_p4.
+            wt = str(getattr(a, "workout_type", None) or "").lower()
+            if wt == "race" or getattr(a, "is_race_candidate", False):
+                continue
+            miles = (a.distance_m or 0) / 1609.344
+            # Any activity over 24 miles is not a training long run (our KB cap is
+            # 22mi for marathon HIGH tier; 24mi for elite).  26+ mile activities are
+            # almost always races (marathon / ultra) that were not tagged correctly.
+            # Including them would inflate l30_floor and set an unreachable floor
+            # for the athlete's next training block.
+            if miles > 24.0:
+                continue
+
             miles = (a.distance_m or 0) / 1609.344
             duration_min = (a.duration_s or 0) / 60
-            
+
             # Long run threshold: 10+ miles OR 90+ minutes
             # This catches long runs at any pace
             is_long_run = miles >= 10 or duration_min >= 90
-            
+
             if is_long_run:
                 all_long_runs.append(miles)
-                
+
                 # Recent long runs (last 4 weeks)
                 if a.start_time.date() >= four_weeks_ago:
                     recent_long_runs.append(miles)
@@ -732,6 +945,74 @@ class FitnessBankCalculator:
         )
         
         return current, average
+
+    def _calculate_recent_long_run_floor_metrics(self, activities: List) -> Tuple[float, float, int]:
+        """
+        Return:
+        - recent_8w_p75_long_run_miles
+        - recent_16w_p50_long_run_miles
+        - recent_16w_run_count
+        """
+        today = date.today()
+        cutoff_8w = today - timedelta(weeks=8)
+        cutoff_16w = today - timedelta(weeks=16)
+
+        long_runs_8w: List[float] = []
+        long_runs_16w: List[float] = []
+        run_count_16w = 0
+
+        for activity in activities:
+            # Exclude race activities — goal races should not anchor the training floor.
+            # Parity with load_context.py:is_activity_excluded_as_race_for_p4.
+            wt = str(getattr(activity, "workout_type", None) or "").lower()
+            if wt == "race" or getattr(activity, "is_race_candidate", False):
+                continue
+
+            activity_date = activity.start_time.date()
+            miles = (activity.distance_m or 0) / 1609.344
+            duration_min = (activity.duration_s or 0) / 60.0
+            # Exclude >24-mile activities regardless of label (untagged marathon/ultra races).
+            if miles > 24.0:
+                continue
+            if activity_date < cutoff_16w:
+                continue
+            run_count_16w += 1
+            is_long_run = miles >= 10 or duration_min >= 90
+            if is_long_run:
+                long_runs_16w.append(miles)
+                if activity_date >= cutoff_8w:
+                    long_runs_8w.append(miles)
+
+        def _percentile(values: List[float], pct: float) -> float:
+            if not values:
+                return 0.0
+            s = sorted(values)
+            if len(s) == 1:
+                return s[0]
+            idx = int(round((len(s) - 1) * pct))
+            idx = max(0, min(len(s) - 1, idx))
+            return s[idx]
+
+        p75_8w = _percentile(long_runs_8w, 0.75)
+        p50_16w = _percentile(long_runs_16w, 0.50)
+        return p75_8w, p50_16w, run_count_16w
+
+    def _calculate_recent_quality_sessions(self, activities: List) -> int:
+        """Count quality sessions in the trailing 28 days."""
+        today = date.today()
+        cutoff = today - timedelta(days=28)
+        count = 0
+        for a in activities:
+            if a.start_time.date() < cutoff:
+                continue
+            workout_type = (a.workout_type or "").lower()
+            name_lower = (a.name or "").lower()
+            if workout_type in ("interval", "intervals", "tempo", "threshold", "race_pace", "speed"):
+                count += 1
+                continue
+            if any(k in name_lower for k in ("interval", "tempo", "threshold", "@ mp", "marathon pace", "track", "fartlek", "race")):
+                count += 1
+        return count
     
     def _determine_experience(self, peaks: Dict, races: List[RacePerformance]) -> ExperienceLevel:
         """Determine experience level from history."""
@@ -748,11 +1029,19 @@ class FitnessBankCalculator:
         else:
             return ExperienceLevel.BEGINNER
     
-    def _detect_constraint(self, peaks: Dict, current_weekly: float, 
-                          activities: List) -> Tuple[ConstraintType, Optional[str], bool]:
+    def _has_recent_race(self, races: List[RacePerformance], days: int = 21) -> bool:
+        cutoff = date.today() - timedelta(days=days)
+        return any(r.date >= cutoff for r in races)
+
+    def _detect_constraint(self, peaks: Dict, current_weekly: float,
+                          activities: List, races: List[RacePerformance]) -> Tuple[ConstraintType, Optional[str], bool]:
         """Detect what's limiting the athlete."""
         peak_weekly = peaks["peak_weekly"]
-        
+
+        # Post-race recovery should never be misclassified as injury/detraining.
+        if self._has_recent_race(races, days=21):
+            return ConstraintType.NONE, None, False
+
         if current_weekly < 0.1:
             # No recent running at all
             return ConstraintType.INJURY, "no recent activity", True
@@ -895,7 +1184,7 @@ class FitnessBankCalculator:
             peak_threshold_miles=5.0,
             peak_ctl=40.0,
             race_performances=[],
-            best_rpi=40.0,
+            best_rpi=0.0,
             best_race=None,
             current_weekly_miles=0.0,
             current_ctl=30.0,
@@ -914,8 +1203,47 @@ class FitnessBankCalculator:
             typical_rest_days=[0, 4],
             weeks_to_80pct_ctl=0,
             weeks_to_race_ready=0,
-            sustainable_peak_weekly=25.0
+            sustainable_peak_weekly=25.0,
+            recent_quality_sessions_28d=0,
+            recent_8w_median_weekly_miles=0.0,
+            recent_16w_p90_weekly_miles=0.0,
+            recent_8w_p75_long_run_miles=0.0,
+            recent_16w_p50_long_run_miles=0.0,
+            recent_16w_run_count=0,
+            last_complete_week_miles=0.0,
+            peak_confidence="low",
         )
+
+    def _assess_peak_confidence(
+        self,
+        *,
+        peak_weekly: float,
+        recent_8w_median: float,
+        recent_16w_p90: float,
+        dedupe_meta: Dict[str, int],
+    ) -> str:
+        """
+        Confidence heuristic for whether historical peak should drive planning.
+        """
+        if peak_weekly <= 0:
+            return "low"
+
+        if recent_16w_p90 <= 0 or recent_8w_median <= 0:
+            return "medium"
+
+        # Plausibility against recent operating band.
+        if peak_weekly > recent_16w_p90 * 1.8:
+            return "low"
+
+        # If fallback dedupe still collapses many rows, reduce trust in raw peak.
+        collapsed = int(dedupe_meta.get("dedupe_pairs_collapsed", 0) or 0)
+        if collapsed >= 10 and peak_weekly > recent_16w_p90 * 1.4:
+            return "low"
+
+        if peak_weekly > recent_16w_p90 * 1.35:
+            return "medium"
+
+        return "high"
 
 
 # =============================================================================
@@ -926,3 +1254,22 @@ def get_fitness_bank(athlete_id: UUID, db: Session) -> FitnessBank:
     """Get athlete's fitness bank."""
     calculator = FitnessBankCalculator(db)
     return calculator.calculate(athlete_id)
+
+
+def sync_race_anchors_for_activities(
+    athlete_id: UUID,
+    activities: List,
+    db: Session,
+) -> None:
+    """
+    Public hook: sync AthleteRaceResultAnchor rows from a list of activities.
+
+    Call this after any batch of activities is imported for an athlete so that
+    race anchors are populated without requiring a full FitnessBank rebuild.
+    Silently no-ops if no authoritative races are found in the list.
+    """
+    calc = FitnessBankCalculator(db)
+    calc._sync_anchor_from_authoritative_race_signals(
+        athlete_id=athlete_id,
+        activities=activities,
+    )

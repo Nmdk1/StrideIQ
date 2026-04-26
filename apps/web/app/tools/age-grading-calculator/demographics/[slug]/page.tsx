@@ -3,6 +3,7 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import WMACalculator from '@/app/components/tools/WMACalculator'
 import { JsonLd } from '@/components/seo/JsonLd'
+import { SignupCtaLink } from '@/components/tools/SignupCtaLink'
 import ageDemoData from '@/data/age-gender-tables.json'
 
 // ============================================================================
@@ -703,8 +704,17 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
       canonical: `https://strideiq.run/tools/age-grading-calculator/demographics/${params.slug}`,
     },
     openGraph: {
+      title: config.title,
+      description: config.description,
       url: `https://strideiq.run/tools/age-grading-calculator/demographics/${params.slug}`,
+      siteName: 'StrideIQ',
+      type: 'website',
       images: [{ url: '/og-image.png', width: 1200, height: 630, alt: config.title }],
+    },
+    twitter: {
+      card: 'summary_large_image',
+      title: config.title,
+      description: config.description,
     },
   }
 }
@@ -939,9 +949,9 @@ export default function DemographicsPage({ params }: Props) {
               <Link href="/tools/age-grading-calculator" className="px-5 py-2.5 bg-slate-800 hover:bg-slate-700 border border-slate-700/50 rounded-lg text-slate-200 font-semibold text-sm transition-colors">
                 Full age-grading calculator →
               </Link>
-              <Link href="/register" className="px-5 py-2.5 bg-orange-600 hover:bg-orange-500 text-white rounded-lg font-semibold text-sm shadow-lg shadow-orange-500/20 transition-colors">
+              <SignupCtaLink className="px-5 py-2.5 bg-orange-600 hover:bg-orange-500 text-white rounded-lg font-semibold text-sm shadow-lg shadow-orange-500/20 transition-colors" telemetry={{ cta: 'demographics_hook' }}>
                 Start free trial
-              </Link>
+              </SignupCtaLink>
             </div>
           </div>
         </section>

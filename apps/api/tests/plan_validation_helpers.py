@@ -27,13 +27,12 @@ Sources:
 
 from dataclasses import dataclass, field
 from typing import List, Optional, Dict, Set
-import re
 
 
 # Workout type classifications
 QUALITY_TYPES = {
     "threshold", "threshold_intervals", "intervals",
-    "long_mp", "long_hmp", "hills", "repetitions", "tempo",
+    "long_mp", "long_hmp", "mp_touch", "hills", "repetitions", "tempo",
 }
 # long_mp is already in QUALITY_TYPES; HARD_TYPES is an alias here,
 # kept separate for clarity if the sets ever diverge.
@@ -46,7 +45,9 @@ LONG_TYPES = {"long"}
 THRESHOLD_TYPES = {"threshold", "threshold_intervals", "tempo"}
 INTERVAL_TYPES = {"intervals"}
 REP_TYPES = {"repetitions"}
-MP_TYPES = {"long_mp"}
+# long_mp: primary MP long; mp_touch: small MP block in a shorter mid-week session
+# (e.g. cutback consolidation for mid/high volume — see generator policy).
+MP_TYPES = {"long_mp", "mp_touch"}
 HMP_TYPES = {"long_hmp"}
 
 # Phases where threshold work should NOT appear
@@ -310,7 +311,7 @@ class PlanValidator:
 
                 # Intervals ≤ spec% and ≤ abs mi (quality miles only)
                 if wtype in INTERVAL_TYPES:
-                    q_miles = self._quality_miles(w, {"interval", "intervals", "vo2max", "vo2", "10k_pace"})
+                    q_miles = self._quality_miles(w, {"interval", "intervals", "vo2max", "vo2", "10k_pace", "5k_pace"})
                     if q_miles > week_miles * i_cap:
                         self._fail(
                             "B1-I-PCT",
@@ -551,7 +552,11 @@ class PlanValidator:
         # Tier-aware cutback detection threshold
         # Builder uses a gentle 10% cutback → detect at > 7%
         # Standard tiers use 25% cutback → detect at > 15%
-        if self.profile and self.profile.volume_tier.value == "builder":
+        tier_builder = (
+            (self.profile and self.profile.volume_tier.value == "builder")
+            or getattr(self.plan, "volume_tier", "") == "builder"
+        )
+        if tier_builder:
             cutback_threshold = 0.07
         else:
             cutback_threshold = 0.15
@@ -649,16 +654,32 @@ class PlanValidator:
 
         mp_min = self._t["mp_total_min_mi"]
 
-        # Tier-aware MP total targets when profile is available
+        # Tier-aware MP total: profile OR plan.volume_tier (standard plans have no profile)
+        tier_val = None
         if self.profile:
             tier_val = self.profile.volume_tier.value
-            if tier_val == "builder":
-                mp_min = 15 if self.strict else 10
-            elif tier_val == "low":
-                mp_min = 25 if self.strict else 15
+        else:
+            vt = getattr(self.plan, "volume_tier", None)
+            if vt:
+                tier_val = str(vt).strip().lower()
 
+        if tier_val == "builder":
+            # T2-8: Builder-tier athletes (< 35mpw) do not receive long_mp sessions
+            # by coaching policy. The validator exempts them from the MP total gate.
+            mp_min = 0
+        elif tier_val == "low":
+            # Relaxed floor matches segment-based MP accounting (true @MP miles only).
+            mp_min = 25 if self.strict else 12
+
+        # Duration-scale: compressed plans (< 16w) have fewer MP sessions.
+        # Reference duration is 18w; scale proportionally, floor at 10mi.
+        dur = getattr(self.plan, "duration_weeks", 18)
+        if dur < 16 and mp_min > 0:
+            mp_min = max(10, mp_min * dur / 18)
+
+        # Miles *at marathon pace* only (segment-aware when present)
         total_mp = sum(
-            w.distance_miles or 0
+            self._quality_miles(w, {"mp", "marathon_pace"})
             for w in self.plan.workouts
             if w.workout_type in MP_TYPES
         )
@@ -806,8 +827,16 @@ class PlanValidator:
                 f"({threshold_count}). Threshold should be primary."
             )
 
-        # Marathon should have MP work
-        if mp_count == 0 and self.plan.duration_weeks >= 12:
+        # Marathon should have MP work — exempt builder tier (T2-8: no MP for < 35mpw athletes)
+        _tier_val_mp = None
+        if self.profile:
+            _tier_val_mp = self.profile.volume_tier.value
+        else:
+            _vt = getattr(self.plan, "volume_tier", None)
+            if _vt:
+                _tier_val_mp = str(_vt).strip().lower()
+
+        if mp_count == 0 and self.plan.duration_weeks >= 12 and _tier_val_mp != "builder":
             self._fail(
                 "DIST-M-NO-MP",
                 f"Marathon {self.plan.duration_weeks}w plan has no MP long runs"
@@ -860,7 +889,16 @@ class PlanValidator:
             )
 
         # HMP long runs should appear in race-specific phase (plans >= 12 weeks)
-        if self.plan.duration_weeks >= 12 and hmp_count == 0:
+        # T2-8: Exempt builder tier — < 35mpw athletes don't receive HMP long runs.
+        _tier_val_hm = None
+        if self.profile:
+            _tier_val_hm = self.profile.volume_tier.value
+        else:
+            _vt_hm = getattr(self.plan, "volume_tier", None)
+            if _vt_hm:
+                _tier_val_hm = str(_vt_hm).strip().lower()
+
+        if self.plan.duration_weeks >= 12 and hmp_count == 0 and _tier_val_hm != "builder":
             self._fail(
                 "DIST-HM-NO-HMP",
                 f"Half marathon {self.plan.duration_weeks}w plan has no "

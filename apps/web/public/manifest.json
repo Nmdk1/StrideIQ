@@ -2,11 +2,10 @@
   "name": "StrideIQ",
   "short_name": "StrideIQ",
   "description": "AI-powered running intelligence and performance insights",
-  "start_url": "/",
+  "start_url": "/home",
   "display": "standalone",
   "background_color": "#111827",
   "theme_color": "#ea580c",
-  "orientation": "portrait-primary",
   "icons": [
     {
       "src": "/icon-192.png",

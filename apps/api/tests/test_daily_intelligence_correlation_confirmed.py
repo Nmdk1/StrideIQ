@@ -60,7 +60,12 @@ def test_correlation_confirmed_confidence_is_capped(monkeypatch):
 
 
 def test_correlation_confirmed_message_includes_specificity_anchors(monkeypatch):
-    """Narration must cite lag, history count, and numeric evidence."""
+    """Narration must cite lag, evidence weight, and numeric evidence.
+
+    The wording for the evidence weight comes from
+    ``services.intelligence.narration_tiers.evidence_phrase`` so that
+    counts below ``CONFIRMED_THRESHOLD`` never carry confident wording.
+    """
     engine = DailyIntelligenceEngine()
     athlete_id = uuid4()
     result = IntelligenceResult(athlete_id=athlete_id, target_date=date(2026, 2, 16))
@@ -80,5 +85,54 @@ def test_correlation_confirmed_message_includes_specificity_anchors(monkeypatch)
     assert len(result.insights) == 1
     message = result.insights[0].message
     assert "within 2 days" in message
-    assert "Confirmed 4 times." in message
+    assert "observed 4 times so far" in message
+    assert "Confirmed 4 times" not in message, (
+        "times_confirmed=4 must not carry 'confirmed' wording. See "
+        "narration_tiers.CONFIRMED_THRESHOLD."
+    )
     assert "Evidence: r=0.46." in message
+
+
+def test_correlation_confirmed_message_uses_repeated_tier_for_mid_counts(monkeypatch):
+    """At times_confirmed >= 6, the wording shifts from emerging to repeated."""
+    engine = DailyIntelligenceEngine()
+    athlete_id = uuid4()
+    result = IntelligenceResult(athlete_id=athlete_id, target_date=date(2026, 2, 16))
+    finding = _finding(times_confirmed=7, confidence=0.7, lag_days=1, corr=0.55)
+
+    monkeypatch.setattr(
+        "services.correlation_persistence.get_surfaceable_findings",
+        lambda _athlete_id, _db: [finding],
+    )
+    monkeypatch.setattr(
+        "services.correlation_persistence.mark_surfaced",
+        lambda _ids, _db: None,
+    )
+
+    engine._rule_correlation_confirmed(athlete_id, date(2026, 2, 16), db=None, result=result)
+
+    message = result.insights[0].message
+    assert "repeated across 7 of your runs" in message
+    assert "confirmed across" not in message.lower()
+
+
+def test_correlation_confirmed_message_uses_confirmed_tier_for_high_counts(monkeypatch):
+    """Only at times_confirmed >= 10 does the wording become 'confirmed'."""
+    engine = DailyIntelligenceEngine()
+    athlete_id = uuid4()
+    result = IntelligenceResult(athlete_id=athlete_id, target_date=date(2026, 2, 16))
+    finding = _finding(times_confirmed=12, confidence=0.85, lag_days=0, corr=0.6)
+
+    monkeypatch.setattr(
+        "services.correlation_persistence.get_surfaceable_findings",
+        lambda _athlete_id, _db: [finding],
+    )
+    monkeypatch.setattr(
+        "services.correlation_persistence.mark_surfaced",
+        lambda _ids, _db: None,
+    )
+
+    engine._rule_correlation_confirmed(athlete_id, date(2026, 2, 16), db=None, result=result)
+
+    message = result.insights[0].message
+    assert "confirmed across 12 of your runs" in message

@@ -14,9 +14,9 @@ import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from datetime import date, timedelta
+from datetime import date
 from core.database import SessionLocal
-from models import Athlete, TrainingPlan, PlannedWorkout
+from models import Athlete
 from services.constraint_aware_planner import generate_constraint_aware_plan
 
 
@@ -50,12 +50,12 @@ def main():
             }
         ]
         
-        print(f"\n📅 SCENARIO")
+        print("\n📅 SCENARIO")
         print(f"  Goal: Marathon on {marathon_date}")
         print(f"  Tune-up: 10 Mile on {ten_mile_date}")
         
         # Generate plan
-        print(f"\n🔄 Generating plan...")
+        print("\n🔄 Generating plan...")
         plan = generate_constraint_aware_plan(
             athlete_id=athlete.id,
             race_date=marathon_date,
@@ -64,7 +64,7 @@ def main():
             tune_up_races=tune_up_races
         )
         
-        print(f"\n✅ PLAN GENERATED")
+        print("\n✅ PLAN GENERATED")
         print(f"  Weeks: {plan.total_weeks}")
         print(f"  Total Miles: {plan.total_miles:.0f}")
         print(f"  Peak Miles: {max(w.total_miles for w in plan.weeks):.0f}")
@@ -73,7 +73,7 @@ def main():
         print(f"  Prediction: {plan.predicted_time}")
         
         # Validate structure
-        print(f"\n📋 STRUCTURE VALIDATION")
+        print("\n📋 STRUCTURE VALIDATION")
         
         checks = []
         
@@ -132,12 +132,12 @@ def main():
                     print(f"       Paces: {day.paces}")
         
         # Counter-conventional notes
-        print(f"\n💡 PERSONALIZED INSIGHTS")
+        print("\n💡 PERSONALIZED INSIGHTS")
         for note in plan.counter_conventional_notes[:5]:
             print(f"  • {note[:80]}...")
         
         # Week overview
-        print(f"\n📆 WEEK OVERVIEW")
+        print("\n📆 WEEK OVERVIEW")
         for w in plan.weeks:
             theme_val = w.theme.value if hasattr(w.theme, 'value') else w.theme
             print(f"  Week {w.week_number:2d}: {theme_val:20s} {w.total_miles:5.0f}mi")

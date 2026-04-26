@@ -7,7 +7,7 @@ import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from core.database import SessionLocal
-from models import Activity, Athlete
+from models import Athlete
 from routers.strava import _calculate_performance_metrics
 
 def recalculate_age_grading():
@@ -61,7 +61,7 @@ def recalculate_age_grading():
         
         db.commit()
         
-        print(f"\n✅ Recalculation complete!")
+        print("\n✅ Recalculation complete!")
         print(f"   Activities recalculated: {recalculated}")
         print(f"   Activities with performance %: {with_performance}")
         

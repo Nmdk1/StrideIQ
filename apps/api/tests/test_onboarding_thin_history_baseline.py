@@ -35,6 +35,8 @@ def test_onboarding_status_marks_baseline_needed_when_history_is_thin_and_no_bas
         body = resp.json()
         assert body.get("history", {}).get("is_thin") is True
         assert body.get("baseline", {}).get("needed") is True
+        assert "garmin_connected" in body
+        assert "last_garmin_sync" in body
 
     finally:
         try:
@@ -90,6 +92,8 @@ def test_onboarding_status_clears_baseline_needed_after_baseline_intake_saved():
         assert body.get("history", {}).get("is_thin") is True
         assert body.get("baseline", {}).get("completed") is True
         assert body.get("baseline", {}).get("needed") is False
+        assert "garmin_connected" in body
+        assert "last_garmin_sync" in body
 
     finally:
         try:

@@ -94,3 +94,30 @@ export function useSendCoachMessage() {
       calendarService.sendCoachMessage(args.request, { signal: args.signal }),
   });
 }
+
+/**
+ * Get valid variant options for a planned workout
+ */
+export function useWorkoutVariants(workoutId: string | undefined, enabled = true) {
+  return useQuery({
+    queryKey: [...calendarKeys.all, 'variants', workoutId] as const,
+    queryFn: () => calendarService.getWorkoutVariants(workoutId!),
+    enabled: enabled && !!workoutId,
+    staleTime: 1000 * 60 * 60,
+  });
+}
+
+/**
+ * Select a workout variant (athlete choice)
+ */
+export function useSelectVariant() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ workoutId, variantId }: { workoutId: string; variantId: string }) =>
+      calendarService.selectWorkoutVariant(workoutId, variantId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: calendarKeys.all });
+    },
+  });
+}

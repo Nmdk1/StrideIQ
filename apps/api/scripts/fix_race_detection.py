@@ -72,7 +72,7 @@ def fix_race_detection():
         
         db.commit()
         
-        print(f"\n✅ Recalculation complete!")
+        print("\n✅ Recalculation complete!")
         print(f"   Activities recalculated: {recalculated}")
         print(f"   Races detected: {races_found}")
         
@@ -80,7 +80,7 @@ def fix_race_detection():
         if races_found > 0:
             print("\n📋 Activities marked as races:")
             race_activities = db.query(Activity).filter(
-                Activity.is_race_candidate == True
+                Activity.is_race_candidate.is_(True)
             ).order_by(Activity.start_time.desc()).all()
             
             for race in race_activities:

@@ -85,15 +85,15 @@ class TestMatchActivities:
         assert match_activities(a, b) is True
 
     def test_time_within_window_matches(self):
-        from services.activity_deduplication import match_activities
+        from services.activity_deduplication import TIME_WINDOW_S, match_activities
         a = self._act(start_offset_s=0)
-        b = self._act(start_offset_s=3599)   # 1 second under 1-hour limit
+        b = self._act(start_offset_s=TIME_WINDOW_S - 1)  # 1 second inside window
         assert match_activities(a, b) is True
 
     def test_time_outside_window_no_match(self):
-        from services.activity_deduplication import match_activities
+        from services.activity_deduplication import TIME_WINDOW_S, match_activities
         a = self._act(start_offset_s=0)
-        b = self._act(start_offset_s=3601)   # 1 second over 1-hour limit
+        b = self._act(start_offset_s=TIME_WINDOW_S + 1)  # 1 second outside window
         assert match_activities(a, b) is False
 
     def test_distance_within_tolerance_matches(self):

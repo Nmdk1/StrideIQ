@@ -96,7 +96,7 @@ def test_refresh_living_fingerprint_runs_campaign_detection(monkeypatch):
     fake_db.query.side_effect = [q_active, q_events]
 
     def _fake_get_db_sync():
-        yield fake_db
+        return fake_db
 
     detect_mock = MagicMock(return_value=[{"t": "inflection"}])
     build_mock = MagicMock(return_value=[{"id": "campaign"}])

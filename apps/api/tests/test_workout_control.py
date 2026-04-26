@@ -28,7 +28,7 @@ def mock_athlete_paid():
     """Mock paid tier athlete."""
     athlete = MagicMock()
     athlete.id = uuid4()
-    athlete.subscription_tier = "pro"
+    athlete.subscription_tier = "subscriber"
     return athlete
 
 
@@ -249,9 +249,9 @@ class TestAdjustLoad:
 class TestTierGating:
     """Tests for tier gating logic."""
     
-    def test_pro_tier_has_access(self, mock_athlete_paid):
-        """Pro tier has full control access."""
-        assert mock_athlete_paid.subscription_tier == "pro"
+    def test_subscriber_tier_has_access(self, mock_athlete_paid):
+        """Subscriber tier has full control access."""
+        assert mock_athlete_paid.subscription_tier == "subscriber"
     
     def test_free_tier_blocked(self, mock_athlete_free):
         """Free tier blocked from full control."""

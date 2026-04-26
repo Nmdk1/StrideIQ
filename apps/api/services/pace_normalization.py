@@ -6,8 +6,6 @@ This normalizes pace for terrain, allowing accurate efficiency comparisons acros
 """
 
 from typing import Optional
-from decimal import Decimal
-import math
 
 
 def calculate_grade_percent(elevation_gain_m: float, distance_m: float) -> Optional[float]:

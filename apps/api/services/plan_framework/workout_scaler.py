@@ -19,17 +19,83 @@ Usage:
 """
 
 import math
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, List, Optional, Tuple
 from dataclasses import dataclass
 
+from .workout_narrative import (
+    hmp_long_copy,
+    mp_long_option_a_copy,
+    mp_long_option_b_copy,
+    mp_touch_copy,
+    threshold_continuous_description,
+    threshold_intervals_description,
+)
 from .constants import (
-    VolumeTier, 
-    Phase, 
+    VolumeTier,
     WorkoutCategory,
     WORKOUT_LIMITS,
     LONG_RUN_PEAKS,
-    Distance
+    Distance,
+    VOLUME_TIER_THRESHOLDS,
+    MIN_STANDARD_EASY_LONG_MILES,
+    PLAN_TAPER_WEEKS_DEFAULT,
 )
+
+
+def _parse_goal_distance(distance: str) -> Distance:
+    d = (distance or "marathon").strip().lower().replace("-", "_")
+    aliases = {
+        "5k": Distance.FIVE_K,
+        "10k": Distance.TEN_K,
+        "half": Distance.HALF_MARATHON,
+        "half_marathon": Distance.HALF_MARATHON,
+        "marathon": Distance.MARATHON,
+    }
+    return aliases.get(d, Distance.MARATHON)
+
+
+def _volume_tier(tier: str) -> VolumeTier:
+    try:
+        return VolumeTier((tier or "mid").strip().lower())
+    except ValueError:
+        return VolumeTier.MID
+
+
+def standard_start_long_miles(goal: Distance, tier: str) -> float:
+    """
+    First easy long for standard plans: max(MIN_STANDARD_EASY_LONG_MILES, min_weekly * 0.25).
+    See docs/specs/PLAN_COACHED_OUTPUT_AND_LOAD_CONTRACT.md (Vega + founder floor).
+    """
+    vt = _volume_tier(tier)
+    row = VOLUME_TIER_THRESHOLDS.get(goal) or VOLUME_TIER_THRESHOLDS[Distance.MARATHON]
+    cfg = row.get(vt) or row[VolumeTier.MID]
+    min_w = float(cfg["min"])
+    raw = min_w * 0.25
+    return max(float(MIN_STANDARD_EASY_LONG_MILES), round(raw, 1))
+
+
+def peak_long_miles(goal: Distance, tier: str) -> float:
+    vt = _volume_tier(tier)
+    peaks = LONG_RUN_PEAKS.get(goal) or LONG_RUN_PEAKS[Distance.MARATHON]
+    if vt in peaks:
+        return float(peaks[vt])
+    if vt == VolumeTier.ELITE and VolumeTier.HIGH in peaks:
+        return float(peaks[VolumeTier.HIGH])
+    return float(peaks.get(VolumeTier.MID, 18))
+
+
+def spike_step_miles_and_pct(tier: str, history_override: bool) -> tuple[float, float]:
+    """Primary step + secondary % guard for easy-long spike (Vega table)."""
+    if history_override:
+        return 3.0, 0.15
+    t = (tier or "mid").strip().lower()
+    if t == "builder":
+        return 1.5, 0.15
+    if t == "low":
+        return 2.0, 0.12
+    if t in ("high", "elite"):
+        return 2.0, 0.10
+    return 2.0, 0.10
 
 
 @dataclass
@@ -81,6 +147,16 @@ class WorkoutScaler:
         mp_week: int = 1,  # For tracking MP long run progression
         athlete_ctx: Optional[Dict[str, Any]] = None,
         plan_week: Optional[int] = None,
+        duration_weeks: Optional[int] = None,
+        total_phase_weeks: Optional[int] = None,
+        is_cutback: bool = False,
+        previous_easy_long_mi: Optional[float] = None,
+        history_override: bool = False,
+        easy_long_floor_mi: Optional[float] = None,
+        prev_mp_miles: Optional[int] = None,
+        prev_threshold_continuous_min: Optional[int] = None,
+        prev_threshold_intervals: Optional[Tuple[int, int]] = None,
+        long_run_modifier: float = 1.0,
     ) -> ScaledWorkout:
         """
         Scale any workout type to athlete capacity.
@@ -105,25 +181,76 @@ class WorkoutScaler:
             return self._scale_easy_with_strides(weekly_volume)
         
         elif workout_type in ["long", "long_run"]:
-            return self._scale_long_run(weekly_volume, tier, distance)
+            proven_peak_lr = (athlete_ctx or {}).get("proven_peak_long_run_miles")
+            return self._scale_long_run(
+                weekly_volume,
+                tier,
+                distance,
+                plan_week=plan_week,
+                duration_weeks=duration_weeks,
+                phase=phase,
+                is_cutback=is_cutback,
+                previous_easy_long_mi=previous_easy_long_mi,
+                history_override=history_override,
+                easy_long_floor_mi=easy_long_floor_mi,
+                long_run_modifier=long_run_modifier,
+                athlete_proven_long_run_miles=proven_peak_lr,
+            )
         
         elif workout_type in ["threshold_intervals", "t_intervals"]:
-            return self._scale_threshold_intervals(weekly_volume, tier, week_in_phase)
+            return self._scale_threshold_intervals(
+                weekly_volume,
+                tier,
+                week_in_phase,
+                total_phase_weeks=total_phase_weeks,
+                prev_intervals=prev_threshold_intervals,
+            )
         
         # Canonical: "threshold" is the Training Pace Calculator threshold (T pace).
         # We treat continuous threshold runs as workout_type="threshold" (not "tempo").
         # Back-compat: accept "tempo" as an alias but DO NOT emit it.
         elif workout_type in ["threshold", "t_run", "tempo"]:
-            return self._scale_threshold_continuous(weekly_volume, tier, week_in_phase)
+            result = self._scale_threshold_continuous(
+                weekly_volume,
+                tier,
+                week_in_phase,
+                total_phase_weeks=total_phase_weeks,
+                prev_continuous_min=prev_threshold_continuous_min,
+            )
+            # 10K-specific coaching cap: threshold sessions must stay ≤ 8.0mi
+            # to comply with the quality gate ceiling (no volume-based override).
+            if distance == "10k" and (result.total_distance_miles or 0) > 8.0:
+                result.total_distance_miles = 8.0
+            return result
         
         elif workout_type in ["long_mp", "marathon_pace_long"]:
-            return self._scale_mp_long_run(weekly_volume, tier, distance, week_in_phase, mp_week)
+            return self._scale_mp_long_run(
+                weekly_volume,
+                tier,
+                distance,
+                week_in_phase,
+                mp_week,
+                prev_mp_miles=prev_mp_miles,
+            )
         
         elif workout_type in ["long_hmp", "half_marathon_pace_long"]:
             return self._scale_hmp_long_run(weekly_volume, tier, distance, week_in_phase)
         
         elif workout_type in ["medium_long", "medium_long_mp"]:
-            return self._scale_medium_long(weekly_volume, tier, week_in_phase)
+            _is_taper = phase in ("taper",)
+            _is_race_week = phase in ("race",)
+            return self._scale_medium_long(
+                weekly_volume,
+                tier,
+                week_in_phase,
+                total_phase_weeks=total_phase_weeks or 1,
+                is_taper=_is_taper,
+                is_race_week=_is_race_week,
+                workout_type=workout_type,
+            )
+
+        elif workout_type == "mp_touch":
+            return self._scale_mp_touch(weekly_volume)
         
         elif workout_type in ["interval", "intervals", "vo2max"]:
             return self._scale_intervals(weekly_volume, tier, phase, athlete_ctx=athlete_ctx, plan_week=plan_week, distance=distance)
@@ -173,83 +300,246 @@ class WorkoutScaler:
             option="A"
         )
     
+    # Distance-aware long-run percentage cap. Shorter-distance plans tolerate
+    # a higher long-run-to-volume ratio because the absolute miles are lower.
+    _PCT_CAP_BY_DISTANCE: Dict[str, float] = {
+        "marathon": 0.30,
+        "half_marathon": 0.32,
+        "10k": 0.35,
+        "5k": 0.40,
+    }
+
     def _scale_long_run(
         self,
         weekly_volume: float,
         tier: str,
-        distance: str
+        distance: str,
+        *,
+        plan_week: Optional[int] = None,
+        duration_weeks: Optional[int] = None,
+        phase: str = "",
+        is_cutback: bool = False,
+        previous_easy_long_mi: Optional[float] = None,
+        history_override: bool = False,
+        easy_long_floor_mi: Optional[float] = None,
+        long_run_modifier: float = 1.0,
+        athlete_proven_long_run_miles: Optional[float] = None,
     ) -> ScaledWorkout:
-        """Scale easy long run (no workout component)."""
-        try:
-            dist = Distance(distance)
-            vol_tier = VolumeTier(tier)
-        except ValueError:
-            dist = Distance.MARATHON
-            vol_tier = VolumeTier.MID
-        
-        # Get peak long run for this tier/distance
-        peak = LONG_RUN_PEAKS.get(dist, {}).get(vol_tier, 18)
-        
-        # Long run target (default): ~28% of weekly.
-        # For high-volume marathon training, allow slightly higher by default
-        # (durability requirement), but still cap by tier/distance peak.
-        pct = 0.28
-        if (distance or "").strip().lower() in ("marathon",) and weekly_volume >= 60:
-            pct = 0.30
-        target = min(weekly_volume * pct, peak)
-        
+        """Scale easy long run (`workout_type` long / long_run) — aerobic only."""
+        goal = _parse_goal_distance(distance)
+        peak = peak_long_miles(goal, tier)
+        dist_key = (distance or "marathon").strip().lower()
+
+        # N=1: athlete's demonstrated peak long run raises the population cap,
+        # but only for marathon/half plans where long runs are the primary
+        # endurance stimulus. For 10K/5K plans the population peak is correct —
+        # a 20-mi long run from marathon training isn't relevant for a 10K build.
+        if (
+            athlete_proven_long_run_miles
+            and athlete_proven_long_run_miles > peak
+            and dist_key in ("marathon", "half_marathon")
+        ):
+            peak = float(athlete_proven_long_run_miles)
+
+        start_long = min(standard_start_long_miles(goal, tier), peak)
+        tw = max(float(weekly_volume), 1.0)
+        pct_cap = self._PCT_CAP_BY_DISTANCE.get(dist_key, 0.30)
+        weekly_soft_cap = tw * 0.35
+
+        # Legacy path when plan context omitted (unit tests, ad-hoc scaler calls).
+        if plan_week is None or duration_weeks is None:
+            pct = 0.28
+            if dist_key == "marathon" and tw >= 60:
+                pct = 0.29
+            target = min(tw * pct, peak, weekly_soft_cap)
+            target = max(float(MIN_STANDARD_EASY_LONG_MILES), target)
+            target = min(target, peak)
+            mi = math.floor(target)
+            mi = min(mi, math.floor(tw * pct_cap))
+            mi = max(mi, int(MIN_STANDARD_EASY_LONG_MILES))
+            return ScaledWorkout(
+                workout_type="long_run",
+                category=WorkoutCategory.LONG,
+                title="Long Run",
+                description="Easy effort throughout. Build endurance through time on feet.",
+                total_distance_miles=float(mi),
+                duration_minutes=int(mi * 9.5),
+                segments=None,
+                pace_description="easy conversational pace, 60-90 sec slower than marathon pace",
+                option="A",
+            )
+
+        taper_w = PLAN_TAPER_WEEKS_DEFAULT
+        build_end = max(1, int(duration_weeks) - taper_w)
+        pw = int(plan_week)
+
+        if pw > build_end:
+            if pw >= int(duration_weeks):
+                curve = peak * 0.38
+            else:
+                curve = peak * 0.52
+        else:
+            span = max(1, build_end - 1)
+            frac = (pw - 1) / span
+            curve = start_long + (peak - start_long) * frac
+
+        if is_cutback:
+            curve *= 0.70
+
+        # --- History-rich path vs cold-start path ---
+        is_cold_start = (previous_easy_long_mi is None and easy_long_floor_mi is None)
+
+        if previous_easy_long_mi is not None:
+            prev = float(previous_easy_long_mi)
+            if prev > float(peak) and not is_cutback:
+                curve = max(curve, prev)
+            step, sp_pct = spike_step_miles_and_pct(tier, history_override)
+            spike_cap = min(prev + step, prev * (1.0 + sp_pct))
+            # N=1: when the athlete has proven they can do this distance,
+            # the spike guard shouldn't prevent them from returning to it.
+            # They're on familiar ground, not building new territory.
+            # Only for marathon/half where long runs are the primary stimulus.
+            if (
+                athlete_proven_long_run_miles
+                and dist_key in ("marathon", "half_marathon")
+                and curve <= float(athlete_proven_long_run_miles)
+                and not is_cutback
+            ):
+                spike_cap = max(spike_cap, min(curve, float(athlete_proven_long_run_miles)))
+            target = min(curve, spike_cap)
+        elif is_cold_start:
+            # COLD-START PATH: no athlete long-run history exists.
+            # Population curve is the sole driver — no history floor, no spike guard.
+            target = curve
+        else:
+            target = curve
+
+        target = min(target, weekly_soft_cap, peak)
+        target = max(float(MIN_STANDARD_EASY_LONG_MILES), target)
+
+        floor_min_int: Optional[int] = None
+        if easy_long_floor_mi is not None and previous_easy_long_mi is None:
+            fl = float(easy_long_floor_mi)
+            target = max(target, fl)
+            floor_min_int = int(math.ceil(fl - 1e-9))
+            peak_cap = max(float(peak), fl * 1.05)
+        else:
+            peak_cap = float(peak)
+        if (
+            previous_easy_long_mi is not None
+            and float(previous_easy_long_mi) > float(peak)
+            and not is_cutback
+        ):
+            peak_cap = max(peak_cap, float(previous_easy_long_mi) * 1.05)
+            target = max(target, float(previous_easy_long_mi))
+        target = min(target, peak_cap)
+        mi = math.floor(target)
+        if floor_min_int is not None:
+            mi = max(mi, floor_min_int)
+        hard_cap = math.floor(tw * pct_cap)
+        # N=1: if the athlete has proven they can do longer, don't let the
+        # percentage cap prevent a proven-safe distance (marathon/half only).
+        if athlete_proven_long_run_miles and dist_key in ("marathon", "half_marathon"):
+            hard_cap = max(hard_cap, int(athlete_proven_long_run_miles))
+        if floor_min_int is not None and mi >= floor_min_int:
+            mi = max(mi, min(mi, hard_cap) if hard_cap >= floor_min_int else floor_min_int)
+        else:
+            mi = min(mi, hard_cap)
+        mi = max(mi, int(MIN_STANDARD_EASY_LONG_MILES))
+
+        desc = "Easy effort throughout. Build endurance through time on feet."
+        if previous_easy_long_mi is not None and mi > int(previous_easy_long_mi):
+            desc = (
+                f"Easy long progressing from {previous_easy_long_mi:.0f} mi — "
+                f"{mi} mi aerobic. Keep effort truly easy; time on feet is the stimulus."
+            )
+
         return ScaledWorkout(
             workout_type="long_run",
             category=WorkoutCategory.LONG,
-            title="Long Run",
-            description="Easy effort throughout. Build endurance through time on feet.",
-            total_distance_miles=round(target, 0),
-            duration_minutes=int(target * 9.5),
+            title=f"Long Run: {mi} mi",
+            description=desc,
+            total_distance_miles=float(mi),
+            duration_minutes=int(mi * 9.5),
             segments=None,
             pace_description="easy conversational pace, 60-90 sec slower than marathon pace",
-            option="A"
+            option="A",
         )
     
     def _scale_threshold_intervals(
         self,
         weekly_volume: float,
         tier: str,
-        week_in_phase: int
+        week_in_phase: int,
+        *,
+        total_phase_weeks: Optional[int] = None,
+        prev_intervals: Optional[Tuple[int, int]] = None,
     ) -> ScaledWorkout:
         """
-        Scale threshold intervals with progression.
-        
-        T-block progression:
-        Week 1: 4x5 min
-        Week 2: 5x5 min
-        Week 3: 4x7 min or 3x10 min
-        Week 4: 4x10 min or 35 min continuous
+        Scale threshold intervals with 6-step proportional progression.
+
+        total_distance_miles uses the capped t_miles (quality portion after
+        10-12% weekly-volume cap) so session size accurately reflects the
+        actual quality load, not the raw rep-formula output.
+
+        6 canonical steps are mapped proportionally to the threshold block length.
+        The LAST week of the phase is always threshold_continuous (handled by
+        _scale_threshold_continuous). This function covers steps 1..N-1.
+
+        Tier starting formats:
+          low:   4×4min → 4×5 → 3×7 → 3×9 → 2×12
+          mid:   5×5min → 4×7 → 4×8 → 3×10 → 2×15
+          high/elite: 6×5min → 5×7 → 4×8 → 3×10 → 2×15
         """
+        # 5 interval steps per tier (step 6 is continuous, handled separately)
+        _STEPS: dict = {
+            "low":   [(4, 4), (4, 5), (3, 7), (3, 9), (2, 12)],
+            "mid":   [(5, 5), (4, 7), (4, 8), (3, 10), (2, 15)],
+            "high":  [(6, 5), (5, 7), (4, 8), (3, 10), (2, 15)],
+            "elite": [(6, 5), (5, 7), (4, 8), (3, 10), (2, 15)],
+        }
+        steps = _STEPS.get(tier, _STEPS["mid"])
+
+        if total_phase_weeks and total_phase_weeks > 1:
+            # Map week_in_phase (1..total-1) to one of the 5 steps proportionally
+            interval_weeks = max(1, total_phase_weeks - 1)
+            step_idx = min(len(steps) - 1, int((week_in_phase - 1) / interval_weeks * len(steps)))
+        else:
+            # Fallback: legacy 4-step behaviour when phase length unknown
+            if week_in_phase <= 1:
+                step_idx = 0
+            elif week_in_phase == 2:
+                step_idx = 1
+            elif week_in_phase == 3:
+                step_idx = 2
+            else:
+                step_idx = 3
+
+        reps, duration = steps[step_idx]
+
         # Max threshold volume per session (10%)
         max_t_miles = weekly_volume * self.limits["threshold_pct"]
         max_t_minutes = max_t_miles * 6  # ~6 min/mile at T
-        
-        # Progress through T-block
-        if week_in_phase <= 1:
-            reps, duration = 4, 5
-        elif week_in_phase == 2:
-            reps, duration = 5, 5
-        elif week_in_phase == 3:
-            reps, duration = 3, 10
-        else:
-            reps, duration = 4, 10
-        
+
         total_t_time = reps * duration
-        
-        # Cap at 10% rule
         if total_t_time > max_t_minutes:
-            # Reduce volume
             reps = max(2, int(max_t_minutes / duration))
-        
+
+        # T2-9: Absolute T-work cap for low-tier athletes.
+        # low tier: T work ≤ min(weekly_volume × 0.12, 3.5mi) ≈ min(weekly × 0.72, 21) min
+        # mid tier (< 35mpw): T work ≤ min(weekly_volume × 0.15, 5.0mi) ≈ min(weekly × 0.9, 30) min
+        if tier == "low":
+            t29_cap_min = max(duration, min(weekly_volume * 0.72, 21.0))
+            while reps > 1 and reps * duration > t29_cap_min:
+                reps -= 1
+        elif tier == "mid" and weekly_volume < 35:
+            t29_cap_min = max(duration, min(weekly_volume * 0.9, 30.0))
+            while reps > 1 and reps * duration > t29_cap_min:
+                reps -= 1
+
         # Hard cap: t_miles must not exceed Source B 10% limit.
-        # Floor the cap to prevent rounding from pushing over the threshold.
         t_miles = round(reps * duration * 0.17, 1)
-        t_miles_cap = math.floor(max_t_miles * 10) / 10.0
+        t_miles_cap = (math.floor(max_t_miles * 10) - 1) / 10.0
         t_miles = min(t_miles, t_miles_cap)
         segments = [
             {"type": "warmup", "distance_miles": 2, "pace": "easy"},
@@ -257,13 +547,17 @@ class WorkoutScaler:
              "pace": "threshold", "distance_miles": t_miles},
             {"type": "cooldown", "distance_miles": 1.5, "pace": "easy"},
         ]
-        
+
+        description = threshold_intervals_description(
+            reps, duration, prev_intervals
+        )
+
         return ScaledWorkout(
             workout_type="threshold_intervals",
             category=WorkoutCategory.THRESHOLD,
             title=f"Threshold Intervals: {reps}x{duration} min",
-            description=f"{reps}x{duration} min at threshold pace with 2 min jog recovery",
-            total_distance_miles=round(3.5 + (reps * duration * 0.17), 1),
+            description=description,
+            total_distance_miles=round(3.5 + t_miles, 1),
             duration_minutes=int(25 + reps * (duration + 2)),
             segments=segments,
             pace_description="comfortably hard - can speak in short sentences",
@@ -274,35 +568,70 @@ class WorkoutScaler:
         self,
         weekly_volume: float,
         tier: str,
-        week_in_phase: int
+        week_in_phase: int,
+        *,
+        total_phase_weeks: Optional[int] = None,
+        prev_continuous_min: Optional[int] = None,
     ) -> ScaledWorkout:
-        """Scale continuous threshold run (T pace)."""
+        """
+        Scale continuous threshold run (T pace).
+
+        The terminal step of the T-block (step 6). Base duration is tier-scaled
+        and then progresses within multi-week threshold blocks:
+          low:   20 min base → +3min/week
+          mid:   25 min base → +3min/week
+          high/elite: 30 min base → +5min/week
+        """
+        # Tier-specific starting duration for the continuous step
+        _BASE: dict = {"low": 20, "mid": 25, "high": 30, "elite": 30}
+        _INCREMENT: dict = {"low": 3, "mid": 3, "high": 5, "elite": 5}
+        base = _BASE.get(tier, 25)
+        increment = _INCREMENT.get(tier, 3)
+
         # Max threshold volume
         max_t_miles = weekly_volume * self.limits["threshold_pct"]
         max_t_minutes = max_t_miles * 6
-        
-        # Progress: 15 → 20 → 25 → 30+ min
-        base = 15
-        progression = min(week_in_phase * 5, 20)  # Max +20 min
-        tempo_duration = min(base + progression, max_t_minutes)
-        # Floor: 15 min for effective stimulus, but defer to the 10% cap
-        # when weekly volume is too low to support 15 min of threshold work.
-        min_duration = max(10, min(15, max_t_minutes))
+
+        # When multiple continuous weeks exist, progress across them
+        if total_phase_weeks and total_phase_weeks > 1:
+            # week_in_phase is likely the last N weeks of the phase
+            continuous_week = max(0, week_in_phase - max(1, total_phase_weeks - 1))
+        else:
+            continuous_week = week_in_phase - 1  # legacy: direct offset
+
+        tempo_duration = min(base + continuous_week * increment, max_t_minutes)
+        min_duration = max(5, min(base, max_t_minutes))  # never let min exceed the volume cap
         tempo_duration = max(tempo_duration, min_duration)
-        
+
+        # T2-9: Absolute T-work cap by tier to protect low-mileage athletes.
+        # Cap is on the WORK portion only (WU/CD overhead is excluded).
+        # low  tier: T work ≤ min(weekly_volume × 0.12, 3.5mi) ≈ min(weekly × 0.72, 21) min
+        # mid  tier (< 35mpw): T work ≤ min(weekly_volume × 0.15, 5.0mi) ≈ min(weekly × 0.9, 30) min
+        if tier == "low":
+            t29_cap_min = min(weekly_volume * 0.72, 21.0)
+            tempo_duration = min(tempo_duration, max(5.0, t29_cap_min))
+        elif tier == "mid" and weekly_volume < 35:
+            t29_cap_min = min(weekly_volume * 0.9, 30.0)
+            tempo_duration = min(tempo_duration, max(10.0, t29_cap_min))
+
         total_distance = 3 + (tempo_duration * 0.17)  # WU/CD + tempo
-        
+
+        nmin = int(tempo_duration)
+        description = threshold_continuous_description(
+            nmin, prev_continuous_min
+        )
+
         return ScaledWorkout(
             workout_type="threshold",
             category=WorkoutCategory.THRESHOLD,
-            title=f"Threshold Run: {int(tempo_duration)} min",
-            description=f"Continuous {int(tempo_duration)} min at threshold pace",
+            title=f"Threshold Run: {nmin} min",
+            description=description,
             total_distance_miles=round(total_distance, 1),
             duration_minutes=int(25 + tempo_duration),
             segments=[
                 {"type": "warmup", "distance_miles": 2, "pace": "easy"},
-                {"type": "threshold", "duration_min": int(tempo_duration), "pace": "threshold",
-                 "distance_miles": min(round(tempo_duration * 0.17, 1), math.floor(max_t_miles * 10) / 10.0)},
+                {"type": "threshold", "duration_min": nmin, "pace": "threshold",
+                 "distance_miles": min(round(tempo_duration * 0.17, 1), (math.floor(max_t_miles * 10) - 1) / 10.0)},
                 {"type": "cooldown", "distance_miles": 1, "pace": "easy"},
             ],
             pace_description="comfortably hard, sustainable for the full duration",
@@ -315,7 +644,9 @@ class WorkoutScaler:
         tier: str,
         distance: str,
         week_in_phase: int,
-        mp_week: int = 1  # Overall MP workout number (1, 2, 3, 4...)
+        mp_week: int = 1,  # Overall MP workout number (1, 2, 3, 4...)
+        *,
+        prev_mp_miles: Optional[int] = None,
     ) -> ScaledWorkout:
         """
         Scale marathon pace long run with progression.
@@ -338,7 +669,11 @@ class WorkoutScaler:
         
         # MP volume limits (Source B)
         max_mp_miles = min(self.limits["mp_max_miles"], peak_long * 0.75)
-        
+
+        # Source B: MP work may not exceed 20% of weekly volume.
+        # Progression table drives ideal session length; weekly cap is the hard ceiling.
+        mp_pct_cap = weekly_volume * 0.20
+
         # Progress MP work based on total MP workout count
         if mp_week <= 1:
             mp_miles = 6
@@ -355,15 +690,26 @@ class WorkoutScaler:
         else:
             mp_miles = min(16, max_mp_miles)
             mp_structure = f"{int(mp_miles)} miles continuous at MP (dress rehearsal)"
-        
+
+        mp_miles = min(mp_miles, mp_pct_cap)
+        # Floor to 1dp: serialized segment distance_miles rounds to 1dp,
+        # so we must pre-floor to ensure stored value stays ≤ 20% of weekly.
+        mp_miles = math.floor(mp_miles * 10) / 10
+        mp_miles = max(mp_miles, 4)  # <4mi MP is not a meaningful session
+        mp_structure = mp_structure if mp_miles >= 4 else f"{mp_miles:.0f} miles at MP"
+
         # Total run length
         total_miles = min(mp_miles + 6, peak_long)  # MP + warmup/cooldown
-        
+
+        title, description = mp_long_option_a_copy(
+            mp_week, mp_miles, mp_structure, total_miles, prev_mp_miles
+        )
+
         return ScaledWorkout(
             workout_type="long_mp",
             category=WorkoutCategory.RACE_PACE,
-            title=f"Long Run with MP: {mp_structure}",
-            description=f"{int(total_miles)} miles total with {mp_structure}",
+            title=title,
+            description=description,
             total_distance_miles=total_miles,
             duration_minutes=int(total_miles * 8.5),
             segments=[
@@ -373,13 +719,18 @@ class WorkoutScaler:
             ],
             pace_description="goal marathon race pace",
             option="A",
-            option_b=self._create_mp_option_b(mp_miles, total_miles)
+            option_b=self._create_mp_option_b(
+                mp_miles, total_miles, mp_week=mp_week, prev_mp_miles=prev_mp_miles
+            ),
         )
     
     def _create_mp_option_b(
         self,
         mp_miles: float,
-        total_miles: float
+        total_miles: float,
+        *,
+        mp_week: int,
+        prev_mp_miles: Optional[int] = None,
     ) -> 'ScaledWorkout':
         """Create Option B for MP long run (intervals instead of continuous)."""
         # Break continuous MP into intervals
@@ -389,12 +740,16 @@ class WorkoutScaler:
         else:
             reps = int(mp_miles / 4)
             rep_distance = 4
-        
+
+        title, description = mp_long_option_b_copy(
+            mp_week, reps, rep_distance, total_miles, mp_miles, prev_mp_miles
+        )
+
         return ScaledWorkout(
             workout_type="long_mp_intervals",
             category=WorkoutCategory.RACE_PACE,
-            title=f"Long Run with MP: {reps}x{rep_distance} mi at MP",
-            description=f"{int(total_miles)} miles total with {reps}x{rep_distance} mi at MP, 1 mi easy between",
+            title=title,
+            description=description,
             total_distance_miles=total_miles,
             duration_minutes=int(total_miles * 8.5),
             segments=[
@@ -450,15 +805,15 @@ class WorkoutScaler:
         hmp_miles = round(hmp_miles, 0)
         easy_warmup = round(total_miles - hmp_miles, 0)
 
+        title, description = hmp_long_copy(
+            total_miles, easy_warmup, hmp_miles, week_in_phase
+        )
+
         return ScaledWorkout(
             workout_type="long_hmp",
             category=WorkoutCategory.RACE_PACE,
-            title=f"Long Run with HMP: last {int(hmp_miles)} mi @ HMP",
-            description=(
-                f"{int(total_miles)} miles total. Easy for the first "
-                f"{int(easy_warmup)} miles, then {int(hmp_miles)} miles "
-                f"at half marathon pace."
-            ),
+            title=title,
+            description=description,
             total_distance_miles=total_miles,
             duration_minutes=int(total_miles * 8.5),
             segments=[
@@ -473,21 +828,45 @@ class WorkoutScaler:
         self,
         weekly_volume: float,
         tier: str,
-        week_in_phase: int
+        week_in_phase: int,
+        total_phase_weeks: int = 1,
+        is_taper: bool = False,
+        is_race_week: bool = False,
+        workout_type: str = "medium_long",
     ) -> ScaledWorkout:
-        """Scale medium-long run (mid-week endurance)."""
-        # Typically 10-15 miles
+        """Scale medium-long run (mid-week endurance).
+
+        Hard cap: 15 miles regardless of weekly volume.
+        T2-7: Applies a 0–10% build ramp across the phase, then reduces for taper/race weeks.
+        Source: _AI_CONTEXT_/KNOWLEDGE_BASE/03_WORKOUT_TYPES.md §3.
+        """
+        # Volume-based base distance
         if weekly_volume >= 70:
-            distance = 15
+            base_distance = 15
         elif weekly_volume >= 55:
-            distance = 13
+            base_distance = 13
         elif weekly_volume >= 40:
-            distance = 11
+            base_distance = 11
         else:
-            distance = 10
-        
+            base_distance = 10
+
+        # T2-7: 0–10% progression ramp across the phase
+        # week_in_phase-1 in numerator ensures week 1 = 0% lift, last week = +10%.
+        build_factor = 1.0 + ((week_in_phase - 1) / max(1, total_phase_weeks - 1)) * 0.10
+        distance = base_distance * build_factor
+
+        # T2-7: Taper / race-week reductions
+        if is_race_week:
+            distance *= 0.50
+        elif is_taper:
+            distance *= 0.70
+
+        # Enforce the absolute 15-mile cap (coaching rule, not a safety concern)
+        distance = min(distance, 15)
+        distance = round(distance, 1)
+
         return ScaledWorkout(
-            workout_type="medium_long",
+            workout_type=workout_type,
             category=WorkoutCategory.LONG,
             # Avoid the phrase "Long Run" in the title (tests/UI treat "Long Run" as the weekly anchor).
             title=f"Medium Long: {distance} mi",
@@ -497,6 +876,35 @@ class WorkoutScaler:
             segments=None,
             pace_description="easy to steady, slightly quicker than long run pace",
             option="A"
+        )
+
+    def _scale_mp_touch(self, weekly_volume: float) -> ScaledWorkout:
+        """
+        Small MP block inside a shortened mid-week run — used on cutback weeks only
+        for mid/high-volume marathon plans (consolidation week: no full MP long,
+        optional race-pace touch so the athlete doesn't go cold on feel).
+        """
+        cap = weekly_volume * 0.20  # Source B: MP work ≤ 20% of week
+        mp_miles = min(4.0, cap)
+        mp_miles = max(2.5, round(mp_miles, 1))
+        warmup = 2.0
+        cooldown = 2.0
+        total_miles = round(warmup + mp_miles + cooldown, 1)
+        title, description = mp_touch_copy(mp_miles, total_miles)
+        return ScaledWorkout(
+            workout_type="mp_touch",
+            category=WorkoutCategory.RACE_PACE,
+            title=title,
+            description=description,
+            total_distance_miles=total_miles,
+            duration_minutes=int(total_miles * 8.8),
+            segments=[
+                {"type": "warmup", "distance_miles": warmup, "pace": "easy"},
+                {"type": "marathon_pace", "distance_miles": mp_miles, "pace": "MP"},
+                {"type": "cooldown", "distance_miles": cooldown, "pace": "easy"},
+            ],
+            pace_description="goal marathon race pace in the middle, easy bookends",
+            option="A",
         )
     
     def _scale_intervals(
@@ -525,6 +933,7 @@ class WorkoutScaler:
 
         athlete_ctx = athlete_ctx or {}
         experienced_high_volume = bool(athlete_ctx.get("experienced_high_volume"))
+        qv = float(athlete_ctx.get("quality_volume_signal") or weekly_volume)
 
         # --- 5K VO2max progression (Phase 1G): caps at 1000m ---
         if distance == "5k":
@@ -540,10 +949,13 @@ class WorkoutScaler:
 
         # For high-volume contexts early in cycle, short reps are a safer VO2 “touch”
         # while still delivering meaningful ceiling work.
-        if phase_norm in ("base_speed", "base") and weekly_volume >= 60 and experienced_high_volume:
+        if phase_norm in ("base_speed", "base") and qv >= 60 and experienced_high_volume:
             rep_miles = 400 / 1609.344  # 400m in miles
             reps = int(max_i_miles / rep_miles) if rep_miles > 0 else 12
             reps = max(10, min(16, reps))
+            # Source B hard cap
+            while reps > 6 and reps * rep_miles > max_i_miles:
+                reps -= 1
 
             return ScaledWorkout(
                 workout_type="intervals",
@@ -564,6 +976,9 @@ class WorkoutScaler:
 
         # Default: 1K reps (classic VO2)
         reps = min(6, max(4, int(max_i_miles / 0.62)))  # 1km = 0.62 mi
+        # Source B hard cap
+        while reps > 2 and reps * 0.62 > max_i_miles:
+            reps -= 1
 
         return ScaledWorkout(
             workout_type="intervals",
@@ -600,14 +1015,15 @@ class WorkoutScaler:
         pw = plan_week or 1
 
         if phase == "race_specific" or pw >= 10:
-            # 1200m reps at 10K pace with shorter rest
+            # 1200m reps at 5K pace — faster than 10K race pace to stress the VO2max system.
+            # The threshold base is built; now sharpen above race pace, not at race pace.
             rep_m = 1200
             rep_miles = 1200 / 1609.344
             reps = min(6, max(4, int(max_i_miles / rep_miles)))
             rest_desc = "90 sec jog recovery"
             rest_val = 1.5  # minutes
-            pace_desc = "10K race pace — controlled, sustainable for all reps"
-            pace_label = "10K_pace"
+            pace_desc = "5K effort — faster than 10K race pace to stress the VO2max system"
+            pace_label = "5K_pace"
         elif pw >= 7:
             # 1000m classic VO2
             rep_m = 1000
@@ -635,6 +1051,11 @@ class WorkoutScaler:
             rest_val = 1.0
             pace_desc = "hard effort, controlled — smooth mechanics, not a sprint"
             pace_label = "interval"
+
+        # Source B hard cap: interval work ≤ 8% of weekly volume
+        rep_miles_each = rep_m / 1609.344
+        while reps > 2 and reps * rep_miles_each > max_i_miles:
+            reps -= 1
 
         total_interval_miles = round(reps * rep_m / 1609.344, 1)
         total_distance = round(3 + total_interval_miles, 1)
@@ -697,6 +1118,11 @@ class WorkoutScaler:
             rest_desc = "200m jog recovery"
             rest_val = 1.0
             pace_desc = "hard effort, controlled — smooth mechanics, not a sprint"
+
+        # Source B hard cap: interval work ≤ 8% of weekly volume
+        rep_miles_each_5k = rep_m / 1609.344
+        while reps > 2 and reps * rep_miles_each_5k > max_i_miles:
+            reps -= 1
 
         total_interval_miles = round(reps * rep_m / 1609.344, 1)
         total_distance = round(3 + total_interval_miles, 1)

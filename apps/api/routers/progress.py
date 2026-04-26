@@ -21,9 +21,15 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from core.database import get_db
-from models import Athlete, Activity, DailyCheckin, CorrelationFinding, TrainingPlan
+from models import Athlete, Activity, DailyCheckin, CorrelationFinding, TrainingPlan, PerformanceEvent
+from services.intelligence.narration_tiers import (
+    evidence_phrase as _pf_evidence_phrase,
+    tier_for as _pf_tier_for,
+)
+from services.n1_insight_generator import friendly_signal_name
+from services.timezone_utils import get_athlete_timezone, get_athlete_timezone_from_db, athlete_local_today
 from routers.auth import get_current_user
-from core.cache import get_cache, set_cache as _set_cache, invalidate_pattern
+from core.cache import get_cache, set_cache as _set_cache
 
 # Module-level so tests can patch routers.progress.anthropic
 try:
@@ -180,8 +186,8 @@ class NarrativeFeedbackRequest(BaseModel):
 
 class PeriodMetrics(BaseModel):
     run_count: int = 0
-    total_distance_mi: float = 0
-    total_duration_hr: float = 0
+    total_distance_m: float = 0
+    total_duration_s: float = 0
     avg_hr: Optional[float] = None
 
 
@@ -286,8 +292,8 @@ class WellnessTrends(BaseModel):
 
 class VolumeTrajectory(BaseModel):
     recent_weeks: Optional[List[Dict[str, Any]]] = None
-    current_week_mi: Optional[float] = None
-    peak_week_mi: Optional[float] = None
+    current_week_m: Optional[float] = None
+    peak_week_m: Optional[float] = None
     trend_pct: Optional[float] = None
 
 
@@ -389,6 +395,7 @@ async def get_progress_summary(
         start_previous = start_current - timedelta(days=days)
 
         def fetch_period(start, end):
+            # Running-only period metrics (explicit sport filter — weekly distance semantics).
             acts = db.query(Activity).filter(
                 Activity.athlete_id == athlete_id,
                 Activity.sport == "run",
@@ -400,8 +407,8 @@ async def get_progress_summary(
             hrs = [int(a.avg_hr) for a in acts if a.avg_hr is not None]
             return PeriodMetrics(
                 run_count=len([a for a in acts if a.distance_m]),
-                total_distance_mi=round(total_m / 1609.344, 1),
-                total_duration_hr=round(total_s / 3600.0, 1),
+                total_distance_m=round(total_m, 1),
+                total_duration_s=round(total_s, 1),
                 avg_hr=round(sum(hrs) / len(hrs), 1) if hrs else None,
             )
 
@@ -409,10 +416,10 @@ async def get_progress_summary(
         previous = fetch_period(start_previous, end_previous)
 
         vol_change = None
-        if previous.total_distance_mi > 0:
+        if previous.total_distance_m > 0:
             vol_change = round(
-                ((current.total_distance_mi - previous.total_distance_mi)
-                 / previous.total_distance_mi) * 100, 1
+                ((current.total_distance_m - previous.total_distance_m)
+                 / previous.total_distance_m) * 100, 1
             )
 
         hr_change = None
@@ -537,29 +544,29 @@ async def get_progress_summary(
                          weekly.get("data", {}).get("weeks", []))
             if weeks_data:
                 completed = []
-                current_mi = None
+                current_m = None
                 for w in weeks_data:
-                    dist = w.get("total_distance_mi", 0)
+                    dist_m = w.get("total_distance_m") or w.get("total_distance_mi", 0) * 1609.344
                     if w.get("is_current_week"):
-                        current_mi = round(dist, 1)
+                        current_m = round(dist_m, 0)
                     else:
                         completed.append({
                             "week_start": w.get("week_start", ""),
-                            "miles": round(dist, 1),
+                            "distance_m": round(dist_m, 0),
                             "runs": w.get("run_count", 0),
                         })
 
-                peak = max((c["miles"] for c in completed), default=0) if completed else 0
+                peak = max((c["distance_m"] for c in completed), default=0) if completed else 0
                 trend_pct = None
-                if len(completed) >= 2 and completed[0]["miles"] > 0:
+                if len(completed) >= 2 and completed[0]["distance_m"] > 0:
                     trend_pct = round(
-                        ((completed[-1]["miles"] - completed[0]["miles"]) / completed[0]["miles"]) * 100, 1
+                        ((completed[-1]["distance_m"] - completed[0]["distance_m"]) / completed[0]["distance_m"]) * 100, 1
                     )
 
                 result.volume_trajectory = VolumeTrajectory(
                     recent_weeks=completed[-6:],
-                    current_week_mi=current_mi,
-                    peak_week_mi=round(peak, 1) if peak else None,
+                    current_week_m=current_m,
+                    peak_week_m=round(peak, 0) if peak else None,
                     trend_pct=trend_pct,
                 )
     except Exception as e:
@@ -599,10 +606,12 @@ async def get_progress_summary(
             .filter(TrainingPlan.athlete_id == athlete_id, TrainingPlan.status == "active")
             .first()
         )
-        if plan and plan.goal_race_date and plan.goal_race_date >= date.today():
+        _tz = get_athlete_timezone_from_db(db, athlete_id)
+        _lt = athlete_local_today(_tz)
+        if plan and plan.goal_race_date and plan.goal_race_date >= _lt:
             result.goal_race_name = plan.goal_race_name or plan.name
             result.goal_race_date = plan.goal_race_date.isoformat()
-            result.goal_race_days_remaining = (plan.goal_race_date - date.today()).days
+            result.goal_race_days_remaining = (plan.goal_race_date - _lt).days
             if plan.goal_time_seconds:
                 h = plan.goal_time_seconds // 3600
                 m = (plan.goal_time_seconds % 3600) // 60
@@ -787,43 +796,28 @@ def _generate_progress_headline(
     )
 
     try:
-        from google import genai
-        import os
+        from core.config import settings
+        from core.llm_client import call_llm_with_json_parse
 
-        api_key = os.getenv("GOOGLE_AI_API_KEY")
-        if not api_key:
-            return None
-
-        client = genai.Client(api_key=api_key)
-        response = client.models.generate_content(
-            model="gemini-2.5-flash",
-            contents=prompt,
-            config=genai.types.GenerateContentConfig(
-                max_output_tokens=2000,
-                temperature=0.3,
-                response_mime_type="application/json",
-                response_schema={
-                    "type": "OBJECT",
-                    "properties": {
-                        "text": {
-                            "type": "STRING",
-                            "description": "One coaching headline about overall progress. No raw metric readouts.",
-                        },
-                        "subtext": {
-                            "type": "STRING",
-                            "description": "One supporting sentence with context and action. No raw metric readouts.",
-                        },
-                    },
-                    "required": ["text", "subtext"],
-                },
-            ),
+        system = (
+            "You are an elite running coach. Respond with ONLY a JSON object: "
+            '{"text": "...", "subtext": "..."}. '
+            '"text" is one coaching headline (no raw metric readouts). '
+            '"subtext" is one supporting sentence with context and action.'
         )
-
-        data = json.loads(response.text)
-        headline = ProgressHeadline(**data)
-        _set_cache(cache_key, data, ttl=1800)
+        data = call_llm_with_json_parse(
+            model=settings.KNOWLEDGE_PRIMARY_MODEL,
+            system=system,
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=2000,
+            temperature=0.3,
+            timeout_s=30,
+        )
+        if not data or not data.get("text") or not data.get("subtext"):
+            return None
+        headline = ProgressHeadline(text=data["text"], subtext=data["subtext"])
+        _set_cache(cache_key, {"text": data["text"], "subtext": data["subtext"]}, ttl=1800)
         return headline
-
     except Exception as e:
         logger.warning(f"Progress headline LLM failed: {type(e).__name__}: {e}")
         return None
@@ -1096,56 +1090,27 @@ def _generate_progress_cards(
     prompt = "\n".join(prompt_parts)
 
     try:
-        import os
-        from google import genai
+        from core.config import settings
+        from core.llm_client import call_llm_with_json_parse
 
-        api_key = os.getenv("GOOGLE_AI_API_KEY")
-        if not api_key:
-            return _fallback_progress_cards(summary, checkin_context, days)
-
-        client = genai.Client(api_key=api_key)
-        response = client.models.generate_content(
-            model="gemini-2.5-flash",
-            contents=prompt,
-            config=genai.types.GenerateContentConfig(
-                max_output_tokens=2200,
-                temperature=0.25,
-                response_mime_type="application/json",
-                response_schema={
-                    "type": "OBJECT",
-                    "properties": {
-                        "cards": {
-                            "type": "ARRAY",
-                            "items": {
-                                "type": "OBJECT",
-                                "properties": {
-                                    "id": {"type": "STRING"},
-                                    "title": {"type": "STRING"},
-                                    "summary": {"type": "STRING"},
-                                    "trend_context": {"type": "STRING"},
-                                    "drivers": {"type": "STRING"},
-                                    "next_step": {"type": "STRING"},
-                                    "ask_coach_query": {"type": "STRING"},
-                                },
-                                "required": [
-                                    "id",
-                                    "title",
-                                    "summary",
-                                    "trend_context",
-                                    "drivers",
-                                    "next_step",
-                                    "ask_coach_query",
-                                ],
-                            },
-                        }
-                    },
-                    "required": ["cards"],
-                },
-            ),
+        system = (
+            "You are an elite running coach. Respond with ONLY a JSON object of the form: "
+            '{"cards": [{"id": "...", "title": "...", "summary": "...", '
+            '"trend_context": "...", "drivers": "...", "next_step": "...", '
+            '"ask_coach_query": "..."}]}. '
+            "Every card must include all seven fields. No markdown, no commentary."
         )
-
-        data = json.loads(response.text)
-        cards = [ProgressCoachCard(**card) for card in data.get("cards", [])]
+        data = call_llm_with_json_parse(
+            model=settings.KNOWLEDGE_PRIMARY_MODEL,
+            system=system,
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=2200,
+            temperature=0.25,
+            timeout_s=45,
+        )
+        if not data or not isinstance(data.get("cards"), list):
+            return _fallback_progress_cards(summary, checkin_context, days)
+        cards = [ProgressCoachCard(**card) for card in data["cards"]]
         if not cards:
             return _fallback_progress_cards(summary, checkin_context, days)
         if not all(_valid_progress_card_contract(c) for c in cards):
@@ -1240,11 +1205,12 @@ def _assemble_chapters_data(db: Session, athlete_id: UUID) -> List[ChapterRespon
                 values = []
                 for w in weeks_data:
                     labels.append(w.get("week_start", "")[-5:])
-                    values.append(round(w.get("total_distance_mi", 0), 1))
+                    dist_m = w.get("total_distance_m") or w.get("total_distance_mi", 0) * 1609.344
+                    values.append(round(dist_m, 0))
 
-                current_mi = values[-1] if values else 0
-                avg_4wk = sum(values[-4:]) / len(values[-4:]) if len(values) >= 4 else current_mi
-                trend_pct = round(((current_mi - avg_4wk) / avg_4wk * 100), 1) if avg_4wk > 0 else 0
+                current_val = values[-1] if values else 0
+                avg_4wk = sum(values[-4:]) / len(values[-4:]) if len(values) >= 4 else current_val
+                trend_pct = round(((current_val - avg_4wk) / avg_4wk * 100), 1) if avg_4wk > 0 else 0
 
                 chapters.append(ChapterResponse(
                     title="Volume Trajectory",
@@ -1254,10 +1220,10 @@ def _assemble_chapters_data(db: Session, athlete_id: UUID) -> List[ChapterRespon
                         "labels": labels,
                         "values": values,
                         "highlight_index": len(values) - 1,
-                        "unit": "mi",
+                        "unit": "m",
                     },
-                    observation=f"Weekly volume: {current_mi}mi this week. {trend_pct:+.0f}% vs 4-week average.",
-                    evidence=f"{current_mi}mi this week | Avg: {avg_4wk:.1f}mi | Trend: {trend_pct:+.1f}%",
+                    observation=f"Weekly volume: {current_val:.0f}m this week. {trend_pct:+.0f}% vs 4-week average.",
+                    evidence=f"{current_val:.0f}m this week | Avg: {avg_4wk:.0f}m | Trend: {trend_pct:+.1f}%",
                     relevance_score=0.85,
                 ))
     except Exception as e:
@@ -1428,16 +1394,16 @@ def _assemble_patterns_data(
     forming: Optional[PatternsFormingResponse] = None
 
     try:
-        from services.correlation_persistence import get_surfaceable_findings
-
-        # Get all active findings regardless of cooldown for display
         from models import CorrelationFinding
+        from services.fingerprint_context import _SUPPRESSED_SIGNALS, _ENVIRONMENT_SIGNALS
+        _suppressed = _SUPPRESSED_SIGNALS | _ENVIRONMENT_SIGNALS
         findings = (
             db.query(CorrelationFinding)
             .filter(
                 CorrelationFinding.athlete_id == athlete_id,
                 CorrelationFinding.is_active == True,  # noqa: E712
                 CorrelationFinding.times_confirmed >= 1,
+                ~CorrelationFinding.input_name.in_(_suppressed),
             )
             .order_by((CorrelationFinding.times_confirmed * CorrelationFinding.confidence).desc())
             .limit(2)
@@ -1446,15 +1412,13 @@ def _assemble_patterns_data(
 
         for f in findings:
             tc = f.times_confirmed
-            if tc >= 6:
-                conf = "strong"
-            elif tc >= 3:
-                conf = "confirmed"
-            else:
-                conf = "emerging"
+            conf = _pf_tier_for(tc).lower()
 
             # Build deterministic fallback narrative
-            fallback_narrative = f"Pattern: {f.input_name} → {f.output_metric}. Confirmed {tc} times."
+            fallback_narrative = (
+                f"Pattern: {f.input_name} → {f.output_metric}. "
+                f"{_pf_evidence_phrase(tc).capitalize()}."
+            )
 
             patterns.append(PersonalPatternResponse(
                 narrative=fallback_narrative,
@@ -1464,8 +1428,8 @@ def _assemble_patterns_data(
                 visual_data={
                     "input_series": [],
                     "output_series": [],
-                    "input_label": f.input_name.replace("_", " ").title(),
-                    "output_label": f.output_metric.replace("_", " ").title(),
+                    "input_label": friendly_signal_name(f.input_name).title(),
+                    "output_label": friendly_signal_name(f.output_metric).title(),
                 },
                 times_confirmed=tc,
                 current_relevance="",
@@ -1513,9 +1477,10 @@ def _assemble_looking_ahead(db: Session, athlete_id: UUID) -> LookingAheadRespon
             .first()
         )
 
-        if plan and plan.goal_race_date and plan.goal_race_date >= date.today():
-            # Race variant
-            days_remaining = (plan.goal_race_date - date.today()).days
+        _tz = get_athlete_timezone_from_db(db, athlete_id)
+        _lt = athlete_local_today(_tz)
+        if plan and plan.goal_race_date and plan.goal_race_date >= _lt:
+            days_remaining = (plan.goal_race_date - _lt).days
             race_name = plan.goal_race_name or plan.name or "Goal Race"
 
             # Get readiness score
@@ -1589,7 +1554,6 @@ def _assemble_looking_ahead(db: Session, athlete_id: UUID) -> LookingAheadRespon
                             continue
                         pred_info = p.get("prediction", {})
                         if pred_info.get("time_formatted"):
-                            short_dist = dist_name.replace(" Marathon", "").replace("Half", "Half")
                             conf = pred_info.get("confidence", "low")
                             if isinstance(conf, str):
                                 conf = "high" if conf.lower() in ("high", "race-anchored") else "moderate" if conf.lower() in ("moderate", "estimate") else "low"
@@ -1629,6 +1593,7 @@ def _assemble_data_coverage(db: Session, athlete_id: UUID) -> DataCoverageRespon
     cutoff = datetime.utcnow() - timedelta(days=90)
 
     try:
+        # All-sport activity rows in window (coverage metric, not running mileage).
         coverage.activity_days = (
             db.query(Activity)
             .filter(Activity.athlete_id == athlete_id, Activity.start_time >= cutoff)
@@ -1660,7 +1625,7 @@ def _assemble_data_coverage(db: Session, athlete_id: UUID) -> DataCoverageRespon
         from models import CorrelationFinding
         coverage.correlation_findings = (
             db.query(CorrelationFinding)
-            .filter(CorrelationFinding.athlete_id == athlete_id, CorrelationFinding.is_active == True)  # noqa: E712
+            .filter(CorrelationFinding.athlete_id == athlete_id, CorrelationFinding.is_active.is_(True))
             .count()
         )
     except Exception:
@@ -1676,9 +1641,6 @@ def _generate_narrative_llm(visual_snapshot: Dict[str, Any]) -> Optional[Dict[st
     Returns a dict with narrative fields for verdict, chapters, patterns,
     looking_ahead. Returns None if LLM is unavailable or fails.
     """
-    if gemini_client is None:
-        return None
-
     prompt_parts = [
         "You are an elite running coach writing a progress narrative for one specific athlete.",
         "You are given their visual data snapshot. Write coaching narrative for each section.",
@@ -1702,52 +1664,26 @@ def _generate_narrative_llm(visual_snapshot: Dict[str, Any]) -> Optional[Dict[st
     prompt = "\n".join(prompt_parts)
 
     try:
-        from google import genai
+        from core.config import settings
+        from core.llm_client import call_llm_with_json_parse
 
-        response = gemini_client.models.generate_content(
-            model="gemini-2.5-flash",
-            contents=prompt,
-            config=genai.types.GenerateContentConfig(
-                max_output_tokens=3000,
-                temperature=0.3,
-                response_mime_type="application/json",
-                response_schema={
-                    "type": "OBJECT",
-                    "properties": {
-                        "verdict_text": {"type": "STRING"},
-                        "chapters": {
-                            "type": "ARRAY",
-                            "items": {
-                                "type": "OBJECT",
-                                "properties": {
-                                    "topic": {"type": "STRING"},
-                                    "observation": {"type": "STRING"},
-                                    "interpretation": {"type": "STRING"},
-                                    "action": {"type": "STRING"},
-                                },
-                                "required": ["topic", "observation", "interpretation", "action"],
-                            },
-                        },
-                        "patterns": {
-                            "type": "ARRAY",
-                            "items": {
-                                "type": "OBJECT",
-                                "properties": {
-                                    "input_metric": {"type": "STRING"},
-                                    "narrative": {"type": "STRING"},
-                                    "current_relevance": {"type": "STRING"},
-                                },
-                                "required": ["input_metric", "narrative", "current_relevance"],
-                            },
-                        },
-                        "looking_ahead_narrative": {"type": "STRING"},
-                    },
-                    "required": ["verdict_text", "chapters"],
-                },
-            ),
+        system = (
+            "You are an elite running coach. Respond with ONLY a JSON object of the form: "
+            '{"verdict_text": "...", '
+            '"chapters": [{"topic": "...", "observation": "...", "interpretation": "...", "action": "..."}], '
+            '"patterns": [{"input_metric": "...", "narrative": "...", "current_relevance": "..."}], '
+            '"looking_ahead_narrative": "..."}. '
+            "verdict_text and chapters are required; patterns and looking_ahead_narrative are optional. "
+            "No markdown, no commentary."
         )
-
-        return json.loads(response.text)
+        return call_llm_with_json_parse(
+            model=settings.KNOWLEDGE_PRIMARY_MODEL,
+            system=system,
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=3000,
+            temperature=0.3,
+            timeout_s=60,
+        )
     except Exception as e:
         logger.warning(f"Narrative LLM generation failed: {type(e).__name__}: {e}")
         return None
@@ -2019,13 +1955,15 @@ def _assemble_knowledge(athlete_id, db: Session) -> KnowledgeResponse:
     """Deterministic assembly of all Phase 1 knowledge data."""
     from services.training_load import TrainingLoadCalculator
 
-    # 1. Query all active correlation findings
+    from services.fingerprint_context import _SUPPRESSED_SIGNALS, _ENVIRONMENT_SIGNALS
+    _suppressed = _SUPPRESSED_SIGNALS | _ENVIRONMENT_SIGNALS
     findings = (
         db.query(CorrelationFinding)
         .filter(
             CorrelationFinding.athlete_id == athlete_id,
-            CorrelationFinding.is_active == True,
+            CorrelationFinding.is_active.is_(True),
             CorrelationFinding.times_confirmed >= 1,
+            ~CorrelationFinding.input_name.in_(_suppressed),
         )
         .order_by(
             (CorrelationFinding.times_confirmed * CorrelationFinding.confidence).desc()
@@ -2064,7 +2002,10 @@ def _assemble_knowledge(athlete_id, db: Session) -> KnowledgeResponse:
             input_metric=f.input_name,
             output_metric=f.output_metric,
             headline=_build_headline(f),
-            evidence=f.insight_text or f"Observed {f.times_confirmed} times with r={f.correlation_coefficient:.2f}.",
+            evidence=(
+                f.insight_text
+                or f"Pattern {_pf_evidence_phrase(f.times_confirmed)} (r={f.correlation_coefficient:.2f})."
+            ),
             implication="",
             times_confirmed=f.times_confirmed,
             confidence_tier=_confidence_tier(f.times_confirmed),
@@ -2086,7 +2027,8 @@ def _assemble_knowledge(athlete_id, db: Session) -> KnowledgeResponse:
         TrainingPlan.status == "active",
     ).first()
 
-    today = date.today()
+    _tz = get_athlete_timezone_from_db(db, athlete_id)
+    today = athlete_local_today(_tz)
     day_name = today.strftime("%A")
     date_str = today.strftime("%b %-d") if os.name != "nt" else today.strftime("%b %d").replace(" 0", " ")
 
@@ -2179,12 +2121,7 @@ def _assemble_knowledge(athlete_id, db: Session) -> KnowledgeResponse:
 
 def _generate_knowledge_llm(response: KnowledgeResponse, athlete_id) -> Optional[Dict]:
     """LLM pass: generate hero headline + per-finding implications."""
-    if not gemini_client:
-        return None
-
     try:
-        from google import genai
-
         facts_summary = []
         for f in response.proved_facts[:8]:
             facts_summary.append(
@@ -2212,16 +2149,26 @@ Rules:
 - Every sentence must be grounded in the data provided
 - Suppress over hallucinate — if uncertain, omit"""
 
-        result = gemini_client.models.generate_content(
-            model="gemini-2.5-flash",
-            contents=prompt,
-            config=genai.types.GenerateContentConfig(
-                max_output_tokens=1500,
-                temperature=0.3,
-                response_mime_type="application/json",
-            ),
+        from core.config import settings
+        from core.llm_client import call_llm_with_json_parse
+
+        system = (
+            "You are a running coach. Respond with ONLY a JSON object of the form: "
+            '{"headline": "...", "headline_accent": "...", "subtext": "...", '
+            '"implications": {"0": "...", "1": "..."}}. '
+            "headline is max 8 words. headline_accent is max 10 words. "
+            "subtext is one paragraph (2-3 sentences). "
+            "implications maps fact index strings to one-sentence current implications. "
+            "No markdown, no commentary."
         )
-        return json.loads(result.text)
+        return call_llm_with_json_parse(
+            model=settings.KNOWLEDGE_PRIMARY_MODEL,
+            system=system,
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=1500,
+            temperature=0.3,
+            timeout_s=45,
+        )
     except Exception as e:
         logger.warning(f"Knowledge LLM failed: {e}")
         return None
@@ -2328,7 +2275,7 @@ def get_training_story(
 
     events = db.query(PerformanceEvent).filter(
         PerformanceEvent.athlete_id == athlete_id,
-        PerformanceEvent.user_confirmed == True,  # noqa: E712
+        PerformanceEvent.user_confirmed.is_(True),
     ).order_by(PerformanceEvent.event_date).all()
 
     story = synthesize_training_story(findings, events)
@@ -2336,5 +2283,73 @@ def get_training_story(
     result['honest_gaps'] = honest_gaps
 
     _set_cache(cache_key, result, ttl=3600)
+
+    return result
+
+
+# ═══════════════════════════════════════════════════════
+#  Personal Operating Manual
+# ═══════════════════════════════════════════════════════
+
+
+@router.get("/manual")
+def get_operating_manual(
+    db: Session = Depends(get_db),
+    current_user: Athlete = Depends(get_current_user),
+):
+    """Personal Operating Manual — everything the system has learned about this athlete.
+
+    Assembles all confirmed correlation findings (with L1-L4 enrichment),
+    investigation findings, and cascade chains into a domain-organized
+    document. Deterministic — no LLM calls.
+
+    Cached for 30 minutes (1800s). The manual is deterministic and only
+    changes after daily sweep or post-sync processing.
+    """
+    from services.operating_manual import assemble_manual
+
+    athlete_id = current_user.id
+    cache_key = f"operating_manual:{athlete_id}"
+
+    cached = get_cache(cache_key)
+    if cached is not None:
+        return cached
+
+    result = assemble_manual(athlete_id, db)
+
+    _set_cache(cache_key, result, ttl=1800)
+
+    return result
+
+
+@router.get("/first-insights")
+def get_first_insights_endpoint(
+    db: Session = Depends(get_db),
+    current_user: Athlete = Depends(get_current_user),
+):
+    """First-session insights — the aha moment.
+
+    Returns the top findings from the athlete's imported history.
+    Returns {"ready": false} if insufficient data exists yet.
+
+    Cache strategy: ready=false caches for 15s (matches frontend poll
+    interval so we don't block the reveal), ready=true caches for 30min
+    (stable once populated).
+    """
+    from services.first_insights import get_first_insights
+
+    athlete_id = current_user.id
+    cache_key = f"first_insights:{athlete_id}"
+
+    cached = get_cache(cache_key)
+    if cached is not None:
+        return cached
+
+    result = get_first_insights(athlete_id, db)
+    if result is None:
+        result = {"ready": False}
+
+    ttl = 1800 if result.get("ready") else 15
+    _set_cache(cache_key, result, ttl=ttl)
 
     return result

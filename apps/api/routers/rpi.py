@@ -76,7 +76,7 @@ def calculate_rpi(
     time_hours: Optional[int] = Query(None, description="Hours component of race time"),
     time_min: Optional[int] = Query(None, description="Minutes component of race time"),
     time_sec: Optional[int] = Query(None, description="Seconds component of race time"),
-    pace_minutes_per_mile: Optional[float] = Query(None, description="Pace in minutes per mile (for reverse calculation, e.g., 7.5 for 7:30/mi)")
+    pace_s_per_km: Optional[float] = Query(None, description="Pace in seconds per km (for reverse calculation, e.g., 279 for ~4:39/km)")
 ):
     """
     Comprehensive RPI (Running Performance Index) calculator.
@@ -85,7 +85,7 @@ def calculate_rpi(
     
     Can calculate from:
     1. Race time and distance (distance_m + time_minutes OR time_hours/time_min/time_sec)
-    2. Pace only (pace_minutes_per_mile) - reverse calculation
+    2. Pace only (pace_s_per_km) - reverse calculation
     
     Returns:
         - RPI score
@@ -96,7 +96,7 @@ def calculate_rpi(
     - 5K in 20:00: distance_m=5000, time_minutes=20.0
     - 10K in 42:30: distance_m=10000, time_minutes=42.5
     - Half Marathon in 1:30:00: distance_m=21097.5, time_hours=1, time_min=30, time_sec=0
-    - From pace 7:30/mi: pace_minutes_per_mile=7.5
+    - From pace 4:39/km: pace_s_per_km=279
     """
     # Parse time input
     time_seconds = None
@@ -111,7 +111,6 @@ def calculate_rpi(
     
     # Validate input
     if distance_m and time_seconds:
-        # Calculate from race time
         if distance_m <= 0:
             raise HTTPException(status_code=400, detail="Distance must be positive")
         if time_seconds <= 0:
@@ -121,18 +120,18 @@ def calculate_rpi(
             distance_meters=distance_m,
             time_seconds=time_seconds
         )
-    elif pace_minutes_per_mile:
-        # Reverse calculation from pace
-        if pace_minutes_per_mile <= 0:
+    elif pace_s_per_km:
+        if pace_s_per_km <= 0:
             raise HTTPException(status_code=400, detail="Pace must be positive")
         
+        pace_min_per_mile = (pace_s_per_km * 1.60934) / 60.0
         result = calculate_rpi_comprehensive(
-            pace_minutes_per_mile=pace_minutes_per_mile
+            pace_minutes_per_mile=pace_min_per_mile
         )
     else:
         raise HTTPException(
             status_code=400,
-            detail="Must provide either (distance_m + time) OR pace_minutes_per_mile"
+            detail="Must provide either (distance_m + time) OR pace_s_per_km"
         )
     
     if result.get("error"):

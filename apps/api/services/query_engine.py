@@ -18,18 +18,15 @@ This is designed for extensibility - new query types can be added
 without modifying existing code.
 """
 
-from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional
 from uuid import UUID
 from datetime import datetime, timedelta
 from enum import Enum
 import logging
-from functools import reduce
 
 from sqlalchemy.orm import Session
-from sqlalchemy import func, and_, or_, desc, asc, case, cast, Float
-from sqlalchemy.sql import text
+from sqlalchemy import func, desc, asc, cast, Float
 
 from models import (
     Athlete, Activity, NutritionEntry, WorkPattern, 
@@ -296,7 +293,7 @@ class QueryEngine:
         if scope == QueryScope.ADMIN_ONLY:
             return user.role in ('admin', 'owner')
         elif scope == QueryScope.TOP_TIER:
-            return user.role in ('admin', 'owner') or user.subscription_tier in ('premium', 'pro', 'elite')
+            return user.role in ('admin', 'owner') or user.has_active_subscription
         return True  # SELF_ONLY is always allowed
     
     def _apply_time_filter(self, query, model, spec: QuerySpec):

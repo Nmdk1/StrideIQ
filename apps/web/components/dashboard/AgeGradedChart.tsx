@@ -19,6 +19,7 @@ import {
   ReferenceLine,
 } from 'recharts';
 import type { EfficiencyTrendPoint } from '@/lib/api/services/analytics';
+import { useUnits } from '@/lib/context/UnitsContext';
 
 interface AgeGradedChartProps {
   data: EfficiencyTrendPoint[];
@@ -26,7 +27,8 @@ interface AgeGradedChartProps {
 }
 
 export function AgeGradedChart({ data, className = '' }: AgeGradedChartProps) {
-  // Filter to only points with age-graded data
+  const { formatPace } = useUnits();
+
   const chartData = data
     .filter((point) => point.performance_percentage !== null && point.performance_percentage !== undefined)
     .map((point) => ({
@@ -34,7 +36,7 @@ export function AgeGradedChart({ data, className = '' }: AgeGradedChartProps) {
       fullDate: point.date,
       ageGraded: point.performance_percentage!,
       efficiency: point.efficiency_factor,
-      pace: point.pace_per_mile,
+      pace: point.pace_s_per_km,
     }));
 
   if (chartData.length === 0) {
@@ -78,10 +80,7 @@ export function AgeGradedChart({ data, className = '' }: AgeGradedChartProps) {
             <p>
               <span className="text-slate-400">Pace:</span>{' '}
               <span className="text-white">
-                {Math.floor(data.pace)}:{Math.round((data.pace % 1) * 60)
-                  .toString()
-                  .padStart(2, '0')}
-                /mi
+                {formatPace(data.pace)}
               </span>
             </p>
           </div>

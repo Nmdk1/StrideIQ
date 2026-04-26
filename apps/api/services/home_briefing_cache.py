@@ -13,7 +13,6 @@ The Celery task calls write_briefing_cache() after generating a briefing.
 
 import json
 import logging
-import os
 from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Dict, Optional, Tuple
@@ -57,52 +56,78 @@ def _circuit_key(athlete_id: str) -> str:
 
 def read_briefing_cache(athlete_id: str) -> Tuple[Optional[Dict], BriefingState]:
     """
+    Backward-compatible read helper.
+    Returns only payload + state.
+    """
+    payload, state, _meta = read_briefing_cache_with_meta(athlete_id)
+    return payload, state
+
+
+def read_briefing_cache_with_meta(
+    athlete_id: str,
+) -> Tuple[Optional[Dict], BriefingState, Dict[str, Any]]:
+    """
     Read briefing from Redis cache with staleness semantics.
 
-    Returns (payload_or_none, state).
+    Returns (payload_or_none, state, meta).
     Never blocks. Never calls LLM.
     """
     r = get_redis_client()
+    meta: Dict[str, Any] = {
+        "briefing_is_interim": False,
+        "briefing_last_updated_at": None,
+        "briefing_source": None,
+    }
     if not r:
-        return None, BriefingState.MISSING
+        return None, BriefingState.MISSING, meta
 
     try:
         raw = r.get(_cache_key(athlete_id))
     except Exception as e:
         logger.warning(f"Redis read error for home briefing {athlete_id}: {e}")
-        return None, BriefingState.MISSING
+        return None, BriefingState.MISSING, meta
 
     if not raw:
         lock_exists = _lock_exists(r, athlete_id)
         state = BriefingState.REFRESHING if lock_exists else BriefingState.MISSING
-        return None, state
+        return None, state, meta
 
     try:
         entry = json.loads(raw)
     except (json.JSONDecodeError, TypeError):
-        return None, BriefingState.MISSING
+        return None, BriefingState.MISSING, meta
 
     generated_at_str = entry.get("generated_at")
     if not generated_at_str:
-        return None, BriefingState.MISSING
+        return None, BriefingState.MISSING, meta
 
     try:
         generated_at = datetime.fromisoformat(generated_at_str)
     except (ValueError, TypeError):
-        return None, BriefingState.MISSING
+        return None, BriefingState.MISSING, meta
 
     age_s = (datetime.now(timezone.utc) - generated_at).total_seconds()
 
     payload = entry.get("payload")
+    source_model = str(entry.get("source_model") or "")
+    source = entry.get("briefing_source")
+    if source not in ("llm", "deterministic_fallback"):
+        source = "deterministic_fallback" if "deterministic" in source_model else "llm"
+    meta = {
+        "briefing_is_interim": bool(entry.get("briefing_is_interim", source == "deterministic_fallback")),
+        "briefing_last_updated_at": generated_at_str,
+        "briefing_source": source,
+        "source_model": source_model,
+    }
 
     if age_s < FRESH_THRESHOLD_S:
-        return payload, BriefingState.FRESH
+        return payload, BriefingState.FRESH, meta
     elif age_s < STALE_MAX_S:
-        return payload, BriefingState.STALE
+        return payload, BriefingState.STALE, meta
     else:
         lock_exists = _lock_exists(r, athlete_id)
         state = BriefingState.REFRESHING if lock_exists else BriefingState.MISSING
-        return None, state
+        return None, state, meta
 
 
 def write_briefing_cache(
@@ -111,6 +136,8 @@ def write_briefing_cache(
     source_model: str,
     data_fingerprint: str,
     version: int = 1,
+    briefing_source: Optional[str] = None,
+    briefing_is_interim: Optional[bool] = None,
 ) -> bool:
     """
     Write a generated briefing to Redis cache.
@@ -123,11 +150,17 @@ def write_briefing_cache(
     from datetime import timedelta
 
     now = datetime.now(timezone.utc)
+    resolved_source = briefing_source
+    if resolved_source not in ("llm", "deterministic_fallback"):
+        resolved_source = "deterministic_fallback" if "deterministic" in str(source_model).lower() else "llm"
+    resolved_is_interim = bool(briefing_is_interim) if briefing_is_interim is not None else (resolved_source == "deterministic_fallback")
     entry = {
         "payload": payload,
         "generated_at": now.isoformat(),
         "expires_at": (now + timedelta(seconds=STALE_MAX_S)).isoformat(),
         "source_model": source_model,
+        "briefing_source": resolved_source,
+        "briefing_is_interim": resolved_is_interim,
         "version": version,
         "data_fingerprint": data_fingerprint,
     }
@@ -202,6 +235,21 @@ def set_enqueue_cooldown(athlete_id: str) -> None:
         r.setex(_cooldown_key(athlete_id), ENQUEUE_COOLDOWN_S, "1")
     except Exception:
         pass
+
+
+def is_enqueue_cooldown_active(athlete_id: str) -> bool:
+    """
+    Public read for enqueue cooldown state.
+    Returns True when a recent enqueue happened and another enqueue should be
+    suppressed to avoid bursty duplicate work.
+    """
+    r = get_redis_client()
+    if not r:
+        return False
+    try:
+        return bool(r.exists(_cooldown_key(athlete_id)))
+    except Exception:
+        return False
 
 
 def acquire_task_lock(athlete_id: str) -> bool:
@@ -293,6 +341,14 @@ def is_circuit_open(athlete_id: str) -> bool:
     except Exception as e:
         logger.warning("is_circuit_open check error for %s: %s", athlete_id, e)
         return False  # fail open
+
+
+def is_task_lock_held(athlete_id: str) -> bool:
+    """Public lock-state check for coalescing logic in external task modules."""
+    r = get_redis_client()
+    if not r:
+        return False
+    return _lock_exists(r, athlete_id)
 
 
 def _lock_exists(r, athlete_id: str) -> bool:

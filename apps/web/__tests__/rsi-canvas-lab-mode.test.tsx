@@ -6,9 +6,10 @@
  * inline below the chart — no tab click needed. AC-12 (no coach surface) still applies.
  */
 import React from 'react';
-import { render, screen } from '@testing-library/react';
+import { screen } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { mockTier1Result, mockTier4Result, generateTestStreamData, mockUnitsImperial } from './rsi-fixtures';
+import { renderWithStreamHover } from '@/test-utils/renderWithStreamHover';
 
 import { RunShapeCanvas } from '@/components/activities/rsi/RunShapeCanvas';
 
@@ -34,7 +35,7 @@ function renderCanvas(analysisResult = mockTier1Result) {
     refetch: jest.fn(),
   } as any);
 
-  return render(<RunShapeCanvas activityId="test-123" />);
+  return renderWithStreamHover(<RunShapeCanvas activityId="test-123" />);
 }
 
 describe('Lab Mode: Removed', () => {

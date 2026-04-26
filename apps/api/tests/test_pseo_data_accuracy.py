@@ -5,7 +5,14 @@ from services.rpi_calculator import calculate_rpi_from_race_time, calculate_trai
 from services.wma_age_factors import get_wma_age_factor, get_wma_open_standard_seconds
 
 
-REPO_ROOT = Path(__file__).resolve().parents[3]
+def _find_repo_root() -> Path:
+    p = Path(__file__).resolve()
+    for parent in p.parents:
+        if (parent / "apps" / "web").is_dir():
+            return parent
+    return p.parents[min(3, len(p.parents) - 1)]
+
+REPO_ROOT = _find_repo_root()
 AGE_TABLES_PATH = REPO_ROOT / "apps" / "web" / "data" / "age-grading-tables.json"
 PACE_TABLES_PATH = REPO_ROOT / "apps" / "web" / "data" / "training-pace-tables.json"
 AGE_PAGE_PATH = (

@@ -330,56 +330,34 @@ const RACE_TIMES = {
 const DISTANCE_METERS = { '5k': 5000, '10k': 10000, 'half': 21097.5, 'marathon': 42195 };
 const DISTANCE_LABELS = { '5k': '5K', '10k': '10K', 'half': 'Half Marathon', 'marathon': 'Marathon' };
 
-async function fetchTrainingPaces(distanceMeters, timeSeconds) {
-  const res = await fetch(`${API_BASE}/rpi/calculate`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ distance_meters: distanceMeters, time_seconds: timeSeconds }),
-  });
-  if (!res.ok) throw new Error(`API ${res.status}: ${await res.text()}`);
-  return res.json();
-}
-
-async function generateTrainingPaceData() {
+function generateTrainingPaceData() {
   const result = {};
 
   for (const [distKey, times] of Object.entries(RACE_TIMES)) {
     const dm = DISTANCE_METERS[distKey];
-    console.log(`Fetching training paces for ${DISTANCE_LABELS[distKey]}...`);
+    console.log(`Computing training paces for ${DISTANCE_LABELS[distKey]}...`);
     const rows = [];
 
     for (const { label, seconds } of times) {
-      try {
-        const data = await fetchTrainingPaces(dm, seconds);
-
-        // Enhanced API returns training.per_mile_km with lowercase keys
-        // Basic fallback returns training_paces with same structure
-        const tp = data.training?.per_mile_km || data.training_paces;
-
-        if (!tp || !tp.easy) {
-          console.error(`  WARN: ${label} — no pace data in response (keys: ${Object.keys(data).join(', ')})`);
-        }
-
-        rows.push({
-          raceTime: label,
-          raceTimeSeconds: seconds,
-          rpi: data.rpi,
-          paces: {
-            easy:       { mi: tp?.easy?.mi       || tp?.easy?.display_mi, km: tp?.easy?.km },
-            marathon:   { mi: tp?.marathon?.mi,   km: tp?.marathon?.km },
-            threshold:  { mi: tp?.threshold?.mi,  km: tp?.threshold?.km },
-            interval:   { mi: tp?.interval?.mi,   km: tp?.interval?.km },
-            repetition: { mi: tp?.repetition?.mi,  km: tp?.repetition?.km },
-          },
-        });
-
-        // Delay to stay under 60/min rate limit
-        await new Promise(r => setTimeout(r, 1100));
-      } catch (err) {
-        console.error(`  FAILED: ${label} — ${err.message}`);
-        // Wait longer on error (likely rate limit)
-        await new Promise(r => setTimeout(r, 5000));
+      const rpi = calculateRpi(dm, seconds);
+      if (!rpi) {
+        console.error(`  WARN: ${label} — could not compute RPI`);
+        continue;
       }
+      const tp = calculateTrainingPaces(rpi);
+
+      rows.push({
+        raceTime: label,
+        raceTimeSeconds: seconds,
+        rpi,
+        paces: {
+          easy:       { mi: tp.easy.mi,       km: tp.easy.km },
+          marathon:   { mi: tp.marathon.mi,   km: tp.marathon.km },
+          threshold:  { mi: tp.threshold.mi,  km: tp.threshold.km },
+          interval:   { mi: tp.interval.mi,   km: tp.interval.km },
+          repetition: { mi: tp.repetition.mi, km: tp.repetition.km },
+        },
+      });
     }
 
     result[distKey] = {
@@ -848,8 +826,8 @@ async function main() {
       console.log(`  Sample: 57M 10K, 80% = ${sample.levels[80].timeFormatted} (${sample.levels[80].pace}/mi)`);
     }
 
-    console.log('\nFetching training pace data from production API...');
-    const trainingPaces = await generateTrainingPaceData();
+    console.log('\nComputing training pace data from local formula...');
+    const trainingPaces = generateTrainingPaceData();
     const paceFile = join(DATA_DIR, 'training-pace-tables.json');
     writeFileSync(paceFile, JSON.stringify(trainingPaces, null, 2));
     console.log(`  Written to ${paceFile}`);

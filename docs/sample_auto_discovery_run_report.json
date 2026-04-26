@@ -1,0 +1,68 @@
+{
+  "schema_version": 1,
+  "phase": "0A",
+  "athlete_id": "00000000-0000-0000-0000-000000000001",
+  "partial": false,
+  "stable_findings": [
+    {
+      "metric": "efficiency",
+      "input": "sleep_hours",
+      "windows": "all"
+    },
+    {
+      "metric": "pace_easy",
+      "input": "readiness_1_5",
+      "windows": "all"
+    }
+  ],
+  "strengthened_findings": [
+    {
+      "metric": "efficiency",
+      "input": "ctl",
+      "windows": [3, 4, 5]
+    }
+  ],
+  "candidate_interactions": [],
+  "registry_tuning_candidates": [],
+  "discarded_experiments": [],
+  "score_summary": {
+    "correlation_rescan": {
+      "experiments_run": 6,
+      "kept": 6,
+      "total_findings_across_windows": 47,
+      "stable_finding_count": 2,
+      "strengthening_finding_count": 1,
+      "recent_only_count": 3,
+      "unstable_count": 5
+    }
+  },
+  "no_surface_guarantee": {
+    "athlete_facing_surfaces_mutated": false,
+    "production_registry_values_mutated": false,
+    "live_mutation_enabled": false,
+    "phase": "0A",
+    "guarantee_schema_version": 1,
+    "timestamp": "2026-03-11T04:02:31.000000+00:00"
+  },
+  "window_stability_detail": {
+    "stable": [
+      { "metric": "efficiency", "input": "sleep_hours", "windows": "all" },
+      { "metric": "pace_easy", "input": "readiness_1_5", "windows": "all" }
+    ],
+    "recent_only": [
+      { "metric": "efficiency", "input": "enjoyment_1_5", "windows": [0, 1] },
+      { "metric": "pace_easy", "input": "soreness_1_5", "windows": [0] },
+      { "metric": "completion", "input": "rpe_1_10", "windows": [0, 1, 2] }
+    ],
+    "strengthening": [
+      { "metric": "efficiency", "input": "ctl", "windows": [3, 4, 5] }
+    ],
+    "unstable": [
+      { "metric": "efficiency", "input": "sleep_quality", "windows": [1, 3] },
+      { "metric": "pace_threshold", "input": "tsb", "windows": [2, 4] },
+      { "metric": "efficiency", "input": "readiness_1_5", "windows": [0, 2, 4] },
+      { "metric": "pace_easy", "input": "sleep_hours", "windows": [1, 3, 5] },
+      { "metric": "efficiency", "input": "confidence_1_5", "windows": [0, 1, 5] }
+    ]
+  }
+}

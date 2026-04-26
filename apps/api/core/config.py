@@ -7,7 +7,6 @@ This ensures consistent configuration across the application.
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import Field, model_validator
 from typing import Optional
-import os
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -21,6 +20,8 @@ def validate_production_config(
     debug: bool,
     cors_origins: Optional[str],
     postgres_password: str,
+    briefing_primary_model: Optional[str] = None,
+    kimi_canary_model: Optional[str] = None,
 ) -> None:
     """
     P0-3: Validate production config. Raises ValueError if invalid.
@@ -194,6 +195,9 @@ class Settings(BaseSettings):
     # Legacy price ID kept for backward-compat subscription matching only.
     # New checkouts do NOT use this; existing subscribers still reconcile against it.
     STRIPE_PRICE_PRO_MONTHLY_ID: Optional[str] = Field(default=None)
+    # Monetization reset (single paid StrideIQ tier).
+    STRIPE_PRICE_STRIDEIQ_MONTHLY_ID: Optional[str] = Field(default=None)
+    STRIPE_PRICE_STRIDEIQ_ANNUAL_ID: Optional[str] = Field(default=None)
     
     # Cloudflare R2 Object Storage (Runtoon photos + generated images)
     # All buckets are private. All access is via signed URLs (15-min TTL).
@@ -208,6 +212,27 @@ class Settings(BaseSettings):
     SENTRY_TRACES_SAMPLE_RATE: float = Field(default=0.1)  # 10% of transactions
     SENTRY_PROFILES_SAMPLE_RATE: float = Field(default=0.1)
 
+    # LLM Provider Configuration
+    # Kimi K2.5 (Moonshot AI — OpenAI-compatible API)
+    KIMI_API_KEY: Optional[str] = Field(default=None)
+    KIMI_BASE_URL: str = Field(default="https://api.moonshot.ai/v1")
+    # Canary routing: set KIMI_CANARY_ENABLED=true + comma-separated athlete UUIDs
+    # to route only those athletes to Kimi. All others remain on Sonnet.
+    KIMI_CANARY_ENABLED: bool = Field(default=False)
+    KIMI_CANARY_ATHLETE_IDS: str = Field(default="")  # comma-separated UUIDs
+
+    # Model selection per call site — change via env to switch providers
+    BRIEFING_PRIMARY_MODEL: str = Field(default="claude-sonnet-4-6")
+    KNOWLEDGE_PRIMARY_MODEL: str = Field(default="claude-sonnet-4-6")
+    # Low-stakes async narratives (default unchanged: Gemini Flash)
+    ADAPTATION_NARRATOR_MODEL: str = Field(default="gemini-2.5-flash")
+    WORKOUT_NARRATIVE_MODEL: str = Field(default="gemini-2.5-flash")
+
+    # Kimi briefing canary model
+    KIMI_CANARY_MODEL: str = Field(default="kimi-k2.6")
+    # Kimi coach canary model (reasoning lane with tool calls)
+    COACH_CANARY_MODEL: str = Field(default="kimi-k2.6")
+
     @model_validator(mode="after")
     def _validate_production_config(self) -> "Settings":
         """P0-3: Hard-fail on invalid production config. Non-production unaffected."""
@@ -216,6 +241,8 @@ class Settings(BaseSettings):
             self.DEBUG,
             self.CORS_ORIGINS,
             self.POSTGRES_PASSWORD,
+            self.BRIEFING_PRIMARY_MODEL,
+            self.KIMI_CANARY_MODEL,
         )
         return self
 

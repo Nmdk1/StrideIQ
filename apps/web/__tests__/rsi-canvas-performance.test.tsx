@@ -5,9 +5,10 @@
  * and strict enforcement of no coach/LLM surface in RSI-Alpha.
  */
 import React from 'react';
-import { render, screen } from '@testing-library/react';
+import { screen } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { mockTier1Result, generateTestStreamData, mockUnitsImperial } from './rsi-fixtures';
+import { renderWithStreamHover } from '@/test-utils/renderWithStreamHover';
 
 import { RunShapeCanvas } from '@/components/activities/rsi/RunShapeCanvas';
 
@@ -43,7 +44,7 @@ describe('AC-11: Rendering Performance', () => {
   });
 
   test('component renders with server-downsampled stream data (≤500 points)', () => {
-    render(<RunShapeCanvas activityId="test-123" />);
+    renderWithStreamHover(<RunShapeCanvas activityId="test-123" />);
 
     // Canvas container should render successfully
     const canvas = document.querySelector('[data-testid="rsi-canvas"]');
@@ -55,7 +56,7 @@ describe('AC-11: Rendering Performance', () => {
   });
 
   test('stream data preserves first and last temporal points', () => {
-    render(<RunShapeCanvas activityId="test-123" />);
+    renderWithStreamHover(<RunShapeCanvas activityId="test-123" />);
 
     // Server-side LTTB preserves endpoints by definition.
     // Verify test fixture has correct first/last points.
@@ -76,7 +77,7 @@ describe('AC-12: No Coach Surface in RSI-Alpha', () => {
   });
 
   test('no LLM calls made from canvas', () => {
-    render(<RunShapeCanvas activityId="test-123" />);
+    renderWithStreamHover(<RunShapeCanvas activityId="test-123" />);
 
     // No fetch calls to coach/narration/LLM endpoints
     const calls = fetchSpy.mock.calls;
@@ -108,7 +109,7 @@ describe('AC-12: No Coach Surface in RSI-Alpha', () => {
       refetch: jest.fn(),
     } as any);
 
-    render(<RunShapeCanvas activityId="test-123" />);
+    renderWithStreamHover(<RunShapeCanvas activityId="test-123" />);
 
     // Zero moment markers in the DOM
     expect(screen.queryByTestId('moment-marker')).not.toBeInTheDocument();

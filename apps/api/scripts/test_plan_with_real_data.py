@@ -14,7 +14,6 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from datetime import date, timedelta
-from uuid import UUID
 import logging
 
 # Setup database connection
@@ -112,7 +111,7 @@ def test_real_athlete():
                 print("  No training data found")
                 continue
             
-            print(f"\n📊 TRAINING HISTORY ANALYSIS (Last 12 Months)")
+            print("\n📊 TRAINING HISTORY ANALYSIS (Last 12 Months)")
             print(f"  Total activities: {stats['total_activities']}")
             print(f"  Weeks with data: {stats['total_weeks_with_data']}")
             print(f"  Baseline avg (3-12mo ago): {stats['baseline_avg']:.1f} mpw")
@@ -126,13 +125,13 @@ def test_real_athlete():
                     print(f"  Volume change: {-drop_pct:+.0f}%")
             
             if stats['long_runs']:
-                print(f"\n🏃 LONG RUN HISTORY")
+                print("\n🏃 LONG RUN HISTORY")
                 print(f"  Longest run: {stats['longest_run']:.1f} miles")
                 print(f"  Typical long run (P75): {stats['typical_long_run']:.1f} miles")
                 print(f"  Long run count: {len(stats['long_runs'])}")
             
             # Generate plan
-            print(f"\n📋 GENERATING MARATHON PLAN...")
+            print("\n📋 GENERATING MARATHON PLAN...")
             race_date = date.today() + timedelta(days=16 * 7)  # 16 weeks out
             
             try:
@@ -143,7 +142,7 @@ def test_real_athlete():
                     db=db
                 )
                 
-                print(f"\n✅ PLAN GENERATED")
+                print("\n✅ PLAN GENERATED")
                 print(f"  Total weeks: {plan.total_weeks}")
                 print(f"  Total miles: {plan.total_miles:.1f}")
                 print(f"  τ1: {plan.tau1:.1f}d, τ2: {plan.tau2:.1f}d")
@@ -156,7 +155,7 @@ def test_real_athlete():
                         if day.workout_type == "long_run":
                             peak_long = max(peak_long, day.target_miles or 0)
                 
-                print(f"\n📏 LONG RUN ANALYSIS")
+                print("\n📏 LONG RUN ANALYSIS")
                 print(f"  Peak long run in plan: {peak_long:.1f} miles")
                 print(f"  Athlete's typical long: {stats['typical_long_run']:.1f} miles")
                 
@@ -165,10 +164,10 @@ def test_real_athlete():
                         print(f"  ⚠️  PROBLEM: Plan long run ({peak_long:.1f}) is too short!")
                         print(f"      Should be at least {stats['typical_long_run'] * 0.9:.1f}mi")
                     else:
-                        print(f"  ✅ Plan appropriately scaled to athlete baseline")
+                        print("  ✅ Plan appropriately scaled to athlete baseline")
                 
                 # Show counter-conventional notes
-                print(f"\n💡 PERSONALIZED INSIGHTS")
+                print("\n💡 PERSONALIZED INSIGHTS")
                 for note in (plan.counter_conventional_notes or []):
                     print(f"  • {note}")
                 

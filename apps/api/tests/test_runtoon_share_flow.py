@@ -176,8 +176,8 @@ class TestPendingEligibility:
         assert "activity_id" in PendingRuntoonResponse.model_fields
         assert "activity_summary" in PendingRuntoonResponse.model_fields
         assert "has_runtoon" in PendingRuntoonResponse.model_fields
-        assert "distance_mi" in ActivitySummary.model_fields
-        assert "pace" in ActivitySummary.model_fields
+        assert "distance_m" in ActivitySummary.model_fields
+        assert "pace_s_per_km" in ActivitySummary.model_fields
         assert "duration" in ActivitySummary.model_fields
 
     def test_pending_requires_feature_flag(self):
@@ -199,12 +199,10 @@ class TestPendingEligibility:
         source = inspect.getsource(get_pending)
         assert "return None" in source
 
-    def test_activity_summary_distance_is_miles(self):
-        """Distance in ActivitySummary is in miles (not meters)."""
-        from routers.runtoon import get_pending
-        source = inspect.getsource(get_pending)
-        # Must divide by 1609.344 or similar miles conversion
-        assert "1609" in source
+    def test_activity_summary_distance_is_meters(self):
+        """Distance in ActivitySummary is in canonical meters."""
+        from routers.runtoon import ActivitySummary
+        assert "distance_m" in ActivitySummary.model_fields
 
     def test_pending_photo_threshold(self):
         """Photo threshold must match the spec (3 photos minimum)."""

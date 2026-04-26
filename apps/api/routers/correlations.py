@@ -9,12 +9,12 @@ between inputs (nutrition, sleep, work patterns, body composition) and outputs
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
-from typing import Optional
 from core.database import get_db
 from core.auth import get_current_user
 from core.cache import cache_key, get_cache, set_cache
 from models import Athlete
 from services.correlation_engine import analyze_correlations, discover_combination_correlations, get_combination_insights
+from services.n1_insight_generator import friendly_signal_name
 
 router = APIRouter(prefix="/v1/correlations", tags=["correlations"])
 
@@ -307,7 +307,7 @@ def get_insights(
                 is_good = c["direction"] == "negative"
                 single_insights.append({
                     'type': 'single_factor',
-                    'factor': c["input_name"],
+                    'factor': friendly_signal_name(c["input_name"]),
                     'direction': 'positive' if is_good else 'negative',
                     'strength': c["strength"],
                     'correlation': c["correlation_coefficient"],
@@ -339,7 +339,7 @@ def get_insights(
 
 def _format_single_insight(correlation: dict, is_good: bool) -> str:
     """Format a single correlation into an insight string."""
-    factor = correlation["input_name"].replace("_", " ")
+    factor = friendly_signal_name(correlation["input_name"])
     strength = correlation["strength"]
     lag = correlation.get("time_lag_days", 0)
     

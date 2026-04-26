@@ -22,7 +22,6 @@ from core.security import (
     verify_password,
     get_password_hash,
     create_access_token,
-    decode_access_token,
     ACCESS_TOKEN_EXPIRE_MINUTES,
     SECRET_KEY,
     ALGORITHM,
@@ -33,6 +32,7 @@ from core.account_security import (
     is_account_locked,
     get_remaining_attempts
 )
+from core.tier_utils import normalize_tier
 from models import Athlete, RacePromoCode
 from services.invite_service import is_invited, mark_invite_used, normalize_email
 from services.system_flags import are_invites_required
@@ -146,7 +146,7 @@ def register(
     # Determine subscription tier: use invite's grant_tier if set, otherwise "free"
     subscription_tier = "free"
     if invite and invite.grant_tier:
-        subscription_tier = invite.grant_tier
+        subscription_tier = normalize_tier(invite.grant_tier)
     
     # Check for race promo code (QR activation from packet pickup)
     race_promo = None
@@ -156,7 +156,7 @@ def register(
         now = datetime.now(timezone.utc)
         race_promo = db.query(RacePromoCode).filter(
             RacePromoCode.code == code,
-            RacePromoCode.is_active == True
+            RacePromoCode.is_active.is_(True),
         ).first()
         
         if race_promo:
@@ -178,12 +178,17 @@ def register(
         race_promo_code_id=race_promo.id if race_promo else None
     )
     
-    # Start extended trial if race promo code was valid
-    if race_promo and trial_days:
-        now = datetime.now(timezone.utc)
-        athlete.trial_started_at = now
-        athlete.trial_ends_at = now + timedelta(days=trial_days)
+    # Monetization reset: always auto-start a 30-day trial on signup.
+    # Race promo codes may extend beyond 30 days.
+    now = datetime.now(timezone.utc)
+    default_trial_days = 30
+    athlete.trial_started_at = now
+    athlete.trial_source = "signup"
+    if race_promo and trial_days and int(trial_days) > default_trial_days:
+        athlete.trial_ends_at = now + timedelta(days=int(trial_days))
         athlete.trial_source = f"race:{race_promo.code}"
+    else:
+        athlete.trial_ends_at = now + timedelta(days=default_trial_days)
     
     db.add(athlete)
     db.commit()

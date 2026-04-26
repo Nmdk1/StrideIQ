@@ -12,6 +12,7 @@ import pytest
 from datetime import date, timedelta
 from unittest.mock import MagicMock, patch
 from uuid import uuid4
+from datetime import datetime, timezone
 
 from services.fitness_bank import (
     FitnessBank,
@@ -37,6 +38,7 @@ from services.constraint_aware_planner import (
     ConstraintAwarePlanner,
     ConstraintAwarePlan,
 )
+from models import Activity, AthleteRaceResultAnchor
 
 
 # =============================================================================
@@ -169,6 +171,20 @@ class TestRPICalculation:
         # 3:00:00 marathon should be ~RPI 53
         rpi = calculate_rpi(42195, 10800)
         assert 51 <= rpi <= 55
+
+    def test_rpi_not_multiplied_by_confidence(self):
+        calc = FitnessBankCalculator(MagicMock())
+        race = RacePerformance(
+            date=date.today() - timedelta(days=7),
+            distance="10k",
+            distance_m=10000,
+            finish_time_seconds=2350,
+            pace_per_mile=6.3,
+            rpi=53.0,
+            confidence=0.9,
+        )
+        best_rpi, _ = calc._find_best_race([race])
+        assert best_rpi == pytest.approx(53.0)
 
 
 class TestPaceCalculation:
@@ -486,6 +502,190 @@ class TestIntegration:
         assert tune_up_week is not None
         # Tune-up week should have reduced volume
         assert tune_up_week.target_volume_pct < 0.6
+
+
+class TestRaceAnchorSync:
+    def test_race_activity_creates_anchor(self, db_session, test_athlete):
+        db_session.add(
+            Activity(
+                athlete_id=test_athlete.id,
+                start_time=datetime.now(timezone.utc) - timedelta(days=3),
+                sport="run",
+                source="manual",
+                duration_s=2400,
+                distance_m=10000,
+                workout_type="race",
+                is_race_candidate=True,
+                race_confidence=0.9,
+            )
+        )
+        db_session.commit()
+
+        calc = FitnessBankCalculator(db_session)
+        calc.calculate(test_athlete.id)
+
+        anchor = (
+            db_session.query(AthleteRaceResultAnchor)
+            .filter(AthleteRaceResultAnchor.athlete_id == test_athlete.id)
+            .one_or_none()
+        )
+        assert anchor is not None
+        assert anchor.distance_key == "10k"
+
+    def test_anchor_sync_uses_authoritative_race_signal_contract(self, db_session, test_athlete):
+        db_session.add(
+            Activity(
+                athlete_id=test_athlete.id,
+                start_time=datetime.now(timezone.utc) - timedelta(days=2),
+                sport="run",
+                source="manual",
+                duration_s=1280,
+                distance_m=5000,
+                workout_type="easy_run",
+                user_verified_race=True,
+            )
+        )
+        db_session.commit()
+
+        calc = FitnessBankCalculator(db_session)
+        calc.calculate(test_athlete.id)
+        anchor = (
+            db_session.query(AthleteRaceResultAnchor)
+            .filter(AthleteRaceResultAnchor.athlete_id == test_athlete.id)
+            .one_or_none()
+        )
+        assert anchor is not None
+        assert anchor.distance_key == "5k"
+
+    def test_anchor_sync_treats_workout_type_case_insensitively(self, db_session, test_athlete):
+        db_session.add(
+            Activity(
+                athlete_id=test_athlete.id,
+                start_time=datetime.now(timezone.utc) - timedelta(days=2),
+                sport="run",
+                source="manual",
+                duration_s=2400,
+                distance_m=10000,
+                workout_type="Race",
+                race_confidence=0.8,
+            )
+        )
+        db_session.commit()
+
+        calc = FitnessBankCalculator(db_session)
+        calc.calculate(test_athlete.id)
+        anchor = (
+            db_session.query(AthleteRaceResultAnchor)
+            .filter(AthleteRaceResultAnchor.athlete_id == test_athlete.id)
+            .one_or_none()
+        )
+        assert anchor is not None
+        assert anchor.distance_key == "10k"
+
+    def test_anchor_sync_skips_low_quality_candidates_with_diagnostic(self, db_session, test_athlete):
+        db_session.add(
+            Activity(
+                athlete_id=test_athlete.id,
+                start_time=datetime.now(timezone.utc) - timedelta(days=2),
+                sport="run",
+                source="manual",
+                duration_s=2500,
+                distance_m=10000,
+                workout_type="easy_run",
+                is_race_candidate=True,
+                race_confidence=0.6,
+            )
+        )
+        db_session.commit()
+
+        calc = FitnessBankCalculator(db_session)
+        calc.calculate(test_athlete.id)
+        anchor = (
+            db_session.query(AthleteRaceResultAnchor)
+            .filter(AthleteRaceResultAnchor.athlete_id == test_athlete.id)
+            .one_or_none()
+        )
+        assert anchor is None
+
+    def test_race_anchor_backfill_populates_existing_tagged_races(self, db_session, test_athlete):
+        """
+        WS-A: Anchor backfill must populate ALL pre-existing race-tagged activities,
+        not just the most recently processed one.
+
+        Scenario: athlete has three historical race activities across two distances
+        (10K × 2, half × 1). After calculate(), there must be anchors for both
+        distance keys and the anchor for each distance must reflect the BEST result.
+        """
+        now = datetime.now(timezone.utc)
+
+        # Older 10K — slower (2600s ≈ 43:20)
+        db_session.add(
+            Activity(
+                athlete_id=test_athlete.id,
+                start_time=now - timedelta(days=120),
+                sport="run",
+                source="strava",
+                duration_s=2600,
+                distance_m=10000,
+                workout_type="race",
+                is_race_candidate=True,
+                race_confidence=0.9,
+            )
+        )
+        # Newer 10K — faster (2354s ≈ 39:14)
+        db_session.add(
+            Activity(
+                athlete_id=test_athlete.id,
+                start_time=now - timedelta(days=60),
+                sport="run",
+                source="strava",
+                duration_s=2354,
+                distance_m=10000,
+                workout_type="race",
+                is_race_candidate=True,
+                race_confidence=0.95,
+            )
+        )
+        # Half marathon — single result (5700s ≈ 1:35)
+        db_session.add(
+            Activity(
+                athlete_id=test_athlete.id,
+                start_time=now - timedelta(days=30),
+                sport="run",
+                source="strava",
+                duration_s=5700,
+                distance_m=21097,
+                workout_type="race",
+                is_race_candidate=True,
+                race_confidence=0.9,
+            )
+        )
+        db_session.commit()
+
+        calc = FitnessBankCalculator(db_session)
+        calc.calculate(test_athlete.id)
+
+        anchors = (
+            db_session.query(AthleteRaceResultAnchor)
+            .filter(AthleteRaceResultAnchor.athlete_id == test_athlete.id)
+            .all()
+        )
+        distance_keys = {a.distance_key for a in anchors}
+
+        # Both distances must have been backfilled
+        assert "10k" in distance_keys, (
+            f"Anchor backfill missed 10K. Got keys: {distance_keys}"
+        )
+        assert "half_marathon" in distance_keys, (
+            f"Anchor backfill missed half marathon. Got keys: {distance_keys}"
+        )
+
+        # 10K anchor must reflect the faster race (2354s, not 2600s)
+        anchor_10k = next(a for a in anchors if a.distance_key == "10k")
+        assert anchor_10k.time_seconds <= 2400, (
+            f"10K anchor has wrong time: {anchor_10k.time_seconds}s. "
+            f"Expected the faster result (2354s), not the slower (2600s)."
+        )
 
 
 if __name__ == "__main__":

@@ -47,7 +47,7 @@ def main():
             Activity.sport.ilike("run")
         ).all()
         
-        print(f"\n📊 TRAINING HISTORY")
+        print("\n📊 TRAINING HISTORY")
         print(f"  Total runs in past year: {len(activities)}")
         
         # Calculate weekly volumes
@@ -75,20 +75,20 @@ def main():
         if baseline_weeks:
             baseline_avg = sum(baseline_weeks) / len(baseline_weeks)
             baseline_p75 = sorted(baseline_weeks)[int(len(baseline_weeks) * 0.75)]
-            print(f"  Baseline (3-12mo ago):")
+            print("  Baseline (3-12mo ago):")
             print(f"    - Average: {baseline_avg:.1f} mpw")
             print(f"    - P75: {baseline_p75:.1f} mpw")
             print(f"    - Peak: {max(baseline_weeks):.1f} mpw")
         
         if recent_weeks:
             recent_avg = sum(recent_weeks) / len(recent_weeks)
-            print(f"  Recent (last 6 weeks):")
+            print("  Recent (last 6 weeks):")
             print(f"    - Average: {recent_avg:.1f} mpw")
         
         if long_runs:
             long_runs.sort()
             p75_idx = int(len(long_runs) * 0.75)
-            print(f"\n🏃 LONG RUNS")
+            print("\n🏃 LONG RUNS")
             print(f"  Longest: {max(long_runs):.1f} miles")
             print(f"  Typical (P75): {long_runs[p75_idx]:.1f} miles")
             print(f"  Count: {len(long_runs)}")
@@ -106,12 +106,12 @@ def main():
                     mp_long_runs.append(miles)
         
         if mp_long_runs:
-            print(f"\n🏃 MARATHON-SPECIFIC WORK (MP Long Runs)")
+            print("\n🏃 MARATHON-SPECIFIC WORK (MP Long Runs)")
             print(f"  Longest MP long run: {max(mp_long_runs):.1f} miles")
             print(f"  Count: {len(mp_long_runs)}")
         
         # Generate marathon plan
-        print(f"\n" + "=" * 70)
+        print("\n" + "=" * 70)
         print("GENERATING 16-WEEK MARATHON PLAN")
         print("=" * 70)
         
@@ -124,13 +124,13 @@ def main():
             db=db
         )
         
-        print(f"\n📋 PLAN SUMMARY")
+        print("\n📋 PLAN SUMMARY")
         print(f"  Total weeks: {plan.total_weeks}")
         print(f"  Total miles: {plan.total_miles:.1f}")
         print(f"  Model: τ1={plan.tau1:.1f}d, τ2={plan.tau2:.1f}d ({plan.model_confidence})")
         
         # Find all long runs in plan
-        print(f"\n🏃 LONG RUN PROGRESSION IN PLAN")
+        print("\n🏃 LONG RUN PROGRESSION IN PLAN")
         for week in plan.weeks:
             for day in week.days:
                 if day.workout_type == "long_run":
@@ -143,18 +143,18 @@ def main():
                 if day.workout_type == "long_run":
                     all_long_runs.append(day.target_miles or 0)
         
-        print(f"\n📏 LONG RUN ANALYSIS")
+        print("\n📏 LONG RUN ANALYSIS")
         print(f"  Peak long run in plan: {max(all_long_runs):.1f} miles")
         print(f"  Athlete's longest historical: {max(long_runs):.1f} miles")
         
         if max(all_long_runs) >= 20:
-            print(f"  ✅ Plan includes proper 20+ mile long run for marathon prep")
+            print("  ✅ Plan includes proper 20+ mile long run for marathon prep")
         else:
             print(f"  ⚠️ ISSUE: Peak long run of {max(all_long_runs):.1f}mi may be too short")
             print(f"      Expected: 20+ miles for a {baseline_avg:.0f} mpw runner")
         
         # Show personalization
-        print(f"\n💡 PERSONALIZED INSIGHTS")
+        print("\n💡 PERSONALIZED INSIGHTS")
         for note in (plan.counter_conventional_notes or []):
             print(f"  • {note}")
         

@@ -6,9 +6,7 @@ Calculates Efficiency Factor (EF) using Normalized Grade Pace (NGP) with:
 - Aerobic decoupling calculation (first half vs second half EF)
 """
 
-from typing import List, Optional, Dict, Tuple
-from decimal import Decimal
-from sqlalchemy.orm import Session
+from typing import List, Optional, Dict
 from models import Activity, ActivitySplit
 
 

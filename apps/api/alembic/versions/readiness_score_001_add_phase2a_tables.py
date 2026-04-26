@@ -11,8 +11,6 @@ Creates tables for Phase 2A: Readiness Score (Signal, Not Rule):
 """
 
 from alembic import op
-import sqlalchemy as sa
-from sqlalchemy.dialects.postgresql import UUID, JSONB
 
 # revision identifiers, used by Alembic.
 revision = 'readiness_score_001'

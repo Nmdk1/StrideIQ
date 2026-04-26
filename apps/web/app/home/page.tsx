@@ -13,8 +13,18 @@ import React, { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
 import { useHomeData, useQuickCheckin, useInvalidateHome } from '@/lib/hooks/queries/home';
+import type { OtherSportSummary } from '@/lib/api/services/home';
+import { useUnits } from '@/lib/context/UnitsContext';
+import { formatTextForUnit } from '@/lib/utils/paceText';
 import { LastRunHero } from '@/components/home/LastRunHero';
 import { CompactPMC } from '@/components/home/CompactPMC';
+import { RecentCrossTrainingCard } from '@/components/home/RecentCrossTrainingCard';
+import { StrengthNudgesCard } from '@/components/strength/StrengthNudgesCard';
+import FindingCard from '@/components/findings/FindingCard';
+import { TrialBanner } from '@/components/home/TrialBanner';
+import { FirstInsightsBanner } from '@/components/home/FirstInsightsBanner';
+import { WeekChipDay, getWorkoutConfig, SPORT_CHIP_ICONS } from '@/components/home/WeekChipDay';
+import { AdaptationProposalCard } from '@/components/home/AdaptationProposalCard';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -34,30 +44,26 @@ import {
   Footprints,
   Flame,
   Sparkles,
+  Loader2,
+  Heart,
+  Moon,
+  Info,
+  UtensilsCrossed,
 } from 'lucide-react';
+import { localToday } from '@/lib/utils/date';
 
-// --- Workout styling ---
-
-const WORKOUT_CONFIG: Record<string, { color: string; bgColor: string; icon: React.ReactNode }> = {
-  rest:         { color: 'text-slate-400', bgColor: 'bg-slate-500/20', icon: <Clock className="w-6 h-6" /> },
-  recovery:     { color: 'text-slate-400', bgColor: 'bg-slate-500/20', icon: <Clock className="w-6 h-6" /> },
-  easy:         { color: 'text-emerald-400', bgColor: 'bg-emerald-500/20', icon: <Footprints className="w-6 h-6" /> },
-  easy_strides: { color: 'text-emerald-400', bgColor: 'bg-emerald-500/20', icon: <Zap className="w-6 h-6" /> },
-  strides:      { color: 'text-emerald-400', bgColor: 'bg-emerald-500/20', icon: <Zap className="w-6 h-6" /> },
-  medium_long:  { color: 'text-blue-400', bgColor: 'bg-blue-500/20', icon: <TrendingUp className="w-6 h-6" /> },
-  long:         { color: 'text-blue-400', bgColor: 'bg-blue-500/20', icon: <TrendingUp className="w-6 h-6" /> },
-  long_mp:      { color: 'text-blue-400', bgColor: 'bg-blue-500/20', icon: <Target className="w-6 h-6" /> },
-  threshold:    { color: 'text-orange-400', bgColor: 'bg-orange-500/20', icon: <Flame className="w-6 h-6" /> },
-  tempo:        { color: 'text-orange-400', bgColor: 'bg-orange-500/20', icon: <Flame className="w-6 h-6" /> },
-  intervals:    { color: 'text-red-400', bgColor: 'bg-red-500/20', icon: <Activity className="w-6 h-6" /> },
-  vo2max:       { color: 'text-red-400', bgColor: 'bg-red-500/20', icon: <Activity className="w-6 h-6" /> },
-  race:         { color: 'text-pink-400', bgColor: 'bg-pink-500/20', icon: <Target className="w-6 h-6" /> },
-};
-
-const DEFAULT_WORKOUT = { color: 'text-slate-400', bgColor: 'bg-slate-500/20', icon: <Footprints className="w-6 h-6" /> };
-
-function getWorkoutConfig(type?: string) {
-  return type ? (WORKOUT_CONFIG[type] ?? DEFAULT_WORKOUT) : DEFAULT_WORKOUT;
+function _otherSportPhrase(s: OtherSportSummary): string {
+  const meta = SPORT_CHIP_ICONS[s.sport];
+  const lbl = (meta?.label ?? s.sport).toLowerCase();
+  const short = s.sport === 'walking' ? 'walk' : lbl;
+  const noDistance = !s.distance_m || s.distance_m < 80;
+  if (noDistance && s.duration_s > 0) {
+    return `${Math.round(s.duration_s / 60)} min ${lbl}`;
+  }
+  if (s.count === 1) {
+    return `1 ${short}`;
+  }
+  return `${s.count}× ${lbl}`;
 }
 
 function formatWorkoutType(type?: string): string {
@@ -84,6 +90,190 @@ function getStatusBadge(status: string) {
 
 
 
+// ── HRV Tooltip ─────────────────────────────────────────────────────
+
+function HrvTooltip({ recoveryHrv, overnightHrv }: { recoveryHrv?: number; overnightHrv?: number }) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <span className="relative inline-flex">
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        onBlur={() => setTimeout(() => setOpen(false), 150)}
+        className="ml-1 text-slate-500 hover:text-slate-300 transition-colors"
+        aria-label="HRV explanation"
+      >
+        <Info className="w-3.5 h-3.5" />
+      </button>
+      {open && (
+        <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-72 rounded-lg bg-slate-700 border border-slate-600 shadow-xl p-3 z-50 text-left">
+          <p className="text-xs font-semibold text-white mb-2">Two HRV numbers — why?</p>
+          <div className="space-y-2 text-xs text-slate-300 leading-relaxed">
+            <div>
+              <span className="text-emerald-400 font-medium">Recovery HRV{recoveryHrv != null ? ` (${Math.round(recoveryHrv)} ms)` : ''}</span>
+              <p className="mt-0.5">
+                The highest 5-minute HRV window during sleep. Reflects your peak
+                parasympathetic recovery — when your nervous system was most relaxed.
+                This is what StrideIQ uses for correlations and your Operating Manual.
+              </p>
+            </div>
+            <div>
+              <span className="text-blue-400 font-medium">Overnight Avg HRV{overnightHrv != null ? ` (${Math.round(overnightHrv)} ms)` : ''}</span>
+              <p className="mt-0.5">
+                The average across your entire sleep. This is the number your
+                Garmin watch displays on the sleep screen. It&apos;s always lower because it
+                includes light sleep and brief awakenings that pull the average down.
+              </p>
+            </div>
+            <p className="text-slate-400 mt-1 pt-1 border-t border-slate-600">
+              Both are valid — they measure different things. Recovery HRV is more
+              predictive of next-day performance.
+            </p>
+          </div>
+          <div className="absolute bottom-0 left-1/2 -translate-x-1/2 translate-y-full w-0 h-0 border-l-[6px] border-r-[6px] border-t-[6px] border-l-transparent border-r-transparent border-t-slate-700" />
+        </div>
+      )}
+    </span>
+  );
+}
+
+
+// ── Wellness Row ────────────────────────────────────────────────────
+
+function WellnessRow({ wellness }: { wellness: any }) {
+  if (!wellness) return null;
+
+  const statusColor = (s?: string) => {
+    if (s === 'high') return 'text-emerald-400';
+    if (s === 'low') return 'text-amber-400';
+    return 'text-slate-300';
+  };
+
+  const statusLabel = (s?: string, metric?: string) => {
+    if (!s) return null;
+    if (metric === 'rhr') {
+      if (s === 'low') return 'Good';
+      if (s === 'high') return 'Elevated';
+    }
+    if (s === 'low') return 'Low for you';
+    if (s === 'high') return 'Strong';
+    return 'Normal';
+  };
+
+  const rangeText = (range?: { low: number; high: number }) => {
+    if (!range) return null;
+    return `${range.low}–${range.high}`;
+  };
+
+  const hasHrv = wellness.recovery_hrv != null;
+  const hasRhr = wellness.resting_hr != null;
+  const hasSleep = wellness.sleep_h != null;
+
+  if (!hasHrv && !hasRhr && !hasSleep) return null;
+
+  return (
+    <div className="flex items-stretch gap-3 px-1">
+      {/* Recovery HRV */}
+      {hasHrv && (
+        <div className="flex-1 rounded-lg bg-slate-800/60 border border-slate-700/50 px-3 py-2.5">
+          <div className="flex items-center gap-1.5 mb-1">
+            <Activity className="w-3.5 h-3.5 text-emerald-500" />
+            <span className="text-[11px] font-medium text-slate-400 uppercase tracking-wide">
+              Recovery HRV
+            </span>
+            <HrvTooltip
+              recoveryHrv={wellness.recovery_hrv}
+              overnightHrv={wellness.overnight_hrv}
+            />
+          </div>
+          <div className="flex items-baseline gap-1.5">
+            <span className={`text-xl font-bold ${statusColor(wellness.recovery_hrv_status)}`}>
+              {Math.round(wellness.recovery_hrv)}
+            </span>
+            <span className="text-xs text-slate-500">ms</span>
+          </div>
+          <div className="flex items-center gap-2 mt-0.5">
+            {statusLabel(wellness.recovery_hrv_status) && (
+              <span className={`text-[11px] font-medium ${statusColor(wellness.recovery_hrv_status)}`}>
+                {statusLabel(wellness.recovery_hrv_status)}
+              </span>
+            )}
+            {wellness.recovery_hrv_range && (
+              <span className="text-[10px] text-slate-500">
+                range: {rangeText(wellness.recovery_hrv_range)}
+              </span>
+            )}
+          </div>
+          {wellness.overnight_hrv != null && (
+            <div className="mt-1.5 pt-1.5 border-t border-slate-700/50">
+              <div className="flex items-baseline gap-1.5">
+                <span className="text-[11px] text-slate-500">Garmin overnight avg</span>
+                <span className="text-sm font-medium text-blue-400">
+                  {Math.round(wellness.overnight_hrv)}
+                </span>
+                <span className="text-[10px] text-slate-500">ms</span>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Right column: RHR + Sleep stacked */}
+      <div className="flex-1 flex flex-col gap-2">
+        {/* Resting HR */}
+        {hasRhr && (
+          <div className="flex-1 rounded-lg bg-slate-800/60 border border-slate-700/50 px-3 py-2">
+            <div className="flex items-center gap-1.5 mb-0.5">
+              <Heart className="w-3.5 h-3.5 text-red-400" />
+              <span className="text-[11px] font-medium text-slate-400 uppercase tracking-wide">Resting HR</span>
+            </div>
+            <div className="flex items-baseline gap-1.5">
+              <span className={`text-lg font-bold ${statusColor(wellness.resting_hr_status === 'low' ? 'high' : wellness.resting_hr_status === 'high' ? 'low' : wellness.resting_hr_status)}`}>
+                {wellness.resting_hr}
+              </span>
+              <span className="text-[10px] text-slate-500">bpm</span>
+              {statusLabel(wellness.resting_hr_status, 'rhr') && (
+                <span className={`text-[11px] font-medium ${statusColor(wellness.resting_hr_status === 'low' ? 'high' : wellness.resting_hr_status === 'high' ? 'low' : wellness.resting_hr_status)}`}>
+                  {statusLabel(wellness.resting_hr_status, 'rhr')}
+                </span>
+              )}
+              {wellness.resting_hr_range && (
+                <span className="text-[10px] text-slate-500">
+                  ({rangeText(wellness.resting_hr_range)})
+                </span>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Sleep */}
+        {hasSleep && (
+          <div className="flex-1 rounded-lg bg-slate-800/60 border border-slate-700/50 px-3 py-2">
+            <div className="flex items-center gap-1.5 mb-0.5">
+              <Moon className="w-3.5 h-3.5 text-indigo-400" />
+              <span className="text-[11px] font-medium text-slate-400 uppercase tracking-wide">Sleep</span>
+            </div>
+            <div className="flex items-baseline gap-1.5">
+              <span className="text-lg font-bold text-slate-300">
+                {wellness.sleep_h}
+              </span>
+              <span className="text-[10px] text-slate-500">hours</span>
+              {wellness.sleep_score != null && (
+                <span className="text-[11px] text-slate-400 ml-1">
+                  Score: {wellness.sleep_score}
+                  {wellness.sleep_score_qualifier ? ` (${wellness.sleep_score_qualifier})` : ''}
+                </span>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+
 // ── Quick Check-in ──────────────────────────────────────────────────
 
 const FEEL_OPTIONS = [
@@ -105,22 +295,38 @@ const SORENESS_OPTIONS = [
   { label: 'Yes',  value: 4, emoji: '🔥' },
 ];
 
+const ENJOYMENT_OPTIONS = [
+  { label: 'Dreading', value: 1, emoji: '😞' },
+  { label: 'Meh',      value: 3, emoji: '😐' },
+  { label: 'Loving it', value: 5, emoji: '😊' },
+];
+
+const CONFIDENCE_OPTIONS = [
+  { label: 'Doubtful', value: 1, emoji: '😰' },
+  { label: 'Steady',   value: 3, emoji: '😐' },
+  { label: 'Strong',   value: 5, emoji: '💪' },
+];
+
 function QuickCheckin() {
   const [feel, setFeel] = useState<number | null>(null);
   const [sleepQuality, setSleepQuality] = useState<number | null>(null);
   const [sleepHours, setSleepHours] = useState<number | null>(null);
   const [soreness, setSoreness] = useState<number | null>(null);
+  const [showMindset, setShowMindset] = useState(false);
+  const [enjoyment, setEnjoyment] = useState<number | null>(null);
+  const [confidence, setConfidence] = useState<number | null>(null);
   const checkin = useQuickCheckin();
 
   const handleSubmit = () => {
     if (feel === null || sleepQuality === null || soreness === null) return;
-    const today = new Date().toISOString().split('T')[0];
     checkin.mutate({
-      date: today,
+      date: localToday(),
       readiness_1_5: feel,
       sleep_quality_1_5: sleepQuality,
       sleep_h: sleepHours ?? undefined,
       soreness_1_5: soreness,
+      enjoyment_1_5: enjoyment ?? undefined,
+      confidence_1_5: confidence ?? undefined,
     });
   };
 
@@ -220,6 +426,65 @@ function QuickCheckin() {
               </button>
             ))}
           </div>
+        </div>
+
+        {/* Mindset (optional, collapsible) */}
+        <div>
+          <button
+            type="button"
+            onClick={() => setShowMindset(!showMindset)}
+            className="flex items-center gap-1.5 text-xs text-slate-500 hover:text-slate-400 transition-colors"
+          >
+            <span>🧠</span>
+            <span>Mindset</span>
+            <span className="text-[10px]">{showMindset ? '▲' : '▼'}</span>
+          </button>
+
+          {showMindset && (
+            <div className="mt-3 space-y-3">
+              <div>
+                <p className="text-sm text-slate-300 mb-2">Enjoying training?</p>
+                <div className="flex gap-2">
+                  {ENJOYMENT_OPTIONS.map((opt) => (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      onClick={() => setEnjoyment(enjoyment === opt.value ? null : opt.value)}
+                      className={`flex-1 py-2 rounded-lg text-xs font-medium transition-all ${
+                        enjoyment === opt.value
+                          ? 'bg-green-600/30 text-green-300 ring-1 ring-green-500/50'
+                          : 'bg-slate-700/50 text-slate-400 hover:bg-slate-700'
+                      }`}
+                    >
+                      <span className="block text-base mb-0.5">{opt.emoji}</span>
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <p className="text-sm text-slate-300 mb-2">Confidence?</p>
+                <div className="flex gap-2">
+                  {CONFIDENCE_OPTIONS.map((opt) => (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      onClick={() => setConfidence(confidence === opt.value ? null : opt.value)}
+                      className={`flex-1 py-2 rounded-lg text-xs font-medium transition-all ${
+                        confidence === opt.value
+                          ? 'bg-purple-600/30 text-purple-300 ring-1 ring-purple-500/50'
+                          : 'bg-slate-700/50 text-slate-400 hover:bg-slate-700'
+                      }`}
+                    >
+                      <span className="block text-base mb-0.5">{opt.emoji}</span>
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Submit */}
@@ -383,13 +648,28 @@ function BriefingPendingPlaceholder({
 export default function HomePage() {
   const invalidateHome = useInvalidateHome();
   const { data, isLoading, error } = useHomeData();
+  const { units, formatDistance, formatPace } = useUnits();
+  const fmtDist = (m: number | null | undefined, decimals: number = 1) =>
+    m === null || m === undefined ? '-' : formatDistance(m, decimals);
+  const fmtDistNoUnit = (m: number | null | undefined, decimals: number = 1) =>
+    m === null || m === undefined
+      ? '-'
+      : formatDistance(m, decimals).replace(/\s*(mi|km)$/i, '');
+  const rewriteImperialToMetric = (
+    text: string | null | undefined,
+  ): string | null | undefined => {
+    if (text == null) return text;
+    return formatTextForUnit(text, units);
+  };
 
   // Briefing pending state + 30s timeout fallback
   const briefingState = data?.briefing_state;
+  const isInterimBriefing = Boolean(data?.briefing_is_interim);
   const isBriefingPending =
     briefingState === 'stale' ||
     briefingState === 'missing' ||
-    briefingState === 'refreshing';
+    briefingState === 'refreshing' ||
+    isInterimBriefing;
 
   const [briefingTimedOut, setBriefingTimedOut] = useState(false);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -441,16 +721,26 @@ export default function HomePage() {
     today,
     week,
     strava_connected,
+    garmin_connected,
     has_any_activities,
     total_activities,
     race_countdown,
     checkin_needed,
     today_checkin,
     coach_briefing,
+    coach_noticed: coachNoticedStructured,
     last_run,
+    briefing_last_updated_at,
+    garmin_wellness,
+    recent_cross_training,
   } = data;
 
-  const hasAnyData = has_any_activities || week.completed_mi > 0;
+  const formattedBriefingUpdatedAt = briefing_last_updated_at
+    ? new Date(briefing_last_updated_at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+    : null;
+
+  const isConnected = strava_connected || garmin_connected;
+  const hasAnyData = has_any_activities || week.completed_m > 0;
   const workoutConfig = getWorkoutConfig(today.workout_type);
 
   return (
@@ -473,10 +763,22 @@ export default function HomePage() {
             </Link>
           </div>
 
+          {/* Trial / subscription status banner */}
+          <TrialBanner />
+          <FirstInsightsBanner />
+
           {/* ═══ ABOVE THE FOLD: Three things ═══ */}
 
           {/* 1. Full-bleed hero (last run canvas) */}
           {last_run && <LastRunHero lastRun={last_run} />}
+
+          {/* Cross-training acknowledgment — secondary to the run hero */}
+          {recent_cross_training && <RecentCrossTrainingCard data={recent_cross_training} />}
+
+          {/* Strength v1 sandbox: nudge for Garmin sessions missing detail.
+              Self-suppresses if flag is off or there are no candidates.
+              See docs/specs/STRENGTH_V1_SCOPE.md §6.2. */}
+          <StrengthNudgesCard />
 
           {/* Training Load — compact PMC (paired visually with LastRunHero) */}
           <CompactPMC />
@@ -484,14 +786,71 @@ export default function HomePage() {
           {/* 2. The Voice — single paragraph only (morning_voice primary) */}
           {(coach_briefing?.morning_voice || coach_briefing?.coach_noticed) ? (
             <div data-testid="morning-voice" className="px-1 py-2 space-y-2">
+              {isInterimBriefing ? (
+                <div
+                  data-testid="briefing-interim-banner"
+                  className="rounded-md border border-blue-500/30 bg-blue-500/10 px-3 py-2"
+                >
+                  <div className="flex items-center gap-2">
+                    <Loader2 className="h-3.5 w-3.5 text-blue-300 animate-spin" />
+                    <p className="text-xs text-blue-200">
+                      Updating your morning insight from newly synced sleep/HRV data...
+                    </p>
+                  </div>
+                </div>
+              ) : null}
               {coach_briefing.morning_voice ? (
-                <p className="text-base text-slate-300 leading-relaxed">
+                <p
+                  className={`text-base leading-relaxed ${
+                    isInterimBriefing ? 'text-slate-400 italic' : 'text-slate-300'
+                  }`}
+                  data-testid="morning-voice-primary"
+                >
                   {coach_briefing.morning_voice}
                 </p>
               ) : coach_briefing.coach_noticed ? (
-                <p className="text-base text-slate-300 leading-relaxed">
-                  {coach_briefing.coach_noticed}
+                coachNoticedStructured?.finding_id ? (
+                  <Link
+                    href={`/coach?finding_id=${coachNoticedStructured.finding_id}&q=${encodeURIComponent(coachNoticedStructured.ask_coach_query)}`}
+                    className={`block text-base leading-relaxed hover:text-orange-300 transition-colors cursor-pointer ${
+                      isInterimBriefing ? 'text-slate-400 italic' : 'text-orange-400/80'
+                    }`}
+                    data-testid="morning-voice-primary"
+                  >
+                    {coach_briefing.coach_noticed}
+                    <span className="ml-1.5 text-xs text-orange-500/60">&rarr; Ask coach</span>
+                  </Link>
+                ) : (
+                  <p
+                    className={`text-base leading-relaxed ${
+                      isInterimBriefing ? 'text-slate-400 italic' : 'text-slate-300'
+                    }`}
+                    data-testid="morning-voice-primary"
+                  >
+                    {coach_briefing.coach_noticed}
+                  </p>
+                )
+              ) : null}
+              {formattedBriefingUpdatedAt ? (
+                <p className="text-[11px] text-slate-500" data-testid="briefing-last-updated">
+                  Last updated: {formattedBriefingUpdatedAt}
                 </p>
+              ) : null}
+              {coach_briefing.morning_voice && coach_briefing.coach_noticed ? (
+                coachNoticedStructured?.finding_id ? (
+                  <Link
+                    href={`/coach?finding_id=${coachNoticedStructured.finding_id}&q=${encodeURIComponent(coachNoticedStructured.ask_coach_query)}`}
+                    className="block text-sm text-orange-400/80 leading-relaxed hover:text-orange-300 transition-colors cursor-pointer"
+                    data-testid="coach-noticed-secondary"
+                  >
+                    {coach_briefing.coach_noticed}
+                    <span className="ml-1.5 text-xs text-orange-500/60">&rarr; Ask coach</span>
+                  </Link>
+                ) : (
+                  <p className="text-sm text-slate-500 leading-relaxed" data-testid="coach-noticed-secondary">
+                    {coach_briefing.coach_noticed}
+                  </p>
+                )
               ) : null}
             </div>
           ) : isBriefingPending ? (
@@ -500,6 +859,12 @@ export default function HomePage() {
               timedOut={briefingTimedOut}
             />
           ) : null}
+
+          {/* 2b. Daily wellness (Garmin HRV, RHR, sleep) */}
+          {garmin_wellness && <WellnessRow wellness={garmin_wellness} />}
+
+          {/* 2c. Adaptation proposal (if pending) */}
+          <AdaptationProposalCard />
 
           {/* 3. Today's workout — plain text, no card chrome */}
           {today.has_workout ? (
@@ -519,9 +884,9 @@ export default function HomePage() {
                 </p>
               )}
               <p className="text-xs text-slate-500 mt-1.5">
-                {today.distance_mi && <span>{today.distance_mi} mi</span>}
-                {today.distance_mi && today.pace_guidance && <span> · </span>}
-                {today.pace_guidance && <span>{today.pace_guidance}</span>}
+                {today.distance_m && <span>{fmtDist(today.distance_m)}</span>}
+                {today.distance_m && today.pace_guidance && <span> · </span>}
+                {today.pace_guidance && <span>{rewriteImperialToMetric(today.pace_guidance)}</span>}
                 {today.week_number && <span> · Week {today.week_number}</span>}
                 {today.phase && <span> · {today.phase}</span>}
               </p>
@@ -531,10 +896,10 @@ export default function HomePage() {
               <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Today</span>
               <p className="text-sm text-slate-400 mt-1">
                 {hasAnyData
-                  ? 'Recovery day.'
-                  : strava_connected
+                  ? 'No workout planned today.'
+                  : isConnected
                     ? 'Create a plan to see workouts.'
-                    : 'Connect Strava or create a plan.'}
+                    : 'Connect your watch to get started.'}
               </p>
             </div>
           )}
@@ -555,34 +920,38 @@ export default function HomePage() {
             ) : null}
           </div>
 
+          {/* Nutrition — daily-use shortcut */}
+          <Link
+            href="/nutrition"
+            className="block group"
+          >
+            <div className="flex items-center gap-3 bg-slate-800/50 border border-slate-700/50 rounded-xl px-4 py-3 transition-colors group-hover:border-emerald-600/40 group-active:bg-slate-700/50">
+              <div className="flex items-center justify-center w-9 h-9 rounded-lg bg-emerald-500/20 flex-shrink-0">
+                <UtensilsCrossed className="w-5 h-5 text-emerald-400" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-white">Log Nutrition</p>
+                <p className="text-xs text-slate-500">Photo, scan, or type what you ate</p>
+              </div>
+              <ArrowRight className="w-4 h-4 text-slate-600 group-hover:text-emerald-400 transition-colors flex-shrink-0" />
+            </div>
+          </Link>
+
           {/* Finding or Cold-Start */}
           {data.finding ? (
-            <div className="rounded-lg border border-slate-700/50 bg-slate-800/30 px-4 py-3.5">
-              <div className="flex items-start gap-2.5">
-                <span className="text-lg flex-shrink-0" aria-hidden="true">🔬</span>
-                <div>
-                  <p className="text-sm text-slate-300 leading-relaxed">{data.finding.text}</p>
-                  <p className="text-xs text-slate-500 mt-1">
-                    {data.finding.confidence_tier === 'strong' ? 'Strong pattern' : 'Confirmed pattern'} · {data.finding.domain.replace(/_/g, ' ')}
-                  </p>
-                </div>
-              </div>
-            </div>
+            <Link href="/progress" className="block transition-transform hover:translate-y-[-1px]">
+              <FindingCard
+                text={data.finding.text}
+                domain={data.finding.domain}
+                confidenceTier={data.finding.confidence_tier}
+                timesConfirmed={data.finding.times_confirmed}
+                evidence={data.finding.evidence_summary}
+                implication={data.finding.implication_summary}
+                expandable={false}
+              />
+            </Link>
           ) : !data.has_correlations && has_any_activities ? (
-            <div className="rounded-lg border border-slate-700/50 bg-slate-800/30 px-4 py-3.5">
-              <div className="flex items-start gap-2.5">
-                <span className="text-lg flex-shrink-0" aria-hidden="true">📊</span>
-                <div>
-                  <p className="text-sm text-slate-400">
-                    {total_activities < 10
-                      ? 'Getting started — keep logging runs and check-ins so the engine can learn your patterns.'
-                      : total_activities < 30
-                        ? 'Patterns forming — the more data you log, the sharper the findings.'
-                        : 'Analysis in progress — confirmed findings will appear here soon.'}
-                  </p>
-                </div>
-              </div>
-            </div>
+            <FindingCard expandable={false} activityCount={total_activities} />
           ) : null}
 
           {/* This Week */}
@@ -601,76 +970,53 @@ export default function HomePage() {
               </div>
             </CardHeader>
             <CardContent className="pb-4 space-y-3">
-              {/* Day chips */}
+              {/* Day chips
+                  - Primary tap target = the longest run that day
+                  - "+N" affordance shown when multiple runs (taps to /calendar?date=...)
+                  - Non-running activity (walk/strength/cycle/hike/...) renders
+                    as small selectable icons stacked under the chip — each
+                    links straight to that activity (no nested anchors). */}
               <div className="flex justify-between gap-1">
-                {week.days.map((day) => {
-                  const dayConfig = getWorkoutConfig(day.workout_type);
-                  const linkHref = day.activity_id
-                    ? `/activities/${day.activity_id}`
-                    : day.workout_id
-                      ? `/calendar?date=${day.date}`
-                      : null;
-
-                  const chip = (
-                    <>
-                      <div className={`text-[10px] uppercase mb-1 ${day.is_today ? 'text-orange-400 font-semibold' : 'text-slate-500'}`}>
-                        {day.day_abbrev}
-                      </div>
-                      <div className={`text-xs font-semibold ${day.completed ? 'text-emerald-400' : dayConfig.color}`}>
-                        {day.completed && day.distance_mi ? (
-                          <span className="flex flex-col items-center gap-0.5">
-                            <CheckCircle2 className="w-3.5 h-3.5" />
-                            <span className="text-[10px]">{day.distance_mi}</span>
-                          </span>
-                        ) : day.workout_type === 'rest' ? (
-                          <span className="text-slate-600">&mdash;</span>
-                        ) : day.distance_mi ? (
-                          <span>{day.distance_mi}</span>
-                        ) : (
-                          <span className="text-slate-600">&mdash;</span>
-                        )}
-                      </div>
-                    </>
-                  );
-
-                  const cls = `flex-1 text-center py-2.5 px-0.5 rounded-lg transition-all ${
-                    day.is_today ? 'ring-2 ring-orange-500 bg-orange-500/10' : ''
-                  } ${day.completed ? 'bg-emerald-500/15 border border-emerald-500/25' : 'bg-slate-700/50 border border-transparent'
-                  } ${linkHref ? 'cursor-pointer hover:bg-slate-600/50' : ''}`;
-
-                  return linkHref ? (
-                    <Link key={day.date} href={linkHref} className={cls}>{chip}</Link>
-                  ) : (
-                    <div key={day.date} className={cls}>{chip}</div>
-                  );
-                })}
+                {week.days.map((day) => (
+                  <WeekChipDay
+                    key={day.date}
+                    day={day}
+                    formatDistNoUnit={(m) => fmtDistNoUnit(m)}
+                  />
+                ))}
               </div>
 
               {/* Progress / Volume */}
               {week.status === 'no_plan' ? (
                 <div className="text-center py-1">
-                  {week.completed_mi > 0 ? (
+                  {week.completed_m > 0 ? (
                     <>
                       <div className="flex items-center justify-center gap-2 mb-1">
                         <Footprints className="w-4 h-4 text-orange-500" />
-                        <span className="text-lg font-bold text-white">{week.completed_mi} mi</span>
+                        <span className="text-lg font-bold text-white">{fmtDist(week.completed_m)}</span>
                         <span className="text-xs text-slate-500">logged</span>
                       </div>
                       {week.trajectory_sentence && (
-                        <p className="text-xs text-slate-400">{week.trajectory_sentence}</p>
+                        <p className="text-xs text-slate-400">{rewriteImperialToMetric(week.trajectory_sentence)}</p>
                       )}
+                      {week.other_sport_summary && week.other_sport_summary.length > 0 ? (
+                        <p className="text-xs text-slate-500 mt-1">
+                          Also this week:{' '}
+                          {week.other_sport_summary.map(_otherSportPhrase).join(' · ')}
+                        </p>
+                      ) : null}
                     </>
                   ) : (
                     <p className="text-sm text-slate-500">
-                      {strava_connected
+                      {isConnected
                         ? total_activities > 0 ? 'No runs this week yet.' : 'Waiting for sync.'
-                        : 'Connect Strava to track.'}
+                        : 'Connect your watch to track.'}
                     </p>
                   )}
                 </div>
               ) : (
                 <>
-                  {week.planned_mi > 0 && (
+                  {week.planned_m > 0 && (
                     <Progress
                       value={Math.min(100, week.progress_pct)}
                       className="h-2"
@@ -683,8 +1029,8 @@ export default function HomePage() {
                   )}
                   <div className="flex items-center justify-between">
                     <div className="flex items-baseline gap-1.5">
-                      <span className="text-lg font-bold text-white">{week.completed_mi}</span>
-                      <span className="text-sm text-slate-500">/ {week.planned_mi} mi</span>
+                      <span className="text-lg font-bold text-white">{fmtDistNoUnit(week.completed_m)}</span>
+                      <span className="text-sm text-slate-500">/ {fmtDist(week.planned_m)}</span>
                     </div>
                     {getStatusBadge(week.status)}
                   </div>
@@ -693,11 +1039,17 @@ export default function HomePage() {
                       {coach_briefing?.week_assessment ? (
                         <div className="flex gap-2">
                           <Sparkles className="w-3.5 h-3.5 text-orange-400 flex-shrink-0 mt-0.5" />
-                          <p className="text-xs text-slate-300">{coach_briefing.week_assessment}</p>
+                          <p className="text-xs text-slate-300">{rewriteImperialToMetric(coach_briefing.week_assessment)}</p>
                         </div>
                       ) : (
-                        <p className="text-xs text-slate-400">{week.trajectory_sentence}</p>
+                        <p className="text-xs text-slate-400">{rewriteImperialToMetric(week.trajectory_sentence)}</p>
                       )}
+                      {week.other_sport_summary && week.other_sport_summary.length > 0 ? (
+                        <p className="text-xs text-slate-500 mt-1">
+                          Also this week:{' '}
+                          {week.other_sport_summary.map(_otherSportPhrase).join(' · ')}
+                        </p>
+                      ) : null}
                     </div>
                   )}
                 </>

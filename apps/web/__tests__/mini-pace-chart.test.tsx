@@ -2,21 +2,17 @@
  * MiniPaceChart — Unit tests for the home hero pace chart.
  *
  * Tests:
- * - Renders SVG with gradient pace line + area fill
+ * - Renders SVG with effort-gradient pace line + area fill
  * - Renders elevation fill when elevation_stream is present
  * - Does not render elevation fill when elevation_stream is absent
  * - Returns null when paceStream is empty
  * - Handles mismatched array lengths gracefully (resamples)
- * - Gradient stops use boosted effortToColor
+ * - Fallback behavior when effort stream is missing
+ * - Heat-adjusted overlay appears only when threshold passes
  */
 
 import React from 'react';
-import { render, screen, fireEvent } from '@testing-library/react';
-
-// Mock effortToColor to return predictable colors
-jest.mock('@/components/activities/rsi/utils/effortColor', () => ({
-  effortToColor: (value: number) => `rgb(${Math.round(value * 120)},${Math.round(value * 80)},50)`,
-}));
+import { render, screen } from '@testing-library/react';
 
 // Mock useUnits for imperial pace formatting
 jest.mock('@/lib/context/UnitsContext', () => ({
@@ -30,7 +26,12 @@ jest.mock('@/lib/context/UnitsContext', () => ({
   }),
 }));
 
+jest.mock('@/components/activities/rsi/utils/effortColor', () => ({
+  effortToColor: jest.fn((v: number) => `rgb(${Math.round(v * 255)}, 100, 80)`),
+}));
+
 import { MiniPaceChart } from '@/components/home/MiniPaceChart';
+import { effortToColor } from '@/components/activities/rsi/utils/effortColor';
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -61,7 +62,6 @@ describe('MiniPaceChart', () => {
     const paceLine = screen.getByTestId('pace-line');
     expect(paceLine).toBeInTheDocument();
     expect(paceLine.getAttribute('d')).toMatch(/^M /);
-    // Gradient stroke
     expect(paceLine.getAttribute('stroke')).toMatch(/^url\(#paceLineGrad-/);
 
     // Area fill exists
@@ -125,7 +125,7 @@ describe('MiniPaceChart', () => {
     expect(screen.getByTestId('elevation-fill')).toBeInTheDocument();
   });
 
-  test('gradient stops use boosted colors', () => {
+  test('uses line linearGradient for per-point effort coloring', () => {
     render(
       <MiniPaceChart
         paceStream={PACE_50}
@@ -135,11 +135,42 @@ describe('MiniPaceChart', () => {
     );
 
     const svg = screen.getByTestId('mini-pace-chart');
-    const stops = svg.querySelectorAll('stop');
-    expect(stops.length).toBeGreaterThan(0);
-    stops.forEach(stop => {
-      expect(stop.getAttribute('stop-color')).toMatch(/^rgb/);
-    });
+    const lineGradient = svg.querySelector('linearGradient[id^="paceLineGrad-"]');
+    expect(lineGradient).not.toBeNull();
+    expect(screen.getByTestId('pace-line').getAttribute('stroke')).toMatch(/^url\(#paceLineGrad-/);
+    expect((effortToColor as jest.Mock).mock.calls.length).toBeGreaterThan(0);
+  });
+
+  test('falls back to slate stroke when effort stream is empty', () => {
+    render(
+      <MiniPaceChart
+        paceStream={PACE_50}
+        effortIntensity={[]}
+        height={140}
+      />
+    );
+    expect(screen.getByTestId('pace-line').getAttribute('stroke')).toBe('#94a3b8');
+  });
+
+  test('renders dashed heat-adjusted overlay only when adjustment > 3', () => {
+    const { rerender } = render(
+      <MiniPaceChart
+        paceStream={PACE_50}
+        effortIntensity={EFFORT_50}
+        heatAdjustmentPct={4.2}
+        height={140}
+      />
+    );
+    expect(screen.getByTestId('mini-adjusted-pace-line')).toBeInTheDocument();
+    rerender(
+      <MiniPaceChart
+        paceStream={PACE_50}
+        effortIntensity={EFFORT_50}
+        heatAdjustmentPct={2.9}
+        height={140}
+      />
+    );
+    expect(screen.queryByTestId('mini-adjusted-pace-line')).not.toBeInTheDocument();
   });
 
   test('has interactive container with cursor-crosshair', () => {
@@ -150,7 +181,6 @@ describe('MiniPaceChart', () => {
         height={140}
       />
     );
-
     const container = screen.getByTestId('mini-pace-chart-container');
     expect(container.className).toContain('cursor-crosshair');
   });

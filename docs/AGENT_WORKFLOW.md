@@ -52,7 +52,10 @@ Builder notes must be authored from `docs/BUILDER_NOTE_TEMPLATE.md`.
 │     Commit message follows repo conventions.         │
 ├─────────────────────────────────────────────────────┤
 │  7. CI                                               │
-│     Push. Verify CI green. Local pass is not enough. │
+│     Do not push to origin until the founder approves │
+│     publication (`docs/FOUNDER_OPERATING_CONTRACT.md`). │
+│     After approved push (or founder-run CI): verify  │
+│     CI green. Local pass is not enough for merge.    │
 │     If CI red, fix before moving on.                 │
 ├─────────────────────────────────────────────────────┤
 │  8. SITE AUDIT UPDATE (MANDATORY)                    │
@@ -303,7 +306,7 @@ way with the `scipy` dependency addition.
 ### CI Verification
 
 ```bash
-# Check CI status after push
+# After an approved push to the remote, check CI status
 gh run list --branch main --limit 3
 gh run view <run-id>
 
@@ -315,10 +318,13 @@ gh run view --job=<job-id> --log-failed
 
 - **Migration Integrity:** `EXPECTED_HEADS` in `.github/scripts/ci_alembic_heads_check.py`
   must be updated whenever a new Alembic migration is added. If you add a migration,
-  update this file to match the new head revision.
+  update this file to match the new head revision. Current heads: `wellness_stamp_001`,
+  `athlete_override_001`.
 - **Frontend Build:** Runs `npx tsc --noEmit`. All TypeScript must pass strict type checking.
   Common pitfalls: `Set` spread requires `downlevelIteration` (use `Array.from()` instead),
   untyped mock parameters in test files.
+- **Nightly Full Suite:** 4,036+ backend tests run on schedule + manual trigger.
+  Nightly failures auto-open GitHub issues with `nightly-ci` label.
 
 ---
 
@@ -540,3 +546,9 @@ These are non-negotiable. Violating any of them costs trust immediately.
 12. **The system INFORMS, the athlete DECIDES.** The daily intelligence engine surfaces data and patterns. It does NOT swap workouts or override the athlete. Fatigue is a stimulus for adaptation, not an enemy. The system must never prevent a breakthrough by "protecting" the athlete from productive stress. Intervention (flagging, not overriding) only on sustained 3+ week negative trajectories. Self-regulation (athlete modifies their own workout) is first-class data that the system learns from.
 
 13. **`docs/SITE_AUDIT_LIVING.md` is mandatory founder infrastructure.** It must be kept current at all times as the complete inventory of what is built, what tools/routes exist, what is live, and what is pending. Every material change updates this file in-session. No exceptions.
+
+14. **Cleanup policy:** Scratch scripts, diagnostic outputs, and temp files created during a session must be deleted before close. See `docs/CLEANUP_POLICY.md` for what goes and what stays. `.gitignore` rules exist for common patterns (`/_*.py`, `scripts/_check_*`, `diag_*.txt`, etc.). Never commit tokens or one-off hardcoded-token scripts.
+
+15. **Never hide numbers.** When displaying physiological data (HRV, HR, sleep, pace, etc.), always show the raw value. Layer interpretation ("low / normal / high") and personal context ("your 30-day range: X-Y") on top. See `docs/DESIGN_PHILOSOPHY_AND_SITE_ROADMAP.md` Part 5 for the full design principle.
+
+16. **HRV labeling standard.** Garmin provides two HRV values: `hrv_5min_high` → display as "Recovery HRV"; `hrv_overnight_avg` → display as "Overnight Avg HRV." Both are always shown together with an explanation tooltip. See the HRV Display Standard in `docs/DESIGN_PHILOSOPHY_AND_SITE_ROADMAP.md`.

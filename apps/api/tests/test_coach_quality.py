@@ -233,7 +233,8 @@ class TestBuildContextDistancesInMiles:
 class TestWellnessTrendsGarminData:
     """get_wellness_trends must include GarminDay Health API data alongside DailyCheckin."""
 
-    def test_wellness_trends_includes_garmin_data(self):
+    @patch("services.timezone_utils.get_athlete_timezone_from_db", return_value=None)
+    def test_wellness_trends_includes_garmin_data(self, _tz):
         from services.coach_tools import get_wellness_trends
 
         athlete_id = uuid.uuid4()
@@ -247,8 +248,6 @@ class TestWellnessTrendsGarminData:
             sleep_score=82,
         )
 
-        # get_wellness_trends calls db.query(DailyCheckin) first, then db.query(GarminDay).
-        # Use side_effect with a call counter to return different results per call order.
         db = MagicMock()
         _call_idx = [0]
 
@@ -257,10 +256,8 @@ class TestWellnessTrendsGarminData:
             idx = _call_idx[0]
             _call_idx[0] += 1
             if idx == 0:
-                # First call: DailyCheckin — return empty
                 q.filter.return_value.order_by.return_value.all.return_value = []
             else:
-                # Second call: GarminDay — return one record
                 q.filter.return_value.order_by.return_value.all.return_value = [garmin]
             return q
 
@@ -280,7 +277,8 @@ class TestWellnessTrendsGarminData:
         assert garmin_data.get("hrv_overnight_avg_ms") is not None
         assert abs(garmin_data["hrv_overnight_avg_ms"] - 44.0) < 0.5
 
-    def test_wellness_trends_graceful_no_garmin(self):
+    @patch("services.timezone_utils.get_athlete_timezone_from_db", return_value=None)
+    def test_wellness_trends_graceful_no_garmin(self, _tz):
         """get_wellness_trends must not crash when no GarminDay or DailyCheckin records exist."""
         from services.coach_tools import get_wellness_trends
 
@@ -427,19 +425,15 @@ class TestCoachPlanDistanceMatchesDb:
 
     def test_planned_workout_distance_from_db(self):
         """The PlannedWorkout distance must be read from target_distance_km and passed
-        to the LLM prompt as PLANNED miles — not inferred or estimated."""
+        to the LLM prompt as unit-aware text — not inferred or estimated."""
         from tasks.home_briefing_tasks import _build_briefing_prompt
         source = inspect.getsource(_build_briefing_prompt)
 
-        # Must read target_distance_km from PlannedWorkout and convert to miles
         assert "target_distance_km" in source, (
             "target_distance_km not read from PlannedWorkout — distance may be hallucinated"
         )
-        assert "0.621371" in source or "1609" in source or "miles" in source.lower(), (
-            "Distance conversion to miles not found in _build_briefing_prompt"
-        )
-        assert "distance_mi" in source, (
-            "distance_mi not in briefing prompt — planned distance not grounded"
+        assert "distance_text" in source, (
+            "distance_text not in briefing prompt — planned distance not grounded in athlete units"
         )
 
     def _run_briefing(self, athlete_id, db, planned_workout=None):
@@ -468,19 +462,19 @@ class TestCoachPlanDistanceMatchesDb:
         return db
 
     def test_planned_workout_distance_injected_into_prompt(self):
-        """PLANNED line in prompt must include the actual distance_mi from DB."""
+        """PLANNED line in prompt must include the actual distance from DB."""
         athlete_id = str(uuid.uuid4())
         planned_workout = {
             "has_workout": True,
             "workout_type": "long_run",
             "title": "Long run",
-            "distance_mi": 10.0,   # From DB: 10 miles (not 15)
+            "distance_text": "10.0 mi",
         }
 
         prep = self._run_briefing(athlete_id, self._make_min_db(), planned_workout=planned_workout)
         prompt = prep[1]
-        assert "10.0mi" in prompt or "10.0 mi" in prompt, (
-            f"Planned distance 10.0mi not in prompt. Prompt excerpt: {prompt[:500]}"
+        assert "10.0 mi" in prompt, (
+            f"Planned distance 10.0 mi not in prompt. Prompt excerpt: {prompt[:500]}"
         )
 
 
@@ -790,6 +784,7 @@ class TestBriefDatePreComputation:
                     "days ago", "yesterday", "today", "tomorrow",
                     "weeks ago", "week ago", "in ", "days away",
                     "days remaining", "of 7 days",
+                    "w ago)", "d ago)", "months ago",
                 ]
             )
             assert has_relative, (

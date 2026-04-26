@@ -5,12 +5,11 @@ Crawl RunningWritings.com for training content
 Extracts articles, training principles, and coaching content from John Davis's site.
 """
 import sys
-import os
 import json
 import time
 import re
 from pathlib import Path
-from typing import List, Dict, Optional
+from typing import List, Dict
 from urllib.parse import urljoin, urlparse
 
 # Add parent directory to path
@@ -256,7 +255,7 @@ def crawl_and_extract(base_url: str, max_articles: int = 50):
                 content = extract_article_content(soup)
                 
                 if not content["text"] or len(content["text"]) < 200:
-                    print(f"  ⚠️  Skipping - content too short or empty")
+                    print("  ⚠️  Skipping - content too short or empty")
                     continue
                 
                 # Store article
@@ -298,9 +297,9 @@ def crawl_and_extract(base_url: str, max_articles: int = 50):
                 continue
         
         db.commit()
-        print(f"\n✅ Crawl complete!")
+        print("\n✅ Crawl complete!")
         print(f"   Extracted {extracted_count} articles")
-        print(f"   Stored in knowledge base")
+        print("   Stored in knowledge base")
         
     except Exception as e:
         print(f"❌ Error: {e}")

@@ -334,6 +334,7 @@ without receipts is a claim. A finding with receipts is evidence.
         "date": "2025-09-15",
         "type": "threshold",
         "distance_km": 12.0,
+<!-- Note: verify if distance_km in receipt payloads was renamed to distance_m in the canonical units migration -->
         "pace_min_km": 4.35,
         "avg_hr": 165,
         "split_ratio": 0.98,

@@ -54,6 +54,9 @@ interface TuneUpRace {
 
 ### Response Schema
 
+> **Updated Apr 2026 — Canonical Units Migration:** `target_miles` → `target_m`
+> (meters) in `DayPlan`. Original ADR used miles.
+
 ```typescript
 interface ConstraintAwarePlanResponse {
   success: boolean;
@@ -131,7 +134,7 @@ interface DayPlan {
   workout_type: string;           // "easy", "threshold", "long_mp", "race", etc.
   name: string;                   // "2x4mi @ T"
   description: string;            // Full description with paces
-  target_miles: number;
+  target_m: number;                // canonical: meters (was target_miles)
   intensity: string;              // "easy", "moderate", "hard", "race"
   paces: Record<string, string>;  // { "threshold": "6:25", "easy": "8:04" }
   notes: string[];
@@ -204,7 +207,7 @@ db_workout = PlannedWorkout(
     title=day.name,                        # "2x4mi @ T"
     description=day.description,           # Full with paces
     phase=phase,                           # "build", "peak", "taper", "race"
-    target_distance_km=day.target_miles * 1.609,
+    target_distance_km=day.target_m / 1000,  # Updated Apr 2026: target_m is canonical meters
     coach_notes=f"Paces: {paces} | {notes}",  # Personalized
 )
 ```

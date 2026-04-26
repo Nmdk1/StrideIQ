@@ -10,7 +10,7 @@ This creates lookup tables that can be interpolated for any RPI value.
 import sys
 import json
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
@@ -206,7 +206,7 @@ def store_rpi_lookup_tables(pace_table: Dict, equivalent_table: Dict):
             print("✅ Created new RPI lookup tables entry")
         
         db.commit()
-        print(f"✅ Stored RPI lookup tables")
+        print("✅ Stored RPI lookup tables")
         
     except Exception as e:
         print(f"❌ Error storing RPI tables: {e}")

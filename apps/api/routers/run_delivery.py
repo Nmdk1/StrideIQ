@@ -38,7 +38,7 @@ def get_activity_delivery(
     Key principle: Only show insights if they're meaningful.
     Always prompt for perception to build the correlation dataset.
     """
-    # Get activity
+    # Single-activity by id (run delivery payload; ownership checked below).
     activity = db.query(Activity).filter(Activity.id == activity_id).first()
     if not activity:
         raise HTTPException(

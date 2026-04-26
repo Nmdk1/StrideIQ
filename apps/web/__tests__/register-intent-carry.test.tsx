@@ -1,9 +1,9 @@
 /**
  * Register intent carry-through tests.
  *
- * Verifies that ?tier=<tier>&period=<period> params on /register are:
+ * Verifies that ?tier=<any>&period=<period> params on /register are:
  *   1. Shown as a contextual hint on the form.
- *   2. Used to route to /settings?upgrade=<tier>&period=<period> after signup.
+ *   2. Used to route to /settings?upgrade=premium&period=<period> after signup.
  *   3. Gracefully ignored for invalid or missing values (falls back to /onboarding).
  */
 
@@ -72,51 +72,17 @@ describe('Register page — no tier intent (baseline)', () => {
 
   it('does not show tier intent hint', () => {
     render(<RegisterPage />);
-    expect(screen.queryByText(/signing up for the/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/signing up for/i)).not.toBeInTheDocument();
   });
 });
 
-describe('Register page — guided annual intent', () => {
-  beforeEach(() => setSearchParams({ tier: 'guided', period: 'annual' }));
+describe('Register page — subscriber annual intent', () => {
+  beforeEach(() => setSearchParams({ tier: 'subscriber', period: 'annual' }));
 
-  it('shows tier intent hint for guided', () => {
+  it('shows upgrade intent hint', () => {
     render(<RegisterPage />);
-    expect(screen.getByText(/signing up for the/i)).toBeInTheDocument();
-    expect(screen.getByText(/Guided/)).toBeInTheDocument();
-  });
-
-  it('routes to /settings?upgrade=guided&period=annual after signup', async () => {
-    render(<RegisterPage />);
-    await submitForm();
-    await waitFor(() =>
-      expect(mockPush).toHaveBeenCalledWith(
-        '/settings?upgrade=guided&period=annual',
-      ),
-    );
-  });
-});
-
-describe('Register page — guided monthly intent', () => {
-  beforeEach(() => setSearchParams({ tier: 'guided', period: 'monthly' }));
-
-  it('routes to /settings?upgrade=guided&period=monthly after signup', async () => {
-    render(<RegisterPage />);
-    await submitForm();
-    await waitFor(() =>
-      expect(mockPush).toHaveBeenCalledWith(
-        '/settings?upgrade=guided&period=monthly',
-      ),
-    );
-  });
-});
-
-describe('Register page — premium annual intent', () => {
-  beforeEach(() => setSearchParams({ tier: 'premium', period: 'annual' }));
-
-  it('shows tier intent hint for premium', () => {
-    render(<RegisterPage />);
-    expect(screen.getByText(/signing up for the/i)).toBeInTheDocument();
-    expect(screen.getByText(/Premium/)).toBeInTheDocument();
+    expect(screen.getByText(/signing up for/i)).toBeInTheDocument();
+    expect(screen.getByText(/StrideIQ/)).toBeInTheDocument();
   });
 
   it('routes to /settings?upgrade=premium&period=annual after signup', async () => {
@@ -130,25 +96,55 @@ describe('Register page — premium annual intent', () => {
   });
 });
 
-describe('Register page — invalid tier params (fallback)', () => {
-  it('ignores unknown tier and routes to /onboarding', async () => {
-    setSearchParams({ tier: 'elite', period: 'annual' });
+describe('Register page — subscriber monthly intent', () => {
+  beforeEach(() => setSearchParams({ tier: 'subscriber', period: 'monthly' }));
+
+  it('routes to /settings?upgrade=premium&period=monthly after signup', async () => {
     render(<RegisterPage />);
-    expect(screen.queryByText(/signing up for the/i)).not.toBeInTheDocument();
     await submitForm();
-    await waitFor(() => expect(mockPush).toHaveBeenCalledWith('/onboarding'));
+    await waitFor(() =>
+      expect(mockPush).toHaveBeenCalledWith(
+        '/settings?upgrade=premium&period=monthly',
+      ),
+    );
+  });
+});
+
+describe('Register page — legacy tier params still work', () => {
+  it('guided param routes to upgrade path', async () => {
+    setSearchParams({ tier: 'guided', period: 'annual' });
+    render(<RegisterPage />);
+    await submitForm();
+    await waitFor(() =>
+      expect(mockPush).toHaveBeenCalledWith(
+        '/settings?upgrade=premium&period=annual',
+      ),
+    );
   });
 
-  it('ignores free tier param (not a paid tier) and routes to /onboarding', async () => {
+  it('premium param routes to upgrade path', async () => {
+    setSearchParams({ tier: 'premium', period: 'monthly' });
+    render(<RegisterPage />);
+    await submitForm();
+    await waitFor(() =>
+      expect(mockPush).toHaveBeenCalledWith(
+        '/settings?upgrade=premium&period=monthly',
+      ),
+    );
+  });
+});
+
+describe('Register page — invalid tier params (fallback)', () => {
+  it('ignores free tier param and routes to /onboarding', async () => {
     setSearchParams({ tier: 'free', period: 'annual' });
     render(<RegisterPage />);
-    expect(screen.queryByText(/signing up for the/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/signing up for/i)).not.toBeInTheDocument();
     await submitForm();
     await waitFor(() => expect(mockPush).toHaveBeenCalledWith('/onboarding'));
   });
 
   it('tier present without period defaults to annual', async () => {
-    setSearchParams({ tier: 'premium' });
+    setSearchParams({ tier: 'subscriber' });
     render(<RegisterPage />);
     await submitForm();
     await waitFor(() =>

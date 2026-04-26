@@ -16,12 +16,11 @@ Usage:
 
 from typing import Optional, List
 from dataclasses import dataclass
-from uuid import UUID
 
 from sqlalchemy.orm import Session
 
 from .feature_flags import FeatureFlagService, AccessResult
-from .constants import PlanTier, Distance
+from .constants import Distance
 
 
 @dataclass

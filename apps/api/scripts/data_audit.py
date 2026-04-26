@@ -36,28 +36,28 @@ def main():
             return
         
         # Total activities
-        result = conn.execute(text(f"SELECT COUNT(*) FROM activity WHERE athlete_id = :id"), {"id": michael_id})
+        result = conn.execute(text("SELECT COUNT(*) FROM activity WHERE athlete_id = :id"), {"id": michael_id})
         total = result.scalar()
-        print(f"\n--- ACTIVITIES ---")
+        print("\n--- ACTIVITIES ---")
         print(f"Total activities: {total}")
         
         # Activities with HR
-        result = conn.execute(text(f"SELECT COUNT(*) FROM activity WHERE athlete_id = :id AND avg_hr IS NOT NULL"), {"id": michael_id})
+        result = conn.execute(text("SELECT COUNT(*) FROM activity WHERE athlete_id = :id AND avg_hr IS NOT NULL"), {"id": michael_id})
         hr_count = result.scalar()
         print(f"With heart rate data: {hr_count} ({100*hr_count/total:.1f}%)" if total > 0 else "With HR: 0")
         
         # Activities with pace (distance and time)
-        result = conn.execute(text(f"SELECT COUNT(*) FROM activity WHERE athlete_id = :id AND distance_m > 0 AND duration_s > 0"), {"id": michael_id})
+        result = conn.execute(text("SELECT COUNT(*) FROM activity WHERE athlete_id = :id AND distance_m > 0 AND duration_s > 0"), {"id": michael_id})
         pace_count = result.scalar()
         print(f"With pace data: {pace_count}")
         
         # Date range
-        result = conn.execute(text(f"SELECT MIN(start_time), MAX(start_time) FROM activity WHERE athlete_id = :id"), {"id": michael_id})
+        result = conn.execute(text("SELECT MIN(start_time), MAX(start_time) FROM activity WHERE athlete_id = :id"), {"id": michael_id})
         row = result.fetchone()
         print(f"Date range: {row[0].strftime('%Y-%m-%d') if row[0] else 'N/A'} to {row[1].strftime('%Y-%m-%d') if row[1] else 'N/A'}")
         
         # Last 12 weeks
-        result = conn.execute(text(f"""
+        result = conn.execute(text("""
             SELECT COUNT(*) FROM activity 
             WHERE athlete_id = :id 
             AND start_time > NOW() - INTERVAL '12 weeks'
@@ -66,7 +66,7 @@ def main():
         print(f"Activities (last 12 weeks): {recent}")
         
         # Recent with HR
-        result = conn.execute(text(f"""
+        result = conn.execute(text("""
             SELECT COUNT(*) FROM activity 
             WHERE athlete_id = :id 
             AND avg_hr IS NOT NULL
@@ -76,13 +76,13 @@ def main():
         print(f"With HR (last 12 weeks): {recent_hr}")
         
         # Check-ins
-        print(f"\n--- CHECK-INS ---")
-        result = conn.execute(text(f"SELECT COUNT(*) FROM daily_checkin WHERE athlete_id = :id"), {"id": michael_id})
+        print("\n--- CHECK-INS ---")
+        result = conn.execute(text("SELECT COUNT(*) FROM daily_checkin WHERE athlete_id = :id"), {"id": michael_id})
         checkins = result.scalar()
         print(f"Total check-ins: {checkins}")
         
         if checkins > 0:
-            result = conn.execute(text(f"""
+            result = conn.execute(text("""
                 SELECT 
                     COUNT(*) FILTER (WHERE sleep_h IS NOT NULL) as sleep,
                     COUNT(*) FILTER (WHERE stress_1_5 IS NOT NULL) as stress,
@@ -99,20 +99,20 @@ def main():
             print(f"  Resting HR logged: {row[4]}")
         
         # Nutrition
-        print(f"\n--- NUTRITION ---")
-        result = conn.execute(text(f"SELECT COUNT(*) FROM nutrition_entry WHERE athlete_id = :id"), {"id": michael_id})
+        print("\n--- NUTRITION ---")
+        result = conn.execute(text("SELECT COUNT(*) FROM nutrition_entry WHERE athlete_id = :id"), {"id": michael_id})
         nutrition = result.scalar()
         print(f"Total nutrition entries: {nutrition}")
         
         # Body composition
-        print(f"\n--- BODY COMPOSITION ---")
-        result = conn.execute(text(f"SELECT COUNT(*) FROM body_composition WHERE athlete_id = :id"), {"id": michael_id})
+        print("\n--- BODY COMPOSITION ---")
+        result = conn.execute(text("SELECT COUNT(*) FROM body_composition WHERE athlete_id = :id"), {"id": michael_id})
         body = result.scalar()
         print(f"Total body comp entries: {body}")
         
         # Activity types breakdown
-        print(f"\n--- ACTIVITY ANALYSIS (Last 12 weeks) ---")
-        result = conn.execute(text(f"""
+        print("\n--- ACTIVITY ANALYSIS (Last 12 weeks) ---")
+        result = conn.execute(text("""
             SELECT 
                 sport,
                 COUNT(*) as count,
@@ -128,8 +128,8 @@ def main():
             print(f"  {row[0]}: {row[1]} activities, avg {row[2]/1000:.1f}km, avg HR {row[3]:.0f}" if row[3] else f"  {row[0]}: {row[1]} activities")
         
         # Efficiency calculation feasibility
-        print(f"\n--- EFFICIENCY ANALYSIS FEASIBILITY ---")
-        result = conn.execute(text(f"""
+        print("\n--- EFFICIENCY ANALYSIS FEASIBILITY ---")
+        result = conn.execute(text("""
             SELECT COUNT(*) FROM activity 
             WHERE athlete_id = :id 
             AND avg_hr IS NOT NULL 
@@ -148,7 +148,7 @@ def main():
             print("STATUS: INSUFFICIENT DATA for reliable correlations")
         
         # What's missing
-        print(f"\n--- MISSING DATA IMPACT ---")
+        print("\n--- MISSING DATA IMPACT ---")
         if checkins == 0:
             print("! NO check-in data - cannot correlate sleep/stress/soreness to performance")
         if nutrition == 0:

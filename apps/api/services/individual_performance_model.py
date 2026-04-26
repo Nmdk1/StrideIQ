@@ -31,6 +31,7 @@ import statistics
 import logging
 
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import ProgrammingError, OperationalError
 from sqlalchemy import func, and_
 
 from models import Activity, Athlete
@@ -158,14 +159,13 @@ class BanisterModel:
         - Adjust: Constrain by τ1 (don't let fitness decay >10%)
         - For 10% fitness loss: t = -τ1 × ln(0.9) ≈ 0.105 × τ1
         """
-        import math
         
         # Fatigue-based minimum: ~2 × τ2 for 80% clearance
-        fatigue_based = 2.0 * self.tau2
+        2.0 * self.tau2
         
         # Fitness-based maximum: Don't lose more than 10% fitness
         # e^(-t/τ1) = 0.9 → t = -τ1 × ln(0.9) ≈ 0.105 × τ1
-        fitness_based_max = 0.105 * self.tau1
+        0.105 * self.tau1
         
         # For fast adapters (low τ1), this constrains the taper
         # τ1=25 → max ~2.6 days before 10% loss (too short, so use τ2)
@@ -316,7 +316,7 @@ class IndividualPerformanceModel:
         """Get daily TSS values from training history."""
         from services.training_load import TrainingLoadCalculator
         
-        # Get all activities in range
+        # Running-only: activities in range for per-day TSS curve.
         activities = self.db.query(Activity).filter(
             Activity.athlete_id == athlete_id,
             func.date(Activity.start_time) >= start_date,
@@ -371,15 +371,16 @@ class IndividualPerformanceModel:
         # 3. is_race_candidate = True with high confidence
         from sqlalchemy import or_
         
+        # Run rows with race signals (RPI inputs); not general all-sport volume.
         races = self.db.query(Activity).filter(
             Activity.athlete_id == athlete_id,
             func.date(Activity.start_time) >= start_date,
             func.date(Activity.start_time) <= end_date,
             or_(
-                Activity.user_verified_race == True,
+                Activity.user_verified_race,
                 Activity.workout_type == 'race',
                 and_(
-                    Activity.is_race_candidate == True,
+                    Activity.is_race_candidate,
                     Activity.race_confidence >= 0.7
                 )
             )
@@ -421,7 +422,7 @@ class IndividualPerformanceModel:
         
         Used as fallback when insufficient race data.
         """
-        # Get monthly efficiency averages as proxy for performance
+        # Running-only efficiency markers when race count is thin.
         activities = self.db.query(Activity).filter(
             Activity.athlete_id == athlete_id,
             func.date(Activity.start_time) >= start_date,
@@ -814,11 +815,17 @@ def get_or_calibrate_model(
     from models import AthleteCalibratedModel
     from datetime import datetime, date, timezone
     
-    # Check for existing cached model
+    # Check for existing cached model.
+    # Production-safe fallback: if cache table is unavailable, continue with runtime calibration.
     if not force_recalibrate:
-        cached = db.query(AthleteCalibratedModel).filter(
-            AthleteCalibratedModel.athlete_id == athlete_id
-        ).first()
+        try:
+            cached = db.query(AthleteCalibratedModel).filter(
+                AthleteCalibratedModel.athlete_id == athlete_id
+            ).first()
+        except (ProgrammingError, OperationalError) as e:
+            logger.warning("Model cache lookup unavailable; falling back to live calibration: %s", e)
+            db.rollback()
+            cached = None
         
         if cached:
             # Check if still valid

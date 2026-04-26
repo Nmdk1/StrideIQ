@@ -346,6 +346,7 @@ class TestGarminAuthUrlEndpoint:
         from routers.garmin import get_auth_url
         athlete = MagicMock()
         athlete.id = str(uuid4())
+        athlete.is_demo = False
 
         with patch("routers.garmin.settings") as mock_settings, \
              patch("routers.garmin.generate_pkce_pair", return_value=("verifier", "challenge")), \
@@ -361,11 +362,118 @@ class TestGarminAuthUrlEndpoint:
         from fastapi import HTTPException
         from routers.garmin import get_auth_url
         athlete = MagicMock()
+        athlete.is_demo = False
         with patch("routers.garmin.settings") as mock_settings:
             mock_settings.GARMIN_CLIENT_ID = None
             with pytest.raises(HTTPException) as exc_info:
                 get_auth_url(return_to="/settings", current_user=athlete)
         assert exc_info.value.status_code == 503
+
+    def test_demo_account_rejected_with_403(self):
+        """
+        is_demo accounts must not be able to start the Garmin OAuth flow.
+        Mirrors the Strava /auth-url demo guard. Without this, a prospect
+        viewing the demo athlete could (in theory) link a real Garmin
+        account to the shared demo and leak personal data to other
+        viewers.
+        """
+        from fastapi import HTTPException
+        from routers.garmin import get_auth_url
+
+        athlete = MagicMock()
+        athlete.id = str(uuid4())
+        athlete.is_demo = True
+
+        with patch("routers.garmin.is_feature_enabled", return_value=True), \
+             patch("routers.garmin.settings") as mock_settings:
+            mock_settings.GARMIN_CLIENT_ID = "cid"
+            with pytest.raises(HTTPException) as exc_info:
+                get_auth_url(
+                    return_to="/settings",
+                    current_user=athlete,
+                    db=MagicMock(),
+                )
+        assert exc_info.value.status_code == 403
+        assert "demo" in str(exc_info.value.detail).lower()
+
+    def test_non_demo_account_passes_through(self):
+        """Real athletes still get the auth URL — guard is is_demo-only."""
+        from routers.garmin import get_auth_url
+
+        athlete = MagicMock()
+        athlete.id = str(uuid4())
+        athlete.is_demo = False
+
+        with patch("routers.garmin.is_feature_enabled", return_value=True), \
+             patch("routers.garmin.settings") as mock_settings, \
+             patch("routers.garmin.generate_pkce_pair", return_value=("verifier", "challenge")), \
+             patch("routers.garmin.create_oauth_state", return_value="signed_state"), \
+             patch("routers.garmin.build_auth_url", return_value="https://connect.garmin.com/oauth2Confirm?..."):
+            mock_settings.GARMIN_CLIENT_ID = "cid"
+            result = get_auth_url(
+                return_to="/settings",
+                current_user=athlete,
+                db=MagicMock(),
+            )
+        assert "auth_url" in result
+
+
+class TestGarminCallbackDemoGuard:
+    """Defense-in-depth: callback must reject is_demo athletes too.
+
+    A demo viewer who reuses a previously-issued Garmin auth URL (from
+    before is_demo was set on the account, or via a copied state token)
+    must not be able to complete the OAuth flow and store tokens on the
+    demo account. Mirrors Strava callback's double-guard.
+    """
+
+    def test_demo_account_callback_redirects_to_error(self):
+        from fastapi.responses import RedirectResponse
+        from routers.garmin import garmin_callback
+
+        athlete = MagicMock()
+        athlete.id = uuid4()
+        athlete.is_demo = True
+        athlete.garmin_connected = False
+
+        db = MagicMock()
+        db.query.return_value.filter.return_value.first.return_value = athlete
+
+        request = MagicMock()
+        request.headers = {"user-agent": "test"}
+
+        state_payload = {
+            "athlete_id": str(athlete.id),
+            "code_verifier": "verifier_x",
+            "return_to": "/settings",
+        }
+
+        # Patch only what's needed to reach (or bypass) the demo check.
+        # We must not let exchange_code_for_token / _store_token_data
+        # actually run if the guard fails.
+        with patch("routers.garmin.verify_oauth_state", return_value=state_payload), \
+             patch("routers.garmin.is_feature_enabled", return_value=True), \
+             patch("routers.garmin.exchange_code_for_token") as mock_exchange, \
+             patch("routers.garmin._store_token_data") as mock_store:
+
+            response = garmin_callback(
+                request=request,
+                code="auth_code_xyz",
+                state="signed_state",
+                error=None,
+                db=db,
+            )
+
+        # Must be a redirect to the error path, not a successful connect.
+        assert isinstance(response, RedirectResponse)
+        location = response.headers.get("location", "")
+        assert "garmin=error" in location
+        assert "demo" in location.lower() or "reason=demo" in location
+
+        # And critically — no token exchange or storage occurred.
+        mock_exchange.assert_not_called()
+        mock_store.assert_not_called()
+
 
 
 # ---------------------------------------------------------------------------

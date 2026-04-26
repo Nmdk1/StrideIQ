@@ -19,7 +19,7 @@ class RaceCard(BaseModel):
     day_of_week: Optional[str] = None
     distance_category: str
     distance_meters: int
-    pace_display: str
+    pace_s_per_km: Optional[float] = None
     duration_display: str
     avg_hr: Optional[int] = None
     detection_confidence: Optional[float] = None

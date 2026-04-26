@@ -51,6 +51,19 @@ export function useActivitiesSummary(days: number = 30) {
 }
 
 /**
+ * Per-dimension distributions for the activities-list filter UI.
+ * Cached aggressively — the distribution only changes when new activities
+ * land, so a 2-minute stale window is comfortable.
+ */
+export function useFilterDistributions() {
+  return useQuery({
+    queryKey: [...activityKeys.all, 'filter-distributions'] as const,
+    queryFn: () => activitiesService.getFilterDistributions(),
+    staleTime: 2 * 60 * 1000,
+  });
+}
+
+/**
  * Get activity by ID
  */
 export function useActivity(activityId: string) {

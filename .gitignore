@@ -73,12 +73,89 @@ test-results/
 apps/web/_tmp/
 
 # Local diagnostics / scratch scripts (keep repo clean)
+# See docs/CLEANUP_POLICY.md for what belongs here vs tracked.
+# To force-track a legitimate script: git add -f <path>
 apps/api/debug_*.py
 apps/api/check_*.py
 apps/api/final_test.py
 apps/api/fix_and_test.py
 apps/api/test_full_flow.py
 apps/api/scripts/_scratch/
+
+# Root-level scratch scripts (underscore-prefixed = disposable)
+/_*.py
+/_*.sh
+
+# Root-level dot-prefixed dev scripts (per-session diagnostics, never in repo)
+/.commit_*
+/.hotpatch_*
+/.verify_*
+/.flip_*
+/.audit_*
+/.diag_*
+/.dejan_*
+/.smoke_*
+/.athlete_*
+/.replay_*
+/.test_*.sh
+/.sweep_*
+/.pr_body*
+/.ci_*
+/.local_test*
+/_commit_msg*
+/.tmp_*
+/.smoke
+/.smoke/
+/.smoke[0-9]*
+/.replay
+/.replay/
+
+# Per-athlete one-off audit scripts in scripts/ (e.g. scripts/jim_*)
+scripts/jim_*
+
+# Root-level temp/scratch by name
+/tmp_*.py
+/check_*.py
+/get_token.py
+
+# Diagnostic output captures
+/diag_*.txt
+/eval_*_report.txt
+/full_*_report.txt
+/test_*.txt
+/plan_eval_output.txt
+/founder_mirror_plans.txt
+
+# API temp debug files
+apps/api/tmp_debug_*.py
+apps/api/eval_*.py
+
+# scripts/ one-off diagnostics (underscore-prefixed)
+# Retained utilities are explicitly tracked; new _check/_diag/_fix are ignored.
+scripts/_check_*.py
+scripts/_diag_*.py
+scripts/_fix_*.py
+scripts/_test_*.py
+scripts/_verify_*.py
+scripts/_trigger_*.py
+scripts/_backfill_*.py
+scripts/_backfill_*.sh
+scripts/_smoke_*.py
+scripts/_smoke_*.sh
+scripts/_smoke.sh
+scripts/_curl_*.sh
+scripts/_cleanup_*.py
+scripts/_deactivate_*.py
+scripts/_find_*.py
+scripts/_list_*.py
+scripts/_regen_*.py
+scripts/_restore_*.py
+scripts/_set_*.py
+scripts/_validate_*.py
+scripts/_dump_*.py
+
+# scripts/ athlete-specific cache flushes (keep general-purpose ones tracked)
+scripts/_flush_*_*.py
 
 # Large files that shouldn't be in repo
 *.pdf
@@ -97,6 +174,10 @@ garmin_export/
 
 # Provider file import uploads (Phase 7)
 .uploads/
+
+# Raw external coach references for replay authoring
+docs/external-coach-references/*
+!docs/external-coach-references/.keep
 
 
 
@@ -126,3 +207,6 @@ htmlcov/
 *-logs-*.txt
 job-logs.txt
 backend-test-logs.txt
+
+# V2 plan engine evaluation reports (generated artifacts)
+apps/api/services/plan_engine_v2/evaluation/reports/

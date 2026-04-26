@@ -9,9 +9,10 @@
  */
 
 import React from 'react';
-import { render, screen } from '@testing-library/react';
+import { screen } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { mockTier1Result, generateTestStreamData, mockUnitsImperial } from './rsi-fixtures';
+import { renderWithStreamHover } from '@/test-utils/renderWithStreamHover';
 
 import { RunShapeCanvas } from '@/components/activities/rsi/RunShapeCanvas';
 
@@ -44,7 +45,7 @@ describe('Tier A: Effort-colored pace line', () => {
       refetch: jest.fn(),
     } as any);
 
-    render(<RunShapeCanvas activityId="test-123" />);
+    renderWithStreamHover(<RunShapeCanvas activityId="test-123" />);
 
     const tracePace = screen.getByTestId('trace-pace');
     expect(tracePace).toHaveAttribute('data-stroke-type', 'effort-gradient');
@@ -58,7 +59,7 @@ describe('Tier A: Effort-colored pace line', () => {
       refetch: jest.fn(),
     } as any);
 
-    render(<RunShapeCanvas activityId="test-123" />);
+    renderWithStreamHover(<RunShapeCanvas activityId="test-123" />);
 
     expect(screen.getByTestId('pace-effort-gradient-def')).toBeInTheDocument();
   });
@@ -71,7 +72,7 @@ describe('Tier A: Effort-colored pace line', () => {
       refetch: jest.fn(),
     } as any);
 
-    render(<RunShapeCanvas activityId="test-123" />);
+    renderWithStreamHover(<RunShapeCanvas activityId="test-123" />);
 
     const tracePace = screen.getByTestId('trace-pace');
     expect(tracePace).not.toHaveAttribute('data-stroke-type', 'flat');
@@ -89,7 +90,7 @@ describe('Tier A: Effort-colored pace line', () => {
       refetch: jest.fn(),
     } as any);
 
-    render(<RunShapeCanvas activityId="test-123" />);
+    renderWithStreamHover(<RunShapeCanvas activityId="test-123" />);
 
     const tracePace = screen.getByTestId('trace-pace');
     // Gradient is now pace-based, so it renders even when effort is zero
@@ -108,7 +109,7 @@ describe('Tier A: Effort-colored pace line', () => {
       refetch: jest.fn(),
     } as any);
 
-    render(<RunShapeCanvas activityId="test-123" />);
+    renderWithStreamHover(<RunShapeCanvas activityId="test-123" />);
 
     const tracePace = screen.getByTestId('trace-pace');
     expect(tracePace).toHaveAttribute('data-stroke-type', 'fallback');
@@ -126,7 +127,7 @@ describe('Tier A: Effort-colored pace line', () => {
       refetch: jest.fn(),
     } as any);
 
-    render(<RunShapeCanvas activityId="test-123" />);
+    renderWithStreamHover(<RunShapeCanvas activityId="test-123" />);
 
     const tracePace = screen.getByTestId('trace-pace');
     expect(tracePace).toHaveAttribute('data-fallback-color', '#94a3b8');

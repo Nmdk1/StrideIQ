@@ -3,6 +3,7 @@ from uuid import uuid4
 from unittest.mock import MagicMock, patch, AsyncMock
 
 from services.ai_coach import AICoach
+from services.coaching._constants import count_hedge_phrases, _check_response_quality
 
 
 def _coach_stub() -> AICoach:
@@ -74,8 +75,122 @@ def test_pace_relation_faster_direction():
     assert "quicker than marathon rhythm" in out
 
 
+def test_chat_normalizer_removes_markdown_section_bold_from_main_prose():
+    coach = _coach_stub()
+    coach._UUID_RE = AICoach._UUID_RE
+    coach._user_explicitly_requested_ids = AICoach._user_explicitly_requested_ids.__get__(coach, AICoach)
+    normalize = AICoach._normalize_response_for_ui.__get__(coach, AICoach)
+
+    raw = (
+        "**Bicarb:** Take it 60-90 minutes before the gun.\n\n"
+        "**Warmup:** Jog 12 minutes, drills, then strides.\n\n"
+        "**Mile by mile:** Open controlled, press, then commit."
+    )
+    out = normalize(user_message="Race plan?", assistant_message=raw)
+
+    assert "**" not in out
+    assert "Bicarb: Take it 60-90 minutes" in out
+    assert "Warmup: Jog 12 minutes" in out
+    assert "Mile by mile: Open controlled" in out
+
+
+def test_chat_normalizer_replaces_fragile_unicode_punctuation():
+    coach = _coach_stub()
+    coach._UUID_RE = AICoach._UUID_RE
+    coach._user_explicitly_requested_ids = AICoach._user_explicitly_requested_ids.__get__(coach, AICoach)
+    normalize = AICoach._normalize_response_for_ui.__get__(coach, AICoach)
+
+    raw = "Stay mechanical — cadence, posture, arms. If it’s first-use, don’t force it. Bad decode: �??"
+    out = normalize(user_message="Race plan?", assistant_message=raw)
+
+    assert "—" not in out
+    assert "’" not in out
+    assert "�" not in out
+    assert "Stay mechanical - cadence" in out
+    assert "it's first-use" in out
+
+
 def test_system_instructions_include_conversational_aia_requirement():
     assert "Conversational A->I->A requirement" in AICoach.SYSTEM_INSTRUCTIONS
+
+
+def test_static_system_instructions_do_not_overtrust_pace_model():
+    assert "trust it over any other data" not in AICoach.SYSTEM_INSTRUCTIONS
+    assert "actual race or workout evidence contradicts" in AICoach.SYSTEM_INSTRUCTIONS
+
+
+def test_phase7_prompt_distinguishes_general_knowledge_from_athlete_facts():
+    coach = _coach_stub()
+    coach.db = MagicMock()
+    prompt = AICoach._build_coach_system_prompt(coach, uuid4())
+
+    assert "Every number, distance, pace, date, and training fact ABOUT THIS ATHLETE" in prompt
+    assert "GENERAL KNOWLEDGE RULE" in prompt
+    assert "standard sports science" in prompt.lower()
+    assert "I don't have that data" not in prompt
+    assert "I don't have that in your history" in prompt
+
+
+def test_phase7_prompt_replaces_forced_weekly_volume_mandate():
+    coach = _coach_stub()
+    coach.db = MagicMock()
+    prompt = AICoach._build_coach_system_prompt(coach, uuid4())
+
+    assert "YOU HAVE TOOLS -- USE THEM WHEN RELEVANT" in prompt
+    assert "ALWAYS call get_weekly_volume first" not in prompt
+    assert "get_training_block_narrative" in prompt
+    assert "do NOT call tools for questions that don't need athlete data" in prompt
+
+
+def test_phase7_prompt_contains_direct_voice_race_day_and_zone_discrepancy_rules():
+    coach = _coach_stub()
+    coach.db = MagicMock()
+    prompt = AICoach._build_coach_system_prompt(coach, uuid4())
+
+    assert "VOICE DIRECTIVE" in prompt
+    assert "Lead with your position" in prompt
+    assert "Race day is execution mode" in prompt
+    assert "Timeline:" in prompt
+    assert "Warmup:" in prompt
+    assert "Mile by mile:" in prompt
+    assert "Cue:" in prompt
+    assert "ZONE / WORKOUT EVIDENCE DISCREPANCY" in prompt
+    assert "reason from what the athlete actually ran" in prompt
+
+
+def test_phase8_prompt_escalates_structured_workout_lookup_to_streams():
+    coach = _coach_stub()
+    coach.db = MagicMock()
+    prompt = AICoach._build_coach_system_prompt(coach, uuid4())
+
+    assert "search_activities" in prompt
+    assert "rep/split proof" in prompt
+    assert "analyze_run_streams or get_mile_splits" in prompt
+    assert "claim is unverified" in prompt
+
+
+def test_hedge_phrase_counter_flags_overqualified_responses():
+    text = (
+        "That said, it's worth noting this is still aggressive. "
+        "I would suggest considering caution."
+    )
+
+    assert count_hedge_phrases(text) >= 3
+    with patch("services.coaching._constants.logger.warning") as warning:
+        _check_response_quality(text, "test-model", "athlete-1")
+
+    warning.assert_called()
+    assert "hedge_overload" in warning.call_args.args[3]
+
+
+def test_kimi_tool_choice_is_auto_for_general_knowledge_questions():
+    coach = _coach_stub()
+    helper = AICoach._requires_first_tool_call.__get__(coach, AICoach)
+
+    assert helper("What is the standard Maurten bicarb timing protocol?") is False
+    assert helper("How should I warm up for a hard 5K in general?") is False
+    assert helper("Give me a race strategy for my 5K this morning.") is True
+    assert helper("That 16 x 400 workout was on March 28th.") is True
 
 
 # ---------------------------------------------------------------------------
@@ -107,23 +222,23 @@ def _build_chat_coach() -> AICoach:
     coach._save_chat_messages = MagicMock()
     coach.get_or_create_thread_with_state = MagicMock(return_value=("thread-1", False))
     coach.get_thread_history = MagicMock(return_value={"messages": []})
-    coach.get_model_for_query = MagicMock(return_value=(AICoach.MODEL_DEFAULT, "low"))
+    coach.get_model_for_query = MagicMock(return_value=(AICoach.MODEL_HIGH_STAKES, True))
     coach.is_high_stakes_query = MagicMock(return_value=False)
+    coach._build_athlete_state_for_opus = MagicMock(return_value="state")
     # _user_explicitly_requested_ids is needed by _normalize_response_for_ui
     coach._user_explicitly_requested_ids = AICoach._user_explicitly_requested_ids.__get__(coach, AICoach)
     coach._normalize_response_for_ui = AICoach._normalize_response_for_ui.__get__(coach, AICoach)
     return coach
 
 
-def test_chat_gemini_success_normalizes_response():
-    """Gemini success path must run _normalize_response_for_ui before returning.
+def test_chat_kimi_success_normalizes_response():
+    """Kimi success path must run _normalize_response_for_ui before returning.
 
     This proves the Coach Output Contract v1 normalization is live for
     production chat responses (the critical gap fixed in this refactor).
     """
     coach = _build_chat_coach()
 
-    # Simulate Gemini returning a response with internal labels that should be stripped
     dirty_response = (
         "authoritative fact capsule\n"
         "response contract\n"
@@ -131,50 +246,42 @@ def test_chat_gemini_success_normalizes_response():
         "Recorded pace vs marathon pace: slower by 0:09/mi.\n"
         "You had a strong controlled session today. Keep tomorrow easy to protect recovery."
     )
-    gemini_future = AsyncMock(return_value={
+    coach._query_kimi_with_fallback = AsyncMock(return_value={
         "response": dirty_response,
         "error": False,
-        "is_high_stakes": False,
-        "input_tokens": 100,
-        "output_tokens": 50,
+        "model": "kimi-k2.6",
     })
-    coach.query_gemini = gemini_future
 
-    result = asyncio.get_event_loop().run_until_complete(
+    result = asyncio.run(
         coach.chat(athlete_id=uuid4(), message="How was my run today?")
     )
 
     assert not result.get("error"), f"Expected success, got error: {result}"
     response = result["response"]
 
-    # Internal labels must be stripped
     assert "authoritative fact capsule" not in response
     assert "response contract" not in response
     assert "Recorded pace vs marathon pace" not in response
 
-    # Coaching content must survive
     assert "strong controlled session" in response
     assert "recovery" in response
 
-    # Verify _save_chat_messages received the *normalized* text
     coach._save_chat_messages.assert_called_once()
     saved_text = coach._save_chat_messages.call_args[0][2]
     assert "authoritative fact capsule" not in saved_text
 
 
-def test_chat_gemini_failure_returns_fail_closed_when_no_opus_available():
-    """When Gemini fails and Anthropic is unavailable, chat() must fail closed."""
+def test_chat_kimi_failure_returns_error_without_saving_chat():
+    """When Kimi (and its Sonnet fallback) fails, chat() must fail closed."""
     coach = _build_chat_coach()
 
-    # Simulate Gemini returning an error
-    gemini_future = AsyncMock(return_value={
+    coach._query_kimi_with_fallback = AsyncMock(return_value={
         "response": "Coach is temporarily unavailable. Please try again in a moment.",
         "error": True,
-        "error_detail": "Gemini API quota exceeded",
+        "error_detail": "Kimi + Sonnet both failed",
     })
-    coach.query_gemini = gemini_future
 
-    result = asyncio.get_event_loop().run_until_complete(
+    result = asyncio.run(
         coach.chat(athlete_id=uuid4(), message="How is my training going?")
     )
 
@@ -183,68 +290,54 @@ def test_chat_gemini_failure_returns_fail_closed_when_no_opus_available():
     coach._save_chat_messages.assert_not_called()
 
 
-def test_chat_gemini_failure_falls_back_to_opus_when_available():
-    """When Gemini fails and Anthropic is configured, chat() should retry via Opus."""
+def test_chat_kimi_success_saves_model_name():
+    """Kimi success path must persist model name in _save_chat_messages call."""
     coach = _build_chat_coach()
-    coach.anthropic_client = MagicMock()  # enable Opus fallback branch
 
-    coach.query_gemini = AsyncMock(return_value={
-        "response": "Coach is temporarily unavailable. Please try again in a moment.",
-        "error": True,
-        "error_detail": "Gemini transient provider error",
-    })
-    coach.query_opus = AsyncMock(return_value={
-        "response": "You're carrying manageable fatigue but trend is stable. Keep tomorrow easy.",
+    coach._query_kimi_with_fallback = AsyncMock(return_value={
+        "response": "Manageable fatigue — keep tomorrow easy.",
         "error": False,
-        "model": AICoach.MODEL_HIGH_STAKES,
+        "model": "kimi-k2.6",
     })
-    coach._build_athlete_state_for_opus = MagicMock(return_value="mock-athlete-state")
 
-    result = asyncio.get_event_loop().run_until_complete(
+    result = asyncio.run(
         coach.chat(athlete_id=uuid4(), message="How is my training going?")
     )
 
     assert result.get("error") is False
-    assert "manageable fatigue" in result.get("response", "").lower()
-    coach.query_opus.assert_called_once()
     coach._save_chat_messages.assert_called_once()
-
-
-def test_chat_gemini_and_opus_failure_returns_error_without_saving_chat():
-    """If both providers fail, return error and do not persist assistant message."""
-    coach = _build_chat_coach()
-    coach.anthropic_client = MagicMock()  # enable Opus fallback branch
-
-    coach.query_gemini = AsyncMock(return_value={
-        "response": "Coach is temporarily unavailable. Please try again in a moment.",
-        "error": True,
-        "error_detail": "Gemini provider error",
-    })
-    coach.query_opus = AsyncMock(return_value={
-        "response": "I encountered an error processing your request. Please try again.",
-        "error": True,
-        "error_detail": "Opus provider error",
-    })
-    coach._build_athlete_state_for_opus = MagicMock(return_value="mock-athlete-state")
-
-    result = asyncio.get_event_loop().run_until_complete(
-        coach.chat(athlete_id=uuid4(), message="How is my training going?")
+    call_kwargs = coach._save_chat_messages.call_args
+    assert call_kwargs.kwargs.get("model") == "kimi-k2.6" or (
+        len(call_kwargs.args) > 3 and call_kwargs.args[3] == "kimi-k2.6"
     )
 
-    assert result.get("error") is True
-    coach.query_opus.assert_called_once()
-    coach._save_chat_messages.assert_not_called()
 
-
-def test_chat_no_gemini_client_returns_fail_closed():
-    """When gemini_client is None, chat() must fail closed immediately."""
+def test_turn_guard_retries_contract_failure_before_saving_response():
     coach = _build_chat_coach()
-    coach.gemini_client = None  # No Gemini available
-
-    result = asyncio.get_event_loop().run_until_complete(
-        coach.chat(athlete_id=uuid4(), message="How is my training going?")
+    coach.anthropic_client = object()
+    coach.query_opus = AsyncMock(
+        return_value={
+            "response": "Decision: postpone threshold. Tradeoff: fresher legs but one less hard stimulus. Default: move it 24 hours.",
+            "error": False,
+            "model": "claude-sonnet-4-6",
+        }
     )
 
-    assert result.get("error") is True
-    assert "not configured" in result["response"].lower() or "unavailable" in result["response"].lower()
-    assert "fallback_to_assistants" not in str(result)
+    long_unframed_response = " ".join(["You have options."] * 80)
+    coach._query_kimi_with_fallback = AsyncMock(
+        return_value={
+            "response": long_unframed_response,
+            "error": False,
+            "model": "kimi-k2.6",
+        }
+    )
+
+    result = asyncio.run(
+        coach.chat(athlete_id=uuid4(), message="Should I postpone threshold tomorrow?")
+    )
+
+    assert result.get("error") is False
+    assert "Decision:" in result["response"]
+    assert "Tradeoff:" in result["response"]
+    assert "Default:" in result["response"]
+    coach.query_opus.assert_awaited_once()

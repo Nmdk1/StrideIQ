@@ -51,7 +51,7 @@ non-negotiable. The depth scales with complexity.
 
 Before touching a single file, do a deep dive:
 - Read the relevant code — trace the full call chain
-- Read the knowledgebase (`_AI_CONTEXT_/KNOWLEDGE_BASE/`)
+- Read the knowledgebase (`docs/wiki/`, `docs/references/`)
 - Read the build plan (`docs/TRAINING_PLAN_REBUILD_PLAN.md`)
 - If the domain is unfamiliar, do external research (modern coaching
   science, competitor analysis, API documentation)
@@ -90,10 +90,35 @@ regression results.
 
 Pass → commit. Fail → fix and retest. No moving forward until green.
 
-### Phase 6: Commit + Deploy
+### Phase 6: Commit (local) + publish (founder-approved)
 
 Scoped commits only. Never `git add -A`. Show `git diff --name-only --cached`
-before committing. Push. Verify production is healthy.
+before committing. **Local commits are expected; `git push` to the remote is
+not.** Do not push to `origin` (or otherwise publish work to the shared
+repository) until the founder has **explicitly approved** that batch of
+commits for publication. The founder may use PRs, review, or a direct “push
+this” — until then, keep work local or on a branch they have not asked you
+to publish.
+
+When the founder has deployed, verify production health if they ask you to.
+
+---
+
+## Remote publish and permission scopes (binding)
+
+These rules apply to every agent and every session.
+
+1. **No remote push without approval.** Pushing to the canonical remote /
+   default branch (or opening a PR, if that is how the founder prefers to
+   gate CI) happens **only** after the founder approves that change set.
+   “Committed locally” does not mean “approved to land on Git.”
+
+2. **No new OAuth or API permission scopes without approval.** Do not
+   implement, request, merge, or deploy **new or widened** OAuth scopes,
+   third-party API permissions, or consent surfaces **without explicit
+   founder approval** for those exact permissions. Roadmaps and specs may
+   describe future scopes (e.g. Strava `activity:write`); **code and
+   production config wait for sign-off.**
 
 ---
 
@@ -300,6 +325,20 @@ Every session ends with:
 
 No exceptions. No "I'll clean it up next time."
 
+### 12. No Remote Push Without Founder Approval
+
+Do not `git push` to `origin` or otherwise publish commits to the shared
+remote until the founder has **explicitly approved** that batch for
+publication. Local commits and scoped branches are fine. See **Remote
+publish and permission scopes (binding)** above.
+
+### 13. No New OAuth or API Permission Scopes Without Founder Approval
+
+Do not add, widen, ship, or enable **new** OAuth scopes, API credentials
+with broader permissions, or new consent flows **without explicit
+founder approval** for those exact permissions. Specs may preview future
+scopes; implementation does not.
+
 ---
 
 ## Build Patterns The Founder Expects
@@ -345,8 +384,8 @@ Once scope is approved:
 6. **Run targeted tests** — the tests you wrote, plus related test files
 7. **Run full regression suite** — entire backend, verify no new failures
 8. **Show evidence** — paste output
-9. **Commit** — scoped, descriptive message
-10. **Deploy** if appropriate — exact commands, verify health
+9. **Commit** — scoped, descriptive message (local); **do not push** until the founder approves publication
+10. **Deploy / push** — only after founder approval; exact commands, verify health
 11. **Report** — files changed, tests added, test results, deploy status
 
 ### The Handoff Pattern
@@ -359,8 +398,8 @@ At the end of every major session:
 2. **Update the build plan** (`docs/TRAINING_PLAN_REBUILD_PLAN.md`) to
    reflect new status
 3. **Clean the tree** — no uncommitted changes
-4. **Push to production** — unless there's a reason not to
-5. **Verify production health** — containers, API, frontend, logs
+4. **Push to remote / production** — **only after founder approval** for that publish; if not approved, leave commits local or on a private branch per founder preference
+5. **Verify production health** — containers, API, frontend, logs (when deployed)
 
 ---
 
@@ -421,7 +460,7 @@ immediately.
    StrideIQ IS and what "done" looks like. "The chart makes you open the
    app. The intelligence makes you trust it. The voice makes you need it."
 2. **This document** — operating contract (how to work)
-3. **`docs/PRODUCT_STRATEGY_2026-03-03.md`** — the moat. 10 priority-ranked
+3. **`docs/PRODUCT_STRATEGY_2026-03-03.md`** — the moat. 16 priority-ranked
    product concepts: Pre-Race Fingerprint, Proactive Coach, Injury
    Fingerprint, Deep Backfill, Personal Operating Manual, and more. Every
    feature, every acquisition hook, every retention mechanism flows from
@@ -457,9 +496,9 @@ immediately.
 - **`services/n1_insight_generator.py`** — contains the Athlete Trust
   Safety Contract (8 clauses) and `OutputMetricMeta` registry. Read this
   before writing any coach output or metric interpretation.
-- **`_AI_CONTEXT_/KNOWLEDGE_BASE/`** — coaching philosophy, governing
-  principles, training hierarchy. Read before touching plan generation.
-- **`_AI_CONTEXT_/00_MANIFESTO.md`** — product manifesto. The "why."
+- **`docs/wiki/`** — system documentation, coaching philosophy, domain guides.
+  Read before touching plan generation.
+- **`docs/PRODUCT_MANIFESTO.md`** — product manifesto. The "why."
 
 ---
 

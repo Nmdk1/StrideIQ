@@ -26,10 +26,9 @@ This service looks at:
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import Optional, List, Tuple
+from typing import Optional, Tuple
 from uuid import UUID
 from sqlalchemy.orm import Session
-from datetime import datetime, timedelta
 import math
 
 from models import Activity, Athlete
@@ -59,6 +58,170 @@ def _matches_keyword(keyword: str, text: str) -> bool:
     # e.g., 'interval' matches 'interval' or 'intervals'
     pattern = r'\b' + re.escape(keyword_lower) + r's?\b'
     return bool(re.search(pattern, text_lower))
+
+
+_STRUCTURED_INTERVAL_DISTANCE_RE = re.compile(
+    r"\b(\d{1,2})\s*[x×]\s*(\d{2,4})\s*(m|meter|meters)?\b",
+    re.IGNORECASE,
+)
+_STRUCTURED_INTERVAL_TIME_RE = re.compile(
+    r"\b(\d{1,2})\s*[x×]\s*(\d{1,3})\s*(min|minute|minutes|sec|second|seconds|'|\")\b",
+    re.IGNORECASE,
+)
+_STRUCTURED_INTERVAL_MILE_RE = re.compile(
+    r"\b(\d{1,2})\s*[x×]\s*(\d+(?:\.\d+)?)\s*(mi|mile|miles)\b",
+    re.IGNORECASE,
+)
+
+
+def _parse_structured_interval(name: str):
+    """Parse a structured-interval name like '16 x 400', '6 x 5 minutes',
+    '4x1mi'.  Pick the workout type from the SEGMENT shape, not the diluted
+    overall pace/HR average.
+
+    Returns ``(workout_type, workout_zone, hr_zone, intensity_score, reasoning_suffix)``
+    or ``None`` if the name has no recognizable interval structure.
+
+    Why this exists: the previous classifier looked at average pace/HR for
+    the whole activity to bucket interval workouts.  For a 16x400 with a 3
+    mile warmup + 90s recoveries + cooldown, the AVERAGE intensity is
+    moderate, so the structure-blind classifier dropped the run into
+    FARTLEK every time.  An athlete naming their run '16 x 400 w 90 sec
+    rest' has told us the structure -- the classifier just has to listen.
+    """
+    if not name:
+        return None
+    n = name.lower()
+
+    # ---------- "N x DISTANCE_METERS" e.g. "16 x 400", "8x800m" ----------
+    m = _STRUCTURED_INTERVAL_DISTANCE_RE.search(n)
+    if m is not None:
+        # Avoid false-positives that look like dates/years (e.g. "2025") or
+        # pace strings ("8 x 1000" is fine; "9 x 13" is not a workout).
+        # We only accept distances that are plausible track/road repeats.
+        try:
+            reps = int(m.group(1))
+            dist_m = int(m.group(2))
+        except (TypeError, ValueError):
+            reps = dist_m = 0
+        unit = (m.group(3) or "").lower()
+        # Treat bare "200/400/600/800/1000/1200/1600/2000" as meters; smaller
+        # values without an 'm' suffix are ambiguous so we require the unit.
+        meters_only_set = {200, 300, 400, 500, 600, 800, 1000, 1200, 1500, 1600, 2000}
+        valid = (
+            reps >= 2
+            and (
+                dist_m in meters_only_set
+                or (unit and dist_m >= 100)
+            )
+        )
+        if valid:
+            if dist_m <= 800:
+                return (
+                    WorkoutType.VO2MAX_INTERVALS,
+                    WorkoutZone.SPEED,
+                    4,
+                    85.0,
+                    f"structured VO2max intervals ({reps} x {dist_m}m)",
+                )
+            if dist_m <= 1600:
+                return (
+                    WorkoutType.VO2MAX_INTERVALS,
+                    WorkoutZone.SPEED,
+                    4,
+                    82.0,
+                    f"structured intervals ({reps} x {dist_m}m)",
+                )
+            return (
+                WorkoutType.CRUISE_INTERVALS,
+                WorkoutZone.STAMINA,
+                4,
+                75.0,
+                f"structured cruise intervals ({reps} x {dist_m}m)",
+            )
+
+    # ---------- "N x MILES" e.g. "5 x 1mi", "4 x 2 miles" ----------
+    m = _STRUCTURED_INTERVAL_MILE_RE.search(n)
+    if m is not None:
+        try:
+            reps = int(m.group(1))
+            dist_mi = float(m.group(2))
+        except (TypeError, ValueError):
+            reps = 0
+            dist_mi = 0.0
+        if reps >= 2 and dist_mi >= 0.25:
+            if dist_mi < 1.0:
+                wt = WorkoutType.VO2MAX_INTERVALS
+                zone = WorkoutZone.SPEED
+                intensity = 85.0
+            elif dist_mi <= 1.5:
+                wt = WorkoutType.VO2MAX_INTERVALS
+                zone = WorkoutZone.SPEED
+                intensity = 82.0
+            else:
+                wt = WorkoutType.CRUISE_INTERVALS
+                zone = WorkoutZone.STAMINA
+                intensity = 75.0
+            return (
+                wt,
+                zone,
+                4,
+                intensity,
+                f"structured intervals ({reps} x {dist_mi:g} mi)",
+            )
+
+    # ---------- "N x DURATION" e.g. "6 x 5 minutes", "10 x 30 sec" ----------
+    m = _STRUCTURED_INTERVAL_TIME_RE.search(n)
+    if m is not None:
+        try:
+            reps = int(m.group(1))
+            qty = int(m.group(2))
+        except (TypeError, ValueError):
+            reps = qty = 0
+        unit = m.group(3).lower()
+        # Normalize to seconds.
+        if unit.startswith(("sec", "second", '"')):
+            seconds = qty
+        elif unit in ("'",) or unit.startswith(("min", "minute")):
+            seconds = qty * 60
+        else:
+            seconds = 0
+        if reps >= 2 and seconds > 0:
+            # Tier by the duration of one work segment.
+            if seconds <= 90:
+                return (
+                    WorkoutType.VO2MAX_INTERVALS,
+                    WorkoutZone.SPEED,
+                    4,
+                    85.0,
+                    f"short VO2max intervals ({reps} x {seconds}s)",
+                )
+            if seconds < 240:  # < 4 min ~ 800m-1200m repeats
+                return (
+                    WorkoutType.VO2MAX_INTERVALS,
+                    WorkoutZone.SPEED,
+                    4,
+                    82.0,
+                    f"VO2max intervals ({reps} x {qty} {unit})",
+                )
+            if seconds <= 720:  # 4-12 min — classic cruise / threshold intervals
+                return (
+                    WorkoutType.CRUISE_INTERVALS,
+                    WorkoutZone.STAMINA,
+                    4,
+                    75.0,
+                    f"cruise intervals ({reps} x {qty} {unit})",
+                )
+            # > 12 min repeats are long threshold blocks, not intervals.
+            return (
+                WorkoutType.THRESHOLD_RUN,
+                WorkoutZone.STAMINA,
+                4,
+                75.0,
+                f"long threshold blocks ({reps} x {qty} {unit})",
+            )
+
+    return None
 
 
 def _has_negation_context(keyword: str, text: str) -> bool:
@@ -159,6 +322,9 @@ class WorkoutType(str, Enum):
     PROGRESSION_RUN = "progression_run"
     FAST_FINISH_LONG = "fast_finish_long_run"
     NEGATIVE_SPLIT_RUN = "negative_split_run"
+
+    # Zone 8: Purpose-specific (effort determined by HR, not name)
+    PACING = "pacing"
 
     # Unknown
     UNCLASSIFIED = "unclassified"
@@ -378,6 +544,22 @@ class WorkoutClassifierService:
         # Keywords mapped to workout types
         # Order matters - more specific patterns first
 
+        # Pacing (before race detection — "pacing at the marathon" is NOT a race)
+        pacing_keywords = ['pacer', 'pacing']
+        if any(_matches_keyword(kw, name) and not _has_negation_context(kw, name)
+               for kw in pacing_keywords):
+            return WorkoutClassification(
+                workout_type=WorkoutType.PACING,
+                workout_zone=WorkoutZone.ENDURANCE,
+                confidence=0.85,
+                reasoning=f"Name indicates pacing duty: '{activity.name}'",
+                detected_intervals=False,
+                detected_progression=False,
+                avg_hr_zone=None,
+                intensity_score=50.0,
+                expected_rpe_range=None,
+            )
+
         # Race indicators (strongest signal)
         race_keywords = ['race', 'marathon', '5k', '10k', 'half marathon', 'pr ', 'personal best',
                         'time trial', 'tt ', 'pb ', 'new record']
@@ -417,13 +599,33 @@ class WorkoutClassifierService:
                 expected_rpe_range=self.get_expected_rpe(wt, duration_min, is_intervals=is_intervals)
             )
 
+        # Structured interval patterns: "16 x 400", "6 x 5 minutes", "8x800m".
+        # Athletes write structure into names constantly; not catching this is
+        # what made every "16 x 400 w 90 sec rest" run drop into FARTLEK.
+        # Pick the workout type from the SEGMENT shape, not the diluted overall
+        # average pace/HR (which is wrecked by warmup + recoveries + cooldown).
+        structured = _parse_structured_interval(name)
+        if structured is not None:
+            wt, zone, hr_zone, intensity, reasoning_suffix = structured
+            return WorkoutClassification(
+                workout_type=wt,
+                workout_zone=zone,
+                confidence=0.90,
+                reasoning=f"Name indicates {reasoning_suffix}: '{activity.name}'",
+                detected_intervals=True,
+                detected_progression=False,
+                avg_hr_zone=hr_zone,
+                intensity_score=intensity,
+                expected_rpe_range=self.get_expected_rpe(wt, duration_min, is_intervals=True),
+            )
+
         # Intervals/Speed work
         # Removed 'workout' and 'speed' as they're too generic (false positives)
         # 'workout' could match "easy workout", "recovery workout"
         # 'speed' could match "speed bump road" or similar
-        interval_keywords = ['interval', 'repeat', 'vo2', 'vo2max', 'track workout',
-                            '400s', '800s', '1000s', '1200s', 'mile repeat', 'yasso',
-                            'speed work', 'speed session']
+        interval_keywords = ['interval', 'repeat', 'repeats', 'vo2', 'vo2max', 'track workout',
+                            '400s', '800s', '1000s', '1200s', 'mile repeat', 'mile repeats',
+                            'yasso', 'yassos', 'speed work', 'speed session']
         # Check for keyword match AND ensure no negation context
         if any(_matches_keyword(kw, name) and not _has_negation_context(kw, name)
                for kw in interval_keywords):
@@ -917,23 +1119,58 @@ class WorkoutClassifierService:
         num_intervals: int = 0,
         avg_interval_duration: float = 0.0
     ) -> WorkoutClassification:
-        """Classify an interval workout"""
+        """Classify an interval workout.
+
+        IMPORTANT: prefer the SEGMENT structure (length of one work bout)
+        over the diluted whole-activity average pace/HR.  A 16x400 with
+        a 3-mile warmup, 90s recoveries, and a cooldown averages a
+        moderate intensity even though the work is hard -- the previous
+        version of this method used overall intensity to bucket and
+        dropped every such workout into FARTLEK.  Athletes call that
+        kind of misclassification "the system can't tell what I'm
+        doing" and the Compare tab compounds the problem because tiers
+        3 and 4 group on workout_type.
+        """
         duration_min = (activity.duration_s or 0) / 60
 
-        # Based on intensity and interval structure, classify type
-        if intensity_score > 85:
+        # ---- 1. Prefer segment-shape buckets when we know the structure ----
+        if avg_interval_duration > 0:
+            seg_seconds = avg_interval_duration * 60
+            if seg_seconds <= 90:
+                # 200-400m repeats: textbook VO2max work.
+                workout_type = WorkoutType.VO2MAX_INTERVALS
+                zone = WorkoutZone.SPEED
+            elif seg_seconds < 240:
+                # 400-1200m: still VO2max even if the average dilutes the score.
+                workout_type = WorkoutType.VO2MAX_INTERVALS
+                zone = WorkoutZone.SPEED
+            elif seg_seconds <= 720:
+                # 4-12 min: cruise/threshold intervals.
+                workout_type = WorkoutType.CRUISE_INTERVALS
+                zone = WorkoutZone.STAMINA
+            else:
+                # Long blocks: treat as continuous threshold work, not intervals.
+                workout_type = WorkoutType.THRESHOLD_RUN
+                zone = WorkoutZone.STAMINA
+        # ---- 2. No segment data available: fall back to intensity buckets ----
+        elif intensity_score > 85:
             workout_type = WorkoutType.VO2MAX_INTERVALS
             zone = WorkoutZone.SPEED
         elif intensity_score > 70:
             workout_type = WorkoutType.TEMPO_INTERVALS
             zone = WorkoutZone.STAMINA
         else:
+            # Unstructured speed play with no segment data -- the only
+            # path that should land in FARTLEK.
             workout_type = WorkoutType.FARTLEK
             zone = WorkoutZone.MIXED
 
         # Build reasoning with structure info
         if num_intervals > 0 and avg_interval_duration > 0:
-            reasoning = f"Interval pattern detected: ~{num_intervals} × {avg_interval_duration:.1f} min"
+            reasoning = (
+                f"Interval pattern detected: ~{num_intervals} × "
+                f"{avg_interval_duration:.1f} min ({workout_type.value})"
+            )
         else:
             reasoning = f"Interval pattern detected, intensity {intensity_score:.0f}%"
 

@@ -13,7 +13,7 @@ Produces exceptional, personalized plans from N=1 data.
 
 from dataclasses import dataclass, field
 from datetime import date, timedelta
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Any
 from uuid import UUID
 import logging
 
@@ -26,18 +26,93 @@ from services.fitness_bank import (
     ExperienceLevel
 )
 from services.week_theme_generator import (
-    WeekThemeGenerator, 
-    WeekTheme, 
-    WeekThemePlan,
-    generate_week_themes
+    WeekTheme,
+    WeekThemePlan
 )
 from services.workout_prescription import (
     WorkoutPrescriptionGenerator,
     WeekPlan,
     DayPlan
 )
+from services.plan_framework.fingerprint_bridge import build_fingerprint_params
+from services.plan_framework.load_context import build_load_context, history_anchor_date
+from services.plan_framework.n1_engine import generate_n1_plan
+from services.race_signal_contract import normalize_distance_alias
+from services.rpi_calculator import calculate_rpi_from_race_time
+
+_DISTANCE_METERS = {
+    "5k": 5000,
+    "10k": 10000,
+    "half_marathon": 21097.5,
+    "marathon": 42195,
+}
 
 logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Module-level helpers for GeneratedWorkout → WeekPlan conversion (T3)
+# ---------------------------------------------------------------------------
+
+_INTENSITY_MAP: Dict[str, str] = {
+    "easy": "easy",
+    "recovery": "easy",
+    "rest": "rest",
+    "easy_strides": "easy",
+    "long": "easy",
+    "long_run": "easy",
+    "easy_long": "easy",
+    "long_mp": "moderate",
+    "long_hmp": "moderate",
+    "medium_long": "easy",
+    "medium_long_mp": "moderate",
+    "quality": "hard",
+    "threshold": "threshold",
+    "threshold_intervals": "threshold",
+    "threshold_continuous": "threshold",
+    "intervals": "hard",
+    "vo2max": "hard",
+    "strides": "easy",
+    "hills": "hard",
+}
+
+
+def _workout_intensity(workout_type: Optional[str]) -> str:
+    return _INTENSITY_MAP.get(workout_type or "rest", "easy")
+
+
+def _workouts_to_week_plan(
+    workouts: List[Any],
+    week_num: int,
+    phase: Any,
+    week_start: date,
+    is_cutback: bool = False,
+) -> WeekPlan:
+    """Convert List[GeneratedWorkout] → WeekPlan.
+
+    T3-3: sets ``theme`` to the phase name (a plain string) instead of a
+    ``WeekTheme`` enum value, eliminating ``[?]`` display in clients.
+    """
+    days = []
+    for wo in workouts:
+        days.append(DayPlan(
+            day_of_week=wo.day,
+            workout_type=wo.workout_type or "rest",
+            name=wo.title or wo.workout_type or "",
+            description=wo.description or "",
+            target_miles=float(wo.distance_miles or 0),
+            intensity=_workout_intensity(wo.workout_type),
+            paces={"default": wo.pace_description} if wo.pace_description else {},
+            notes=[],
+        ))
+    total = sum(d.target_miles for d in days)
+    return WeekPlan(
+        week_number=week_num,
+        theme=phase.phase_type.value,  # T3-3: phase_type string (e.g. "race_specific")
+        start_date=week_start,
+        days=days,
+        total_miles=round(total, 1),
+        is_cutback=is_cutback,
+    )
 
 
 @dataclass
@@ -52,6 +127,11 @@ class ConstraintAwarePlan:
     # Race info
     race_date: date
     race_distance: str
+
+    @property
+    def distance(self) -> str:
+        """Alias for race_distance — satisfies PlanValidator interface."""
+        return self.race_distance
     tune_up_races: List[Dict]
     
     # Fitness Bank data
@@ -68,6 +148,12 @@ class ConstraintAwarePlan:
     # Predicted outcomes
     predicted_time: Optional[str]
     prediction_ci: Optional[str]
+    prediction_scenarios: Dict[str, Dict[str, str]]
+    prediction_rationale_tags: List[str]
+    prediction_uncertainty_reason: Optional[str]
+    volume_contract: Dict[str, Any] = field(default_factory=dict)
+    quality_gate_fallback: bool = False
+    quality_gate_reasons: List[str] = field(default_factory=list)
     
     def to_dict(self) -> Dict:
         return {
@@ -86,8 +172,14 @@ class ConstraintAwarePlan:
             "insights": self.counter_conventional_notes,
             "prediction": {
                 "time": self.predicted_time,
-                "ci": self.prediction_ci
-            }
+                "ci": self.prediction_ci,
+                "uncertainty_reason": self.prediction_uncertainty_reason,
+                "rationale_tags": self.prediction_rationale_tags,
+                "scenarios": self.prediction_scenarios,
+            },
+            "volume_contract": self.volume_contract,
+            "quality_gate_fallback": self.quality_gate_fallback,
+            "quality_gate_reasons": self.quality_gate_reasons,
         }
 
 
@@ -105,82 +197,276 @@ class ConstraintAwarePlanner:
     
     def __init__(self, db: Session):
         self.db = db
-        self.theme_generator = WeekThemeGenerator()
     
     def generate_plan(self,
                      athlete_id: UUID,
                      race_date: date,
                      race_distance: str,
                      goal_time: Optional[str] = None,
-                     tune_up_races: Optional[List[Dict]] = None) -> ConstraintAwarePlan:
+                     tune_up_races: Optional[List[Dict]] = None,
+                     target_peak_weekly_miles: Optional[float] = None,
+                     target_peak_weekly_range: Optional[Dict[str, float]] = None,
+                     quality_gate_fallback: bool = False,
+                     quality_gate_reasons: Optional[List[str]] = None,
+                     taper_weeks: Optional[int] = None) -> ConstraintAwarePlan:
         """
         Generate a complete constraint-aware plan.
         """
         logger.info(f"Generating constraint-aware plan for athlete {athlete_id}")
+        race_distance = normalize_distance_alias(race_distance)
         
+        # 0. Read intake context — the athlete's self-reported profile.
+        # For beginners this IS the primary data source.
+        # For experienced athletes it supplements the fingerprint.
+        intake = None
+        try:
+            if self.db is not None:
+                from services.intake_context import get_intake_context, PainFlag
+                intake = get_intake_context(athlete_id, self.db)
+                if intake.age is not None:
+                    logger.info(f"Intake context: age={intake.age}, experience={intake.running_experience}, "
+                               f"policy={intake.policy_stance.value}, pain={intake.pain_flag.value}")
+        except Exception as ex:
+            logger.warning("intake_context unavailable, continuing without: %s", ex)
+
         # 1. Get Fitness Bank
         bank = get_fitness_bank(athlete_id, self.db)
+
+        # Overlay intake self-reports onto bank for cold-start athletes.
+        # If bank has zeros (no synced history) but intake has self-reported data,
+        # use intake as the seed — it's the only data we have.
+        if intake is not None:
+            if bank.current_long_run_miles == 0 and intake.current_longest_run_miles:
+                bank.current_long_run_miles = intake.current_longest_run_miles
+                bank.average_long_run_miles = intake.current_longest_run_miles
+            if bank.current_weekly_miles == 0 and intake.current_runs_per_week and intake.current_longest_run_miles:
+                bank.current_weekly_miles = intake.current_runs_per_week * intake.current_longest_run_miles * 0.7
+
+            # Pain flag from intake overrides automatic constraint detection.
+            # The athlete told us they're in pain — that takes precedence over
+            # volume-drop heuristics.
+            if intake.pain_flag == PainFlag.PAIN and bank.constraint_type == ConstraintType.NONE:
+                bank.constraint_type = ConstraintType.INJURY
+                bank.constraint_details = f"self-reported pain: {intake.injury_context or 'unspecified'}"
+                bank.is_returning_from_break = True
+            elif intake.pain_flag == PainFlag.NIGGLE and bank.constraint_type == ConstraintType.NONE:
+                bank.constraint_details = f"self-reported niggle: {intake.injury_context or 'unspecified'}"
+
         logger.info(f"Fitness Bank: peak={bank.peak_weekly_miles:.0f}mpw, "
                    f"current={bank.current_weekly_miles:.0f}mpw, "
                    f"constraint={bank.constraint_type.value}")
-        
-        # 2. Generate week themes
-        themes = self.theme_generator.generate(
+        rationale_tags: List[str] = []
+        volume_contract = self._build_volume_contract(
             bank=bank,
-            race_date=race_date,
             race_distance=race_distance,
-            tune_up_races=tune_up_races
+            target_peak_weekly_miles=target_peak_weekly_miles,
+            target_peak_weekly_range=target_peak_weekly_range,
         )
-        
-        if not themes:
-            logger.warning("No themes generated - race date too soon?")
-            return self._generate_minimal_plan(bank, race_date, race_distance)
-        
-        # 3. Apply constraint overrides
-        themes = self._apply_constraint_overrides(themes, bank, tune_up_races)
-        
-        # 4. Fill workouts for each week
-        workout_generator = WorkoutPrescriptionGenerator(bank, race_distance=race_distance)
-        weeks = []
-        
-        for theme_plan in themes:
-            target_miles = theme_plan.target_volume_pct * bank.peak_weekly_miles
-            
-            # Only clamp early weeks if injury return - allow progression to peak
-            if bank.constraint_type == ConstraintType.INJURY and theme_plan.week_number <= 4:
-                max_weekly = self._calculate_safe_weekly(
-                    bank.current_weekly_miles,
-                    theme_plan.week_number,
-                    bank.tau1,
-                    bank.peak_weekly_miles
+        if volume_contract.get("source") == "trusted_recent_band":
+            rationale_tags.append("untrusted_peak_suppressed")
+
+        # Optional P5 bridge: bring the same L30/D4 context used in semi-custom
+        # into constraint-aware generation so experienced athletes get a sane week-1
+        # easy-long seed and history override behavior.
+        load_ctx = None
+        try:
+            if self.db is not None:
+                try:
+                    reference_date = history_anchor_date(None, self.db, athlete_id)
+                except Exception:
+                    reference_date = date.today()
+                load_ctx = build_load_context(
+                    athlete_id,
+                    self.db,
+                    reference_date,
                 )
-                target_miles = min(target_miles, max_weekly)
-            
-            week_plan = workout_generator.generate_week(
-                theme=theme_plan.theme,
-                week_number=theme_plan.week_number,
-                total_weeks=len(themes),
-                target_miles=target_miles,
-                start_date=theme_plan.start_date
-            )
-            
-            # Add theme notes to week
-            week_plan.notes.extend(theme_plan.notes)
-            
-            weeks.append(week_plan)
+                if load_ctx.history_override_easy_long:
+                    rationale_tags.append("d4_history_override")
+        except Exception as ex:
+            logger.warning("constraint-aware load_context unavailable, continuing with fitness-bank only: %s", ex)
         
-        # 5. Insert tune-up race specifics
+        # 2. Determine plan parameters from fitness bank
+        horizon_weeks = max(4, (race_date - date.today()).days // 7)
+        is_abbreviated = horizon_weeks <= 5
+        _applied_peak = volume_contract.get("applied_peak") or bank.current_weekly_miles
+
+        starting_vol = max(
+            bank.current_weekly_miles,
+            bank.recent_8w_median_weekly_miles or 0.0,
+            bank.last_complete_week_miles or 0.0,
+        )
+
+        # Days per week: intake questionnaire is the authority when available.
+        if intake and intake.days_per_week:
+            days_per_week = max(3, min(6, intake.days_per_week))
+        else:
+            days_per_week = max(3, min(6, 7 - len(bank.typical_rest_days or [])))
+
+        # Abbreviated plan volume: guarantee at least 1 mile per running
+        # session of build room.  The volume contract's 10K/5K cap may
+        # have shrunk applied_peak below starting_vol + dpw — override it.
+        if is_abbreviated:
+            safe_increase = days_per_week
+            min_peak = starting_vol + safe_increase
+            _applied_peak = max(_applied_peak, min_peak)
+            if _applied_peak > bank.peak_weekly_miles:
+                _applied_peak = min(bank.peak_weekly_miles, min_peak)
+            volume_contract["applied_peak"] = round(_applied_peak, 1)
+            volume_contract["band_max"] = round(_applied_peak, 1)
+        if starting_vol != bank.current_weekly_miles:
+            logger.info(
+                "Starting volume adjusted: bank.current=%.1f -> %.1f "
+                "(8w_median=%.1f, last_complete_week=%.1f, abbreviated=%s)",
+                bank.current_weekly_miles, starting_vol,
+                bank.recent_8w_median_weekly_miles or 0.0,
+                bank.last_complete_week_miles or 0.0,
+                is_abbreviated,
+            )
+
+        # Current long run: use the best available from L30, bank, or load context
+        l30_from_ctx = (load_ctx.l30_max_easy_long_mi if load_ctx is not None else None) or 0.0
+        bank_known_lr = float(
+            getattr(bank, "current_long_run_miles", None)
+            or getattr(bank, "average_long_run_miles", None)
+            or 0.0
+        )
+        _current_lr = max(l30_from_ctx, bank_known_lr) or (starting_vol / max(1, days_per_week) * 1.5)
+
+        # Plan start: normalise to Monday
+        raw_start = race_date - timedelta(weeks=horizon_weeks)
+        plan_start = raw_start - timedelta(days=raw_start.weekday())
+        horizon_weeks = max(4, -(-((race_date - plan_start).days) // 7))
+
+        # Compute personal long-run floor from the athlete's proven history
+        # so the engine doesn't start below their established capability.
+        from services.plan_quality_gate import _compute_personal_long_run_floor
+        personal_lr_floor = _compute_personal_long_run_floor(
+            bank.to_dict(), race_distance=race_distance,
+        )
+
+        # 2b. Build fingerprint params — bridge between correlation engine
+        # and plan engine.  Drives cutback frequency, quality spacing, and
+        # limiter-based session selection from N=1 data.
+        fp_params = None
+        try:
+            if self.db is not None:
+                fp_params = build_fingerprint_params(athlete_id, self.db)
+                if fp_params.source == "fingerprint":
+                    rationale_tags.append("fingerprint_driven")
+                    logger.info(
+                        "Fingerprint bridge: cutback=%d spacing=%dh limiter=%s tss=%s",
+                        fp_params.cutback_frequency, fp_params.quality_spacing_min_hours,
+                        fp_params.limiter, fp_params.tss_sensitivity,
+                    )
+        except Exception as ex:
+            logger.warning("Fingerprint bridge unavailable, using defaults: %s", ex)
+
+        # 3. Derive RPI: proven race > goal-time > race anchors > PBs > none.
+        _best_rpi = bank.best_rpi
+        if (not _best_rpi or _best_rpi <= 0) and goal_time:
+            dist_m = _DISTANCE_METERS.get(race_distance)
+            goal_secs = self._parse_goal_seconds(goal_time)
+            if dist_m and goal_secs and goal_secs > 0:
+                _best_rpi = calculate_rpi_from_race_time(dist_m, goal_secs)
+                if _best_rpi:
+                    logger.info(
+                        "RPI derived from goal time: %s in %s -> RPI=%.1f",
+                        race_distance, goal_time, _best_rpi,
+                    )
+
+        if (not _best_rpi or _best_rpi <= 0) and self.db is not None:
+            _best_rpi = self._rpi_from_anchors_or_pbs(athlete_id, self.db)
+            if _best_rpi and _best_rpi > 0:
+                logger.info("RPI recovered from race anchors/PBs: %.1f", _best_rpi)
+
+        weeks = generate_n1_plan(
+            race_distance=race_distance,
+            race_date=race_date,
+            plan_start=plan_start,
+            horizon_weeks=horizon_weeks,
+            days_per_week=days_per_week,
+            starting_vol=starting_vol,
+            current_lr=_current_lr,
+            applied_peak=_applied_peak,
+            experience=bank.experience_level,
+            best_rpi=_best_rpi,
+            weeks_since_peak=bank.weeks_since_peak,
+            goal_time=goal_time,
+            personal_lr_floor=personal_lr_floor,
+            taper_weeks=taper_weeks,
+            fingerprint=fp_params,
+            # Lifetime long-run signal lets the readiness gate see ultra
+            # runners whose recent 4-week training-LR window filtered
+            # out their >24mi sessions as suspected races.
+            peak_long_run_miles=float(getattr(bank, "peak_long_run_miles", 0.0) or 0.0),
+            long_run_capability_proven=bool(
+                getattr(bank, "long_run_capability_proven", False)
+            ),
+        )
+
+        # 5. Inject race day with pre-race and post-race handling.
+        if weeks:
+            last_week = weeks[-1]
+            race_day_of_week = race_date.weekday()
+            race_day = DayPlan(
+                day_of_week=race_day_of_week,
+                workout_type="race",
+                name=f"Race Day — {race_distance.replace('_', ' ').title()}",
+                description="Goal race. Warm up well, execute your plan.",
+                target_miles=0.0,
+                intensity="race",
+                paces={},
+                notes=[],
+            )
+
+            pre_race_dow = (race_day_of_week - 1) % 7
+            pre_race_day = DayPlan(
+                day_of_week=pre_race_dow,
+                workout_type="pre_race",
+                name="Pre-race shakeout",
+                description="3-4mi easy + 4x100m strides. Stay loose, save your legs.",
+                target_miles=4.0,
+                intensity="easy",
+                paces={},
+                notes=["Keep it short and relaxed"],
+            )
+
+            post_race_dow = (race_day_of_week + 1) % 7
+            post_race_day = DayPlan(
+                day_of_week=post_race_dow,
+                workout_type="rest",
+                name="Post-race recovery",
+                description="Complete rest. You earned it.",
+                target_miles=0.0,
+                intensity="rest",
+                paces={},
+                notes=[],
+            )
+
+            override_dows = {race_day_of_week, pre_race_dow, post_race_dow}
+            existing = [d for d in last_week.days if d.day_of_week not in override_dows]
+            last_week.days = sorted(
+                existing + [pre_race_day, race_day, post_race_day],
+                key=lambda d: d.day_of_week,
+            )
+
+        # 7. Insert tune-up race specifics
         if tune_up_races:
             weeks = self._insert_tune_up_details(weeks, tune_up_races, bank)
-        
-        # 6. Generate counter-conventional notes
-        notes = self._generate_insights(bank, themes, tune_up_races)
-        
-        # 7. Calculate predictions
-        predicted, ci = self._predict_race(bank, race_distance, goal_time)
-        
+
+        # 8. Generate counter-conventional notes
+        notes = self._generate_insights(bank, weeks, tune_up_races)
+
+        # 9. Calculate predictions
+        predicted, ci, scenarios, prediction_rationale_tags, uncertainty_reason = self._predict_race(
+            bank,
+            race_distance,
+            goal_time,
+        )
+        prediction_rationale_tags = list(dict.fromkeys(prediction_rationale_tags + rationale_tags))
+
         total_miles = sum(w.total_miles for w in weeks)
-        
+
         return ConstraintAwarePlan(
             weeks=weeks,
             total_weeks=len(weeks),
@@ -194,8 +480,92 @@ class ConstraintAwarePlanner:
             model_confidence=self._assess_confidence(bank),
             counter_conventional_notes=notes,
             predicted_time=predicted,
-            prediction_ci=ci
+            prediction_ci=ci,
+            prediction_scenarios=scenarios,
+            prediction_rationale_tags=prediction_rationale_tags,
+            prediction_uncertainty_reason=uncertainty_reason,
+            volume_contract=volume_contract,
+            quality_gate_fallback=quality_gate_fallback,
+            quality_gate_reasons=quality_gate_reasons or [],
         )
+
+    def _is_peak_plausible(self, peak: float, band_min: float, band_max: float, peak_confidence: str) -> bool:
+        if peak <= 0:
+            return False
+        if peak_confidence == "low":
+            return False
+        if band_max <= 0:
+            return True
+        return peak <= band_max * 1.35
+
+    def _build_volume_contract(
+        self,
+        *,
+        bank: FitnessBank,
+        race_distance: str,
+        target_peak_weekly_miles: Optional[float],
+        target_peak_weekly_range: Optional[Dict[str, float]],
+    ) -> Dict[str, Any]:
+        band_center = bank.recent_8w_median_weekly_miles or bank.current_weekly_miles or bank.peak_weekly_miles
+        band_max = bank.recent_16w_p90_weekly_miles or max(band_center, bank.current_weekly_miles)
+        if band_max <= 0:
+            band_max = max(25.0, bank.current_weekly_miles or 0.0, bank.peak_weekly_miles * 0.8)
+        band_min = max(10.0, min(band_center, band_max) * 0.9)
+        requested_peak = None
+        if target_peak_weekly_miles is not None:
+            requested_peak = float(target_peak_weekly_miles)
+        elif target_peak_weekly_range:
+            rmin = float(target_peak_weekly_range.get("min", 0) or 0)
+            rmax = float(target_peak_weekly_range.get("max", 0) or 0)
+            if rmin > 0 and rmax > 0:
+                requested_peak = (rmin + rmax) / 2.0
+            elif rmax > 0:
+                requested_peak = rmax
+            elif rmin > 0:
+                requested_peak = rmin
+
+        peak_plausible = self._is_peak_plausible(
+            bank.peak_weekly_miles,
+            band_min,
+            band_max,
+            bank.peak_confidence,
+        )
+        source = "trusted_peak" if peak_plausible else "trusted_recent_band"
+        applied_peak = bank.peak_weekly_miles if peak_plausible else band_max
+
+        clamped = False
+        clamp_reason = None
+        if requested_peak is not None:
+            source = "athlete_override"
+            override_floor = max(10.0, band_min * 0.8)
+            override_ceiling = max(override_floor, band_max * 1.2)
+            applied_peak = max(override_floor, min(override_ceiling, requested_peak))
+            clamped = abs(applied_peak - requested_peak) > 1e-6
+            if clamped:
+                clamp_reason = (
+                    f"Requested peak {requested_peak:.1f}mpw outside safety band "
+                    f"{override_floor:.1f}-{override_ceiling:.1f}mpw."
+                )
+
+        return {
+            "band_min": round(band_min, 1),
+            "band_max": round(band_max, 1),
+            "source": source,
+            "peak_confidence": bank.peak_confidence,
+            "requested_peak": round(requested_peak, 1) if requested_peak is not None else None,
+            "applied_peak": round(applied_peak, 1),
+            "clamped": clamped,
+            "clamp_reason": clamp_reason,
+        }
+
+    def _apply_volume_contract_bounds(self, target_miles: float, volume_contract: Dict[str, Any]) -> float:
+        band_min = float(volume_contract.get("band_min", 0) or 0)
+        band_max = float(volume_contract.get("band_max", 0) or 0)
+        if band_max <= 0:
+            return target_miles
+        lower = max(8.0, band_min * 0.75)
+        upper = max(lower, band_max * 1.10)
+        return max(lower, min(upper, target_miles))
     
     def _apply_constraint_overrides(self,
                                    themes: List[WeekThemePlan],
@@ -286,8 +656,8 @@ class ConstraintAwarePlanner:
                                bank: FitnessBank) -> List[WeekPlan]:
         """Insert specific tune-up race details into week plans."""
         
-        today = date.today()
-        week_start = today - timedelta(days=today.weekday())
+        plan_week_start = weeks[0].start_date if weeks else date.today()
+        week_start = plan_week_start - timedelta(days=plan_week_start.weekday())
         
         for tune_up in tune_up_races:
             tune_date = tune_up["date"]
@@ -306,8 +676,8 @@ class ConstraintAwarePlanner:
                     if day.day_of_week == day_idx:
                         # Replace with tune-up race
                         purpose = tune_up.get("purpose", "sharpening")
-                        distance = tune_up.get("distance", "10_mile")
-                        name = tune_up.get("name", f"{distance} tune-up")
+                        distance = normalize_distance_alias(tune_up.get("distance", "10_mile"))
+                        name = tune_up.get("name") or f"{distance} tune-up"
                         
                         if purpose == "threshold":
                             intensity = "very_hard"
@@ -321,8 +691,11 @@ class ConstraintAwarePlanner:
                         
                         # Estimate miles from distance
                         dist_miles = {
-                            "5k": 3.1, "10k": 6.2, "10_mile": 10.0,
-                            "half": 13.1, "marathon": 26.2
+                            "5k": 3.1,
+                            "10k": 6.2,
+                            "10_mile": 10.0,
+                            "half_marathon": 13.1,
+                            "marathon": 26.2,
                         }.get(distance, 10.0)
                         
                         week.days[i] = DayPlan(
@@ -354,13 +727,31 @@ class ConstraintAwarePlanner:
                             tss_estimate=40
                         )
                         break
-        
+
+                # Day after tune-up race = easy recovery
+                post_race_day = (day_idx + 1) % 7
+                for i, day in enumerate(week.days):
+                    if day.day_of_week == post_race_day:
+                        week.days[i] = DayPlan(
+                            day_of_week=post_race_day,
+                            workout_type="recovery",
+                            name="Post-race recovery",
+                            description="Easy recovery or rest. Let the legs bounce back.",
+                            target_miles=3.0,
+                            intensity="easy",
+                            paces={},
+                            notes=["Listen to your body — rest if needed"],
+                            tss_estimate=25,
+                        )
+                        break
+
         return weeks
     
     def _estimate_race_pace(self, bank: FitnessBank, distance: str) -> str:
         """Estimate race pace for a distance from RPI."""
         from services.workout_prescription import calculate_paces_from_rpi, format_pace
         
+        distance = normalize_distance_alias(distance)
         paces = calculate_paces_from_rpi(bank.best_rpi)
         
         # Shorter distances = faster than marathon pace
@@ -368,7 +759,7 @@ class ConstraintAwarePlanner:
             "5k": -0.45,
             "10k": -0.30,
             "10_mile": -0.20,
-            "half": -0.12,
+            "half_marathon": -0.12,
             "marathon": 0.0
         }
         
@@ -379,7 +770,7 @@ class ConstraintAwarePlanner:
     
     def _generate_insights(self,
                           bank: FitnessBank,
-                          themes: List[WeekThemePlan],
+                          weeks_or_themes: Any,
                           tune_up_races: Optional[List[Dict]]) -> List[str]:
         """Generate counter-conventional notes based on individual data."""
         
@@ -440,38 +831,219 @@ class ConstraintAwarePlanner:
         
         return notes
     
-    def _predict_race(self, bank: FitnessBank, distance: str, 
-                      goal_time: Optional[str]) -> tuple:
-        """Predict race time based on fitness bank."""
-        
-        from services.fitness_bank import rpi_equivalent_time
-        
-        distance_m = {
-            "5k": 5000, "10k": 10000, "10_mile": 16093,
-            "half": 21097, "marathon": 42195
-        }.get(distance, 42195)
-        
-        # Predict from best RPI
-        predicted_sec = rpi_equivalent_time(bank.best_rpi, distance_m)
-        
-        hours = predicted_sec // 3600
-        minutes = (predicted_sec % 3600) // 60
-        seconds = predicted_sec % 60
-        
+    def _format_time_seconds(self, total_seconds: int) -> str:
+        hours = total_seconds // 3600
+        minutes = (total_seconds % 3600) // 60
+        seconds = total_seconds % 60
         if hours > 0:
-            predicted = f"{hours}:{minutes:02d}:{seconds:02d}"
-        else:
-            predicted = f"{minutes}:{seconds:02d}"
-        
-        # Confidence interval based on data quality
-        if bank.constraint_type == ConstraintType.INJURY:
-            ci = "±5-8 min (injury recovery uncertainty)"
-        elif len(bank.race_performances) >= 3:
-            ci = "±2-3 min"
-        else:
-            ci = "±4-5 min"
-        
-        return predicted, ci
+            return f"{hours}:{minutes:02d}:{seconds:02d}"
+        return f"{minutes}:{seconds:02d}"
+
+    def _scenario_confidence(
+        self,
+        *,
+        races_count: int,
+        quality_sessions_28d: int,
+        is_injury_return: bool,
+    ) -> str:
+        """
+        Confidence is monotonic with quality continuity: if quality continuity
+        decreases while other factors are unchanged, confidence cannot increase.
+        """
+        race_score = 2 if races_count >= 3 else (1 if races_count >= 1 else 0)
+        quality_score = 2 if quality_sessions_28d >= 6 else (1 if quality_sessions_28d >= 3 else 0)
+        injury_penalty = 1 if is_injury_return else 0
+        score = min(race_score, quality_score) - injury_penalty
+        if score >= 2:
+            return "high"
+        if score >= 1:
+            return "medium"
+        return "low"
+
+    @staticmethod
+    def _rpi_from_anchors_or_pbs(athlete_id: UUID, db: Session) -> Optional[float]:
+        """Last-resort RPI: try user-entered race anchors, then plausible PBs."""
+        from models import AthleteRaceResultAnchor, PersonalBest
+        from services.personal_best import _is_plausible_effort
+
+        best_rpi = None
+
+        # 1. Race anchors (user-entered race results)
+        anchors = db.query(AthleteRaceResultAnchor).filter(
+            AthleteRaceResultAnchor.athlete_id == athlete_id
+        ).all()
+        for anc in anchors:
+            if not anc.distance_meters or not anc.time_seconds or anc.time_seconds <= 0:
+                continue
+            rpi = calculate_rpi_from_race_time(anc.distance_meters, anc.time_seconds)
+            if rpi and rpi > 15 and (best_rpi is None or rpi > best_rpi):
+                best_rpi = rpi
+                logger.info("RPI from race anchor %s: %.1f", anc.distance_key, rpi)
+
+        if best_rpi and best_rpi > 0:
+            return best_rpi
+
+        # 2. Personal bests (from activity history, plausibility-filtered)
+        RPI_ELIGIBLE = {'5k', '10k', '15k', 'half_marathon', 'marathon', '25k', '30k'}
+        pbs = db.query(PersonalBest).filter(
+            PersonalBest.athlete_id == athlete_id,
+            PersonalBest.distance_category.in_(RPI_ELIGIBLE),
+        ).all()
+        for pb in pbs:
+            if not pb.distance_meters or not pb.time_seconds:
+                continue
+            if not _is_plausible_effort(pb.distance_meters, pb.time_seconds, pb.distance_category):
+                continue
+            rpi = calculate_rpi_from_race_time(pb.distance_meters, pb.time_seconds)
+            if rpi and rpi > 15 and (best_rpi is None or rpi > best_rpi):
+                best_rpi = rpi
+                logger.info("RPI from PB %s: %.1f", pb.distance_category, rpi)
+
+        return best_rpi
+
+    @staticmethod
+    def _parse_goal_seconds(gt: Optional[str]) -> Optional[int]:
+        if not gt:
+            return None
+        gt = gt.strip()
+        if ":" not in gt:
+            try:
+                val = int(gt)
+                return val if val > 0 else None
+            except ValueError:
+                return None
+        parts = gt.split(":")
+        try:
+            if len(parts) == 3:
+                return int(parts[0]) * 3600 + int(parts[1]) * 60 + int(parts[2])
+            if len(parts) == 2:
+                return int(parts[0]) * 60 + int(parts[1])
+        except (ValueError, IndexError):
+            pass
+        return None
+
+    def _predict_race(self, bank: FitnessBank, distance: str, goal_time: Optional[str]) -> tuple:
+        """Predict race time using conservative/base/aggressive scenarios."""
+        from services.fitness_bank import rpi_equivalent_time
+
+        distance = normalize_distance_alias(distance)
+        distance_m = {
+            "5k": 5000,
+            "10k": 10000,
+            "10_mile": 16093,
+            "half_marathon": 21097,
+            "marathon": 42195,
+        }.get(distance, 42195)
+
+        races_count = len(bank.race_performances)
+        is_injury_return = bank.constraint_type == ConstraintType.INJURY
+        quality_sessions_28d = int(getattr(bank, "recent_quality_sessions_28d", 0) or 0)
+        current_ratio = (
+            bank.current_weekly_miles / bank.peak_weekly_miles
+            if bank.peak_weekly_miles > 0
+            else 1.0
+        )
+
+        rationale_tags: List[str] = ["proven_peak"]
+        if races_count > 0:
+            rationale_tags.append("recent_form")
+        if is_injury_return:
+            rationale_tags.append("injury_return")
+        if quality_sessions_28d < 3:
+            rationale_tags.append("quality_gap")
+
+        base_rpi = bank.best_rpi if bank.best_rpi and bank.best_rpi > 0 else None
+        if base_rpi is None and goal_time:
+            dist_m_for_rpi = _DISTANCE_METERS.get(distance)
+            goal_secs = self._parse_goal_seconds(goal_time)
+            if dist_m_for_rpi and goal_secs and goal_secs > 0:
+                base_rpi = calculate_rpi_from_race_time(dist_m_for_rpi, goal_secs)
+                rationale_tags.append("goal_time_derived")
+        if base_rpi is None:
+            base_rpi = max(25.0, min(45.0, 30.0 + bank.current_weekly_miles * 0.20))
+            rationale_tags.append("no_race_history")
+        if is_injury_return:
+            base_rpi -= 1.0
+        if current_ratio < 0.6:
+            base_rpi -= 0.8
+        elif current_ratio < 0.75:
+            base_rpi -= 0.4
+
+        # Quality gap penalty: skip if athlete is in normal post-marathon recovery
+        # (within 35 days of a race >= half marathon distance).  Skipping intervals
+        # for 4 weeks after a marathon is correct training, not a fitness red flag.
+        from datetime import date as _date
+        recent_long_race_days_ago: Optional[int] = None
+        for r in (bank.race_performances or []):
+            if r.distance in ("marathon", "half", "half_marathon") and r.distance_m and r.distance_m >= 21000:
+                days_ago = (_date.today() - r.date).days
+                if recent_long_race_days_ago is None or days_ago < recent_long_race_days_ago:
+                    recent_long_race_days_ago = days_ago
+
+        in_post_long_race_recovery = recent_long_race_days_ago is not None and recent_long_race_days_ago <= 35
+
+        if not in_post_long_race_recovery:
+            if quality_sessions_28d == 0:
+                base_rpi -= 1.5
+            elif quality_sessions_28d <= 2:
+                base_rpi -= 0.9
+            elif quality_sessions_28d <= 4:
+                base_rpi -= 0.4
+
+        conservative_rpi = base_rpi - (1.0 if is_injury_return else 0.5)
+        proven_rpi = bank.best_rpi if bank.best_rpi and bank.best_rpi > 0 else base_rpi
+        aggressive_rpi = max(base_rpi + (0.5 if quality_sessions_28d >= 3 else 0.15), proven_rpi - 0.2)
+
+        # Keep ranges sane.
+        conservative_rpi = max(20.0, conservative_rpi)
+        base_rpi = max(20.0, base_rpi)
+        aggressive_rpi = min(85.0, aggressive_rpi)
+
+        conservative_sec = rpi_equivalent_time(conservative_rpi, distance_m)
+        base_sec = rpi_equivalent_time(base_rpi, distance_m)
+        aggressive_sec = rpi_equivalent_time(aggressive_rpi, distance_m)
+
+        scenarios = {
+            "conservative": {
+                "time": self._format_time_seconds(conservative_sec),
+                "confidence": self._scenario_confidence(
+                    races_count=races_count,
+                    quality_sessions_28d=max(0, quality_sessions_28d - 1),
+                    is_injury_return=is_injury_return,
+                ),
+            },
+            "base": {
+                "time": self._format_time_seconds(base_sec),
+                "confidence": self._scenario_confidence(
+                    races_count=races_count,
+                    quality_sessions_28d=quality_sessions_28d,
+                    is_injury_return=is_injury_return,
+                ),
+            },
+            "aggressive": {
+                "time": self._format_time_seconds(aggressive_sec),
+                "confidence": self._scenario_confidence(
+                    races_count=races_count,
+                    quality_sessions_28d=quality_sessions_28d,
+                    is_injury_return=is_injury_return,
+                ),
+            },
+        }
+
+        predicted = scenarios["base"]["time"]
+        ci_minutes_low = max(1, int((base_sec - conservative_sec) / 60))
+        ci_minutes_high = max(1, int((aggressive_sec - base_sec) / 60))
+        ci = f"-{ci_minutes_low}/+{ci_minutes_high} min"
+
+        uncertainty_reason = None
+        if is_injury_return and quality_sessions_28d < 3:
+            uncertainty_reason = "Return-from-injury with limited recent quality continuity."
+        elif quality_sessions_28d < 3:
+            uncertainty_reason = "Limited recent quality continuity increases uncertainty."
+        elif races_count < 2:
+            uncertainty_reason = "Limited race-history depth increases uncertainty."
+
+        return predicted, ci, scenarios, rationale_tags, uncertainty_reason
     
     def _assess_confidence(self, bank: FitnessBank) -> str:
         """Assess model confidence based on data."""
@@ -510,7 +1082,24 @@ class ConstraintAwarePlanner:
             model_confidence="low",
             counter_conventional_notes=["Very short prep — trust your banked fitness."],
             predicted_time=None,
-            prediction_ci=None
+            prediction_ci=None,
+            prediction_scenarios={
+                "conservative": {"time": "N/A", "confidence": "low"},
+                "base": {"time": "N/A", "confidence": "low"},
+                "aggressive": {"time": "N/A", "confidence": "low"},
+            },
+            prediction_rationale_tags=["insufficient_data"],
+            prediction_uncertainty_reason="Very short prep window; prediction not reliable.",
+            volume_contract={
+                "band_min": 20.0,
+                "band_max": 40.0,
+                "source": "trusted_recent_band",
+                "peak_confidence": bank.peak_confidence,
+                "requested_peak": None,
+                "applied_peak": 40.0,
+                "clamped": False,
+                "clamp_reason": None,
+            },
         )
 
 
@@ -524,15 +1113,25 @@ def generate_constraint_aware_plan(
     race_distance: str,
     db: Session,
     goal_time: Optional[str] = None,
-    tune_up_races: Optional[List[Dict]] = None
+    tune_up_races: Optional[List[Dict]] = None,
+    target_peak_weekly_miles: Optional[float] = None,
+    target_peak_weekly_range: Optional[Dict[str, float]] = None,
+    quality_gate_fallback: bool = False,
+    quality_gate_reasons: Optional[List[str]] = None,
+    taper_weeks: Optional[int] = None,
 ) -> ConstraintAwarePlan:
     """Generate a constraint-aware plan for an athlete."""
-    
+
     planner = ConstraintAwarePlanner(db)
     return planner.generate_plan(
         athlete_id=athlete_id,
         race_date=race_date,
         race_distance=race_distance,
         goal_time=goal_time,
-        tune_up_races=tune_up_races
+        tune_up_races=tune_up_races,
+        target_peak_weekly_miles=target_peak_weekly_miles,
+        target_peak_weekly_range=target_peak_weekly_range,
+        quality_gate_fallback=quality_gate_fallback,
+        quality_gate_reasons=quality_gate_reasons,
+        taper_weeks=taper_weeks,
     )

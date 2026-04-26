@@ -289,10 +289,10 @@ class TestCacheComputeAndServe:
 class TestCacheVersionInvalidation:
     """Version bump invalidates stale cache."""
 
-    def test_stale_version_triggers_recompute(
+    def test_previous_version_4_triggers_recompute_under_version_5(
         self, db_session, test_athlete, activity_with_stream
     ):
-        """Cache row with old version is treated as a miss."""
+        """Explicit regression: cached v4 rows must miss when CURRENT_ANALYSIS_VERSION is v5."""
         from services.run_stream_analysis import AthleteContext
 
         stream_row = db_session.query(ActivityStream).filter(
@@ -312,7 +312,9 @@ class TestCacheVersionInvalidation:
         row = db_session.query(CachedStreamAnalysis).filter(
             CachedStreamAnalysis.activity_id == activity_with_stream.id
         ).first()
-        row.analysis_version = 0  # Old version
+        previous_version = CURRENT_ANALYSIS_VERSION - 1
+        assert previous_version == 4, "This regression test is pinned to the v4→v5 transition."
+        row.analysis_version = previous_version
         db_session.commit()
 
         # Next call should recompute (version mismatch)

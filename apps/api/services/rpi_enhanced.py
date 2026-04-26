@@ -13,7 +13,6 @@ Not affiliated with RPI O2 or The Run SMART Project.
 from typing import Dict, List, Optional
 from services.rpi_calculator import (
     calculate_rpi_from_race_time,
-    STANDARD_DISTANCES,
     _get_distance_name,
     calculate_equivalent_race_time
 )
@@ -350,7 +349,6 @@ def calculate_rpi_enhanced(distance_meters: float, time_seconds: int) -> Dict:
         # Calculated using Daniels/Gilbert oxygen cost equations
         "rpi": round(rpi, 1),
         "fitness_score": round(rpi, 1),  # Backward compatibility
-        "rpi": round(rpi, 1),  # Backward compatibility
         "input": {
             "distance_m": distance_meters,
             "distance_name": _get_distance_name(distance_meters),

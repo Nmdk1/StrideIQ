@@ -34,6 +34,7 @@ from services.home_briefing_cache import (
     BriefingState,
     acquire_task_lock,
     read_briefing_cache,
+    read_briefing_cache_with_meta,
     record_task_failure,
     release_task_lock,
     reset_circuit,
@@ -51,7 +52,10 @@ if _app_root not in sys.path:
 
 PROVIDER_TIMEOUT_S = 45   # Rich prompt (5 intelligence sources) needs more generation time
 TASK_HARD_TIMEOUT_S = 55  # Must exceed PROVIDER_TIMEOUT_S + DB work headroom
-BRIEFING_FINGERPRINT_VERSION = "v2"
+# v3: prompt now respects athlete preferred_units (metric/imperial). Bumping
+# the version invalidates every cached briefing on rollout so metric athletes
+# stop seeing the previous imperial-baked morning_voice paragraph.
+BRIEFING_FINGERPRINT_VERSION = "v4"
 
 
 def _build_data_fingerprint(
@@ -59,20 +63,75 @@ def _build_data_fingerprint(
     db: Session,
 ) -> str:
     """Build a fingerprint of the athlete's current data state."""
-    from models import Activity, DailyCheckin, TrainingPlan
+    from models import Activity, ActivitySplit, Athlete, DailyCheckin, TrainingPlan
+    from services.timezone_utils import get_athlete_timezone_from_db, athlete_local_today, get_athlete_effective_timezone
 
-    today = date.today()
-    parts = [athlete_id, f"schema:{BRIEFING_FINGERPRINT_VERSION}"]
+    _fp_tz = get_athlete_timezone_from_db(db, UUID(athlete_id))
+    today = athlete_local_today(_fp_tz)
+    # Include effective timezone in fingerprint so travel triggers fresh LLM generation.
+    # When the athlete runs in a different timezone, the briefing must say the correct
+    # local time — "fingerprint unchanged" must NOT serve a stale home-timezone briefing.
+    _fp_eff_tz = get_athlete_effective_timezone(UUID(athlete_id), db)
+    parts = [athlete_id, f"schema:{BRIEFING_FINGERPRINT_VERSION}", f"date:{today.isoformat()}", f"tz:{_fp_eff_tz}"]
+
+    # Include preferred_units so a units toggle forces a fresh briefing
+    # instead of serving the stale imperial-baked paragraph from cache.
+    try:
+        units_val = (
+            db.query(Athlete.preferred_units)
+            .filter(Athlete.id == athlete_id)
+            .scalar()
+        ) or "imperial"
+        parts.append(f"units:{units_val}")
+    except Exception:
+        pass
 
     try:
+        # Pull richer signal so async-arriving stream analysis triggers
+        # cache invalidation. Prior versions only watched id+start_time,
+        # which is set at upload time -- splits, run_shape, and
+        # workout_type all land later asynchronously, and without them
+        # in the fingerprint the cached "no workout structure" brief
+        # froze even after the structured workout context arrived.
+        # (Founder regression, 2026-04-18.)
         latest_activity = (
-            db.query(Activity.id, Activity.start_time)
-            .filter(Activity.athlete_id == athlete_id)
+            db.query(
+                Activity.id,
+                Activity.start_time,
+                Activity.workout_type,
+                Activity.run_shape,
+            )
+            .filter(Activity.athlete_id == athlete_id, Activity.sport == "run")
             .order_by(desc(Activity.start_time))
             .first()
         )
         if latest_activity:
             parts.append(f"act:{latest_activity.id}:{latest_activity.start_time}")
+
+            wt = latest_activity.workout_type or ""
+            parts.append(f"wt:{wt}")
+
+            # Splits arrive asynchronously; use count + presence so the
+            # fingerprint flips both when splits first land AND when
+            # additional segments arrive in a follow-up sync.
+            split_count = (
+                db.query(ActivitySplit.id)
+                .filter(ActivitySplit.activity_id == latest_activity.id)
+                .count()
+            )
+            parts.append(f"splits:{split_count}")
+
+            # run_shape.summary.workout_classification is the stream
+            # analyzer's bucket. We hash on its presence + value so the
+            # brief regenerates when classification flips from absent
+            # to "anomaly", "intervals", "tempo", etc.
+            shape_cls = ""
+            rs = latest_activity.run_shape
+            if isinstance(rs, dict):
+                summary = rs.get("summary") or {}
+                if isinstance(summary, dict):
+                    shape_cls = summary.get("workout_classification") or ""
+            parts.append(f"shape:{shape_cls}")
     except Exception:
         pass
 
@@ -114,14 +173,30 @@ def _build_briefing_prompt(athlete_id: str, db: Session) -> Optional[tuple]:
     generate_coach_home_briefing() prompt builder.
 
     Returns
-      (prompt, schema_fields, required_fields, checkin_data_dict, race_data_dict, garmin_sleep_h)
+      (prompt, schema_fields, required_fields, checkin_data_dict, race_data_dict, garmin_sleep_h, local_now)
     on success, ``None`` when legacy cache short-circuits, and ``False`` on hard failure.
     """
-    from models import Activity, DailyCheckin, PlannedWorkout, TrainingPlan
+    from models import Activity, Athlete, DailyCheckin, PlannedWorkout, TrainingPlan
 
-    today = date.today()
+    from services.timezone_utils import get_athlete_timezone_from_db, athlete_local_today
+    from services.coach_units import coach_units
+    # Home timezone — used for all training day/week window queries so that
+    # weekly mileage and "today's workout" are consistent regardless of travel.
+    tz = get_athlete_timezone_from_db(db, UUID(athlete_id))
+    today = athlete_local_today(tz)
 
     try:
+        # Resolve the athlete's preferred display units once. The morning
+        # briefing must speak in the same units the athlete sees on every
+        # other surface — historically this builder hardcoded miles and the
+        # LLM faithfully repeated "7-mile run" to a metric athlete.
+        preferred_units = (
+            db.query(Athlete.preferred_units)
+            .filter(Athlete.id == athlete_id)
+            .scalar()
+        ) or "imperial"
+        units = coach_units(preferred_units)
+
         active_plan = (
             db.query(TrainingPlan)
             .filter(
@@ -131,40 +206,58 @@ def _build_briefing_prompt(athlete_id: str, db: Session) -> Optional[tuple]:
             .first()
         )
 
+        from services.timezone_utils import local_day_bounds_utc
+        _day_start_utc, _day_end_utc = local_day_bounds_utc(today, tz)
         today_completed = None
         today_actual = (
             db.query(Activity)
             .filter(
                 Activity.athlete_id == athlete_id,
-                Activity.start_time >= today,
-                Activity.start_time < today + timedelta(days=1),
+                Activity.sport == "run",
+                Activity.start_time >= _day_start_utc,
+                Activity.start_time < _day_end_utc,
             )
             .order_by(desc(Activity.start_time))
             .first()
         )
         if today_actual:
-            actual_mi = (
-                round(today_actual.distance_m / 1609.344, 1)
-                if today_actual.distance_m
-                else None
+            actual_pace = units.format_pace_from_distance_duration(
+                today_actual.distance_m, today_actual.duration_s
             )
-            actual_pace = None
-            if today_actual.distance_m and today_actual.duration_s:
-                pace_s = today_actual.duration_s / (today_actual.distance_m / 1609.344)
-                mins = int(pace_s // 60)
-                secs = int(pace_s % 60)
-                actual_pace = f"{mins}:{secs:02d}/mi"
+            elev_m = float(today_actual.total_elevation_gain) if today_actual.total_elevation_gain is not None else None
             today_completed = {
                 "name": today_actual.name or "Run",
-                "distance_mi": actual_mi,
+                "distance_text": units.format_distance(today_actual.distance_m),
                 "pace": actual_pace,
                 "avg_hr": int(today_actual.avg_hr) if today_actual.avg_hr else None,
-                "duration_min": (
-                    round(today_actual.duration_s / 60, 0)
-                    if today_actual.duration_s
-                    else None
-                ),
+                "duration_s": int(today_actual.duration_s) if today_actual.duration_s else None,
+                "elevation_text": units.format_elevation(elev_m),
+                "temperature_f": round(float(today_actual.temperature_f), 1) if today_actual.temperature_f is not None else None,
+                "temperature_text": units.format_temperature_from_f(today_actual.temperature_f),
+                "humidity_pct": round(float(today_actual.humidity_pct), 0) if today_actual.humidity_pct is not None else None,
+                "heat_adjustment_pct": round(float(today_actual.heat_adjustment_pct), 1) if today_actual.heat_adjustment_pct is not None else None,
             }
+            try:
+                from models import ActivitySplit
+                from routers.home import _summarize_workout_structure
+                # Tell the prompt branch whether splits actually exist yet.
+                # Without this the "no structure detected" prompt would
+                # falsely claim splits were examined when they hadn't been
+                # processed -- the 2026-04-18 founder regression.
+                today_completed["splits_available"] = (
+                    db.query(ActivitySplit.id)
+                    .filter(ActivitySplit.activity_id == today_actual.id)
+                    .first()
+                ) is not None
+                ws = _summarize_workout_structure(today_actual.id, db)
+                if ws:
+                    today_completed["workout_structure"] = ws
+                if today_actual.run_shape and isinstance(today_actual.run_shape, dict):
+                    sc = today_actual.run_shape.get('summary', {}).get('workout_classification', '')
+                    if sc:
+                        today_completed["shape_classification"] = sc
+            except Exception as _ws_err:
+                logger.debug("Workout structure detection skipped: %s", _ws_err)
 
         planned_workout_dict = None
         if active_plan:
@@ -177,14 +270,12 @@ def _build_briefing_prompt(athlete_id: str, db: Session) -> Optional[tuple]:
                 .first()
             )
             if planned:
-                distance_mi = None
-                if planned.target_distance_km:
-                    distance_mi = round(planned.target_distance_km * 0.621371, 1)
+                planned_distance_m = float(planned.target_distance_km) * 1000.0 if planned.target_distance_km else None
                 planned_workout_dict = {
                     "has_workout": True,
                     "workout_type": planned.workout_type,
                     "title": planned.title,
-                    "distance_mi": distance_mi,
+                    "distance_text": units.format_distance(planned_distance_m),
                 }
 
         race_data_dict = None
@@ -216,6 +307,29 @@ def _build_briefing_prompt(athlete_id: str, db: Session) -> Optional[tuple]:
             from routers.home import _build_checkin_data_dict
             checkin_data_dict = _build_checkin_data_dict(existing_checkin)
 
+        upcoming_plan_list = []
+        if active_plan:
+            _upcoming_days = (
+                db.query(PlannedWorkout)
+                .filter(
+                    PlannedWorkout.plan_id == active_plan.id,
+                    PlannedWorkout.scheduled_date > today,
+                    PlannedWorkout.scheduled_date <= today + timedelta(days=3),
+                )
+                .order_by(PlannedWorkout.scheduled_date)
+                .all()
+            )
+            for pw in _upcoming_days:
+                _pw_distance_m = float(pw.target_distance_km) * 1000.0 if pw.target_distance_km else None
+                upcoming_plan_list.append({
+                    "date": pw.scheduled_date.isoformat(),
+                    "day_name": pw.scheduled_date.strftime("%A"),
+                    "workout_type": pw.workout_type,
+                    "title": pw.title,
+                    "distance_text": units.format_distance(_pw_distance_m),
+                    "description": pw.description,
+                })
+
         from routers.home import generate_coach_home_briefing
 
         # skip_cache=True: bypass the legacy coach_home_briefing:{athlete_id}:{hash}
@@ -231,6 +345,8 @@ def _build_briefing_prompt(athlete_id: str, db: Session) -> Optional[tuple]:
             checkin_data=checkin_data_dict,
             race_data=race_data_dict,
             skip_cache=True,
+            upcoming_plan=upcoming_plan_list if upcoming_plan_list else None,
+            preferred_units=preferred_units,
         )
 
         if len(prep) == 1:
@@ -241,12 +357,23 @@ def _build_briefing_prompt(athlete_id: str, db: Session) -> Optional[tuple]:
             )
             return None  # Sentinel: already cached, normal skip
 
-        _, prompt, schema_fields, required_fields, _, garmin_sleep_h = prep
+        _, prompt, schema_fields, required_fields, _, garmin_sleep_h, _local_today, _local_now = prep
         if garmin_sleep_h is not None:
             if checkin_data_dict is None:
                 checkin_data_dict = {}
             checkin_data_dict["garmin_sleep_h"] = garmin_sleep_h
-        return prompt, schema_fields, required_fields, checkin_data_dict, race_data_dict, garmin_sleep_h
+        return (
+            prompt,
+            schema_fields,
+            required_fields,
+            checkin_data_dict,
+            race_data_dict,
+            garmin_sleep_h,
+            _local_now,
+            today_completed,
+            planned_workout_dict,
+            upcoming_plan_list,
+        )
 
     except Exception as e:
         logger.error(f"Failed to build briefing prompt for {athlete_id}: {e}", exc_info=True)
@@ -289,8 +416,14 @@ def _call_opus_briefing(
     prompt: str,
     schema_fields: dict,
     required_fields: list,
+    athlete_id: Optional[str] = None,
+    local_now=None,
 ) -> Optional[dict]:
-    """Call Opus with PROVIDER_TIMEOUT_S enforced."""
+    """Call Sonnet (via _call_opus_briefing_sync) with PROVIDER_TIMEOUT_S enforced.
+
+    Function name retained for compatibility — runtime model is claude-sonnet-4-6
+    unless Kimi canary is active for this athlete.
+    """
     from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeout
     from routers.home import _call_opus_briefing_sync
 
@@ -302,12 +435,15 @@ def _call_opus_briefing(
     future = pool.submit(
         _call_opus_briefing_sync, prompt, schema_fields, required_fields, anthropic_key,
         PROVIDER_TIMEOUT_S,  # llm_timeout — worker path gets full budget
+        athlete_id,          # pass through for canary routing
+        None,                # local_today — let _call_opus_briefing_sync default
+        local_now,           # athlete's current local datetime
     )
     try:
         return future.result(timeout=PROVIDER_TIMEOUT_S)
     except FuturesTimeout:
         logger.warning(
-            "Opus home briefing provider timeout (%ss)", PROVIDER_TIMEOUT_S
+            "Sonnet home briefing provider timeout (%ss)", PROVIDER_TIMEOUT_S
         )
         future.cancel()
         pool.shutdown(wait=False)
@@ -320,23 +456,29 @@ def _call_llm_for_briefing(
     prompt: str,
     schema_fields: dict,
     required_fields: list,
-) -> Optional[dict]:
+    athlete_id: Optional[str] = None,
+    local_now=None,
+) -> tuple[Optional[dict], str]:
     """
     Single LLM dispatch point for home briefing generation.
 
-    Always tries Opus first (if ANTHROPIC_API_KEY is set), falls back to
-    Gemini Flash. Matches the behaviour of _fetch_llm_briefing_sync in
-    home.py. The use_opus feature flag has been retired — the model
-    selection is driven entirely by API key availability.
+    Returns (result_dict, source_model_name).
 
-    This wrapper exists so consent gating in generate_home_briefing_task
-    can be verified by tests via patching this function.  All actual LLM
-    calls go through _call_opus_briefing or _call_gemini_briefing.
+    Always tries primary model first (Sonnet or Kimi canary), falls back to
+    Gemini Flash. The model selection is driven by API key availability and
+    canary config.
     """
-    result = _call_opus_briefing(prompt, schema_fields, required_fields)
+    from core.config import settings as _cfg
+    primary = _cfg.BRIEFING_PRIMARY_MODEL or "claude-sonnet-4-6"
+    fallback = "gemini-2.5-flash"
+
+    result = _call_opus_briefing(prompt, schema_fields, required_fields, athlete_id=athlete_id, local_now=local_now)
     if result is not None:
-        return result
-    return _call_gemini_briefing(prompt, schema_fields, required_fields)
+        return result, primary
+    gemini_result = _call_gemini_briefing(prompt, schema_fields, required_fields)
+    if gemini_result is not None:
+        return gemini_result, fallback
+    return None, primary
 
 
 def _build_deterministic_briefing(athlete_id: str, db: Session) -> Dict[str, str]:
@@ -345,25 +487,32 @@ def _build_deterministic_briefing(athlete_id: str, db: Session) -> Dict[str, str
 
     This is used when provider calls or contract validation fail.
     """
-    from models import Activity
+    from models import Activity, Athlete
+    from services.coach_units import coach_units
+
+    preferred_units = (
+        db.query(Athlete.preferred_units)
+        .filter(Athlete.id == athlete_id)
+        .scalar()
+    ) or "imperial"
+    units = coach_units(preferred_units)
 
     latest = (
         db.query(Activity)
-        .filter(Activity.athlete_id == athlete_id)
+        .filter(Activity.athlete_id == athlete_id, Activity.sport == "run")
         .order_by(desc(Activity.start_time))
         .first()
     )
 
     if latest and latest.distance_m and latest.duration_s:
-        distance_mi = round(float(latest.distance_m) / 1609.344, 1)
-        pace_s = float(latest.duration_s) / max(float(latest.distance_m) / 1609.344, 0.1)
-        pace_str = f"{int(pace_s // 60)}:{int(pace_s % 60):02d}/mi"
+        distance_text = units.format_distance(latest.distance_m)
+        pace_str = units.format_pace_from_distance_duration(latest.distance_m, latest.duration_s)
         coach_noticed = (
-            f"Latest run synced: {distance_mi} mi at {pace_str}. "
+            f"Latest run synced: {distance_text} at {pace_str}. "
             "Signals will refine as more data arrives."
         )
         morning_voice = (
-            f"{distance_mi} miles in your latest run at {pace_str}. "
+            f"{distance_text} in your latest run at {pace_str}. "
             "Your home briefing is refreshed from synced activity data."
         )
         today_context = "Sync completed. Use this as your current baseline for today's effort."
@@ -383,6 +532,51 @@ def _build_deterministic_briefing(athlete_id: str, db: Session) -> Dict[str, str
         "morning_voice": morning_voice,
         "workout_why": "Fresh synced data keeps your training decisions anchored to what just happened.",
     }
+
+
+def _write_fallback_or_preserve(
+    athlete_id: str,
+    fallback_payload: Dict,
+    fingerprint: str,
+    cached_meta: Dict,
+    cached_payload: Optional[Dict],
+) -> Dict:
+    """Write deterministic fallback ONLY if no LLM briefing exists.
+
+    If the currently cached briefing was LLM-generated, preserve it by
+    refreshing its TTL instead of overwriting with deterministic garbage.
+    A stale excellent briefing is always better than a fresh empty one.
+    """
+    existing_is_llm = (
+        cached_payload
+        and cached_meta.get("briefing_source") == "llm"
+        and not cached_meta.get("briefing_is_interim")
+    )
+    if existing_is_llm:
+        logger.info(
+            "Preserving existing LLM briefing for %s instead of overwriting with deterministic fallback",
+            athlete_id,
+        )
+        cached_source_model = cached_meta.get("source_model") or "preserved-llm"
+        write_briefing_cache(
+            athlete_id=athlete_id,
+            payload=cached_payload,
+            source_model=str(cached_source_model),
+            data_fingerprint=fingerprint,
+            briefing_source="llm",
+            briefing_is_interim=False,
+        )
+        return {"status": "preserved", "reason": "existing_llm_kept"}
+
+    write_briefing_cache(
+        athlete_id=athlete_id,
+        payload=fallback_payload,
+        source_model="deterministic-fallback",
+        data_fingerprint=fingerprint,
+        briefing_source="deterministic_fallback",
+        briefing_is_interim=True,
+    )
+    return {"status": "degraded", "model": "deterministic-fallback"}
 
 
 @celery_app.task(
@@ -418,7 +612,8 @@ def generate_home_briefing_task(self: Task, athlete_id: str) -> Dict:
 
         fingerprint = _build_data_fingerprint(athlete_id, db)
 
-        cached_payload, cached_state = read_briefing_cache(athlete_id)
+        cached_payload, cached_state, cached_meta = read_briefing_cache_with_meta(athlete_id)
+        cached_is_interim = bool(cached_meta.get("briefing_is_interim", False))
         if cached_state in (BriefingState.FRESH, BriefingState.STALE) and cached_payload:
             r = get_redis_client()
             if r:
@@ -427,11 +622,42 @@ def generate_home_briefing_task(self: Task, athlete_id: str) -> Dict:
                     if raw:
                         entry = json.loads(raw)
                         if entry.get("data_fingerprint") == fingerprint:
+                            entry_source = str(entry.get("briefing_source") or "").strip().lower()
+                            source_model = str(entry.get("source_model") or "").strip().lower()
+                            entry_is_interim = bool(
+                                entry.get("briefing_is_interim", cached_is_interim)
+                            )
+                            is_deterministic = (
+                                entry_source == "deterministic_fallback"
+                                or "deterministic" in source_model
+                            )
+                            if not entry_is_interim and not is_deterministic:
+                                logger.info(
+                                    "Home briefing fingerprint unchanged for %s — refreshing cache without LLM call",
+                                    athlete_id,
+                                )
+                                # Critical: refresh generated_at/expires_at so unchanged
+                                # fingerprints do not decay into stale->missing.
+                                # This keeps morning voice + coach insight available
+                                # when source data has not changed.
+                                cached_source_model = entry.get("source_model") or "cache-refresh"
+                                write_briefing_cache(
+                                    athlete_id=athlete_id,
+                                    payload=cached_payload,
+                                    source_model=str(cached_source_model),
+                                    data_fingerprint=fingerprint,
+                                    briefing_source=str(cached_meta.get("briefing_source") or "llm"),
+                                    briefing_is_interim=bool(cached_meta.get("briefing_is_interim")),
+                                )
+                                reset_circuit(athlete_id)
+                                return {
+                                    "status": "success",
+                                    "reason": "fingerprint_unchanged_cache_refreshed",
+                                }
                             logger.info(
-                                "Home briefing fingerprint unchanged for %s — skipping LLM call",
+                                "Home briefing fingerprint unchanged for %s but cached briefing is interim; forcing LLM regeneration",
                                 athlete_id,
                             )
-                            return {"status": "skipped", "reason": "fingerprint_unchanged"}
                 except (json.JSONDecodeError, TypeError, Exception):
                     pass
 
@@ -442,64 +668,139 @@ def generate_home_briefing_task(self: Task, athlete_id: str) -> Dict:
         if prompt_result is False:
             logger.error(f"Prompt build failed for {athlete_id}; writing deterministic fallback")
             fallback_payload = _build_deterministic_briefing(athlete_id, db)
-            write_briefing_cache(
-                athlete_id=athlete_id,
-                payload=fallback_payload,
-                source_model="deterministic-fallback",
-                data_fingerprint=fingerprint,
+            fb_result = _write_fallback_or_preserve(
+                athlete_id, fallback_payload, fingerprint, cached_meta, cached_payload,
             )
             reset_circuit(athlete_id)
-            return {"status": "degraded", "reason": "prompt_build_failed", "model": "deterministic-fallback"}
+            fb_result["reason"] = "prompt_build_failed"
+            return fb_result
 
-        prompt, schema_fields, required_fields, checkin_data, race_data, garmin_sleep_h = prompt_result
+        (
+            prompt,
+            schema_fields,
+            required_fields,
+            checkin_data,
+            race_data,
+            garmin_sleep_h,
+            _local_now,
+            today_completed,
+            planned_workout_snapshot,
+            upcoming_plan_snapshot,
+        ) = prompt_result
 
-        use_opus = bool(os.getenv("ANTHROPIC_API_KEY"))
-        source_model = "claude-opus-4-6" if use_opus else "gemini-2.5-flash"
-        result = _call_llm_for_briefing(prompt, schema_fields, required_fields)
-
-        if result is None:
-            logger.warning("All LLM providers failed for %s; writing deterministic fallback", athlete_id)
-            fallback_payload = _build_deterministic_briefing(athlete_id, db)
-            write_briefing_cache(
-                athlete_id=athlete_id,
-                payload=fallback_payload,
-                source_model="deterministic-fallback",
-                data_fingerprint=fingerprint,
-            )
-            reset_circuit(athlete_id)
-            return {"status": "degraded", "reason": "llm_unavailable", "model": "deterministic-fallback"}
+        # Track which output validators fired so the persisted briefing row
+        # carries a truthful audit trail of what happened to the LLM output.
+        validation_flags: Dict[str, bool] = {
+            "contract_valid": True,
+            "voice_valid": True,
+            "sleep_valid": True,
+            "sleep_stripped": False,
+            "coach_noticed_cleared": False,
+            "workout_why_cleared": False,
+            "canary_retried": False,
+        }
 
         from routers.home import (
             _valid_home_briefing_contract,
             validate_voice_output,
             validate_sleep_claims,
+            _strip_ungrounded_sleep_sentences,
             _VOICE_FALLBACK,
         )
+        from core.llm_client import is_canary_athlete
+
+        is_canary = is_canary_athlete(athlete_id)
+        result, source_model = _call_llm_for_briefing(prompt, schema_fields, required_fields, athlete_id=athlete_id, local_now=_local_now)
+
+        if result is not None and is_canary:
+            canary_failed = False
+            if not _valid_home_briefing_contract(result, checkin_data=checkin_data, race_data=race_data):
+                canary_failed = True
+                logger.warning(
+                    "Canary model failed A->I->A contract for %s; retrying with primary",
+                    athlete_id,
+                )
+            else:
+                raw_voice = result.get("morning_voice")
+                if raw_voice:
+                    voice_check = validate_voice_output(raw_voice, field="morning_voice")
+                    if not voice_check["valid"]:
+                        canary_failed = True
+                        logger.warning(
+                            "Canary model morning_voice failed validation (%s) for %s; retrying with primary",
+                            voice_check.get("reason"), athlete_id,
+                        )
+
+            if canary_failed:
+                validation_flags["canary_retried"] = True
+                result = _call_opus_briefing(prompt, schema_fields, required_fields, athlete_id=None)
+                if result is not None:
+                    from core.config import settings as _retry_cfg
+                    source_model = _retry_cfg.BRIEFING_PRIMARY_MODEL or "claude-sonnet-4-6"
+                else:
+                    result = _call_gemini_briefing(prompt, schema_fields, required_fields)
+                    if result is not None:
+                        source_model = "gemini-2.5-flash"
+                if result is not None:
+                    logger.info("Primary model retry succeeded for %s", athlete_id)
+
+        if result is None:
+            logger.warning("All LLM providers failed for %s; writing deterministic fallback", athlete_id)
+            fallback_payload = _build_deterministic_briefing(athlete_id, db)
+            fb_result = _write_fallback_or_preserve(
+                athlete_id, fallback_payload, fingerprint, cached_meta, cached_payload,
+            )
+            reset_circuit(athlete_id)
+            fb_result["reason"] = "llm_unavailable"
+            return fb_result
 
         if not _valid_home_briefing_contract(result, checkin_data=checkin_data, race_data=race_data):
             logger.warning(f"Home briefing failed A->I->A contract for {athlete_id}")
             fallback_payload = _build_deterministic_briefing(athlete_id, db)
-            write_briefing_cache(
-                athlete_id=athlete_id,
-                payload=fallback_payload,
-                source_model="deterministic-fallback",
-                data_fingerprint=fingerprint,
+            fb_result = _write_fallback_or_preserve(
+                athlete_id, fallback_payload, fingerprint, cached_meta, cached_payload,
             )
             reset_circuit(athlete_id)
-            return {"status": "degraded", "reason": "contract_validation_failed", "model": "deterministic-fallback"}
+            fb_result["reason"] = "contract_validation_failed"
+            return fb_result
 
         raw_voice = result.get("morning_voice")
         if raw_voice:
             voice_check = validate_voice_output(raw_voice, field="morning_voice")
             if not voice_check["valid"]:
-                logger.warning(
-                    f"morning_voice failed validation ({voice_check.get('reason')}) "
-                    f"for {athlete_id}; using fallback"
-                )
-                result["morning_voice"] = voice_check["fallback"]
+                # Strip-and-recover: try removing the offending sentences
+                # before publishing the deterministic fallback. The 80%
+                # of good content in a partially-bad briefing is worth
+                # preserving when we can.
+                from routers.home import _strip_disallowed_sentences as _strip
+                stripped = _strip(raw_voice)
+                recovered = False
+                if stripped["removed"] and stripped["text"]:
+                    recheck = validate_voice_output(
+                        stripped["text"], field="morning_voice"
+                    )
+                    if recheck.get("valid"):
+                        logger.info(
+                            "morning_voice recovered via strip "
+                            "(reasons=%s) for %s",
+                            stripped["reasons"], athlete_id,
+                        )
+                        result["morning_voice"] = (
+                            recheck.get("truncated_text") or stripped["text"]
+                        )
+                        recovered = True
+                if not recovered:
+                    validation_flags["voice_valid"] = False
+                    logger.warning(
+                        f"morning_voice failed validation "
+                        f"({voice_check.get('reason')}) for "
+                        f"{athlete_id}; using fallback"
+                    )
+                    result["morning_voice"] = voice_check["fallback"]
             elif voice_check.get("truncated_text"):
                 result["morning_voice"] = voice_check["truncated_text"]
         else:
+            validation_flags["voice_valid"] = False
             result["morning_voice"] = _VOICE_FALLBACK
 
         # Sleep claim grounding validator
@@ -509,26 +810,86 @@ def generate_home_briefing_task(self: Task, athlete_id: str) -> Dict:
         if final_voice and final_voice != _VOICE_FALLBACK:
             sleep_check = validate_sleep_claims(final_voice, _garmin_h, _checkin_h)
             if not sleep_check["valid"]:
-                logger.warning(
-                    "morning_voice sleep claim ungrounded (%s) for %s; suppressing to fallback",
-                    sleep_check.get("reason"), athlete_id,
+                validation_flags["sleep_valid"] = False
+                validation_flags["sleep_stripped"] = True
+                stripped = _strip_ungrounded_sleep_sentences(
+                    final_voice, _garmin_h, _checkin_h
                 )
-                result["morning_voice"] = _VOICE_FALLBACK
+                candidate = stripped.get("text") or ""
+                if candidate:
+                    candidate_voice_check = validate_voice_output(candidate, field="morning_voice")
+                    candidate_sleep_check = validate_sleep_claims(candidate, _garmin_h, _checkin_h)
+                    if candidate_voice_check.get("valid") and candidate_sleep_check.get("valid"):
+                        logger.warning(
+                            "morning_voice sleep claim ungrounded (%s) for %s; removed offending sentence(s)",
+                            sleep_check.get("reason"),
+                            athlete_id,
+                        )
+                        result["morning_voice"] = candidate
+                    else:
+                        logger.warning(
+                            "morning_voice sleep claim ungrounded (%s) for %s; candidate invalid (voice=%s sleep=%s), using deterministic fallback",
+                            sleep_check.get("reason"),
+                            athlete_id,
+                            candidate_voice_check.get("reason"),
+                            candidate_sleep_check.get("reason"),
+                        )
+                        result["morning_voice"] = _build_deterministic_briefing(athlete_id, db).get("morning_voice", _VOICE_FALLBACK)
+                else:
+                    logger.warning(
+                        "morning_voice sleep claim ungrounded (%s) for %s; no valid content remained, using deterministic fallback",
+                        sleep_check.get("reason"),
+                        athlete_id,
+                    )
+                    result["morning_voice"] = _build_deterministic_briefing(athlete_id, db).get("morning_voice", _VOICE_FALLBACK)
 
         raw_noticed = result.get("coach_noticed")
         if raw_noticed:
             noticed_check = validate_voice_output(raw_noticed, field="coach_noticed")
             if not noticed_check["valid"]:
-                logger.warning(
-                    f"coach_noticed failed validation ({noticed_check.get('reason')}) "
-                    f"for {athlete_id}; clearing field"
-                )
-                result["coach_noticed"] = None
+                # Strip-and-recover: if only a single sentence trips a
+                # content gate (interrogative / multi_topic / meta_preamble)
+                # remove that sentence and re-validate. This preserves the
+                # 80% of coach_noticed content that is good. Only fall back
+                # to clearing the field when nothing usable remains.
+                from routers.home import _strip_disallowed_sentences as _strip
+                stripped = _strip(raw_noticed)
+                if stripped["removed"] and stripped["text"]:
+                    recheck = validate_voice_output(
+                        stripped["text"], field="coach_noticed"
+                    )
+                    if recheck.get("valid"):
+                        logger.info(
+                            "coach_noticed recovered via strip "
+                            "(reasons=%s) for %s",
+                            stripped["reasons"], athlete_id,
+                        )
+                        result["coach_noticed"] = stripped["text"]
+                    else:
+                        validation_flags["coach_noticed_cleared"] = True
+                        logger.warning(
+                            "coach_noticed strip-and-recover failed "
+                            "(initial=%s, post-strip=%s) for %s; "
+                            "clearing field",
+                            noticed_check.get("reason"),
+                            recheck.get("reason"),
+                            athlete_id,
+                        )
+                        result["coach_noticed"] = None
+                else:
+                    validation_flags["coach_noticed_cleared"] = True
+                    logger.warning(
+                        f"coach_noticed failed validation "
+                        f"({noticed_check.get('reason')}) for "
+                        f"{athlete_id}; clearing field"
+                    )
+                    result["coach_noticed"] = None
 
         raw_why = result.get("workout_why")
         if raw_why:
             why_check = validate_voice_output(raw_why, field="workout_why")
             if not why_check["valid"]:
+                validation_flags["workout_why_cleared"] = True
                 result["workout_why"] = None
 
         # write_briefing_cache raises RuntimeError on any failure (setex error or
@@ -540,28 +901,60 @@ def generate_home_briefing_task(self: Task, athlete_id: str) -> Dict:
             payload=result,
             source_model=source_model,
             data_fingerprint=fingerprint,
+            briefing_source="llm",
+            briefing_is_interim=False,
         )
 
         # Finding-level cooldown: after briefing generation, set cooldown keys
         # for any correlation findings that appear in the output text.
+        injected: list = []
         try:
             from routers.home import _set_finding_cooldowns
             briefing_text = " ".join(str(v) for v in result.values() if v)
-            injected = kwargs.get("injected_findings", [])
-            if not injected:
-                from services.correlation_engine import analyze_correlations
-                try:
-                    corr_result = analyze_correlations(athlete_id, days=60, db=db)
-                    injected = [
-                        {"input_name": c.get("input_name", ""), "output_metric": c.get("output_metric", "efficiency")}
-                        for c in corr_result.get("correlations", [])
-                        if c.get("is_significant")
-                    ]
-                except Exception:
-                    pass
+            from services.correlation_engine import analyze_correlations
+            try:
+                corr_result = analyze_correlations(athlete_id, days=60, db=db)
+                injected = [
+                    {"input_name": c.get("input_name", ""), "output_metric": c.get("output_metric", "efficiency")}
+                    for c in corr_result.get("correlations", [])
+                    if c.get("is_significant")
+                ]
+            except Exception:
+                pass
             _set_finding_cooldowns(athlete_id, briefing_text, injected)
         except Exception as _e:
             logger.debug("Finding cooldown write failed (non-blocking): %s", _e)
+
+        # Persist the generated brief + inputs to the long-term corpus
+        # (coach_briefing, coach_briefing_input). NEVER raises — if this
+        # fails, the Redis cache is already written and /v1/home stays
+        # healthy. See services/intelligence/briefing_persistence.py.
+        try:
+            from services.intelligence.briefing_persistence import persist_briefing
+            athlete_local_date_value = (
+                _local_now.date() if _local_now is not None else datetime.now(timezone.utc).date()
+            )
+            persist_briefing(
+                db=db,
+                athlete_id=athlete_id,
+                athlete_local_date=athlete_local_date_value,
+                payload=result,
+                source_model=source_model,
+                briefing_source="llm",
+                briefing_is_interim=False,
+                data_fingerprint=fingerprint,
+                schema_version=2,
+                prompt_text=prompt,
+                today_completed=today_completed,
+                planned_workout=planned_workout_snapshot,
+                checkin_data=checkin_data,
+                race_data=race_data,
+                upcoming_plan=upcoming_plan_snapshot,
+                findings_injected=injected or None,
+                validation_flags=validation_flags,
+            )
+        except Exception as _pe:  # noqa: BLE001 — persistence must never break /v1/home
+            logger.warning("Brief persistence failed (non-blocking) for %s: %s", athlete_id, _pe)
 
         reset_circuit(athlete_id)
 
@@ -637,9 +1030,23 @@ def enqueue_briefing_refresh(
         should_enqueue_refresh,
         set_enqueue_cooldown,
         is_circuit_open,
+        is_enqueue_cooldown_active,
+        is_task_lock_held,
     )
 
+    if is_task_lock_held(athlete_id):
+        logger.debug("Home briefing enqueue skipped (task lock held): %s", athlete_id)
+        return False
+
     if force:
+        # Force mode is intended for data-change recovery, not burst replay.
+        # Suppress repeated force-enqueues during cooldown for background traffic.
+        if priority != "high" and is_enqueue_cooldown_active(athlete_id):
+            logger.debug(
+                "Home briefing force-enqueue skipped (cooldown active): %s",
+                athlete_id,
+            )
+            return False
         if is_circuit_open(athlete_id) and not allow_circuit_probe:
             logger.debug("Home briefing force-enqueue blocked (circuit open): %s", athlete_id)
             return False

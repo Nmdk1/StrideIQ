@@ -10,8 +10,6 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from services.rpi_lookup import calculate_rpi_from_race_time_lookup
-
 # Reference test cases: race time -> expected RPI
 REFERENCE_CASES = [
     {"distance_m": 5000, "time_s": 1200, "expected_rpi": 50.0},  # 5K in 20:00
@@ -67,8 +65,8 @@ def find_rpi_adjustment():
     avg_adjustment = sum(a["adjustment"] for a in adjustments) / len(adjustments)
     print(f"\n{'='*60}")
     print(f"Average adjustment factor: {avg_adjustment:.4f}")
-    print(f"\nNote: If adjustment factor is close to 1.0, formula is accurate.")
-    print(f"If significantly different, may need formula correction.")
+    print("\nNote: If adjustment factor is close to 1.0, formula is accurate.")
+    print("If significantly different, may need formula correction.")
 
 if __name__ == "__main__":
     find_rpi_adjustment()

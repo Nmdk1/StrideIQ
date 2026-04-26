@@ -17,7 +17,7 @@ import sys
 import json
 import re
 from pathlib import Path
-from typing import List, Set, Dict
+from typing import Set
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
@@ -229,7 +229,7 @@ def tag_all_entries():
                     # Extract text from principles JSON
                     principles_text = json.dumps(principles)
                     text_sources.append(principles_text)
-                except:
+                except Exception:
                     pass
             
             combined_text = " ".join(text_sources)
@@ -253,7 +253,7 @@ def tag_all_entries():
         
         db.commit()
         
-        print(f"\n✅ Tagging complete!")
+        print("\n✅ Tagging complete!")
         print(f"   Tagged {tagged_count} entries")
         print(f"   Total tags assigned: {total_tags}")
         print(f"   Average tags per entry: {total_tags / tagged_count if tagged_count > 0 else 0:.1f}")
@@ -293,12 +293,12 @@ def show_tag_statistics():
         print("TAG STATISTICS")
         print("=" * 60)
         
-        print(f"\n📊 Top Tags (by frequency):")
+        print("\n📊 Top Tags (by frequency):")
         sorted_tags = sorted(tag_counts.items(), key=lambda x: x[1], reverse=True)
         for tag, count in sorted_tags[:20]:
             print(f"   {tag}: {count} entries")
         
-        print(f"\n📚 Tags by Methodology:")
+        print("\n📚 Tags by Methodology:")
         for methodology, tags in methodology_tags.items():
             print(f"   {methodology}: {len(tags)} unique tags")
         

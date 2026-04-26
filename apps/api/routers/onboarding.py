@@ -35,6 +35,26 @@ _ALLOWED_INTAKE_STAGES = {
     "connect_strava",
     "nutrition_setup",
     "work_setup",
+    # Strength v1 sandbox: baseline lifting profile (currently lifting?,
+    # days/week, experience bucket, optional baseline 1RMs). Optional,
+    # gated by the strength.v1 feature flag in the UI; persisted here so
+    # the engine can stratify findings by lifting-state.
+    # See docs/specs/STRENGTH_V1_SCOPE.md §5.5 / §11.1.
+    "strength_baseline",
+}
+
+
+# Strength v1 — coarse buckets for lifting frequency and experience.
+# Stored on the Athlete model (lifts_currently, lift_days_per_week,
+# lift_experience_bucket). Validated at intake time so a typo doesn't
+# poison the population-level analysis later.
+_STRENGTH_LIFTS_CURRENTLY = {"yes", "no", "returning", "intermittent"}
+_STRENGTH_EXPERIENCE_BUCKETS = {
+    "new",                # < 6 months consistent
+    "developing",         # 6-24 months
+    "established",        # 2-10 years
+    "experienced",        # 10+ years
+    "returning",          # had a long break
 }
 
 
@@ -51,6 +71,7 @@ def _run_history_snapshot(db: Session, athlete_id) -> dict:
     cutoff_28d = now - timedelta(days=28)
     cutoff_14d = now - timedelta(days=14)
 
+    # Running-only baseline for "thin history" — intentional (not all-sport volume).
     q = (
         db.query(Activity)
         .filter(
@@ -137,6 +158,41 @@ def _upsert_intake_row(db: Session, athlete_id, stage: str, responses: dict, com
                 pass
 
     return row
+
+
+def _persist_strength_baseline_to_athlete(
+    db: Session, athlete: Athlete, responses: dict
+) -> None:
+    """Mirror strength_baseline intake responses onto Athlete columns.
+
+    The IntakeQuestionnaire row is the canonical record of the
+    interview; the Athlete columns are the fast-read denormalized
+    fields the engine queries when stratifying findings by lifting
+    state. Both are updated together so they cannot diverge.
+
+    Three coarse fields, all optional. Unknown values are silently
+    rejected (we do not 400 on baseline so the athlete can skip
+    questions); the Athlete columns simply stay NULL until valid
+    values arrive on a later upsert. See STRENGTH_V1_SCOPE.md §11.1.
+    """
+    if not isinstance(responses, dict):
+        return
+
+    raw_currently = responses.get("lifts_currently")
+    if isinstance(raw_currently, str):
+        normalized = raw_currently.strip().lower()
+        if normalized in _STRENGTH_LIFTS_CURRENTLY:
+            athlete.lifts_currently = normalized
+
+    raw_days = responses.get("lift_days_per_week")
+    if isinstance(raw_days, (int, float)) and 0 <= float(raw_days) <= 14:
+        athlete.lift_days_per_week = float(raw_days)
+
+    raw_bucket = responses.get("lift_experience_bucket")
+    if isinstance(raw_bucket, str):
+        normalized = raw_bucket.strip().lower()
+        if normalized in _STRENGTH_EXPERIENCE_BUCKETS:
+            athlete.lift_experience_bucket = normalized
 
 
 def _maybe_seed_intent_snapshot_from_goals(db: Session, athlete_id, responses: dict):
@@ -358,6 +414,8 @@ def upsert_intake(
     row = _upsert_intake_row(db, current_user.id, st, payload.responses, payload.completed)
     pace_result = None
     pace_flag_enabled = False
+    if st == "strength_baseline":
+        _persist_strength_baseline_to_athlete(db, current_user, payload.responses)
     if st == "goals":
         _maybe_seed_intent_snapshot_from_goals(db, current_user.id, payload.responses)
         try:
@@ -403,7 +461,9 @@ def get_onboarding_status(
     baseline_completed = bool(baseline_row and baseline_row.completed_at)
     return {
         "strava_connected": bool(current_user.strava_access_token),
+        "garmin_connected": bool(current_user.garmin_connected),
         "last_sync": current_user.last_strava_sync.isoformat() if current_user.last_strava_sync else None,
+        "last_garmin_sync": current_user.last_garmin_sync.isoformat() if current_user.last_garmin_sync else None,
         "ingestion_state": snapshot.to_dict() if snapshot else None,
         "history": history,
         "baseline": {

@@ -216,3 +216,34 @@ class TestGradeExplained:
             grade[i] = 5.0
 
         assert _is_grade_sustained(grade, 500, 30, 3.0) is True
+
+
+# ---------------------------------------------------------------------------
+# Fallback ladder integrity for effort semantics
+# ---------------------------------------------------------------------------
+
+class TestEffortFallbackLadder:
+    def test_threshold_pace_only_context_produces_effort_array(self):
+        stream = make_easy_run_stream(duration_s=1200, steady_pace_m_s=2.9)
+        ctx = AthleteContext(threshold_pace_per_km=300.0)
+        result = analyze_stream(stream, list(stream.keys()), athlete_context=ctx)
+        assert len(result.effort_intensity) == result.point_count
+        assert max(result.effort_intensity) > 0.0
+
+    def test_hr_tier_used_when_no_pace_anchors_available(self):
+        stream = make_easy_run_stream(duration_s=1200, steady_pace_m_s=2.9, steady_hr=150)
+        ctx = AthleteContext(threshold_hr=165, max_hr=186, resting_hr=48)
+        result = analyze_stream(stream, list(stream.keys()), athlete_context=ctx)
+        # Existing tier contract remains stable even with pace-first effort implementation.
+        assert result.tier_used == "tier1_threshold_hr"
+        assert len(result.effort_intensity) == result.point_count
+
+    def test_stream_relative_last_resort_without_hr_or_pace(self):
+        stream = make_easy_run_stream(duration_s=900)
+        stream.pop("heartrate", None)
+        ctx = AthleteContext()
+        result = analyze_stream(stream, list(stream.keys()), athlete_context=ctx)
+        assert result.tier_used == "tier4_stream_relative"
+        assert len(result.effort_intensity) == result.point_count
+        # No pace anchors + no HR should degrade gracefully to bounded zeros.
+        assert all(0.0 <= v <= 1.0 for v in result.effort_intensity)

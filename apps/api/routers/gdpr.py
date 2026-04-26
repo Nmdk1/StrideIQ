@@ -4,9 +4,9 @@ GDPR Compliance Endpoints
 Provides data export and account deletion endpoints for GDPR compliance.
 Tone: Neutral, empowering, no guilt-inducing language.
 """
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
-from sqlalchemy import and_, func
+from sqlalchemy import func
 from typing import Any, Dict, Optional
 from datetime import datetime, timezone
 

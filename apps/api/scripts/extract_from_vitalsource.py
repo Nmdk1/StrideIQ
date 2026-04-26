@@ -8,7 +8,6 @@ Requires browser automation (Selenium) to navigate through the book.
 import sys
 import os
 import time
-from pathlib import Path
 
 try:
     from selenium import webdriver

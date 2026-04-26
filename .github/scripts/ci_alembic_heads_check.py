@@ -4,18 +4,12 @@ Prevents accidental introduction of new standalone migration roots
 (down_revision = None) that cause non-deterministic ordering, FK failures,
 and "overlaps" errors in CI and production.
 
-Expected state (after Phase 2 monetization gating):
-  Single linear chain ending at: monetization_001
-    consent_001
-    └── garmin_001 (Athlete OAuth fields)
-    └── garmin_002 (Activity new columns)
-    └── garmin_003 (GarminDay model)
-    └── garmin_004 (Activity official schema fields — D3)
-    └── monetization_001 (Tier migration + plan_purchase table)  ← HEAD
+Expected state: a single linear head on the main chain (see EXPECTED_HEADS).
+When you add a migration, chain ``down_revision`` from the current head — do not
+introduce a new root.
 
-If a new migration is added, it MUST chain off the existing head — not introduce
-a new root.  If this check fails, the fix is to set down_revision to the
-appropriate parent.
+If this check fails, either fix migration parentage or update EXPECTED_HEADS
+when the new head is intentional.
 
 Usage:
   python .github/scripts/ci_alembic_heads_check.py
@@ -32,7 +26,7 @@ sys.path.insert(0, str(api_root))
 from alembic.config import Config
 from alembic.script import ScriptDirectory
 
-EXPECTED_HEADS = {"athlete_fact_001"}
+EXPECTED_HEADS = {"coach_v2_truth_001"}
 MAX_ROOTS = 2  # main chain root + phase chain root (readiness_score_001)
 
 

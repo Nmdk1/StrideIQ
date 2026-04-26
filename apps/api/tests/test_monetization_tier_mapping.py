@@ -263,22 +263,22 @@ class TestFreeTier:
 # =============================================================================
 
 class TestOneTimeTier:
-    """One-time $5 purchase: full paces unlocked per plan. No adaptation."""
+    """Two-tier model: one-time purchase does not grant pace access."""
 
     def test_one_time_gets_complete_plan(self):
-        """After PlanPurchase, paces_locked=False on that plan."""
+        """After PlanPurchase, free tier remains locked (no one-time unlock)."""
         athlete = _make_athlete("free")
         plan = _make_plan(athlete)
         purchase = _make_purchase(athlete, plan)
         try:
             resp = client.get(f"/v2/plans/{plan.id}", headers=_headers(athlete))
             assert resp.status_code == 200
-            assert resp.json()["paces_locked"] is False
+            assert resp.json()["paces_locked"] is True
         finally:
             _cleanup(purchase, plan, athlete)
 
     def test_one_time_gets_calculated_paces(self):
-        """After PlanPurchase, coach_notes are present (not null)."""
+        """After PlanPurchase, coach_notes remain null for free tier."""
         athlete = _make_athlete("free")
         plan = _make_plan(athlete)
         purchase = _make_purchase(athlete, plan)
@@ -287,7 +287,7 @@ class TestOneTimeTier:
             assert resp.status_code == 200
             notes = _all_coach_notes(resp.json())
             non_null = [n for n in notes if n is not None]
-            assert len(non_null) > 0, "Expected at least one coach_notes after purchase"
+            assert len(non_null) == 0, "Free tier should not see coach_notes without subscription"
         finally:
             _cleanup(purchase, plan, athlete)
 
@@ -325,7 +325,7 @@ class TestOneTimeTier:
 # =============================================================================
 
 class TestGuidedTierGroupA:
-    """Guided tier: full adaptation access, no premium narratives."""
+    """Guided tier: full adaptation access including workout narratives."""
 
     def test_guided_gets_daily_adaptation(self):
         """Guided athletes get 200 (not 403) on daily intelligence endpoint."""
@@ -360,16 +360,16 @@ class TestGuidedTierGroupA:
         finally:
             _cleanup(athlete)
 
-    def test_guided_no_narratives(self):
-        """Guided athletes get 403 on workout-narrative — that's premium only."""
+    def test_guided_gets_narratives(self):
+        """Guided athletes can access workout-narrative after monetization reset."""
         athlete = _make_athlete("guided")
         try:
             resp = client.get(
                 "/v1/intelligence/workout-narrative/2026-03-10",
                 headers=_headers(athlete),
             )
-            assert resp.status_code == 403, (
-                f"Workout narratives must be premium-only, but guided got {resp.status_code}"
+            assert resp.status_code != 403, (
+                f"Workout narratives should be guided+, but guided got {resp.status_code}"
             )
         finally:
             _cleanup(athlete)

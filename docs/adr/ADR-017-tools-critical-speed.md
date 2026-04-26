@@ -111,6 +111,11 @@ New component on Tools page:
 - Prediction cards: time, pace/km, pace/mile, confidence range
 - Insight sentence below
 
+> **Note (Apr 2026) — Canonical Units Migration:** The API now returns all
+> distances in meters and paces in seconds-per-km. Display values like
+> `pace/mile` and `5:44/mi` shown in the UI mockups below are now rendered
+> according to the athlete's preferred unit setting, not hard-coded as imperial.
+
 For unauthenticated or no-data users:
 - Explain what CS is
 - CTA to connect Strava/log races

@@ -27,6 +27,23 @@ from services.garmin_adapter import adapt_activity_detail_samples
 
 
 # ---------------------------------------------------------------------------
+# Module-level autouse fixture: block all Celery/broker side effects
+# ---------------------------------------------------------------------------
+# Root cause of the historical hang: tests that call process_garmin_activity_task.run()
+# with a running payload (created > 0) trigger the briefing refresh path, which calls
+# enqueue_briefing_refresh() → generate_home_briefing_task.apply_async() → Celery broker.
+# In CI (no broker), this blocks indefinitely.  We patch both entry points here
+# as an autouse module fixture so every test in this file is always safe.
+
+@pytest.fixture(autouse=True)
+def _no_briefing_side_effects():
+    with patch("services.home_briefing_cache.mark_briefing_dirty"), \
+         patch("tasks.home_briefing_tasks.enqueue_briefing_refresh"), \
+         patch("core.cache.invalidate_athlete_cache"):
+        yield
+
+
+# ---------------------------------------------------------------------------
 # Shared test fixtures / helpers
 # ---------------------------------------------------------------------------
 
@@ -336,16 +353,16 @@ class TestPayloadShapeNormalization:
         assert result["created"] == 0
         assert result["updated"] == 0
 
-    def test_mixed_list_only_runs_processed(self):
-        """Mixed list: only running activities created; cycling skipped."""
+    def test_mixed_list_all_accepted_sports_processed(self):
+        """Mixed list: both running and cycling activities are created."""
         mock_db = _make_mock_db()
         mock_athlete = _make_mock_athlete()
 
         payload = [_RUNNING_RAW, _CYCLING_RAW]
         result = self._run_task(mock_db, mock_athlete, payload)
 
-        assert result["created"] == 1
-        assert result["skipped"] == 1
+        assert result["created"] == 2
+        assert result["skipped"] == 0
 
 
 # ---------------------------------------------------------------------------
@@ -353,7 +370,7 @@ class TestPayloadShapeNormalization:
 # ---------------------------------------------------------------------------
 
 class TestActivityTypeFiltering:
-    """Only running activities (sport="run") should be created as Activity rows."""
+    """Accepted sports are created; unmapped types are skipped."""
 
     def _run_item(self, raw_payload):
         from tasks.garmin_webhook_tasks import _ingest_activity_item
@@ -371,17 +388,28 @@ class TestActivityTypeFiltering:
         result = self._run_item(_TRAIL_RUNNING_RAW)
         assert result == "created"
 
-    def test_cycling_activity_is_skipped(self):
+    def test_cycling_activity_is_created(self):
         result = self._run_item(_CYCLING_RAW)
-        assert result == "skipped"
+        assert result == "created"
 
     def test_treadmill_running_is_created(self):
         raw = {**_RUNNING_RAW, "activityType": "TREADMILL_RUNNING", "summaryId": "sum-treadmill-001"}
         result = self._run_item(raw)
         assert result == "created"
 
-    def test_unknown_sport_is_skipped(self):
-        raw = {**_RUNNING_RAW, "activityType": "YOGA", "summaryId": "sum-yoga-001"}
+    def test_cross_training_types_are_created(self):
+        for garmin_type in ("WALKING", "HIKING", "STRENGTH_TRAINING", "YOGA", "PILATES"):
+            raw = {**_RUNNING_RAW, "activityType": garmin_type, "summaryId": f"sum-{garmin_type.lower()}-001"}
+            result = self._run_item(raw)
+            assert result == "created", f"{garmin_type} should be created"
+
+    def test_unmapped_sport_is_skipped(self):
+        raw = {**_RUNNING_RAW, "activityType": "GOLF", "summaryId": "sum-golf-001"}
+        result = self._run_item(raw)
+        assert result == "skipped"
+
+    def test_swimming_is_skipped(self):
+        raw = {**_RUNNING_RAW, "activityType": "SWIMMING", "summaryId": "sum-swim-001"}
         result = self._run_item(raw)
         assert result == "skipped"
 
@@ -579,6 +607,57 @@ class TestActivityFieldMapping:
         added = mock_db.add.call_args[0][0]
         assert added.source == "garmin_manual"
 
+    def test_workout_classifier_called_with_instance_and_persists_fields(self):
+        """REGRESSION GUARD: every Garmin activity ingest must instantiate
+        the classifier with `db`, call `.classify_activity(activity)`, and
+        persist workout_type / workout_zone / workout_confidence /
+        intensity_score onto the new row.
+
+        The previous code called `WorkoutClassifierService.classify_activity(
+        new_activity)` as if it were a static method. That raised TypeError
+        on every Garmin ingest, was swallowed by the broad except in
+        `_ingest_activity_item`, and every Garmin run went to disk with
+        workout_type=NULL. That single bug is what caused the Compare tab
+        to return "no similar runs" for every Garmin-primary athlete --
+        tiers 3 and 4 both gate on workout_type.
+
+        If this test fails, do NOT loosen the assertion. Either the
+        classifier signature changed and you must update the call site,
+        or someone reverted the instance-based call and broke the
+        Compare feature for the population again."""
+        from tasks.garmin_webhook_tasks import _ingest_activity_item
+        from services.workout_classifier import WorkoutType, WorkoutZone
+
+        mock_db = _make_mock_db()
+        mock_athlete = _make_mock_athlete()
+        mock_db.query.return_value.filter.return_value.first.return_value = None
+        mock_db.query.return_value.filter.return_value.all.return_value = []
+
+        fake_classification = MagicMock()
+        fake_classification.workout_type = WorkoutType.AEROBIC_RUN
+        fake_classification.workout_zone = WorkoutZone.ENDURANCE
+        fake_classification.confidence = 0.82
+        fake_classification.intensity_score = 47.5
+        fake_classifier = MagicMock()
+        fake_classifier.classify_activity.return_value = fake_classification
+
+        with patch(
+            "services.workout_classifier.WorkoutClassifierService",
+            return_value=fake_classifier,
+        ) as mock_cls:
+            _ingest_activity_item(_RUNNING_RAW, mock_athlete, mock_db)
+
+        # The service was instantiated with db (NOT called as a static method)
+        mock_cls.assert_called_once_with(mock_db)
+        # And then invoked on the new activity row that was added
+        added = mock_db.add.call_args[0][0]
+        fake_classifier.classify_activity.assert_called_once_with(added)
+        # And the result was persisted to the activity
+        assert added.workout_type == WorkoutType.AEROBIC_RUN.value
+        assert added.workout_zone == WorkoutZone.ENDURANCE.value
+        assert added.workout_confidence == 0.82
+        assert added.intensity_score == 47.5
+
 
 # ---------------------------------------------------------------------------
 # D5.1: last_garmin_sync update
@@ -604,7 +683,7 @@ class TestLastGarminSyncUpdate:
         assert isinstance(mock_athlete.last_garmin_sync, datetime)
 
     def test_last_garmin_sync_updated_even_when_all_skipped(self):
-        """Sync timestamp updated even if all items are skipped (e.g. cycling only)."""
+        """Sync timestamp updated even if all items are skipped (e.g. unmapped sport)."""
         from tasks.garmin_webhook_tasks import process_garmin_activity_task
         mock_db = _make_mock_db()
         mock_athlete = _make_mock_athlete()
@@ -612,9 +691,10 @@ class TestLastGarminSyncUpdate:
         mock_db.query.return_value.filter.return_value.first.return_value = None
         mock_db.query.return_value.filter.return_value.all.return_value = []
 
+        golf_raw = {**_RUNNING_RAW, "activityType": "GOLF", "summaryId": "sum-golf-skip"}
         with patch("tasks.garmin_webhook_tasks.get_db_sync", return_value=mock_db), \
              patch("tasks.garmin_webhook_tasks._find_athlete_in_db", return_value=mock_athlete):
-            process_garmin_activity_task.run(ATHLETE_ID, _CYCLING_RAW)
+            process_garmin_activity_task.run(ATHLETE_ID, golf_raw)
 
         assert mock_athlete.last_garmin_sync is not None
 
@@ -659,7 +739,7 @@ class TestLastGarminSyncUpdate:
         mock_db = _make_mock_db()
         mock_athlete = _make_mock_athlete()
 
-        # CYCLING payload is skipped by _ingest_activity_item
+        golf_raw = {**_RUNNING_RAW, "activityType": "GOLF", "summaryId": "sum-golf-nobriefing"}
         mock_db.query.return_value.filter.return_value.first.return_value = None
         mock_db.query.return_value.filter.return_value.all.return_value = []
 
@@ -667,10 +747,109 @@ class TestLastGarminSyncUpdate:
              patch("tasks.garmin_webhook_tasks._find_athlete_in_db", return_value=mock_athlete), \
              patch("services.home_briefing_cache.mark_briefing_dirty") as mock_dirty, \
              patch("tasks.home_briefing_tasks.enqueue_briefing_refresh") as mock_enq:
-            process_garmin_activity_task.run(ATHLETE_ID, _CYCLING_RAW)
+            process_garmin_activity_task.run(ATHLETE_ID, golf_raw)
 
         mock_dirty.assert_not_called()
         mock_enq.assert_not_called()
+
+
+class TestDeferredDetailReplay:
+    def test_summary_ingestion_replays_deferred_details(self):
+        """When summary arrives after detail, deferred details are replayed automatically."""
+        from tasks.garmin_webhook_tasks import process_garmin_activity_task
+
+        mock_db = _make_mock_db()
+        mock_athlete = _make_mock_athlete()
+
+        # New activity path: no existing Garmin idempotency hit, no dedup candidates.
+        mock_db.query.return_value.filter.return_value.first.return_value = None
+        mock_db.query.return_value.filter.return_value.all.return_value = []
+
+        deferred_payload = {"dummy": "detail"}
+
+        with patch("tasks.garmin_webhook_tasks.get_db_sync", return_value=mock_db), \
+             patch("tasks.garmin_webhook_tasks._find_athlete_in_db", return_value=mock_athlete), \
+             patch("tasks.garmin_webhook_tasks._pop_deferred_activity_detail_payloads", return_value=[deferred_payload]), \
+             patch("tasks.garmin_webhook_tasks.process_garmin_activity_detail_task") as mock_detail_task:
+            mock_detail_task.apply_async = MagicMock()
+            result = process_garmin_activity_task.run(ATHLETE_ID, _RUNNING_RAW)
+
+        assert result["status"] == "ok"
+        assert result["created"] == 1
+        mock_detail_task.apply_async.assert_called_once()
+        _, kwargs = mock_detail_task.apply_async.call_args
+        assert kwargs["args"][0] == ATHLETE_ID
+        assert kwargs["args"][1] == [deferred_payload]
+        assert kwargs["countdown"] == 5
+
+    def test_summary_ingestion_without_deferred_details_does_not_enqueue_replay(self):
+        from tasks.garmin_webhook_tasks import process_garmin_activity_task
+
+        mock_db = _make_mock_db()
+        mock_athlete = _make_mock_athlete()
+
+        mock_db.query.return_value.filter.return_value.first.return_value = None
+        mock_db.query.return_value.filter.return_value.all.return_value = []
+
+        with patch("tasks.garmin_webhook_tasks.get_db_sync", return_value=mock_db), \
+             patch("tasks.garmin_webhook_tasks._find_athlete_in_db", return_value=mock_athlete), \
+             patch("tasks.garmin_webhook_tasks._pop_deferred_activity_detail_payloads", return_value=[]), \
+             patch("tasks.garmin_webhook_tasks.process_garmin_activity_detail_task") as mock_detail_task:
+            mock_detail_task.apply_async = MagicMock()
+            process_garmin_activity_task.run(ATHLETE_ID, _RUNNING_RAW)
+
+        mock_detail_task.apply_async.assert_not_called()
+
+
+class TestFirstSessionSweepTrigger:
+    def test_first_session_sweep_enqueued_on_new_athlete_batch(self):
+        from tasks.garmin_webhook_tasks import process_garmin_activity_task
+
+        mock_db = _make_mock_db()
+        mock_athlete = _make_mock_athlete()
+        mock_db.query.return_value.filter.return_value.first.return_value = None
+        mock_db.query.return_value.filter.return_value.all.return_value = []
+
+        with patch("tasks.garmin_webhook_tasks.get_db_sync", return_value=mock_db), \
+             patch("tasks.garmin_webhook_tasks._find_athlete_in_db", return_value=mock_athlete), \
+             patch("tasks.garmin_webhook_tasks._try_acquire_first_session_lock", return_value=True), \
+             patch("tasks.correlation_tasks.run_athlete_first_session_sweep") as mock_sweep:
+            mock_sweep.apply_async = MagicMock()
+            # 3 created activities triggers threshold.
+            payload = [{**_RUNNING_RAW, "summaryId": "s1"}, {**_RUNNING_RAW, "summaryId": "s2"}, {**_RUNNING_RAW, "summaryId": "s3"}]
+            process_garmin_activity_task.run(ATHLETE_ID, payload)
+
+        mock_sweep.apply_async.assert_called_once()
+
+    def test_first_session_sweep_not_enqueued_when_findings_exist(self):
+        from tasks.garmin_webhook_tasks import process_garmin_activity_task
+        from models import CorrelationFinding
+
+        mock_db = _make_mock_db()
+        mock_athlete = _make_mock_athlete()
+
+        default_q = MagicMock()
+        default_q.filter.return_value.first.return_value = None
+        default_q.filter.return_value.all.return_value = []
+
+        cf_q = MagicMock()
+        cf_q.filter.return_value.first.return_value = MagicMock()
+
+        def _smart_query(model, *a, **kw):
+            if model is CorrelationFinding.id:
+                return cf_q
+            return default_q
+
+        mock_db.query.side_effect = _smart_query
+
+        with patch("tasks.garmin_webhook_tasks.get_db_sync", return_value=mock_db), \
+             patch("tasks.garmin_webhook_tasks._find_athlete_in_db", return_value=mock_athlete), \
+             patch("tasks.correlation_tasks.run_athlete_first_session_sweep") as mock_sweep:
+            mock_sweep.apply_async = MagicMock()
+            payload = [{**_RUNNING_RAW, "summaryId": "s1"}, {**_RUNNING_RAW, "summaryId": "s2"}, {**_RUNNING_RAW, "summaryId": "s3"}]
+            process_garmin_activity_task.run(ATHLETE_ID, payload)
+
+        mock_sweep.apply_async.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
@@ -717,6 +896,7 @@ class TestStreamIngestionTask:
         activity.garmin_activity_id = 5001968355
         activity.start_time = datetime.fromtimestamp(_SAMPLE_UNIX, tz=timezone.utc)
         activity.stream_fetch_status = "pending"
+        activity.sport = "run"
         return activity
 
     def _run_task(self, payload, activity=None):
@@ -779,12 +959,14 @@ class TestStreamIngestionTask:
         assert activity.stream_fetch_status == "success"
 
     def test_unknown_garmin_activity_id_is_skipped(self):
-        """If no Activity matches the activityId, skip gracefully (no add)."""
-        result, mock_db = self._run_task(_DETAIL_PAYLOAD, activity=None)
+        """If no Activity matches, payload is deferred and no stream row is created."""
+        with patch("tasks.garmin_webhook_tasks._defer_activity_detail_payload") as mock_defer:
+            result, mock_db = self._run_task(_DETAIL_PAYLOAD, activity=None)
 
         assert result["status"] == "ok"
         assert result["processed"] == 0
         mock_db.add.assert_not_called()
+        mock_defer.assert_called_once()
 
     def test_missing_activity_id_in_payload_skipped(self):
         """Payload without activityId is skipped."""
@@ -804,6 +986,7 @@ class TestStreamIngestionTask:
         activity_b.garmin_activity_id = 9999000001
         activity_b.start_time = datetime.fromtimestamp(_SAMPLE_UNIX, tz=timezone.utc)
         activity_b.stream_fetch_status = "pending"
+        activity_b.sport = "run"
 
         payload_b = {**_DETAIL_PAYLOAD, "activityId": 9999000001}
 
@@ -826,10 +1009,30 @@ class TestStreamIngestionTask:
         """No samples in detail → status set to unavailable, no stream row created."""
         activity = self._make_activity()
         payload_no_samples = {**_DETAIL_PAYLOAD, "samples": []}
-        result, mock_db = self._run_task(payload_no_samples, activity=activity)
+        with patch(
+            "tasks.strava_fallback_tasks.repair_garmin_activity_from_strava_task.delay"
+        ):
+            result, mock_db = self._run_task(payload_no_samples, activity=activity)
 
         mock_db.add.assert_not_called()
         assert activity.stream_fetch_status == "unavailable"
+
+    def test_empty_samples_enqueues_strava_fallback(self):
+        """REGRESSION GUARD: every Garmin row marked 'unavailable' must enqueue
+        the Strava fallback. The cleanup beat does this for stale rows; the
+        webhook path used to silently skip it, leaving Garmin-only athletes
+        with permanently empty pages when Garmin's detail webhook returned
+        an empty envelope. Both paths must enqueue or the asymmetry returns.
+        """
+        activity = self._make_activity()
+        payload_no_samples = {**_DETAIL_PAYLOAD, "samples": []}
+        with patch(
+            "tasks.strava_fallback_tasks.repair_garmin_activity_from_strava_task.delay"
+        ) as mock_enqueue:
+            result, mock_db = self._run_task(payload_no_samples, activity=activity)
+
+        assert activity.stream_fetch_status == "unavailable"
+        mock_enqueue.assert_called_once_with(str(activity.id))
 
     def test_dict_payload_treated_as_single_item(self):
         """Single dict payload processes as one detail item."""
@@ -837,3 +1040,13 @@ class TestStreamIngestionTask:
         result, mock_db = self._run_task(_DETAIL_PAYLOAD, activity=activity)
 
         assert result["processed"] == 1
+
+    def test_non_run_detail_stored_in_session_detail(self):
+        """Non-run activity detail: raw payload stored in session_detail, no stream created."""
+        activity = self._make_activity()
+        activity.sport = "cycling"
+        result, mock_db = self._run_task(_DETAIL_PAYLOAD, activity=activity)
+
+        assert result["processed"] == 1
+        assert activity.session_detail["detail_webhook_raw"] == _DETAIL_PAYLOAD
+        mock_db.add.assert_not_called()

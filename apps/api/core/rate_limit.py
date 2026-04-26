@@ -6,8 +6,8 @@ Per-user and per-endpoint limits.
 """
 import time
 import logging
-from typing import Optional, Dict, Tuple
-from fastapi import Request, HTTPException, status
+from typing import Tuple
+from fastapi import Request, status
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 from core.config import settings

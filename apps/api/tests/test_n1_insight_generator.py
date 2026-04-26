@@ -43,25 +43,27 @@ from services.n1_insight_generator import (
 
 class TestInsightTextGeneration:
 
-    def test_text_starts_with_based_on_your_data(self):
+    def test_text_uses_coaching_voice(self):
         text = _build_insight_text(
             input_name="weekly_volume_km",
             direction="positive",
             strength="moderate",
             r=0.5,
             lag_days=2,
+            output_metric="completion_rate",
         )
-        assert text.startswith("Based on your data:")
+        assert "your" in text.lower()
 
     def test_text_contains_your(self):
         text = _build_insight_text(
             input_name="sleep_hours",
-            direction="positive",
+            direction="negative",
             strength="moderate",
-            r=0.4,
+            r=-0.4,
             lag_days=0,
+            output_metric="pace_easy",
         )
-        assert "YOUR" in text
+        assert "your" in text.lower()
 
     def test_text_is_non_prescriptive(self):
         """Insight should be observational, not prescriptive."""
@@ -71,64 +73,63 @@ class TestInsightTextGeneration:
             strength="strong",
             r=0.7,
             lag_days=0,
+            output_metric="completion_rate",
         )
         assert "you should" not in text.lower()
 
     def test_lag_phrasing_zero(self):
-        text = _build_insight_text("sleep_hours", "positive", "moderate", 0.4, lag_days=0)
-        assert "following day" not in text
-        assert "within" not in text
+        text = _build_insight_text("weekly_volume_km", "positive", "moderate", 0.4,
+                                   lag_days=0, output_metric="completion_rate")
+        assert "next day" not in text
 
     def test_lag_phrasing_one_day(self):
-        text = _build_insight_text("sleep_hours", "positive", "moderate", 0.4, lag_days=1)
-        assert "following day" in text
+        text = _build_insight_text("weekly_volume_km", "positive", "moderate", 0.4,
+                                   lag_days=1, output_metric="completion_rate")
+        assert "next day" in text
 
     def test_lag_phrasing_multi_day(self):
-        text = _build_insight_text("sleep_hours", "positive", "moderate", 0.4, lag_days=3)
-        assert "within 3 days" in text
+        text = _build_insight_text("weekly_volume_km", "positive", "moderate", 0.4,
+                                   lag_days=3, output_metric="completion_rate")
+        assert "next 3 days" in text
 
     # -- Ambiguous metric: raw efficiency --
 
-    def test_efficiency_positive_r_gets_neutral_text(self):
-        """Raw efficiency is ambiguous — no 'improve' or 'decline'."""
+    def test_efficiency_positive_r_suppressed(self):
+        """Raw efficiency is ambiguous — suppress entirely rather than say nothing useful."""
         text = _build_insight_text("sleep_hours", "positive", "moderate", 0.5,
                                    lag_days=0, output_metric="efficiency")
-        assert "associated with changes" in text
-        assert "improve" not in text.lower()
-        assert "decline" not in text.lower()
+        assert text is None
 
-    def test_efficiency_negative_r_gets_neutral_text(self):
+    def test_efficiency_negative_r_suppressed(self):
         text = _build_insight_text("work_stress", "negative", "moderate", -0.5,
                                    lag_days=0, output_metric="efficiency")
-        assert "associated with changes" in text
-        assert "improve" not in text.lower()
-        assert "decline" not in text.lower()
+        assert text is None
 
     # -- Unambiguous metrics --
 
     def test_pace_easy_positive_r_means_worse(self):
-        """pace_easy: lower=better. Positive r (input up → pace up = slower) = decline."""
+        """pace_easy: lower=better. Positive r (more stress → slower) = hurts."""
         text = _build_insight_text("work_stress", "positive", "moderate", 0.5,
                                    lag_days=0, output_metric="pace_easy")
-        assert "decline" in text.lower()
+        assert "hurt" in text.lower()
 
     def test_pace_easy_negative_r_means_better(self):
-        """pace_easy: lower=better. Negative r (input up → pace down = faster) = improve."""
+        """pace_easy: lower=better. Negative r (more sleep → faster) = helps."""
         text = _build_insight_text("sleep_hours", "negative", "moderate", -0.5,
                                    lag_days=0, output_metric="pace_easy")
-        assert "improve" in text.lower()
+        assert "help" in text.lower()
 
     def test_completion_positive_r_means_better(self):
-        """completion_rate: higher=better. Positive r = improve."""
+        """completion_rate: higher=better. Positive r = helps."""
         text = _build_insight_text("sleep_hours", "positive", "moderate", 0.5,
                                    lag_days=0, output_metric="completion_rate")
-        assert "improve" in text.lower()
+        assert "help" in text.lower()
 
     def test_completion_negative_r_means_worse(self):
-        """completion_rate: higher=better. Negative r = decline."""
+        """completion_rate: higher=better. Negative r = hurts."""
         text = _build_insight_text("work_stress", "negative", "moderate", -0.5,
                                    lag_days=0, output_metric="completion_rate")
-        assert "decline" in text.lower()
+        assert "hurt" in text.lower()
 
 
 # ---------------------------------------------------------------------------
@@ -246,17 +247,14 @@ class TestMixedScenarioRegression:
     directional claims from that ratio.
     """
 
-    def test_ambiguous_insight_never_says_improve_or_decline(self):
-        """Any direction + efficiency → no directional claim."""
+    def test_ambiguous_insight_suppressed(self):
+        """Any direction + efficiency → suppressed entirely (returns None)."""
         for direction in ("positive", "negative"):
             text = _build_insight_text(
                 "sleep_hours", direction, "moderate", 0.5, 0,
                 output_metric="efficiency",
             )
-            lower = text.lower()
-            assert "improve" not in lower, f"'improve' found for direction={direction}"
-            assert "decline" not in lower, f"'decline' found for direction={direction}"
-            assert "associated with changes" in lower
+            assert text is None, f"Expected None for ambiguous metric, got: {text}"
 
     def test_ambiguous_insight_categorised_as_pattern(self):
         assert _categorize("positive", "efficiency") == "pattern"
@@ -264,18 +262,18 @@ class TestMixedScenarioRegression:
         assert _categorize("positive", "efficiency_threshold") == "pattern"
 
     def test_unambiguous_pace_correctly_directional(self):
-        """pace_easy: input up → pace down (negative r) = faster = improvement."""
-        text_improve = _build_insight_text(
+        """pace_easy: input up → pace down (negative r) = faster = helps."""
+        text_help = _build_insight_text(
             "sleep_hours", "negative", "moderate", -0.5, 0,
             output_metric="pace_easy",
         )
-        assert "improve" in text_improve.lower()
+        assert "help" in text_help.lower()
 
-        text_decline = _build_insight_text(
+        text_hurt = _build_insight_text(
             "work_stress", "positive", "moderate", 0.5, 0,
             output_metric="pace_easy",
         )
-        assert "decline" in text_decline.lower()
+        assert "hurt" in text_hurt.lower()
 
 
 # ---------------------------------------------------------------------------
@@ -355,14 +353,13 @@ class TestTier2MetadataSuppression:
     def test_unknown_metric_categorised_as_pattern(self):
         assert _categorize("positive", "made_up_metric_abc") == "pattern"
 
-    def test_unknown_metric_gets_neutral_text(self):
+    def test_unknown_metric_suppressed(self):
+        """Unknown metric → suppress rather than say something meaningless."""
         text = _build_insight_text(
             "sleep_hours", "positive", "moderate", 0.5, 0,
             output_metric="made_up_metric_abc",
         )
-        assert "associated with changes" in text
-        assert "improve" not in text.lower()
-        assert "decline" not in text.lower()
+        assert text is None
 
 
 # ---------------------------------------------------------------------------
@@ -397,8 +394,7 @@ class TestDirectionalWhitelist:
                 output_metric=metric,
             )
             lower = text.lower()
-            # Must use directional language (improve or decline)
-            assert "improve" in lower or "decline" in lower, (
+            assert "help" in lower or "hurt" in lower, (
                 f"Whitelisted metric '{metric}' did not get directional text"
             )
 
@@ -430,13 +426,15 @@ class TestDirectionalWhitelist:
 class TestBannedAcronyms:
 
     def test_no_banned_acronyms_in_generated_text(self):
-        """All friendly-name mapped inputs produce clean text."""
+        """All friendly-name mapped inputs produce clean text (using unambiguous metric)."""
         inputs = [
             "weekly_volume_km", "avg_hr", "sleep_hours", "daily_protein_g",
-            "hrv_rmssd", "intensity_score", "efficiency", "completion_rate",
+            "hrv_rmssd", "intensity_score", "completion_rate",
         ]
         for inp in inputs:
-            text = _build_insight_text(inp, "positive", "moderate", 0.5, 0)
+            text = _build_insight_text(inp, "positive", "moderate", 0.5, 0,
+                                       output_metric="completion_rate")
+            assert text is not None, f"Unexpected None for {inp}"
             assert not BANNED_PATTERN.search(text), f"Banned acronym in text for {inp}: {text}"
 
     def test_friendly_name_for_hrv(self):
@@ -493,11 +491,12 @@ class TestGenerateN1Insights:
         ])
         with patch("services.correlation_engine.analyze_correlations", return_value=corr):
             with patch("services.phase3_eligibility._history_stats", return_value={"history_span_days": 200}):
-                insights = generate_n1_insights(uuid4(), MagicMock(), days_window=200)
+                insights = generate_n1_insights(uuid4(), MagicMock(), days_window=200,
+                                                 output_metric="completion_rate")
 
         assert len(insights) == 1
         assert insights[0].source == "n1"
-        assert "YOUR" in insights[0].text
+        assert "your" in insights[0].text.lower()
         assert insights[0].evidence["r"] == 0.55
 
     def test_filters_out_weak_correlations(self):
@@ -570,8 +569,7 @@ class TestGenerateN1Insights:
                 insights = generate_n1_insights(uuid4(), MagicMock(), days_window=200,
                                                  output_metric="efficiency")
 
-        assert insights[0].category == "pattern"
-        assert "associated with changes" in insights[0].text
+        assert len(insights) == 0  # ambiguous metrics produce no insights
 
     # -- Unambiguous metrics: proper directional categorisation --
 
@@ -579,7 +577,7 @@ class TestGenerateN1Insights:
         """pace_easy (lower=better): negative r = beneficial = what_works."""
         corr = self._mock_correlations([
             {
-                "input_name": "sleep_hours",
+                "input_name": "weekly_volume_km",
                 "correlation_coefficient": -0.5,
                 "p_value": 0.001,
                 "sample_size": 50,
@@ -621,7 +619,7 @@ class TestGenerateN1Insights:
         """completion_rate (higher=better): positive r = beneficial = what_works."""
         corr = self._mock_correlations([
             {
-                "input_name": "sleep_hours",
+                "input_name": "weekly_volume_km",
                 "correlation_coefficient": 0.5,
                 "p_value": 0.001,
                 "sample_size": 50,
@@ -653,7 +651,8 @@ class TestGenerateN1Insights:
         ])
         with patch("services.correlation_engine.analyze_correlations", return_value=corr):
             with patch("services.phase3_eligibility._history_stats", return_value={"history_span_days": 200}):
-                insights = generate_n1_insights(uuid4(), MagicMock(), days_window=200)
+                insights = generate_n1_insights(uuid4(), MagicMock(), days_window=200,
+                                                 output_metric="completion_rate")
 
         assert "p_adjusted" in insights[0].evidence
         assert insights[0].evidence["p_adjusted"] <= 0.05

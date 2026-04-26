@@ -82,7 +82,7 @@ def main():
         print(f"Activities with calculable efficiency: {len(efficiencies)}")
         
         # Weekly aggregates
-        print(f"\n--- WEEKLY EFFICIENCY TREND (last 12 weeks) ---")
+        print("\n--- WEEKLY EFFICIENCY TREND (last 12 weeks) ---")
         weeks_sorted = sorted(weekly_data.keys())[-12:]
         
         weekly_stats = []
@@ -105,7 +105,7 @@ def main():
             print(f"  {week}: eff={avg_eff:.4f} vol={total_km:.1f}km runs={run_count} HR={avg_hr:.0f} pace={avg_pace:.1f}min/km")
         
         # Correlation: Volume vs Next Week's Efficiency
-        print(f"\n--- CORRELATION ANALYSIS ---")
+        print("\n--- CORRELATION ANALYSIS ---")
         
         if len(weekly_stats) >= 6:
             # Volume this week vs efficiency next week
@@ -140,7 +140,7 @@ def main():
             interpret_r(r, len(hr_eff_pairs), "HR on efficiency")
         
         # Run-level analysis: distance, elevation, etc.
-        print(f"\n--- RUN-LEVEL CORRELATIONS (Last 12 weeks only) ---")
+        print("\n--- RUN-LEVEL CORRELATIONS (Last 12 weeks only) ---")
         recent = [e for e in efficiencies if e['date'] > datetime.now(e['date'].tzinfo) - timedelta(weeks=12)]
         print(f"Recent runs analyzed: {len(recent)}")
         
@@ -159,18 +159,18 @@ def main():
                 print(f"\nElevation vs Efficiency: r = {r:.3f}")
                 interpret_r(r, len(recent), "elevation on efficiency")
             else:
-                print(f"\nElevation: Insufficient variation in data")
+                print("\nElevation: Insufficient variation in data")
             
             # Speed vs HR (should be positive if HR tracking is valid)
             speeds = [r['speed_kph'] for r in recent]
             hrs = [r['avg_hr'] for r in recent]
             r = pearson_correlation(speeds, hrs)
             print(f"\nSpeed vs Avg HR: r = {r:.3f}")
-            print(f"  (Expected: positive, as faster = harder)")
+            print("  (Expected: positive, as faster = harder)")
             interpret_r(r, len(recent), "speed on HR")
         
         # Efficiency trend over time
-        print(f"\n--- EFFICIENCY TREND OVER TIME ---")
+        print("\n--- EFFICIENCY TREND OVER TIME ---")
         if len(weekly_stats) >= 4:
             first_half = weekly_stats[:len(weekly_stats)//2]
             second_half = weekly_stats[len(weekly_stats)//2:]

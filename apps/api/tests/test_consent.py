@@ -512,7 +512,7 @@ class TestLLMPipelineGating:
     @pytest.fixture(autouse=True)
     def athlete_and_headers(self):
         db = SessionLocal()
-        athlete = _make_athlete(db)
+        athlete = _make_athlete(db, subscription_tier="guided")
         headers = _auth_headers(athlete)
         self.athlete = athlete
         self.headers = headers
@@ -537,7 +537,7 @@ class TestLLMPipelineGating:
     def consented_athlete(self):
         """Create an athlete with ai_consent=True."""
         db = SessionLocal()
-        athlete = _make_athlete(db)
+        athlete = _make_athlete(db, subscription_tier="guided")
         headers = _auth_headers(athlete)
         grant_consent(db=db, athlete_id=athlete.id, ip_address="127.0.0.1", user_agent="Test", source="onboarding")
         db.refresh(athlete)
@@ -619,17 +619,22 @@ class TestLLMPipelineGating:
         mock_genai.GenerativeModel.assert_not_called()
 
     def test_workout_narrative_returns_none_without_consent(self):
-        """Test 25: _call_llm in workout_narrative_generator returns None without consent."""
-        from services.workout_narrative_generator import WorkoutNarrativeGenerator
-        with patch("services.workout_narrative_generator.genai") as mock_genai:
-            gen = WorkoutNarrativeGenerator.__new__(WorkoutNarrativeGenerator)
+        """Test 25: _call_llm in workout_narrative_generator returns None without consent.
+
+        Module now routes through core.llm_client.call_llm instead of the legacy
+        google-generativeai ``genai`` client.  Consent must be checked before the
+        LLM dispatch, so the underlying call must never be reached.
+        """
+        from services.intelligence import workout_narrative_generator as wng_mod
+        with patch.object(wng_mod, "_call_narrative_llm") as mock_llm_call:
+            gen = wng_mod.WorkoutNarrativeGenerator.__new__(wng_mod.WorkoutNarrativeGenerator)
             result = gen._call_llm(
                 athlete_id=self.athlete.id,
                 prompt="Test prompt",
                 db=None,
             )
         assert result is None
-        mock_genai.GenerativeModel.assert_not_called()
+        mock_llm_call.assert_not_called()
 
     def test_adaptation_narrator_returns_none_without_consent(self):
         """Test 26: generate_narration in adaptation_narrator returns None without consent."""

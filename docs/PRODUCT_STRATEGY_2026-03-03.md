@@ -43,6 +43,8 @@ hook that converts.
 
 ## Priority-Ranked Product Concepts
 
+There are **16** numbered concepts below (1–16). Other docs should cite this count when referring to the strategy document.
+
 ### 1. Pre-Race Fingerprint (full block signature)
 
 Mine every race in an athlete's Garmin history. For each one, extract
@@ -110,7 +112,7 @@ keep hitting the same wall."
 **Why #4:** Acquisition, not retention. The hook that makes everything
 else possible from day one.
 
-### 5. Personal Operating Manual
+### 5. Personal Operating Manual — V2 SHIPPED (Apr 4, 2026)
 
 Not a dashboard. A document that grows. Every confirmed correlation,
 every proven pattern, every historical fingerprint match — a living
@@ -118,6 +120,12 @@ document that belongs to this athlete.
 
 After 6 months: 8 entries. After 2 years: 40. The most complete
 physiological self-knowledge document any amateur athlete has ever had.
+
+**V2 shipped:** Race Character (the most important insight — "during
+training, sleep below 7h precedes lower efficiency. On race day, you
+override this"), Cascade Stories (multi-step mechanism chains),
+interestingness-scored findings, human-language headlines, delta tracking.
+Promoted to primary navigation. `/manual` is now a top-level page.
 
 **Why #5:** Highest quality acquisition when it fires. "I know things
 about how my body works that my coach of 10 years didn't know." That
@@ -158,7 +166,83 @@ recorded history — is the proof of concept. That is a clinical result.
 A 79-year-old athlete setting state records coached by AI and a
 correlation engine is the most powerful demonstration of the product.
 
-### 10. Cohort Intelligence
+### 10. Athlete Hypothesis Testing — "I Have a Theory"
+
+The correlation engine discovers patterns autonomously. The athlete
+has no way to aim it. Serious athletes think in hypotheses constantly:
+"I think I run better when I do strides the day before intervals."
+
+The athlete states a theory. The system tracks it, shows a living
+evidence board ("4 of 6 support this — too early to confirm"), and
+graduates confirmed hypotheses into the Manual alongside engine-
+discovered findings. The athlete becomes a collaborator in their own
+science — their questions living next to the system's answers.
+
+The journey of watching evidence accumulate IS the stickiness. An
+athlete watching 4 out of 6 observations confirm their hypothesis is
+not leaving this product.
+
+**Why #10:** Retention through ownership. The athlete isn't consuming
+intelligence — they're contributing to it. Targets the data-literate
+serious runner who is exactly the founder's profile and the product's
+core market.
+
+**Spec:** `docs/specs/ATHLETE_HYPOTHESIS_TESTING_SPEC.md`
+
+### 11. Forward-Projection of Findings Against Today's Wellness
+
+The morning briefing has confirmed findings (sleep cliff at 6.2h) and
+today's wellness data (sleep 5.3h) on the same screen. They don't talk
+to each other. The gap: run confirmed findings FORWARD against today's
+numbers before the athlete walks out the door, using their personal
+decay curves for timing. The data, findings, and delivery surface all
+exist — the forward-projection connection doesn't yet.
+
+**Why #11:** Highest-impact prompt engineering change. No new
+infrastructure. Transforms the morning voice from reporting what
+happened to predicting what's coming.
+
+### 12. Intelligent Maps — The Correlation Engine on Geography
+
+The map is not decoration. It is the most natural way to render what
+the correlation engine knows about how the athlete moves through space.
+
+Current state: No maps in the product. GPS data exists on every
+outdoor activity. Route matching is a simple query (start location +
+distance clustering) — most runners run 3-5 routes all year.
+
+**Build sequence:**
+
+1. **Basic GPS trace** — get maps on screen for all outdoor activities
+2. **Ghost Map** — current run overlaid on previous runs of the same
+   route, weighted by recency and condition similarity. 6-8 runs gives
+   meaningful ghosts. The athlete sees exactly where they're gaining
+   on their history and where they're losing it.
+3. **Effort-Normalized Map** — grade-adjusted pace at every point.
+   Same math as heat adjustment but for elevation. A 7:30 uphill and
+   a 7:30 downhill are completely different events — this shows the truth.
+4. **Body State Narrative Map** — shape_extractor phases rendered as
+   labeled chapters on the route ("miles 3-5: optimal zone, seasonal best")
+5. **Physiological Terrain Map** — efficiency at each point vs personal
+   baseline. Where your body works harder than terrain justifies = a
+   finding rendered as a hot spot on the map.
+6. **Route Intelligence** — the route becomes an entity. Performance
+   trajectory on this route over time. Conditions that produce best/worst
+   efforts. Prediction for today given current conditions.
+
+Every one of these is impossible on Strava because Strava doesn't have
+the athlete's correlation data, personal baselines, or confirmed findings.
+Every one is possible on StrideIQ because the engine already computes
+the underlying relationships. The map just renders them spatially.
+
+**Why #12:** Highest screenshot value of any surface. A ghost map with
+effort-normalized coloring and narrative segments is the image that
+gets posted in running forums with "what app is that?"
+
+**Spec:** `docs/BUILDER_INSTRUCTIONS_2026-04-05_CROSS_TRAINING_POLISH.md`
+(Workstream 2, section 2B)
+
+### 13. Cohort Intelligence
 
 Zero acquisition value today. Highest long-term network effect. Design
 for it now, build at 500 users.
@@ -191,20 +275,79 @@ That's the product. Everything else is execution.
 
 ---
 
-## Connection to This Week's Build
+### 14. Compound Recovery Signals (HRV/RHR Ratio)
+
+HRV and resting HR are already tracked independently. The hypothesis:
+a combined signal (HRV ÷ RHR, or a z-score composite) may have stronger
+predictive power for next-day efficiency than either metric alone. This
+is a cheap test — derive the compound signal in the correlation engine's
+input builder, let the existing pipeline discover whether it correlates.
+If it does, it becomes a new recovery readiness metric that no consumer
+app currently surfaces.
+
+**Status:** Scoped for builder. Estimated: 1 session.
+
+### 15. Personal Coach Tier (Monetization)
+
+Two distinct product shapes under evaluation:
+1. **Service model** — Michael coaches athletes directly using StrideIQ
+   as the intelligence layer. The system provides the data, the human
+   provides the relationship and judgment.
+2. **Platform model** — coaches bring their own athletes. StrideIQ
+   provides the intelligence tools (findings, plans, briefings) under
+   a coach dashboard with multi-athlete views.
+
+The platform scales; the service proves the concept. Both require a
+coach-facing view of athlete intelligence, permissioning, and billing.
+
+**Status:** Strategic priority. Requires dedicated planning session.
+
+### 16. AI Nutrition Intelligence
+
+Not a food logger — a nutrition correlation engine. The differentiator:
+nutrition data feeds into the same pipeline as sleep, HRV, and training
+load, producing findings like "your efficiency improves when protein
+exceeds 140g on the day before intervals." Without this connection,
+it's MyFitnessPal with fewer features.
+
+**Architecture decided (Apr 8, 2026):** Build our own. LLM vision model
+(GPT-5.4 Mini or Kimi K2.5) identifies food and estimates portions from
+photos. USDA FoodData Central provides verified macro values. This
+separates identification error (manageable) from macro accuracy (solved
+by database lookup). Third-party APIs evaluated and rejected: Passio AI
+($1,800/mo at our scale), Edamam (cumulative licensing trap, smallest
+database), January AI ($1,499/mo). FatSecret deferred as fallback if
+USDA coverage proves insufficient.
+
+Athlete confirmation flow + meal template learning compound accuracy
+over time. Cost: ~$13.50/month at 30 athletes. Full CRUD API, correlation
+engine wiring, and nutrition model already exist.
+
+**Status:** Researched and scoped. See `docs/specs/NUTRITION_PHOTO_TRACKING_SPEC.md`.
+Estimated: 2 builder sessions.
+
+## Connection to Current Build (Updated Apr 8, 2026)
 
 The correlation engine is the foundation for everything above:
 
-- **Effort Classification** (shipping now) → unlocks 6 of 9 correlation
-  metrics, Recovery Fingerprint, accurate workout classification
-- **Engine Layers 1–4** (threshold detection, asymmetric response,
-  cascade detection, decay curves) → produces the specific, actionable
+- **Effort Classification** ✅ → unlocked 6 of 9 correlation metrics,
+  Recovery Fingerprint, accurate workout classification
+- **Engine Layers 1–4** ✅ (threshold detection, asymmetric response,
+  cascade detection, decay curves) → producing the specific, actionable
   findings that power the Pre-Race Fingerprint, Injury Fingerprint,
   and Personal Operating Manual
 - **Engine Layers 5–6** (confidence trajectory, momentum effects) →
   improves quality of every finding surfaced
 - **Engine Layers 7+** → the uncopyable moat that requires years of
   data to populate
+
+**Intelligence surfaces now live:**
+- Personal Operating Manual V2 (Race Character, Cascades, Interestingness)
+- Home wellness row (Recovery HRV, Overnight Avg, RHR, Sleep)
+- Pre-activity wellness stamps on every activity
+- Limiter Engine Phases 1-4 (fingerprint bridge → coach integration)
+- Cross-training multi-sport support (6 sports, sport-aware TSS)
+- N=1 plan engine V3 (diagnosis-first, KB-grounded, 14 archetypes)
 
 Every layer of the correlation engine roadmap
 (`docs/specs/CORRELATION_ENGINE_ROADMAP.md`) is a direct prerequisite

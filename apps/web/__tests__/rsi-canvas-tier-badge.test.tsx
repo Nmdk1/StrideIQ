@@ -6,9 +6,10 @@
  * communicates that effort colors are relative to this run only, which is useful.
  */
 import React from 'react';
-import { render, screen } from '@testing-library/react';
+import { screen } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { mockTier1Result, mockTier4Result, generateTestStreamData, mockUnitsImperial } from './rsi-fixtures';
+import { renderWithStreamHover } from '@/test-utils/renderWithStreamHover';
 
 import { RunShapeCanvas } from '@/components/activities/rsi/RunShapeCanvas';
 
@@ -34,7 +35,7 @@ describe('Tier Badge: Removed', () => {
       refetch: jest.fn(),
     } as any);
 
-    render(<RunShapeCanvas activityId="test-123" />);
+    renderWithStreamHover(<RunShapeCanvas activityId="test-123" />);
 
     expect(screen.queryByTestId('tier-badge')).not.toBeInTheDocument();
   });
@@ -47,7 +48,7 @@ describe('Tier Badge: Removed', () => {
       refetch: jest.fn(),
     } as any);
 
-    render(<RunShapeCanvas activityId="test-123" />);
+    renderWithStreamHover(<RunShapeCanvas activityId="test-123" />);
 
     expect(screen.queryByTestId('tier-badge')).not.toBeInTheDocument();
   });
@@ -62,7 +63,7 @@ describe('Tier 4 Caveat: Still Visible', () => {
       refetch: jest.fn(),
     } as any);
 
-    render(<RunShapeCanvas activityId="test-123" />);
+    renderWithStreamHover(<RunShapeCanvas activityId="test-123" />);
 
     const caveatText = screen.getByText(/Effort colors show the shape of this run/i);
     expect(caveatText).toBeInTheDocument();
@@ -77,7 +78,7 @@ describe('Tier 4 Caveat: Still Visible', () => {
       refetch: jest.fn(),
     } as any);
 
-    render(<RunShapeCanvas activityId="test-123" />);
+    renderWithStreamHover(<RunShapeCanvas activityId="test-123" />);
 
     expect(screen.queryByTestId('tier4-caveat')).not.toBeInTheDocument();
   });

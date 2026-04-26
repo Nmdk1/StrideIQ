@@ -181,3 +181,58 @@ class TestEffortInvariants:
         assert hasattr(result, "effort_intensity"), \
             "StreamAnalysisResult must include effort_intensity array"
         assert len(result.effort_intensity) == result.point_count
+
+
+# ---------------------------------------------------------------------------
+# Pace-first effort calibration (N=1 system fix)
+# ---------------------------------------------------------------------------
+
+class TestPaceFirstEffortCalibration:
+    """Behavioral tests for pace-first effort semantics."""
+
+    def test_easy_run_with_pace_profile_is_not_red_dominant(self):
+        stream = make_easy_run_stream(duration_s=2400, steady_pace_m_s=2.85, steady_hr=150)
+        ctx = AthleteContext(
+            threshold_hr=170,
+            max_hr=190,
+            resting_hr=50,
+            threshold_pace_per_km=300.0,
+            rpi=56.0,
+        )
+        result = analyze_stream(stream, channels_available=list(stream.keys()), athlete_context=ctx)
+        effort = result.effort_intensity
+        assert len(effort) == 2400
+        hot_ratio = sum(1 for v in effort if v >= 0.80) / len(effort)
+        cool_ratio = sum(1 for v in effort if v <= 0.60) / len(effort)
+        assert hot_ratio < 0.08, f"easy run unexpectedly hot-dominant (hot_ratio={hot_ratio:.3f})"
+        assert cool_ratio > 0.80, f"easy run should stay mostly cool/moderate (cool_ratio={cool_ratio:.3f})"
+
+    def test_interval_run_reaches_hot_effort_segments(self):
+        stream = make_interval_stream(reps=5, work_pace_m_s=4.6, work_hr=176, rest_hr=140)
+        ctx = AthleteContext(
+            threshold_hr=170,
+            max_hr=192,
+            resting_hr=50,
+            threshold_pace_per_km=300.0,
+            rpi=58.0,
+        )
+        result = analyze_stream(stream, channels_available=list(stream.keys()), athlete_context=ctx)
+        effort = sorted(result.effort_intensity)
+        p90 = effort[int(0.90 * (len(effort) - 1))]
+        assert p90 >= 0.80, f"hard session should produce hot segments (p90={p90:.3f})"
+
+    def test_hr_modifier_is_bounded_when_pace_is_easy(self):
+        stream = make_easy_run_stream(duration_s=1800, steady_pace_m_s=2.8, steady_hr=182, drift_hr_per_hour=0.0)
+        ctx = AthleteContext(
+            threshold_hr=165,
+            max_hr=188,
+            resting_hr=48,
+            threshold_pace_per_km=300.0,
+            rpi=55.0,
+        )
+        result = analyze_stream(stream, channels_available=list(stream.keys()), athlete_context=ctx)
+        effort = sorted(result.effort_intensity)
+        median_effort = effort[len(effort) // 2]
+        assert median_effort <= 0.62, (
+            f"pace-first path should prevent HR-only easy->hard flips (median={median_effort:.3f})"
+        )

@@ -18,6 +18,15 @@ from core.database import (
     check_db_connection,
 )
 
+__all__ = [
+    "engine",
+    "SessionLocal",
+    "Base",
+    "get_db",
+    "get_db_sync",
+    "check_db_connection",
+]
+
 warnings.warn(
     "Importing from 'database' is deprecated. Use 'core.database' instead.",
     DeprecationWarning,

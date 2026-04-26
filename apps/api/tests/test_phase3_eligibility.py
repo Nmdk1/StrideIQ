@@ -38,11 +38,16 @@ from services.phase3_eligibility import (
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _make_athlete(tier="premium"):
+def _make_athlete(tier="premium", trial_active=False):
     a = MagicMock()
     a.id = uuid4()
     a.subscription_tier = tier
-    a.has_active_subscription = tier in {"premium", "guided", "elite", "pro"}
+    if trial_active:
+        a.trial_ends_at = datetime.now(timezone.utc) + timedelta(days=15)
+        a.has_active_subscription = True
+    else:
+        a.trial_ends_at = None
+        a.has_active_subscription = tier in {"subscriber", "premium", "guided", "elite", "pro"}
     return a
 
 
@@ -330,7 +335,29 @@ class TestPhase3CTierGating:
         db = _mock_db_for_athlete(athlete, total_runs=200, span_days=300)
         result = get_3c_eligibility(athlete.id, db)
         assert result.eligible is False
-        assert "tier" in result.reason.lower()
+        assert "paid subscription" in result.reason.lower() or "trial" in result.reason.lower()
+
+    def test_3c_trial_user_passes_tier_gate(self):
+        """Free tier with active trial qualifies for 3C."""
+        athlete = _make_athlete(tier="free", trial_active=True)
+        db = _mock_db_for_athlete(athlete, total_runs=200, span_days=300)
+        mock_corr = {
+            "correlations": [
+                {
+                    "input_name": "weekly_volume_km",
+                    "correlation_coefficient": 0.55,
+                    "p_value": 0.001,
+                    "sample_size": 50,
+                    "is_significant": True,
+                    "direction": "positive",
+                    "strength": "moderate",
+                    "time_lag_days": 2,
+                },
+            ],
+        }
+        with patch("services.correlation_engine.analyze_correlations", return_value=mock_corr):
+            result = get_3c_eligibility(athlete.id, db)
+        assert result.eligible is True
 
     def test_3c_guided_tier_allowed(self):
         """Guided tier gets 3C access."""
@@ -384,15 +411,25 @@ class TestPhase3BEligibility:
         db = _mock_db_for_athlete(athlete, total_runs=200, span_days=300)
         result = get_3b_eligibility(athlete.id, db)
         assert result.eligible is False
-        assert "premium" in result.reason.lower()
+        assert "paid subscription" in result.reason.lower() or "trial" in result.reason.lower()
 
-    def test_3b_guided_tier_blocked(self):
-        """Guided tier gets 3C but NOT 3B."""
-        athlete = _make_athlete(tier="guided")
-        db = _mock_db_for_athlete(athlete, total_runs=200, span_days=300)
+    def test_3b_trial_user_passes_tier_gate(self):
+        """Free tier with active 30-day trial passes the tier gate."""
+        athlete = _make_athlete(tier="free", trial_active=True)
+        db = _mock_db_for_athlete(athlete, total_runs=200, span_days=300,
+                                  has_workout=True)
+        result = get_3b_eligibility(athlete.id, db)
+        assert result.eligible is True
+
+    def test_3b_expired_trial_blocked(self):
+        """Free tier with expired trial is blocked."""
+        athlete = _make_athlete(tier="free")
+        athlete.trial_ends_at = datetime.now(timezone.utc) - timedelta(days=5)
+        athlete.has_active_subscription = False
+        db = _mock_db_for_athlete(athlete, total_runs=200, span_days=300,
+                                  has_workout=True)
         result = get_3b_eligibility(athlete.id, db)
         assert result.eligible is False
-        assert "premium" in result.reason.lower()
 
     def test_3b_no_planned_workout(self):
         """No planned workout for target date → ineligible."""
@@ -489,13 +526,14 @@ class TestSyncedHistorySufficiency:
 
 class TestCrossTierGating:
 
-    def test_guided_gets_3c_not_3b(self):
+    def test_guided_gets_both_3b_and_3c(self):
+        """Guided normalizes to subscriber — gets both 3B and 3C."""
         athlete = _make_athlete(tier="guided")
 
         db_3b = _mock_db_for_athlete(athlete, total_runs=200, span_days=300,
                                      has_workout=True)
         result_3b = get_3b_eligibility(athlete.id, db_3b)
-        assert result_3b.eligible is False
+        assert result_3b.eligible is True
 
         db_3c = _mock_db_for_athlete(athlete, total_runs=200, span_days=300)
         mock_corr = {
@@ -565,3 +603,28 @@ class TestCrossTierGating:
         db = _mock_db_for_athlete(athlete, total_runs=200, span_days=300, has_workout=True)
         assert get_3b_eligibility(athlete.id, db).eligible is False
         assert get_3c_eligibility(athlete.id, db).eligible is False
+
+    def test_free_with_trial_gets_both(self):
+        """Free tier + active trial → full access to 3B and 3C."""
+        athlete = _make_athlete(tier="free", trial_active=True)
+        db_3b = _mock_db_for_athlete(athlete, total_runs=200, span_days=300,
+                                     has_workout=True)
+        assert get_3b_eligibility(athlete.id, db_3b).eligible is True
+
+        db_3c = _mock_db_for_athlete(athlete, total_runs=200, span_days=300)
+        mock_corr = {
+            "correlations": [
+                {
+                    "input_name": "weekly_volume_km",
+                    "correlation_coefficient": 0.55,
+                    "p_value": 0.001,
+                    "sample_size": 50,
+                    "is_significant": True,
+                    "direction": "positive",
+                    "strength": "moderate",
+                    "time_lag_days": 0,
+                },
+            ],
+        }
+        with patch("services.correlation_engine.analyze_correlations", return_value=mock_corr):
+            assert get_3c_eligibility(athlete.id, db_3c).eligible is True

@@ -407,8 +407,8 @@ class TestWorkerValidatesAllVoiceFields:
              patch("tasks.home_briefing_tasks.release_task_lock"), \
              patch("tasks.home_briefing_tasks.get_db_sync", return_value=MagicMock()), \
              patch("tasks.home_briefing_tasks._build_data_fingerprint", return_value="fp1"), \
-             patch("tasks.home_briefing_tasks._build_briefing_prompt", return_value=("prompt", {}, [], {}, {}, None)), \
-             patch("tasks.home_briefing_tasks._call_llm_for_briefing", return_value=tsb_payload), \
+             patch("tasks.home_briefing_tasks._build_briefing_prompt", return_value=("prompt", {}, [], {}, {}, None, None, None, None, None)), \
+             patch("tasks.home_briefing_tasks._call_llm_for_briefing", return_value=(tsb_payload, "claude-sonnet-4-6")), \
              patch("tasks.home_briefing_tasks.reset_circuit"), \
              patch("routers.home._valid_home_briefing_contract", return_value=True), \
              patch("services.consent.has_ai_consent", return_value=True):
@@ -452,8 +452,8 @@ class TestWorkerValidatesAllVoiceFields:
              patch("tasks.home_briefing_tasks.release_task_lock"), \
              patch("tasks.home_briefing_tasks.get_db_sync", return_value=MagicMock()), \
              patch("tasks.home_briefing_tasks._build_data_fingerprint", return_value="fp1"), \
-             patch("tasks.home_briefing_tasks._build_briefing_prompt", return_value=("prompt", {}, [], {}, {}, None)), \
-             patch("tasks.home_briefing_tasks._call_llm_for_briefing", return_value=tsb_payload), \
+             patch("tasks.home_briefing_tasks._build_briefing_prompt", return_value=("prompt", {}, [], {}, {}, None, None, None, None, None)), \
+             patch("tasks.home_briefing_tasks._call_llm_for_briefing", return_value=(tsb_payload, "claude-sonnet-4-6")), \
              patch("tasks.home_briefing_tasks.reset_circuit"), \
              patch("routers.home._valid_home_briefing_contract", return_value=True), \
              patch("services.consent.has_ai_consent", return_value=True):
@@ -470,6 +470,48 @@ class TestWorkerValidatesAllVoiceFields:
             assert payload["morning_voice"] == _VOICE_FALLBACK, (
                 "morning_voice with internal metrics must use fallback"
             )
+
+    def test_worker_strips_ungrounded_sleep_sentence_preserves_rest(self):
+        """Ungrounded sleep claim should be removed while keeping valid numbered context."""
+        from unittest.mock import MagicMock, patch
+        from uuid import uuid4
+        import json
+
+        llm_payload = {
+            "morning_voice": (
+                "You slept 7.5 hours last night, which should support strong recovery today. "
+                "You ran 4.0 miles at 8:43/mi with 129 bpm, so keep tomorrow very short and easy."
+            ),
+            "coach_noticed": "Solid consistency into race week.",
+            "workout_why": "Easy mileage preserves rhythm without adding fatigue.",
+            "week_assessment": "Taper trajectory remains stable.",
+            "today_context": "Stay disciplined with effort.",
+            "coach_thread_id": None,
+        }
+        fake_r = self._make_fake_redis()
+
+        with patch("services.home_briefing_cache.get_redis_client", return_value=fake_r), \
+             patch("tasks.home_briefing_tasks.acquire_task_lock", return_value=True), \
+             patch("tasks.home_briefing_tasks.release_task_lock"), \
+             patch("tasks.home_briefing_tasks.get_db_sync", return_value=MagicMock()), \
+             patch("tasks.home_briefing_tasks._build_data_fingerprint", return_value="fp1"), \
+             patch("tasks.home_briefing_tasks._build_briefing_prompt", return_value=("prompt", {}, [], {"garmin_sleep_h": 5.3, "sleep_h": 5.0}, {"days_remaining": 3}, None, None, None, None, None)), \
+             patch("tasks.home_briefing_tasks._call_llm_for_briefing", return_value=(llm_payload, "claude-sonnet-4-6")), \
+             patch("tasks.home_briefing_tasks.reset_circuit"), \
+             patch("routers.home._valid_home_briefing_contract", return_value=True), \
+             patch("services.consent.has_ai_consent", return_value=True):
+
+            from tasks.home_briefing_tasks import generate_home_briefing_task
+            from services.home_briefing_cache import _cache_key
+
+            athlete_id = str(uuid4())
+            result = generate_home_briefing_task(athlete_id=athlete_id)
+            assert result["status"] == "success"
+
+            raw = fake_r.get(_cache_key(athlete_id))
+            payload = json.loads(raw)["payload"]
+            assert "7.5 hours" not in payload["morning_voice"]
+            assert "4.0 miles at 8:43/mi" in payload["morning_voice"]
 
 
 # ---------------------------------------------------------------------------
@@ -508,14 +550,13 @@ class TestMorningVoiceSchemaConstraints:
     """Schema field text must enforce one-paragraph / no-restatement rules."""
 
     def test_schema_contains_paragraph_constraint(self):
-        """morning_voice schema description enforces single paragraph, no restatement, no sentence count."""
+        """morning_voice schema description enforces single paragraph with structured formula."""
         import inspect
         from routers.home import generate_coach_home_briefing
         src = inspect.getsource(generate_coach_home_briefing)
         assert "ONE paragraph" in src
-        assert "no second paragraph" in src.lower()
-        assert "No restatement" in src
-        assert "2-3 sentences" not in src
+        assert "2-3 sentences" in src
+        assert "NEVER" in src
 
     def test_long_morning_voice_passes(self):
         """No upper character limit — morning voice can breathe."""
@@ -579,6 +620,22 @@ class TestFindingTextSanitization:
         raw = "When sleep is consistent, your easy pace is steadier."
         assert _sanitize_finding_text(raw) == raw
 
+    def test_sanitize_finding_text_normalizes_legacy_signal_tokens(self):
+        from routers.home import _sanitize_finding_text
+
+        raw = (
+            "Based on your data: YOUR easy pace tends to decline within 4 days "
+            "when your soreness 1.5 is higher and readiness_1_5 is low."
+        )
+        clean = _sanitize_finding_text(raw)
+        lower = clean.lower()
+
+        assert "your easy pace" in lower
+        assert "soreness 1.5" not in lower
+        assert "readiness_1_5" not in lower
+        assert "soreness" in lower
+        assert "self-rated readiness" in lower
+
     def test_home_finding_uses_sanitizer(self):
         import inspect
         from routers.home import get_home_data
@@ -612,3 +669,23 @@ class TestCachedBriefingNormalization:
         out = _normalize_cached_briefing_payload(payload, garmin_sleep_h=None, checkin_sleep_h=None)
         assert out is not None
         assert out["coach_noticed"] is None
+
+    def test_cached_sleep_claim_strips_bad_sentence_keeps_valid_context(self):
+        from routers.home import _normalize_cached_briefing_payload, _VOICE_FALLBACK
+
+        payload = {
+            "morning_voice": (
+                "You slept 7.5 hours last night, so your legs should feel fresh today. "
+                "You ran 4.0 miles at 8:43/mi and 129 bpm, so keep tomorrow very short and easy."
+            ),
+            "coach_noticed": "Strong consistency this week.",
+        }
+        out = _normalize_cached_briefing_payload(
+            payload,
+            garmin_sleep_h=5.3,
+            checkin_sleep_h=5.0,
+        )
+        assert out is not None
+        assert out["morning_voice"] != _VOICE_FALLBACK
+        assert "7.5 hours" not in out["morning_voice"]
+        assert "4.0 miles at 8:43/mi" in out["morning_voice"]

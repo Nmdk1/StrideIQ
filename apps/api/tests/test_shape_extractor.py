@@ -851,3 +851,112 @@ class TestTrustGates:
         # Either it classifies correctly or suppresses — never wrong
         if shape.summary.workout_classification is None:
             assert sentence is None, "Null classification must suppress sentence"
+
+
+class TestWorkoutStructureSummaryElevation:
+    """_summarize_workout_structure must not label hilly runs as intervals
+    when pace variation is explained by elevation."""
+
+    def test_hilly_run_with_steady_gap_returns_none(self):
+        """14 mile splits with 1600ft gain, alternating fast/slow from hills.
+        GAP values are steady (effort was consistent). Should return None."""
+        from unittest.mock import MagicMock, patch
+
+        METERS_PER_MILE = 1609.344
+
+        mock_db = MagicMock()
+        activity_id = "test-hilly-activity"
+
+        mock_activity = MagicMock()
+        mock_activity.total_elevation_gain = 488  # ~1600 ft in meters
+
+        splits = []
+        for i in range(14):
+            s = MagicMock()
+            s.split_number = i + 1
+            s.distance = METERS_PER_MILE
+            s.average_heartrate = 145
+            if i % 2 == 0:
+                s.elapsed_time = 570  # uphill: ~9:30/mi
+                s.gap_seconds_per_mile = 520  # GAP: ~8:40/mi (steady)
+            else:
+                s.elapsed_time = 470  # downhill: ~7:50/mi
+                s.gap_seconds_per_mile = 515  # GAP: ~8:35/mi (steady)
+            splits.append(s)
+
+        def _route_query(model_cls):
+            chain = MagicMock()
+            if model_cls.__name__ == "Activity":
+                chain.filter.return_value = chain
+                chain.first.return_value = mock_activity
+            elif model_cls.__name__ == "ActivitySplit":
+                chain.filter.return_value = chain
+                chain.order_by.return_value = chain
+                chain.all.return_value = splits
+            return chain
+
+        mock_db.query.side_effect = _route_query
+
+        from routers.home import _summarize_workout_structure
+        result = _summarize_workout_structure(activity_id, mock_db)
+        assert result is None, (
+            f"Hilly run with steady GAP should NOT be classified as intervals, "
+            f"got: {result}"
+        )
+
+
+class TestHillyRunNotIntervals:
+    """Hilly runs with pace variation from terrain must not be classified
+    as structured intervals, threshold work, or over/under."""
+
+    def test_hilly_long_run_not_intervals(self):
+        """14-mi hilly run with 1600ft gain — downhill miles are faster,
+        uphill miles are slower. Elevation profile is 'hilly'. Should NOT
+        classify as track_intervals, threshold_intervals, or over_under."""
+        duration = 7200  # 2 hours
+        base_v = 2.8     # ~9:30/mi easy
+        time = list(range(duration))
+        velocity = [base_v] * duration
+        grade = [0.0] * duration
+        altitude = [100.0] * duration
+
+        hill_segments = [
+            (0, 600, 4.0, 2.3),        # uphill, slow
+            (600, 1200, -4.0, 3.3),     # downhill, fast
+            (1200, 1800, 3.5, 2.4),     # uphill, slow
+            (1800, 2400, -3.5, 3.2),    # downhill, fast
+            (2400, 3000, 5.0, 2.2),     # steep uphill
+            (3000, 3600, -5.0, 3.4),    # steep downhill
+            (3600, 4200, 4.0, 2.3),     # uphill
+            (4200, 4800, -4.0, 3.3),    # downhill
+            (4800, 5400, 3.0, 2.5),     # uphill
+            (5400, 6000, -3.0, 3.1),    # downhill
+            (6000, 6600, 4.5, 2.3),     # uphill
+            (6600, 7200, -4.5, 3.3),    # downhill
+        ]
+
+        for start, end, g, v in hill_segments:
+            for i in range(start, min(end, duration)):
+                grade[i] = g
+                velocity[i] = v
+                alt_delta = g * 0.01  # approximate altitude change per second
+                altitude[i] = altitude[max(0, i-1)] + alt_delta
+
+        distance = [0.0]
+        for i in range(1, duration):
+            distance.append(distance[-1] + velocity[i])
+
+        stream = {
+            'time': time,
+            'velocity_smooth': velocity,
+            'heartrate': [145] * duration,
+            'cadence': [170] * duration,
+            'grade_smooth': grade,
+            'altitude': altitude,
+            'distance': distance,
+        }
+        shape = extract_shape(stream, pace_profile=FOUNDER_PROFILE)
+        assert shape is not None
+        cls = shape.summary.workout_classification
+        assert cls not in ('track_intervals', 'threshold_intervals', 'over_under'), \
+            f"Hilly run misclassified as '{cls}' — pace variation is from terrain"

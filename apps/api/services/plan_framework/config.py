@@ -14,7 +14,6 @@ Usage:
     ConfigService.reload()
 """
 
-import os
 import yaml
 import logging
 from typing import Any, Optional, Dict

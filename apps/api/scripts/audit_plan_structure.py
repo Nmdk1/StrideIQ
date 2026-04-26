@@ -47,19 +47,19 @@ def audit_plans():
                         
                         if has_weeks or has_phases:
                             structured_count += 1
-                            print(f'  ✅ STRUCTURED')
+                            print('  ✅ STRUCTURED')
                         else:
                             unstructured_count += 1
-                            print(f'  ⚠️  UNSTRUCTURED (has principles but no week structure)')
+                            print('  ⚠️  UNSTRUCTURED (has principles but no week structure)')
                     else:
                         unstructured_count += 1
-                        print(f'  ⚠️  UNSTRUCTURED (principles not a dict)')
+                        print('  ⚠️  UNSTRUCTURED (principles not a dict)')
                 except Exception as e:
                     unstructured_count += 1
                     print(f'  ❌ Parse error: {e}')
             else:
                 unstructured_count += 1
-                print(f'  ⚠️  UNSTRUCTURED (no extracted_principles)')
+                print('  ⚠️  UNSTRUCTURED (no extracted_principles)')
             
             text_len = len(plan.text_chunk) if plan.text_chunk else 0
             print(f'  Text chunk length: {text_len} chars')

@@ -6,14 +6,13 @@ They exist here for type safety and documentation.
 """
 
 from enum import Enum
-from typing import Dict, List
 
 
 class PlanTier(str, Enum):
     """Plan pricing/access tiers."""
     STANDARD = "standard"      # Free, fixed templates
-    SEMI_CUSTOM = "semi"       # $5, questionnaire-based
-    CUSTOM = "custom"          # Subscription, full personalization
+    SEMI_CUSTOM = "semi"       # Guided personalization
+    CUSTOM = "custom"          # Premium personalization
 
 
 class VolumeTier(str, Enum):
@@ -123,10 +122,11 @@ LONG_RUN_PEAKS = {
         VolumeTier.BUILDER: 18,
         VolumeTier.LOW: 20,
         VolumeTier.MID: 22,
-        # High-volume marathoners often benefit from longer durability work;
-        # this is a DEFAULT peak cap (N=1 history can justify higher/other strategies).
-        VolumeTier.HIGH: 24,
-        VolumeTier.ELITE: 26,
+        # 03_WORKOUT_TYPES.md §2b: standard high-mileage cap is 22mi.
+        # Advanced/elite cap is 24mi. Above 24 adds risk without proportional
+        # benefit and violates the founder's explicit ceiling.
+        VolumeTier.HIGH: 22,
+        VolumeTier.ELITE: 24,
     },
     Distance.HALF_MARATHON: {
         VolumeTier.BUILDER: 13,
@@ -148,6 +148,12 @@ LONG_RUN_PEAKS = {
         VolumeTier.HIGH: 13,
     },
 }
+
+# Standard-plan easy long run: minimum miles (founder: never 5 mi; builder uses 8+).
+MIN_STANDARD_EASY_LONG_MILES = 8.0
+
+# Default taper weeks aligned with volume progression (see volume_tiers.calculate_volume_progression).
+PLAN_TAPER_WEEKS_DEFAULT = 2
 
 # Workout limits as percentage of weekly volume (Source B)
 WORKOUT_LIMITS = {
@@ -171,7 +177,7 @@ CUTBACK_RULES = {
 # Minimum 2 weeks for all distances: 1 taper week + 1 race week.
 # This gives even 10K/5K a proper taper phase in the structure.
 TAPER_WEEKS = {
-    Distance.MARATHON: 2,      # 10-14 days
+    Distance.MARATHON: 3,      # 3 weeks per framework Rule A5
     Distance.HALF_MARATHON: 2,
     Distance.TEN_K: 2,         # 7-10 days (1 taper + race week)
     Distance.FIVE_K: 2,        # 5-7 days (1 taper + race week)
@@ -181,7 +187,7 @@ TAPER_WEEKS = {
 # These are POPULATION DEFAULTS (Priority 4 in ADR-062).  The TaperCalculator
 # will override with N=1 signals when available.
 TAPER_DAYS_DEFAULT = {
-    Distance.MARATHON: 14,
+    Distance.MARATHON: 21,     # 3 weeks per framework Rule A5
     Distance.HALF_MARATHON: 10,
     Distance.TEN_K: 7,
     Distance.FIVE_K: 5,

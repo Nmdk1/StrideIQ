@@ -17,6 +17,7 @@ import { useAuth } from '@/lib/hooks/useAuth';
 import { API_CONFIG } from '@/lib/api/config';
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
 import { Tooltip as UiTooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { Info } from 'lucide-react';
 import {
   LineChart,
   Line,
@@ -64,10 +65,22 @@ interface PersonalZones {
   zone_description: string;
 }
 
+interface SportTSS {
+  sport: string;
+  tss: number;
+  activity_count: number;
+}
+
+interface WeeklyTSSSplit {
+  total_tss: number;
+  by_sport: SportTSS[];
+}
+
 interface LoadHistoryResponse {
   history: DailyLoad[];
   summary: LoadSummary;
   personal_zones?: PersonalZones;
+  weekly_tss_split?: WeeklyTSSSplit;
 }
 
 function getPeriodEndpoints(history: DailyLoad[]) {
@@ -290,6 +303,9 @@ export default function TrainingLoadPage() {
               </div>
             </div>
 
+            {/* Cross-training disclosure */}
+            <TSSSplitDisclosure split={data.weekly_tss_split} />
+
             {/* Daily TSS Chart */}
             <div className="bg-slate-800/50 rounded-lg p-6 mb-8">
               <h2 className="text-xl font-bold text-white mb-4">Daily Training Stress</h2>
@@ -391,6 +407,67 @@ export default function TrainingLoadPage() {
 }
 
 // ============ Sub-Components ============
+
+const SPORT_LABELS: Record<string, string> = {
+  run: 'Running',
+  cycling: 'Cycling',
+  strength: 'Strength',
+  hiking: 'Hiking',
+  walking: 'Walking',
+  flexibility: 'Flexibility',
+};
+
+function TSSSplitDisclosure({ split }: { split?: WeeklyTSSSplit }) {
+  const [expanded, setExpanded] = useState(false);
+
+  const hasCrossTraining = split && split.by_sport.some(s => s.sport !== 'run' && s.tss > 0);
+
+  return (
+    <div className="mb-6 px-4 py-3 bg-slate-800/30 border border-slate-700/30 rounded-lg">
+      <button
+        onClick={() => setExpanded(v => !v)}
+        className="flex items-center gap-2 w-full text-left"
+      >
+        <Info className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+        <span className="text-xs text-slate-400">
+          Training load includes all activities
+          {hasCrossTraining ? ' (running + cross-training)' : ''}
+        </span>
+        <svg
+          className={`w-3 h-3 text-slate-500 ml-auto transition-transform ${expanded ? 'rotate-180' : ''}`}
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke="currentColor"
+        >
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+        </svg>
+      </button>
+
+      {expanded && split && (
+        <div className="mt-3 pt-3 border-t border-slate-700/20">
+          <p className="text-xs text-slate-500 mb-2">Last 7 days</p>
+          <div className="space-y-1.5">
+            {split.by_sport.map(s => (
+              <div key={s.sport} className="flex items-center justify-between text-sm">
+                <span className="text-slate-300">
+                  {SPORT_LABELS[s.sport] ?? s.sport}
+                  <span className="text-slate-600 text-xs ml-1.5">
+                    ({s.activity_count} {s.activity_count === 1 ? 'session' : 'sessions'})
+                  </span>
+                </span>
+                <span className="font-medium text-white">{Math.round(s.tss)} TSS</span>
+              </div>
+            ))}
+          </div>
+          <div className="flex items-center justify-between mt-2 pt-2 border-t border-slate-700/20 text-sm">
+            <span className="text-slate-400 font-medium">Total</span>
+            <span className="font-bold text-white">{Math.round(split.total_tss)} TSS</span>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 function MetricCard({
   label,

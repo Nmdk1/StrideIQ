@@ -1,9 +1,11 @@
 "use client";
 
 import React from 'react';
+import Link from 'next/link';
 import TrainingPaceCalculator from './tools/TrainingPaceCalculator';
 import WMACalculator from './tools/WMACalculator';
 import HeatAdjustedPace from './tools/HeatAdjustedPace';
+import { SignupCtaLink } from '@/components/tools/SignupCtaLink';
 
 export default function FreeTools() {
   return (
@@ -17,9 +19,38 @@ export default function FreeTools() {
             Training calculators you’ll actually use
           </h2>
           <p className="text-xl text-slate-300 max-w-3xl mx-auto mb-6">
-            Training paces, age-grading, and heat adjustments—built with research-backed equations (not lookup tables).
+            Training paces, age-grading, and heat adjustments—built on peer-reviewed equations (Daniels/Gilbert 1979, WMA 2025).
           </p>
-          <div className="flex flex-wrap justify-center gap-6 text-sm text-slate-400">
+          <div className="flex flex-wrap justify-center gap-3 text-sm text-slate-400 mb-6">
+            <Link href="/tools/training-pace-calculator" className="text-orange-400/90 hover:text-orange-300 transition-colors">
+              Full training pace calculator →
+            </Link>
+            <span className="text-slate-600" aria-hidden>
+              |
+            </span>
+            <Link href="/tools/heat-adjusted-pace" className="text-orange-400/90 hover:text-orange-300 transition-colors">
+              Heat-adjusted pace →
+            </Link>
+            <span className="text-slate-600" aria-hidden>
+              |
+            </span>
+            <Link href="/tools/race-equivalency/5k-to-marathon" className="text-orange-400/90 hover:text-orange-300 transition-colors">
+              Race equivalency (5K → marathon) →
+            </Link>
+            <span className="text-slate-600" aria-hidden>
+              |
+            </span>
+            <Link href="/tools/boston-qualifying" className="text-orange-400/90 hover:text-orange-300 transition-colors">
+              Boston qualifying times →
+            </Link>
+            <span className="text-slate-600" aria-hidden>
+              |
+            </span>
+            <Link href="/tools/age-grading-calculator/good-5k-times-by-age" className="text-orange-400/90 hover:text-orange-300 transition-colors">
+              Good 5K times by age →
+            </Link>
+          </div>
+          <div className="flex flex-wrap justify-center gap-6 text-sm text-slate-400 mb-4">
             <div className="flex items-center gap-2">
               <svg className="w-5 h-5 text-orange-500" fill="currentColor" viewBox="0 0 20 20">
                 <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
@@ -39,6 +70,12 @@ export default function FreeTools() {
               <span>Mobile-friendly</span>
             </div>
           </div>
+          <p className="text-center text-sm text-slate-500">
+            Want personalized intelligence from your Garmin or Strava history?{' '}
+            <SignupCtaLink className="text-orange-400 hover:text-orange-300 font-medium" telemetry={{ cta: 'free_tools_footer' }}>
+              Start free — no card
+            </SignupCtaLink>
+          </p>
         </div>
 
         <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">

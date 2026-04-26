@@ -12,8 +12,18 @@ export const metadata: Metadata = {
     canonical: 'https://strideiq.run/tools/age-grading-calculator',
   },
   openGraph: {
+    title: 'Age-Grading Calculator - WMA Age Graded Running Performance',
+    description:
+      'Free WMA age-grading calculator for runners. Compare your race time to world-standard benchmarks for your age. See your age-graded percentage and equivalent open-age performance.',
     url: 'https://strideiq.run/tools/age-grading-calculator',
+    siteName: 'StrideIQ',
+    type: 'website',
     images: [{ url: '/og-image.png', width: 1200, height: 630, alt: 'StrideIQ Age-Grading Calculator' }],
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'Age-Grading Calculator - WMA Age Graded Running Performance',
+    description: 'WMA age-graded percentage and equivalent open-age time from any race result.',
   },
 }
 
@@ -184,6 +194,12 @@ export default function AgeGradingCalculatorPage() {
             </Link>
             <Link href="/tools/heat-adjusted-pace" className="px-4 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700/50 rounded-lg text-sm text-slate-200 transition-colors">
               Heat-Adjusted Pace →
+            </Link>
+            <Link href="/tools/race-equivalency/half-marathon-to-marathon" className="px-4 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700/50 rounded-lg text-sm text-slate-200 transition-colors">
+              Race Equivalency →
+            </Link>
+            <Link href="/tools/boston-qualifying" className="px-4 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700/50 rounded-lg text-sm text-slate-200 transition-colors">
+              Boston Qualifying Times →
             </Link>
             <Link href="/tools" className="px-4 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700/50 rounded-lg text-sm text-slate-200 transition-colors">
               All Tools →

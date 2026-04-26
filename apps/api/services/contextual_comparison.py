@@ -12,15 +12,15 @@ This engine:
 No other platform offers this level of contextual analysis.
 """
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import List, Optional, Dict, Any, Tuple
 from uuid import UUID
 import math
-from sqlalchemy import func, and_
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from models import Activity, ActivitySplit, Athlete
+from models import Activity, ActivitySplit
 
 
 # =============================================================================
@@ -528,6 +528,7 @@ class ContextualComparisonService:
         cutoff = datetime.utcnow() - timedelta(days=days_back)
         candidates = self.db.query(Activity).filter(
             Activity.athlete_id == athlete_id,
+            Activity.sport == "run",
             Activity.id != activity_id,
             Activity.start_time >= cutoff,
             Activity.distance_m >= 1000,  # At least 1km
@@ -792,7 +793,7 @@ class ContextualComparisonService:
                 "avg_hr": split.average_heartrate,
                 "max_hr": split.max_heartrate,
                 "cadence": float(split.average_cadence) if split.average_cadence else None,
-                "gap_per_mile": float(split.gap_seconds_per_mile) if split.gap_seconds_per_mile else None,
+                "gap_s_per_km": round(float(split.gap_seconds_per_mile) * 1000 / 1609.34, 2) if split.gap_seconds_per_mile else None,
                 "efficiency": round(efficiency, 4) if efficiency else None,
                 "cumulative_distance_m": cumulative_distance,
             })
@@ -1089,7 +1090,7 @@ class ContextualComparisonService:
                 impact = "negative" if diff > 100 else ("positive" if diff < -100 else "neutral")
                 
                 if diff > 0:
-                    explanation = f"More climbing requires more effort. Expect ~10-15 sec/km slower per 100m extra elevation."
+                    explanation = "More climbing requires more effort. Expect ~10-15 sec/km slower per 100m extra elevation."
                 else:
                     explanation = f"Less climbing typically means faster times. You gained {abs(diff):.0f}m less than usual."
                 
@@ -1256,6 +1257,7 @@ class ContextualComparisonService:
         # Find activities within HR range
         candidates = self.db.query(Activity).filter(
             Activity.athlete_id == athlete_id,
+            Activity.sport == "run",
             Activity.id != activity_id,
             Activity.start_time >= cutoff,
             Activity.avg_hr.isnot(None),
@@ -1302,6 +1304,7 @@ class ContextualComparisonService:
         # Find activities within max HR range
         candidates = self.db.query(Activity).filter(
             Activity.athlete_id == athlete_id,
+            Activity.sport == "run",
             Activity.id != activity_id,
             Activity.start_time >= cutoff,
             Activity.max_hr.isnot(None),
@@ -1343,6 +1346,7 @@ class ContextualComparisonService:
         
         query = self.db.query(Activity).filter(
             Activity.athlete_id == athlete_id,
+            Activity.sport == "run",
             Activity.start_time >= cutoff,
             Activity.avg_hr.isnot(None),
             Activity.avg_hr >= min_hr,
@@ -1437,6 +1441,7 @@ class ContextualComparisonService:
         cutoff = datetime.utcnow() - timedelta(days=365)
         candidates = self.db.query(Activity).filter(
             Activity.athlete_id == athlete_id,
+            Activity.sport == "run",
             Activity.id != activity_id,
             Activity.start_time >= cutoff,
             Activity.distance_m >= 1000,

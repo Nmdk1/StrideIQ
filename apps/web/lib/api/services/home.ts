@@ -15,10 +15,10 @@ export interface TodayWorkout {
   has_workout: boolean;
   workout_type?: string;
   title?: string;
-  distance_mi?: number;
+  distance_m?: number;
   pace_guidance?: string;
   why_context?: string;
-  why_source?: 'correlation' | 'load' | 'plan';  // ADR-020: Source of context
+  why_source?: 'correlation' | 'load' | 'plan';
   week_number?: number;
   phase?: string;
 }
@@ -27,40 +27,59 @@ export interface YesterdayInsight {
   has_activity: boolean;
   activity_name?: string;
   activity_id?: string;
-  distance_mi?: number;
-  pace_per_mi?: string;
+  distance_m?: number;
+  pace_s_per_km?: number;
   insight?: string;
-  // Fallback: most recent activity if no yesterday activity
   last_activity_date?: string;
   last_activity_name?: string;
   last_activity_id?: string;
   days_since_last?: number;
 }
 
+/** Non-running activity (walk / strength / cycle / hike / etc.) on a given day. */
+export interface OtherActivityRef {
+  activity_id: string;
+  sport: string;
+  distance_m?: number | null;
+  duration_s?: number | null;
+  name?: string | null;
+}
+
 export interface WeekDay {
   date: string;
   day_abbrev: string;
   workout_type?: string;
-  distance_mi?: number;
-  planned_distance_mi?: number;  // Show both for comparison
+  sport?: string;
+  distance_m?: number;
+  planned_distance_m?: number;
   completed: boolean;
   is_today: boolean;
-  activity_id?: string;  // For linking to activity
-  workout_id?: string;   // For linking to planned workout
+  activity_id?: string;
+  workout_id?: string;
+  run_count?: number;
+  other_activities?: OtherActivityRef[];
+}
+
+export interface OtherSportSummary {
+  sport: string;
+  count: number;
+  distance_m: number;
+  duration_s: number;
 }
 
 export interface WeekProgress {
   week_number?: number;
   total_weeks?: number;
   phase?: string;
-  completed_mi: number;
-  planned_mi: number;
+  completed_m: number;
+  planned_m: number;
   progress_pct: number;
   days: WeekDay[];
   status: 'on_track' | 'ahead' | 'behind' | 'no_plan';
   trajectory_sentence?: string;
-  tsb_context?: 'Fresh' | 'Building' | 'Fatigued';  // ADR-020: Training stress context
-  load_trend?: 'up' | 'stable' | 'down';  // ADR-020: Load direction
+  tsb_context?: 'Fresh' | 'Building' | 'Fatigued';
+  load_trend?: 'up' | 'stable' | 'down';
+  other_sport_summary?: OtherSportSummary[];
 }
 
 // --- ADR-17 Phase 2 Types ---
@@ -69,6 +88,7 @@ export interface CoachNoticed {
   text: string;
   source: 'correlation' | 'signal' | 'insight_feed' | 'narrative';
   ask_coach_query: string;
+  finding_id?: string;
 }
 
 export interface RaceCountdown {
@@ -117,6 +137,7 @@ export interface LastRun {
   athlete_title?: string | null;
   resolved_title?: string | null;
   heat_adjustment_pct?: number | null;
+  workout_classification?: string | null;
 }
 
 export interface HomeFinding {
@@ -124,6 +145,8 @@ export interface HomeFinding {
   confidence_tier: string;
   domain: string;
   times_confirmed: number;
+  evidence_summary?: string | null;
+  implication_summary?: string | null;
 }
 
 export type BriefingState = 'fresh' | 'stale' | 'missing' | 'refreshing' | 'consent_required';
@@ -164,9 +187,39 @@ export interface HomeData {
   last_run?: LastRun | null;
   // Async briefing state machine — drives polling and pending UI
   briefing_state?: BriefingState | null;
+  briefing_is_interim?: boolean;
+  briefing_last_updated_at?: string | null;
+  briefing_source?: 'llm' | 'deterministic_fallback' | null;
   // Path A surfaces
   finding?: HomeFinding | null;
   has_correlations?: boolean;
+  // Daily wellness
+  garmin_wellness?: {
+    date: string;
+    sleep_h?: number;
+    sleep_score?: number;
+    sleep_score_qualifier?: string;
+    recovery_hrv?: number;
+    recovery_hrv_status?: 'low' | 'normal' | 'high';
+    recovery_hrv_range?: { low: number; high: number };
+    overnight_hrv?: number;
+    resting_hr?: number;
+    resting_hr_status?: 'low' | 'normal' | 'high';
+    resting_hr_range?: { low: number; high: number };
+    avg_stress?: number;
+  } | null;
+  recent_cross_training?: {
+    id: string;
+    sport: string;
+    name: string | null;
+    distance_m: number | null;
+    duration_s: number | null;
+    avg_hr: number | null;
+    steps: number | null;
+    active_kcal: number | null;
+    start_time: string;
+    additional_count: number;
+  } | null;
 }
 
 // --- API Functions ---

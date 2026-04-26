@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 from core.auth import get_current_user, require_admin
 from core.database import get_db
 from models import Activity, Athlete, PerformanceEvent, AthleteFinding
+from services.timezone_utils import get_athlete_timezone, get_athlete_timezone_from_db, to_activity_local_date
 from schemas_fingerprint import (
     BrowseResponse,
     RaceCard,
@@ -23,7 +24,6 @@ from schemas_fingerprint import (
     WeekData,
     FingerprintFindingsResponse,
 )
-from services.effort_classification import classify_effort_bulk
 from services.fingerprint_analysis import (
     extract_fingerprint_findings,
     store_findings,
@@ -40,20 +40,11 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/v1/fingerprint", tags=["Fingerprint"])
 
 
-def _format_pace(distance_m: float, duration_s: int, units: str = "imperial") -> str:
-    """Format pace as min:ss/mi (imperial) or min:ss/km (metric)."""
+def _pace_s_per_km(distance_m: float, duration_s: int) -> Optional[float]:
+    """Return pace in seconds per km, or None if inputs are invalid."""
     if not distance_m or not duration_s or distance_m <= 0:
-        return "—"
-    if units == "metric":
-        divisor = distance_m / 1000
-        label = "/km"
-    else:
-        divisor = distance_m / 1609.34
-        label = "/mi"
-    sec_per_unit = duration_s / divisor
-    mins = int(sec_per_unit // 60)
-    secs = int(sec_per_unit % 60)
-    return f"{mins}:{secs:02d}{label}"
+        return None
+    return round(duration_s / (distance_m / 1000), 2)
 
 
 def _format_duration(seconds: int) -> str:
@@ -71,7 +62,7 @@ def _format_duration(seconds: int) -> str:
 def _activity_to_card(
     act: Activity,
     event: Optional[PerformanceEvent] = None,
-    units: str = "imperial",
+    tz=None,
 ) -> RaceCard:
     dist_m = float(act.distance_m) if act.distance_m else 0
     from services.personal_best import get_distance_category
@@ -91,12 +82,12 @@ def _activity_to_card(
         event_id=event.id if event else None,
         activity_id=act.id,
         name=act.name,
-        date=act.start_time.date() if act.start_time else None,
+        date=to_activity_local_date(act, tz) if (act.start_time and tz) else (act.start_time.date() if act.start_time else None),
         time_of_day=time_of_day,
         day_of_week=day_of_week,
         distance_category=dist_cat,
         distance_meters=int(dist_m),
-        pace_display=_format_pace(dist_m, act.duration_s, units),
+        pace_s_per_km=_pace_s_per_km(dist_m, act.duration_s),
         duration_display=_format_duration(act.duration_s),
         avg_hr=act.avg_hr,
         detection_confidence=event.detection_confidence if event else None,
@@ -125,6 +116,7 @@ def _build_strip_data(athlete_id: UUID, db: Session) -> RacingLifeStripData:
         for ev in confirmed_events
     ]
 
+    # All-sport distance weeks for racing-life strip (not the home "running mileage" contract).
     activities = db.query(Activity).filter(
         Activity.athlete_id == athlete_id,
         Activity.is_duplicate == False,  # noqa: E712
@@ -132,9 +124,10 @@ def _build_strip_data(athlete_id: UUID, db: Session) -> RacingLifeStripData:
         Activity.distance_m > 0,
     ).order_by(Activity.start_time).all()
 
+    _tz = get_athlete_timezone_from_db(db, athlete_id)
     weekly: dict = {}
     for act in activities:
-        d = act.start_time.date()
+        d = to_activity_local_date(act, _tz)
         week_start = d - timedelta(days=d.weekday())
         if week_start not in weekly:
             weekly[week_start] = {"volume_m": 0, "count": 0}
@@ -183,7 +176,7 @@ async def get_race_candidates(
     candidates = []
 
     for ev, act in rows:
-        card = _activity_to_card(act, ev, units=current_user.preferred_units or "imperial")
+        card = _activity_to_card(act, ev, tz=get_athlete_timezone(current_user))
 
         if ev.user_confirmed is True or (ev.detection_confidence and ev.detection_confidence >= 0.7) or ev.detection_source in ('strava_tag', 'user_verified'):
             confirmed.append(card)
@@ -196,6 +189,7 @@ async def get_race_candidates(
         dist_filters.append(
             (Activity.distance_m >= lo) & (Activity.distance_m <= hi)
         )
+    # All-sport count in standard distance bands (tier-3 browse pool).
     browse_count = db.query(Activity).filter(
         Activity.athlete_id == current_user.id,
         Activity.is_duplicate == False,  # noqa: E712
@@ -235,6 +229,7 @@ async def browse_activities(
         ).all()
     )
 
+    # All-sport browse (pace-sorted); not athlete running-totals.
     q = db.query(Activity).filter(
         Activity.athlete_id == current_user.id,
         Activity.is_duplicate == False,  # noqa: E712
@@ -274,8 +269,8 @@ async def browse_activities(
         (Activity.duration_s / Activity.distance_m).asc()
     ).offset(offset).limit(limit).all()
 
-    units = current_user.preferred_units or "imperial"
-    items = [_activity_to_card(act, units=units) for act in activities]
+    _tz = get_athlete_timezone(current_user)
+    items = [_activity_to_card(act, tz=_tz) for act in activities]
 
     return BrowseResponse(items=items, total=total, offset=offset, limit=limit)
 
@@ -343,6 +338,7 @@ async def add_race(
     db: Session = Depends(get_db),
 ):
     """Athlete identifies an activity as a race the system missed."""
+    # Single-activity by id (any sport).
     act = db.query(Activity).filter(
         Activity.id == activity_id,
         Activity.athlete_id == current_user.id,
@@ -370,7 +366,7 @@ async def add_race(
 
     dist_m = float(act.distance_m) if act.distance_m else 0
     dist_cat = get_distance_category(dist_m) or "unknown"
-    event_date = act.start_time.date()
+    event_date = to_activity_local_date(act, get_athlete_timezone(current_user))
 
     dupe = db.query(PerformanceEvent).filter(
         PerformanceEvent.athlete_id == current_user.id,
@@ -401,7 +397,7 @@ async def add_race(
     try:
         block_sig = compute_block_signature(
             activity_id=act.id,
-            event_date=act.start_time.date(),
+            event_date=event_date,
             distance_category=dist_cat,
             athlete_id=current_user.id,
             db=db,

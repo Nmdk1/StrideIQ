@@ -1,0 +1,1104 @@
+TUNE-UP RACE INTEGRATION — FULL PLAN OUTPUT
+Generated: 2026-04-11
+Plan Monday: 2026-04-06
+
+============================================================================
+  MICHAEL — Marathon 16wk + Brooklyn Half (W10 Sat, threshold)
+  16 weeks | marathon | athlete_type=balanced
+  Phases: general(6w) → supportive(4w) → specific(4w) → taper(2w)
+  Tune-up: Brooklyn Half (half_marathon, threshold) on 2026-06-13 (Sat)
+============================================================================
+
+  W 1 | general       ~63mi
+    Mon: rest
+    Tue: easy (9mi)
+    Wed: threshold_cruise  [warmup 2.0km, work 5min, jog_rest 2min, work 5min, jog_rest 2min, work 5min, jog_rest 2min, work 5min, jog_rest 2min, work 5min, jog_rest 2min, work 5min, cooldown 2.0km]
+    Thu: easy_strides (9mi)
+    Fri: medium_long (8mi)
+    Sat: easy (9mi)
+    Sun: long_easy (14mi)  [fuel: 80g/hr]
+
+  W 2 | general       ~64mi
+    Mon: rest
+    Tue: easy (9mi)
+    Wed: steady_run (6mi)  [steady 10.5km]
+    Thu: easy_strides (9mi)
+    Fri: medium_long (10mi)
+    Sat: easy (9mi)
+    Sun: long_easy (16mi)  [fuel: 80g/hr]
+
+  W 3 | general       ~65mi
+    Mon: rest
+    Tue: easy (8mi)
+    Wed: vo2max_intervals  [warmup 2.0km, work 3min, jog_rest 3min, work 3min, jog_rest 3min, work 3min, jog_rest 3min, work 3min, jog_rest 3min, work 3min, cooldown 2.0km]
+    Thu: easy_strides (8mi)
+    Fri: medium_long (11mi)  [fuel: 80g/hr]
+    Sat: easy (8mi)
+    Sun: long_run_moderate (18mi)  [steady 16.8km, work 13.8km]  [fuel: 80g/hr]
+
+  W 4 | general      [CUTBACK]  ~55mi
+    Mon: rest
+    Tue: easy (9mi)
+    Wed: easy_strides (9mi)
+    Thu: rest
+    Fri: easy (9mi)
+    Sat: easy (9mi)
+    Sun: long_easy (14mi)  [fuel: 80g/hr]
+
+  W 5 | general       ~66mi
+    Mon: rest
+    Tue: easy (7mi)
+    Wed: micro_intervals  [warmup 2.0km, work 25min, cooldown 2.0km]
+    Thu: easy_strides (7mi)
+    Fri: medium_long (12mi)  [fuel: 80g/hr]
+    Sat: easy (7mi)
+    Sun: long_run_progression_finish (20mi)  [steady 20.3km, work 8.4km, work 5.1km]  [fuel: 80g/hr]
+
+  W 6 | general       ~66mi
+    Mon: rest
+    Tue: easy (6mi)
+    Wed: speed_support  [warmup 2.0km, work 1.6km, jog_rest 3min, work 1.6km, jog_rest 3min, work 1.6km, jog_rest 3min, work 1.6km, jog_rest 3min, work 1.6km, cooldown 2.0km]
+    Thu: easy_strides (6mi)
+    Fri: medium_long (13mi)  [fuel: 80g/hr]
+    Sat: easy (6mi)
+    Sun: long_fast_stepwise (21mi)  [work 10.6km, work 8.8km, work 8.8km, work 7.1km]  [fuel: 80g/hr]
+
+  W 7 | supportive    ~68mi
+    Mon: rest
+    Tue: easy_strides (9mi)
+    Wed: threshold_cruise  [warmup 2.0km, work 10min, jog_rest 3min, work 10min, jog_rest 3min, work 10min, cooldown 2.0km]
+    Thu: medium_long (13mi)  [fuel: 80g/hr]
+    Fri: regenerative  [warmup 2.0km, work 6.0km, cooldown 2.0km]
+    Sat: easy (9mi)
+    Sun: long_run_mp (19mi)  [easy 6.0km, work 14.5km, easy 11.7km]  [fuel: 80g/hr]
+
+  W 8 | supportive   [CUTBACK]  ~55mi
+    Mon: rest
+    Tue: easy (9mi)
+    Wed: easy_strides (9mi)
+    Thu: rest
+    Fri: easy (9mi)
+    Sat: easy (9mi)
+    Sun: long_easy (14mi)  [fuel: 80g/hr]
+
+  W 9 | supportive    ~65mi
+    Mon: rest
+    Tue: easy_strides (9mi)
+    Wed: micro_intervals  [warmup 2.0km, work 26min, cooldown 2.0km]
+    Thu: medium_long (12mi)  [fuel: 80g/hr]
+    Fri: regenerative  [warmup 2.0km, work 6.0km, cooldown 2.0km]
+    Sat: easy (9mi)
+    Sun: long_run_fatigue_resistance (18mi)  [steady 19.9km, work 18min, steady 6.1km]  [fuel: 80g/hr]
+
+  W10 | supportive    ~56mi
+    Mon: rest
+    Tue: easy_strides (9mi)
+    Wed: threshold_cruise  [warmup 2.0km, work 15min, jog_rest 3min, work 15min, cooldown 2.0km]
+    Thu: easy (9mi)
+    Fri: pre_race (4mi)  <<<
+         -> 3-5mi easy (easy) + 4×100m strides (3K effort). Stay loose, save your legs. Confirm your race-day kit and nutrition.
+    Sat: tune_up_race (13.1mi)  [race 21.1km]  <<<
+         -> RACE: Brooklyn Half. Race this HARD — final threshold-level effort before goal race. Full race effort, use it to calibrate your pacing and test your race-day routine.
+    Sun: recovery_long (9mi)
+
+  W11 | specific      ~70mi
+    Mon: rest
+    Tue: easy_strides (8mi)
+    Wed: marathon_pace_alt_km  [warmup 2.0km, work 2.0km, float 1.0km, work 2.0km, float 1.0km, work 2.0km, float 1.0km, work 2.0km, cooldown 2.0km]
+    Thu: medium_long (13mi)  [fuel: 80g/hr]
+    Fri: regenerative  [warmup 2.0km, work 6.0km, cooldown 2.0km]
+    Sat: easy (8mi)
+    Sun: long_run_mp (21mi)  [easy 6.0km, work 19.5km, easy 9.9km]  [fuel: 80g/hr]
+
+  W12 | specific     [CUTBACK]  ~55mi
+    Mon: rest
+    Tue: easy (9mi)
+    Wed: easy_strides (9mi)
+    Thu: rest
+    Fri: easy (9mi)
+    Sat: easy (9mi)
+    Sun: long_easy (14mi)  [fuel: 80g/hr]
+
+  W13 | specific      ~68mi
+    Mon: rest
+    Tue: easy_strides (9mi)
+    Wed: progression  [easy 4.9km, work 3.5km, work 3.5km, work 2.1km]
+    Thu: medium_long (13mi)  [fuel: 80g/hr]
+    Fri: regenerative  [warmup 2.0km, work 6.0km, cooldown 2.0km]
+    Sat: easy (9mi)
+    Sun: long_run_fatigue_resistance (19mi)  [steady 20.9km, work 18min, steady 6.4km]  [fuel: 80g/hr]
+
+  W14 | specific      ~70mi
+    Mon: rest
+    Tue: easy_strides (9mi)
+    Wed: marathon_pace_alt_km  [warmup 2.0km, work 2.5km, float 1.0km, work 2.5km, float 1.0km, work 2.5km, float 1.0km, work 2.5km, float 1.0km, work 2.5km, cooldown 2.0km]
+    Thu: medium_long (11mi)  [fuel: 80g/hr]
+    Fri: regenerative  [warmup 2.0km, work 6.0km, cooldown 2.0km]
+    Sat: easy (9mi)
+    Sun: long_run_progression_finish (18mi)  [steady 18.4km, work 7.7km, work 4.6km]  [fuel: 80g/hr]
+
+  W15 | taper         ~36mi
+    Mon: rest
+    Tue: easy_strides (5mi)
+    Wed: threshold_cruise  [warmup 2.0km, work 5min, jog_rest 2min, work 5min, jog_rest 2min, work 5min, cooldown 2.0km]
+    Thu: rest
+    Fri: easy (5mi)
+    Sat: easy (5mi)
+    Sun: long_easy (12mi)  [fuel: 80g/hr]
+
+  W16 | taper         ~35mi
+    Mon: rest
+    Tue: easy_strides (5mi)
+    Wed: easy (5mi)
+    Thu: rest
+    Fri: easy (5mi)
+    Sat: easy (5mi)
+    Sun: long_easy (10mi)
+
+============================================================================
+  MICHAEL — Marathon 16wk + 10K (W8 Sun) + Philly Half (W12 Sat)
+  16 weeks | marathon | athlete_type=balanced
+  Phases: general(6w) → supportive(4w) → specific(4w) → taper(2w)
+  Tune-up: Turkey Trot 10K (10K, confidence) on 2026-05-31 (Sun)
+  Tune-up: Philly Half (half_marathon, threshold) on 2026-06-27 (Sat)
+============================================================================
+
+  W 1 | general       ~63mi
+    Mon: rest
+    Tue: easy (9mi)
+    Wed: threshold_cruise  [warmup 2.0km, work 5min, jog_rest 2min, work 5min, jog_rest 2min, work 5min, jog_rest 2min, work 5min, jog_rest 2min, work 5min, jog_rest 2min, work 5min, cooldown 2.0km]
+    Thu: easy_strides (9mi)
+    Fri: medium_long (8mi)
+    Sat: easy (9mi)
+    Sun: long_easy (14mi)  [fuel: 80g/hr]
+
+  W 2 | general       ~64mi
+    Mon: rest
+    Tue: easy (9mi)
+    Wed: steady_run (6mi)  [steady 10.5km]
+    Thu: easy_strides (9mi)
+    Fri: medium_long (10mi)
+    Sat: easy (9mi)
+    Sun: long_easy (16mi)  [fuel: 80g/hr]
+
+  W 3 | general       ~65mi
+    Mon: rest
+    Tue: easy (8mi)
+    Wed: vo2max_intervals  [warmup 2.0km, work 3min, jog_rest 3min, work 3min, jog_rest 3min, work 3min, jog_rest 3min, work 3min, jog_rest 3min, work 3min, cooldown 2.0km]
+    Thu: easy_strides (8mi)
+    Fri: medium_long (11mi)  [fuel: 80g/hr]
+    Sat: easy (8mi)
+    Sun: long_run_moderate (18mi)  [steady 16.8km, work 13.8km]  [fuel: 80g/hr]
+
+  W 4 | general      [CUTBACK]  ~55mi
+    Mon: rest
+    Tue: easy (9mi)
+    Wed: easy_strides (9mi)
+    Thu: rest
+    Fri: easy (9mi)
+    Sat: easy (9mi)
+    Sun: long_easy (14mi)  [fuel: 80g/hr]
+
+  W 5 | general       ~66mi
+    Mon: rest
+    Tue: easy (7mi)
+    Wed: micro_intervals  [warmup 2.0km, work 25min, cooldown 2.0km]
+    Thu: easy_strides (7mi)
+    Fri: medium_long (12mi)  [fuel: 80g/hr]
+    Sat: easy (7mi)
+    Sun: long_run_progression_finish (20mi)  [steady 20.3km, work 8.4km, work 5.1km]  [fuel: 80g/hr]
+
+  W 6 | general       ~66mi
+    Mon: rest
+    Tue: easy (6mi)
+    Wed: speed_support  [warmup 2.0km, work 1.6km, jog_rest 3min, work 1.6km, jog_rest 3min, work 1.6km, jog_rest 3min, work 1.6km, jog_rest 3min, work 1.6km, cooldown 2.0km]
+    Thu: easy_strides (6mi)
+    Fri: medium_long (13mi)  [fuel: 80g/hr]
+    Sat: easy (6mi)
+    Sun: long_fast_stepwise (21mi)  [work 10.6km, work 8.8km, work 8.8km, work 7.1km]  [fuel: 80g/hr]
+
+  W 7 | supportive    ~68mi
+    Mon: rest
+    Tue: easy_strides (9mi)
+    Wed: threshold_cruise  [warmup 2.0km, work 10min, jog_rest 3min, work 10min, jog_rest 3min, work 10min, cooldown 2.0km]
+    Thu: medium_long (13mi)  [fuel: 80g/hr]
+    Fri: regenerative  [warmup 2.0km, work 6.0km, cooldown 2.0km]
+    Sat: easy (9mi)
+    Sun: long_run_mp (19mi)  [easy 6.0km, work 14.5km, easy 11.7km]  [fuel: 80g/hr]
+
+  W 8 | supportive   [CUTBACK]  ~41mi
+    Mon: rest
+    Tue: easy (9mi)
+    Wed: easy_strides (9mi)
+    Thu: rest
+    Fri: easy (9mi)
+    Sat: pre_race (4mi)  <<<
+         -> 3-5mi easy (easy) + 4×100m strides (3K effort). Stay loose, save your legs. Confirm your race-day kit and nutrition.
+    Sun: tune_up_race (6.2mi)  [race 10.0km]  <<<
+         -> RACE: Turkey Trot 10K. Controlled effort — run within yourself. The goal is a confidence booster and a process rehearsal, not a PB. Save your peak for the goal race.
+
+  W 9 | supportive    ~80mi
+    Mon: recovery_long (13mi)
+    Tue: easy_strides (9mi)
+    Wed: micro_intervals  [warmup 2.0km, work 26min, cooldown 2.0km]
+    Thu: medium_long (12mi)  [fuel: 80g/hr]
+    Fri: regenerative  [warmup 2.0km, work 6.0km, cooldown 2.0km]
+    Sat: easy (9mi)
+    Sun: long_run_fatigue_resistance (18mi)  [steady 19.9km, work 18min, steady 6.1km]  [fuel: 80g/hr]
+
+  W10 | supportive    ~69mi
+    Mon: rest
+    Tue: easy_strides (9mi)
+    Wed: threshold_cruise  [warmup 2.0km, work 15min, jog_rest 3min, work 15min, cooldown 2.0km]
+    Thu: medium_long (13mi)  [fuel: 80g/hr]
+    Fri: regenerative  [warmup 2.0km, work 6.0km, cooldown 2.0km]
+    Sat: easy (9mi)
+    Sun: long_run_progression_finish (20mi)  [steady 20.3km, work 8.4km, work 5.1km]  [fuel: 80g/hr]
+
+  W11 | specific      ~70mi
+    Mon: rest
+    Tue: easy_strides (8mi)
+    Wed: marathon_pace_alt_km  [warmup 2.0km, work 2.0km, float 1.0km, work 2.0km, float 1.0km, work 2.0km, float 1.0km, work 2.0km, cooldown 2.0km]
+    Thu: medium_long (13mi)  [fuel: 80g/hr]
+    Fri: regenerative  [warmup 2.0km, work 6.0km, cooldown 2.0km]
+    Sat: easy (8mi)
+    Sun: long_run_mp (21mi)  [easy 6.0km, work 19.5km, easy 9.9km]  [fuel: 80g/hr]
+
+  W12 | specific     [CUTBACK]  ~48mi
+    Mon: rest
+    Tue: easy (9mi)
+    Wed: easy_strides (9mi)
+    Thu: rest
+    Fri: pre_race (4mi)  <<<
+         -> 3-5mi easy (easy) + 4×100m strides (3K effort). Stay loose, save your legs. Confirm your race-day kit and nutrition.
+    Sat: tune_up_race (13.1mi)  [race 21.1km]  <<<
+         -> RACE: Philly Half. Race this HARD — final threshold-level effort before goal race. Full race effort, use it to calibrate your pacing and test your race-day routine.
+    Sun: recovery_long (9mi)
+
+  W13 | specific      ~68mi
+    Mon: rest
+    Tue: easy_strides (9mi)
+    Wed: progression  [easy 4.9km, work 3.5km, work 3.5km, work 2.1km]
+    Thu: medium_long (13mi)  [fuel: 80g/hr]
+    Fri: regenerative  [warmup 2.0km, work 6.0km, cooldown 2.0km]
+    Sat: easy (9mi)
+    Sun: long_run_fatigue_resistance (19mi)  [steady 20.9km, work 18min, steady 6.4km]  [fuel: 80g/hr]
+
+  W14 | specific      ~70mi
+    Mon: rest
+    Tue: easy_strides (9mi)
+    Wed: marathon_pace_alt_km  [warmup 2.0km, work 2.5km, float 1.0km, work 2.5km, float 1.0km, work 2.5km, float 1.0km, work 2.5km, float 1.0km, work 2.5km, cooldown 2.0km]
+    Thu: medium_long (11mi)  [fuel: 80g/hr]
+    Fri: regenerative  [warmup 2.0km, work 6.0km, cooldown 2.0km]
+    Sat: easy (9mi)
+    Sun: long_run_progression_finish (18mi)  [steady 18.4km, work 7.7km, work 4.6km]  [fuel: 80g/hr]
+
+  W15 | taper         ~36mi
+    Mon: rest
+    Tue: easy_strides (5mi)
+    Wed: threshold_cruise  [warmup 2.0km, work 5min, jog_rest 2min, work 5min, jog_rest 2min, work 5min, cooldown 2.0km]
+    Thu: rest
+    Fri: easy (5mi)
+    Sat: easy (5mi)
+    Sun: long_easy (12mi)  [fuel: 80g/hr]
+
+  W16 | taper         ~35mi
+    Mon: rest
+    Tue: easy_strides (5mi)
+    Wed: easy (5mi)
+    Thu: rest
+    Fri: easy (5mi)
+    Sat: easy (5mi)
+    Sun: long_easy (10mi)
+
+============================================================================
+  MICHAEL — Half Marathon 12wk + Central Park 10K (W8 Sat, sharpening)
+  12 weeks | half_marathon | athlete_type=balanced
+  Phases: general(5w) → supportive(3w) → specific(3w) → taper(1w)
+  Tune-up: Central Park 10K (10K, sharpening) on 2026-05-30 (Sat)
+============================================================================
+
+  W 1 | general       ~63mi
+    Mon: rest
+    Tue: easy (9mi)
+    Wed: threshold_cruise  [warmup 2.0km, work 5min, jog_rest 2min, work 5min, jog_rest 2min, work 5min, jog_rest 2min, work 5min, jog_rest 2min, work 5min, jog_rest 2min, work 5min, cooldown 2.0km]
+    Thu: easy_strides (9mi)
+    Fri: medium_long (8mi)
+    Sat: easy (9mi)
+    Sun: long_easy (14mi)  [fuel: 80g/hr]
+
+  W 2 | general       ~64mi
+    Mon: rest
+    Tue: easy (9mi)
+    Wed: micro_intervals  [warmup 2.0km, work 22min, cooldown 2.0km]
+    Thu: easy_strides (9mi)
+    Fri: medium_long (10mi)
+    Sat: easy (9mi)
+    Sun: long_easy (16mi)  [fuel: 80g/hr]
+
+  W 3 | general       ~65mi
+    Mon: rest
+    Tue: easy (9mi)
+    Wed: progression  [easy 4.2km, work 3.0km, work 3.0km, work 1.8km]
+    Thu: easy_strides (9mi)
+    Fri: medium_long (10mi)
+    Sat: easy (9mi)
+    Sun: long_run_moderate (17mi)  [steady 16.0km, work 13.1km]  [fuel: 80g/hr]
+
+  W 4 | general      [CUTBACK]  ~55mi
+    Mon: rest
+    Tue: easy (9mi)
+    Wed: easy_strides (9mi)
+    Thu: rest
+    Fri: easy (9mi)
+    Sat: easy (9mi)
+    Sun: long_easy (14mi)  [fuel: 80g/hr]
+
+  W 5 | general       ~62mi
+    Mon: rest
+    Tue: easy (9mi)
+    Wed: steady_run (6mi)  [steady 10.5km]
+    Thu: easy_strides (9mi)
+    Fri: medium_long (9mi)
+    Sat: easy (9mi)
+    Sun: long_run_progression_finish (15mi)  [steady 15.4km, work 6.4km, work 3.9km]  [fuel: 80g/hr]
+
+  W 6 | supportive    ~59mi
+    Mon: rest
+    Tue: easy_strides (9mi)
+    Wed: threshold_cruise  [warmup 2.0km, work 10min, jog_rest 3min, work 10min, jog_rest 3min, work 10min, cooldown 2.0km]
+    Thu: medium_long (9mi)
+    Fri: regenerative  [warmup 2.0km, work 6.0km, cooldown 2.0km]
+    Sat: easy (9mi)
+    Sun: long_run_moderate (14mi)  [steady 13.3km, work 10.8km]  [fuel: 80g/hr]
+
+  W 7 | supportive    ~62mi
+    Mon: rest
+    Tue: easy_strides (9mi)
+    Wed: micro_intervals  [warmup 2.0km, work 26min, cooldown 2.0km]
+    Thu: medium_long (11mi)
+    Fri: regenerative  [warmup 2.0km, work 6.0km, cooldown 2.0km]
+    Sat: easy (9mi)
+    Sun: long_fast_stepwise (16mi)  [work 10.9km, work 8.2km, work 8.2km]  [fuel: 80g/hr]
+
+  W 8 | supportive   [CUTBACK]  ~41mi
+    Mon: rest
+    Tue: easy (9mi)
+    Wed: easy_strides (9mi)
+    Thu: rest
+    Fri: pre_race (4mi)  <<<
+         -> 3-5mi easy (easy) + 4×100m strides (3K effort). Stay loose, save your legs. Confirm your race-day kit and nutrition.
+    Sat: tune_up_race (6.2mi)  [race 10.0km]  <<<
+         -> RACE: Central Park 10K. Sharpening effort — run hard but not all-out. This is neuromuscular stimulus at race intensity with full recovery before the goal race.
+    Sun: recovery_long (9mi)
+
+  W 9 | specific      ~64mi
+    Mon: rest
+    Tue: easy_strides (9mi)
+    Wed: threshold_cruise  [warmup 2.0km, work 5min, jog_rest 2min, work 5min, jog_rest 2min, work 5min, jog_rest 2min, work 5min, jog_rest 2min, work 5min, jog_rest 2min, work 5min, cooldown 2.0km]
+    Thu: medium_long (10mi)
+    Fri: regenerative  [warmup 2.0km, work 6.0km, cooldown 2.0km]
+    Sat: easy (9mi)
+    Sun: long_run_moderate (17mi)  [steady 16.0km, work 13.1km]  [fuel: 80g/hr]
+
+  W10 | specific      ~62mi
+    Mon: rest
+    Tue: easy_strides (9mi)
+    Wed: threshold_alt_km  [warmup 2.0km, work 1.0km, float 1.0km, work 1.0km, float 1.0km, work 1.0km, float 1.0km, work 1.0km, float 1.0km, work 1.0km, float 1.0km, work 1.0km, cooldown 2.0km]
+    Thu: medium_long (10mi)
+    Fri: regenerative  [warmup 2.0km, work 6.0km, cooldown 2.0km]
+    Sat: easy (9mi)
+    Sun: long_fast_stepwise (15mi)  [work 10.3km, work 7.7km, work 7.7km]  [fuel: 80g/hr]
+
+  W11 | specific      ~59mi
+    Mon: rest
+    Tue: easy_strides (9mi)
+    Wed: threshold_cruise  [warmup 2.0km, work 35min, cooldown 2.0km]
+    Thu: medium_long (8mi)
+    Fri: regenerative  [warmup 2.0km, work 6.0km, cooldown 2.0km]
+    Sat: easy (9mi)
+    Sun: long_run_fatigue_resistance (14mi)  [steady 15.7km, work 20min, steady 4.8km]  [fuel: 80g/hr]
+
+  W12 | taper         ~32mi
+    Mon: rest
+    Tue: easy_strides (5mi)
+    Wed: threshold_cruise  [warmup 2.0km, work 5min, jog_rest 2min, work 5min, jog_rest 2min, work 5min, cooldown 2.0km]
+    Thu: rest
+    Fri: easy (5mi)
+    Sat: easy (5mi)
+    Sun: long_easy (8mi)
+
+============================================================================
+  BRIAN — Marathon 16wk + Queens Half (W10 Sat, confidence)
+  16 weeks | marathon | athlete_type=balanced
+  Phases: general(6w) → supportive(4w) → specific(4w) → taper(2w)
+  Tune-up: Queens Half (half_marathon, confidence) on 2026-06-13 (Sat)
+============================================================================
+
+  W 1 | general       ~36mi
+    Mon: rest
+    Tue: easy (6mi)
+    Wed: easy (6mi)
+    Thu: progression  [easy 4.2km, work 3.0km, work 3.0km, work 1.8km]
+    Fri: rest
+    Sat: rest
+    Sun: long_easy (13mi)  [fuel: 75g/hr]
+
+  W 2 | general       ~37mi
+    Mon: rest
+    Tue: easy (6mi)
+    Wed: easy (6mi)
+    Thu: threshold_alt_km  [warmup 2.0km, work 1.0km, float 1.0km, work 1.0km, float 1.0km, work 1.0km, float 1.0km, work 1.0km, cooldown 2.0km]
+    Fri: rest
+    Sat: rest
+    Sun: long_easy (14mi)  [fuel: 75g/hr]
+
+  W 3 | general      [CUTBACK]  ~31mi
+    Mon: rest
+    Tue: easy (5mi)
+    Wed: easy (5mi)
+    Thu: easy_strides (5mi)
+    Fri: rest
+    Sat: rest
+    Sun: long_easy (13mi)  [fuel: 75g/hr]
+
+  W 4 | general       ~38mi
+    Mon: rest
+    Tue: easy (4mi)
+    Wed: easy (4mi)
+    Thu: vo2max_intervals  [warmup 2.0km, work 3min, jog_rest 3min, work 3min, jog_rest 3min, work 3min, jog_rest 3min, work 3min, jog_rest 3min, work 3min, cooldown 2.0km]
+    Fri: easy_strides (4mi)
+    Sat: rest
+    Sun: long_easy (15mi)  [fuel: 75g/hr]
+
+  W 5 | general       ~38mi
+    Mon: rest
+    Tue: easy (6mi)
+    Wed: easy (6mi)
+    Thu: micro_intervals  [warmup 2.0km, work 25min, cooldown 2.0km]
+    Fri: rest
+    Sat: rest
+    Sun: long_run_progression_finish (16mi)  [steady 16.4km, work 6.8km, work 4.1km]  [fuel: 75g/hr]
+
+  W 6 | general      [CUTBACK]  ~33mi
+    Mon: rest
+    Tue: easy (5mi)
+    Wed: easy (5mi)
+    Thu: easy_strides (5mi)
+    Fri: rest
+    Sat: rest
+    Sun: long_easy (13mi)  [fuel: 75g/hr]
+
+  W 7 | supportive    ~47mi
+    Mon: rest
+    Tue: regenerative  [warmup 2.0km, work 6.0km, cooldown 2.0km]
+    Wed: medium_long (9mi)
+    Thu: threshold_cruise  [warmup 2.0km, work 10min, jog_rest 3min, work 10min, jog_rest 3min, work 10min, cooldown 2.0km]
+    Fri: easy_strides (4mi)
+    Sat: rest
+    Sun: long_run_mp (17mi)  [easy 6.0km, work 13.1km, easy 9.9km]  [fuel: 75g/hr]
+
+  W 8 | supportive    ~47mi
+    Mon: rest
+    Tue: regenerative  [warmup 2.0km, work 6.0km, cooldown 2.0km]
+    Wed: medium_long (10mi)
+    Thu: micro_intervals  [warmup 2.0km, work 26min, cooldown 2.0km]
+    Fri: easy_strides (4mi)
+    Sat: rest
+    Sun: long_run_fatigue_resistance (18mi)  [steady 19.9km, work 17min, steady 6.1km]  [fuel: 75g/hr]
+
+  W 9 | supportive   [CUTBACK]  ~34mi
+    Mon: rest
+    Tue: easy (6mi)
+    Wed: easy (6mi)
+    Thu: easy_strides (6mi)
+    Fri: rest
+    Sat: rest
+    Sun: long_easy (13mi)  [fuel: 75g/hr]
+
+  W10 | supportive    ~42mi
+    Mon: rest
+    Tue: regenerative  [warmup 2.0km, work 6.0km, cooldown 2.0km]
+    Wed: easy (4mi)
+    Thu: threshold_cruise  [warmup 2.0km, work 15min, jog_rest 3min, work 15min, cooldown 2.0km]
+    Fri: pre_race (4mi)  <<<
+         -> 3-5mi easy (easy) + 4×100m strides (3K effort). Stay loose, save your legs. Confirm your race-day kit and nutrition.
+    Sat: tune_up_race (13.1mi)  [race 21.1km]  [fuel: 80g/hr]  <<<
+         -> RACE: Queens Half. Controlled effort — run within yourself. The goal is a confidence booster and a process rehearsal, not a PB. Save your peak for the goal race.
+    Sun: recovery_long (4mi)
+
+  W11 | specific      ~48mi
+    Mon: rest
+    Tue: regenerative  [warmup 2.0km, work 6.0km, cooldown 2.0km]
+    Wed: medium_long (9mi)
+    Thu: marathon_pace_alt_km  [warmup 2.0km, work 2.0km, float 1.0km, work 2.0km, float 1.0km, work 2.0km, float 1.0km, work 2.0km, cooldown 2.0km]
+    Fri: easy_strides (4mi)
+    Sat: rest
+    Sun: long_run_mp (17mi)  [easy 6.0km, work 16.0km, easy 7.0km]  [fuel: 75g/hr]
+
+  W12 | specific     [CUTBACK]  ~35mi
+    Mon: rest
+    Tue: easy (4mi)
+    Wed: easy (4mi)
+    Thu: easy_strides (4mi)
+    Fri: easy (4mi)
+    Sat: rest
+    Sun: long_easy (13mi)  [fuel: 75g/hr]
+
+  W13 | specific      ~49mi
+    Mon: rest
+    Tue: regenerative  [warmup 2.0km, work 6.0km, cooldown 2.0km]
+    Wed: medium_long (10mi)
+    Thu: progression  [easy 4.9km, work 3.5km, work 3.5km, work 2.1km]
+    Fri: easy_strides (4mi)
+    Sat: rest
+    Sun: long_run_fatigue_resistance (18mi)  [steady 19.9km, work 18min, steady 6.1km]  [fuel: 75g/hr]
+
+  W14 | specific      ~50mi
+    Mon: rest
+    Tue: regenerative  [warmup 2.0km, work 6.0km, cooldown 2.0km]
+    Wed: medium_long (8mi)
+    Thu: marathon_pace_alt_km  [warmup 2.0km, work 2.5km, float 1.0km, work 2.5km, float 1.0km, work 2.5km, float 1.0km, work 2.5km, float 1.0km, work 2.5km, cooldown 2.0km]
+    Fri: easy_strides (4mi)
+    Sat: rest
+    Sun: long_run_progression_finish (16mi)  [steady 16.4km, work 6.8km, work 4.1km]  [fuel: 75g/hr]
+
+  W15 | taper         ~35mi
+    Mon: rest
+    Tue: easy (5mi)
+    Wed: easy (5mi)
+    Thu: threshold_cruise  [warmup 2.0km, work 5min, jog_rest 2min, work 5min, jog_rest 2min, work 5min, cooldown 2.0km]
+    Fri: easy_strides (5mi)
+    Sat: rest
+    Sun: long_easy (11mi)  [fuel: 75g/hr]
+
+  W16 | taper         ~22mi
+    Mon: rest
+    Tue: easy (5mi)
+    Wed: easy (5mi)
+    Thu: rest
+    Fri: rest
+    Sat: rest
+    Sun: long_easy (9mi)
+
+============================================================================
+  SARAH — 10K 10wk + Prospect Park 5K (W7 Sat, sharpening)
+  10 weeks | 10K | athlete_type=balanced
+  Phases: general(4w) → supportive(3w) → specific(2w) → taper(1w)
+  Tune-up: Prospect Park 5K (5K, sharpening) on 2026-05-23 (Sat)
+============================================================================
+
+  W 1 | general       ~50mi
+    Mon: rest
+    Tue: medium_long (8mi)
+    Wed: vo2max_intervals  [warmup 2.0km, work 3min, jog_rest 3min, work 2min, jog_rest 2min, work 1min, jog_rest 1min, work 2min, jog_rest 2min, work 3min, cooldown 2.0km]
+    Thu: easy_strides (6mi)
+    Fri: easy (6mi)
+    Sat: long_easy (15mi)  [fuel: 80g/hr]
+    Sun: easy (6mi)
+
+  W 2 | general       ~51mi
+    Mon: rest
+    Tue: medium_long (9mi)
+    Wed: threshold_alt_km  [warmup 2.0km, work 1.0km, float 1.0km, work 1.0km, float 1.0km, work 1.0km, float 1.0km, work 1.0km, cooldown 2.0km]
+    Thu: easy_strides (4mi)
+    Fri: easy (4mi)
+    Sat: long_easy (17mi)  [fuel: 80g/hr]
+    Sun: easy (4mi)
+
+  W 3 | general       ~51mi
+    Mon: rest
+    Tue: medium_long (8mi)
+    Wed: speed_support  [warmup 2.0km, work 1.6km, jog_rest 3min, work 1.6km, jog_rest 3min, work 1.6km, jog_rest 3min, work 1.6km, jog_rest 3min, work 1.6km, cooldown 2.0km]
+    Thu: easy_strides (5mi)
+    Fri: easy (5mi)
+    Sat: long_run_moderate (15mi)  [steady 14.2km, work 11.6km]  [fuel: 80g/hr]
+    Sun: easy (5mi)
+
+  W 4 | general      [CUTBACK]  ~44mi
+    Mon: rest
+    Tue: easy (6mi)
+    Wed: easy_strides (6mi)
+    Thu: rest
+    Fri: easy (6mi)
+    Sat: long_easy (15mi)  [fuel: 80g/hr]
+    Sun: easy (6mi)
+
+  W 5 | supportive    ~56mi
+    Mon: rest
+    Tue: medium_long (9mi)
+    Wed: threshold_cruise  [warmup 2.0km, work 10min, jog_rest 3min, work 10min, jog_rest 3min, work 10min, cooldown 2.0km]
+    Thu: easy_strides (7mi)
+    Fri: easy (7mi)
+    Sat: long_run_moderate (15mi)  [steady 14.2km, work 11.6km]  [fuel: 80g/hr]
+    Sun: easy (7mi)
+
+  W 6 | supportive    ~57mi
+    Mon: rest
+    Tue: medium_long (10mi)
+    Wed: micro_intervals  [warmup 2.0km, work 25min, cooldown 2.0km]
+    Thu: easy_strides (6mi)
+    Fri: easy (6mi)
+    Sat: long_fast_stepwise (17mi)  [work 11.6km, work 8.7km, work 8.7km]  [fuel: 80g/hr]
+    Sun: easy (6mi)
+
+  W 7 | supportive    ~46mi
+    Mon: rest
+    Tue: easy (9mi)
+    Wed: threshold_cruise  [warmup 2.0km, work 10min, jog_rest 3min, work 10min, jog_rest 3min, work 10min, cooldown 2.0km]
+    Thu: easy_strides (9mi)
+    Fri: pre_race (4mi)  <<<
+         -> 3-5mi easy (easy) + 4×100m strides (3K effort). Stay loose, save your legs. Confirm your race-day kit and nutrition.
+    Sat: tune_up_race (3.1mi)  [race 5.0km]  <<<
+         -> RACE: Prospect Park 5K. Sharpening effort — run hard but not all-out. This is neuromuscular stimulus at race intensity with full recovery before the goal race.
+    Sun: recovery_long (9mi)
+
+  W 8 | specific     [CUTBACK]  ~47mi
+    Mon: rest
+    Tue: easy (7mi)
+    Wed: easy_strides (7mi)
+    Thu: rest
+    Fri: easy (7mi)
+    Sat: long_easy (15mi)  [fuel: 80g/hr]
+    Sun: easy (7mi)
+
+  W 9 | specific      ~56mi
+    Mon: rest
+    Tue: medium_long (9mi)
+    Wed: speed_support  [warmup 2.0km, work 1.0km, jog_rest 3min, work 1.0km, jog_rest 3min, work 1.0km, jog_rest 3min, work 1.0km, jog_rest 3min, work 1.0km, jog_rest 3min, work 1.0km, cooldown 2.0km]
+    Thu: easy_strides (6mi)
+    Fri: easy (6mi)
+    Sat: long_run_moderate (15mi)  [steady 14.2km, work 11.6km]  [fuel: 80g/hr]
+    Sun: easy (6mi)
+
+  W10 | taper         ~31mi
+    Mon: rest
+    Tue: easy_strides (5mi)
+    Wed: vo2max_intervals  [warmup 2.0km, work 4min, jog_rest 4min, work 3min, jog_rest 3min, work 2min, jog_rest 2min, work 1min, cooldown 2.0km]
+    Thu: rest
+    Fri: easy (5mi)
+    Sat: long_easy (7mi)
+    Sun: easy (5mi)
+
+============================================================================
+  MARK — Half Marathon 12wk + NYRR 10K (W8 Sun, threshold)
+  12 weeks | half_marathon | athlete_type=balanced
+  Phases: general(5w) → supportive(3w) → specific(3w) → taper(1w)
+  Tune-up: NYRR 10K (10K, threshold) on 2026-05-31 (Sun)
+============================================================================
+
+  W 1 | general       ~57mi
+    Mon: rest
+    Tue: easy (7mi)
+    Wed: threshold_cruise  [warmup 2.0km, work 5min, jog_rest 2min, work 5min, jog_rest 2min, work 5min, jog_rest 2min, work 5min, jog_rest 2min, work 5min, jog_rest 2min, work 5min, cooldown 2.0km]
+    Thu: easy_strides (7mi)
+    Fri: medium_long (8mi)
+    Sat: easy (7mi)
+    Sun: long_easy (14mi)  [fuel: 80g/hr]
+
+  W 2 | general       ~58mi
+    Mon: rest
+    Tue: easy (7mi)
+    Wed: micro_intervals  [warmup 2.0km, work 22min, cooldown 2.0km]
+    Thu: easy_strides (7mi)
+    Fri: medium_long (10mi)
+    Sat: easy (7mi)
+    Sun: long_easy (16mi)  [fuel: 80g/hr]
+
+  W 3 | general       ~59mi
+    Mon: rest
+    Tue: easy (7mi)
+    Wed: progression  [easy 4.2km, work 3.0km, work 3.0km, work 1.8km]
+    Thu: easy_strides (7mi)
+    Fri: medium_long (10mi)
+    Sat: easy (7mi)
+    Sun: long_run_moderate (17mi)  [steady 16.0km, work 13.1km]  [fuel: 80g/hr]
+
+  W 4 | general      [CUTBACK]  ~51mi
+    Mon: rest
+    Tue: easy (8mi)
+    Wed: easy_strides (8mi)
+    Thu: rest
+    Fri: easy (8mi)
+    Sat: easy (8mi)
+    Sun: long_easy (14mi)  [fuel: 80g/hr]
+
+  W 5 | general       ~61mi
+    Mon: rest
+    Tue: easy (9mi)
+    Wed: steady_run (6mi)  [steady 10.5km]
+    Thu: easy_strides (9mi)
+    Fri: medium_long (9mi)
+    Sat: easy (9mi)
+    Sun: long_run_progression_finish (15mi)  [steady 15.4km, work 6.4km, work 3.9km]  [fuel: 80g/hr]
+
+  W 6 | supportive    ~59mi
+    Mon: rest
+    Tue: easy_strides (9mi)
+    Wed: threshold_cruise  [warmup 2.0km, work 10min, jog_rest 3min, work 10min, jog_rest 3min, work 10min, cooldown 2.0km]
+    Thu: medium_long (8mi)
+    Fri: regenerative  [warmup 2.0km, work 6.0km, cooldown 2.0km]
+    Sat: easy (9mi)
+    Sun: long_run_moderate (14mi)  [steady 13.3km, work 10.8km]  [fuel: 80g/hr]
+
+  W 7 | supportive    ~61mi
+    Mon: rest
+    Tue: easy_strides (9mi)
+    Wed: micro_intervals  [warmup 2.0km, work 26min, cooldown 2.0km]
+    Thu: medium_long (10mi)
+    Fri: regenerative  [warmup 2.0km, work 6.0km, cooldown 2.0km]
+    Sat: easy (9mi)
+    Sun: long_fast_stepwise (16mi)  [work 10.9km, work 8.2km, work 8.2km]  [fuel: 80g/hr]
+
+  W 8 | supportive   [CUTBACK]  ~41mi
+    Mon: rest
+    Tue: easy (9mi)
+    Wed: easy_strides (9mi)
+    Thu: rest
+    Fri: easy (9mi)
+    Sat: pre_race (4mi)  <<<
+         -> 3-5mi easy (easy) + 4×100m strides (3K effort). Stay loose, save your legs. Confirm your race-day kit and nutrition.
+    Sun: tune_up_race (6.2mi)  [race 10.0km]  <<<
+         -> RACE: NYRR 10K. Race this HARD — final threshold-level effort before goal race. Full race effort, use it to calibrate your pacing and test your race-day routine.
+
+  W 9 | specific      ~77mi
+    Mon: recovery_long (12mi)
+    Tue: easy_strides (9mi)
+    Wed: threshold_cruise  [warmup 2.0km, work 5min, jog_rest 2min, work 5min, jog_rest 2min, work 5min, jog_rest 2min, work 5min, jog_rest 2min, work 5min, jog_rest 2min, work 5min, cooldown 2.0km]
+    Thu: medium_long (10mi)
+    Fri: regenerative  [warmup 2.0km, work 6.0km, cooldown 2.0km]
+    Sat: easy (9mi)
+    Sun: long_run_moderate (17mi)  [steady 16.0km, work 13.1km]  [fuel: 80g/hr]
+
+  W10 | specific      ~62mi
+    Mon: rest
+    Tue: easy_strides (9mi)
+    Wed: threshold_alt_km  [warmup 2.0km, work 1.0km, float 1.0km, work 1.0km, float 1.0km, work 1.0km, float 1.0km, work 1.0km, float 1.0km, work 1.0km, float 1.0km, work 1.0km, cooldown 2.0km]
+    Thu: medium_long (10mi)
+    Fri: regenerative  [warmup 2.0km, work 6.0km, cooldown 2.0km]
+    Sat: easy (9mi)
+    Sun: long_fast_stepwise (15mi)  [work 10.3km, work 7.7km, work 7.7km]  [fuel: 80g/hr]
+
+  W11 | specific      ~60mi
+    Mon: rest
+    Tue: easy_strides (9mi)
+    Wed: threshold_cruise  [warmup 2.0km, work 35min, cooldown 2.0km]
+    Thu: medium_long (8mi)
+    Fri: regenerative  [warmup 2.0km, work 6.0km, cooldown 2.0km]
+    Sat: easy (9mi)
+    Sun: long_run_fatigue_resistance (14mi)  [steady 15.7km, work 20min, steady 4.8km]  [fuel: 80g/hr]
+
+  W12 | taper         ~33mi
+    Mon: rest
+    Tue: easy_strides (5mi)
+    Wed: threshold_cruise  [warmup 2.0km, work 5min, jog_rest 2min, work 5min, jog_rest 2min, work 5min, cooldown 2.0km]
+    Thu: rest
+    Fri: easy (5mi)
+    Sat: easy (5mi)
+    Sun: long_easy (8mi)
+
+============================================================================
+  LISA — Marathon 16wk + Parkrun 5K (W6 Sat) + City Half (W11 Sat)
+  16 weeks | marathon | athlete_type=balanced
+  Phases: general(6w) → supportive(4w) → specific(4w) → taper(2w)
+  Tune-up: Parkrun (5K, confidence) on 2026-05-16 (Sat)
+  Tune-up: City Half (half_marathon, threshold) on 2026-06-20 (Sat)
+============================================================================
+
+  W 1 | general       ~63mi
+    Mon: rest
+    Tue: medium_long (10mi)  [fuel: 80g/hr]
+    Wed: threshold_cruise  [warmup 2.0km, work 5min, jog_rest 2min, work 5min, jog_rest 2min, work 5min, jog_rest 2min, work 5min, jog_rest 2min, work 5min, jog_rest 2min, work 5min, cooldown 2.0km]
+    Thu: easy_strides (8mi)
+    Fri: easy (8mi)
+    Sat: long_easy (17mi)  [fuel: 80g/hr]
+    Sun: easy (8mi)
+
+  W 2 | general       ~64mi
+    Mon: rest
+    Tue: medium_long (11mi)  [fuel: 80g/hr]
+    Wed: steady_run (6mi)  [steady 10.5km]
+    Thu: easy_strides (7mi)
+    Fri: easy (7mi)
+    Sat: long_easy (19mi)  [fuel: 80g/hr]
+    Sun: easy (7mi)
+
+  W 3 | general       ~65mi
+    Mon: rest
+    Tue: medium_long (13mi)  [fuel: 80g/hr]
+    Wed: vo2max_intervals  [warmup 2.0km, work 3min, jog_rest 3min, work 3min, jog_rest 3min, work 3min, jog_rest 3min, work 3min, jog_rest 3min, work 3min, cooldown 2.0km]
+    Thu: easy_strides (7mi)
+    Fri: easy (7mi)
+    Sat: long_run_moderate (21mi)  [steady 19.5km, work 15.9km]  [fuel: 80g/hr]
+    Sun: easy (7mi)
+
+  W 4 | general      [CUTBACK]  ~56mi
+    Mon: rest
+    Tue: easy (8mi)
+    Wed: easy_strides (8mi)
+    Thu: rest
+    Fri: easy (8mi)
+    Sat: long_easy (17mi)  [fuel: 80g/hr]
+    Sun: easy (8mi)
+
+  W 5 | general       ~67mi
+    Mon: rest
+    Tue: medium_long (11mi)  [fuel: 80g/hr]
+    Wed: micro_intervals  [warmup 2.0km, work 25min, cooldown 2.0km]
+    Thu: easy_strides (8mi)
+    Fri: easy (8mi)
+    Sat: long_run_progression_finish (19mi)  [steady 19.3km, work 8.1km, work 4.8km]  [fuel: 80g/hr]
+    Sun: easy (8mi)
+
+  W 6 | general       ~47mi
+    Mon: rest
+    Tue: easy (9mi)
+    Wed: speed_support  [warmup 2.0km, work 1.6km, jog_rest 3min, work 1.6km, jog_rest 3min, work 1.6km, jog_rest 3min, work 1.6km, jog_rest 3min, work 1.6km, cooldown 2.0km]
+    Thu: easy_strides (9mi)
+    Fri: pre_race (4mi)  <<<
+         -> 3-5mi easy (easy) + 4×100m strides (3K effort). Stay loose, save your legs. Confirm your race-day kit and nutrition.
+    Sat: tune_up_race (3.1mi)  [race 5.0km]  <<<
+         -> RACE: Parkrun. Controlled effort — run within yourself. The goal is a confidence booster and a process rehearsal, not a PB. Save your peak for the goal race.
+    Sun: recovery_long (9mi)
+
+  W 7 | supportive    ~73mi
+    Mon: rest
+    Tue: medium_long (13mi)  [fuel: 80g/hr]
+    Wed: threshold_cruise  [warmup 2.0km, work 10min, jog_rest 3min, work 10min, jog_rest 3min, work 10min, cooldown 2.0km]
+    Thu: easy_strides (9mi)
+    Fri: easy (9mi)
+    Sat: long_run_mp (20mi)  [easy 6.0km, work 15.2km, easy 12.6km]  [fuel: 80g/hr]
+    Sun: easy (9mi)
+
+  W 8 | supportive   [CUTBACK]  ~58mi
+    Mon: rest
+    Tue: easy (9mi)
+    Wed: easy_strides (9mi)
+    Thu: rest
+    Fri: easy (9mi)
+    Sat: long_easy (17mi)  [fuel: 80g/hr]
+    Sun: easy (9mi)
+
+  W 9 | supportive    ~73mi
+    Mon: rest
+    Tue: medium_long (14mi)  [fuel: 80g/hr]
+    Wed: micro_intervals  [warmup 2.0km, work 26min, cooldown 2.0km]
+    Thu: easy_strides (9mi)
+    Fri: easy (9mi)
+    Sat: long_run_fatigue_resistance (21mi)  [steady 23.0km, work 18min, steady 7.1km]  [fuel: 80g/hr]
+    Sun: easy (9mi)
+
+  W10 | supportive    ~71mi
+    Mon: rest
+    Tue: medium_long (13mi)  [fuel: 80g/hr]
+    Wed: threshold_cruise  [warmup 2.0km, work 15min, jog_rest 3min, work 15min, cooldown 2.0km]
+    Thu: easy_strides (9mi)
+    Fri: easy (9mi)
+    Sat: long_run_progression_finish (19mi)  [steady 19.3km, work 8.1km, work 4.8km]  [fuel: 80g/hr]
+    Sun: easy (9mi)
+
+  W11 | specific      ~57mi
+    Mon: rest
+    Tue: easy (9mi)
+    Wed: marathon_pace_alt_km  [warmup 2.0km, work 2.0km, float 1.0km, work 2.0km, float 1.0km, work 2.0km, float 1.0km, work 2.0km, cooldown 2.0km]
+    Thu: easy_strides (9mi)
+    Fri: pre_race (4mi)  <<<
+         -> 3-5mi easy (easy) + 4×100m strides (3K effort). Stay loose, save your legs. Confirm your race-day kit and nutrition.
+    Sat: tune_up_race (13.1mi)  [race 21.1km]  [fuel: 80g/hr]  <<<
+         -> RACE: City Half. Race this HARD — final threshold-level effort before goal race. Full race effort, use it to calibrate your pacing and test your race-day routine.
+    Sun: recovery_long (9mi)
+
+  W12 | specific     [CUTBACK]  ~58mi
+    Mon: rest
+    Tue: easy (9mi)
+    Wed: easy_strides (9mi)
+    Thu: rest
+    Fri: easy (9mi)
+    Sat: long_easy (17mi)  [fuel: 80g/hr]
+    Sun: easy (9mi)
+
+  W13 | specific      ~74mi
+    Mon: rest
+    Tue: medium_long (13mi)  [fuel: 80g/hr]
+    Wed: progression  [easy 4.9km, work 3.5km, work 3.5km, work 2.1km]
+    Thu: easy_strides (9mi)
+    Fri: easy (9mi)
+    Sat: long_run_fatigue_resistance (20mi)  [steady 22.0km, work 18min, steady 6.8km]  [fuel: 80g/hr]
+    Sun: easy (9mi)
+
+  W14 | specific      ~74mi
+    Mon: rest
+    Tue: medium_long (14mi)  [fuel: 80g/hr]
+    Wed: marathon_pace_alt_km  [warmup 2.0km, work 2.5km, float 1.0km, work 2.5km, float 1.0km, work 2.5km, float 1.0km, work 2.5km, float 1.0km, work 2.5km, cooldown 2.0km]  [fuel: 80g/hr]
+    Thu: easy_strides (7mi)
+    Fri: easy (7mi)
+    Sat: long_run_progression_finish (21mi)  [steady 21.2km, work 8.8km, work 5.3km]  [fuel: 80g/hr]
+    Sun: easy (7mi)
+
+  W15 | taper         ~36mi
+    Mon: rest
+    Tue: easy_strides (5mi)
+    Wed: threshold_cruise  [warmup 2.0km, work 5min, jog_rest 2min, work 5min, jog_rest 2min, work 5min, cooldown 2.0km]
+    Thu: rest
+    Fri: easy (5mi)
+    Sat: long_easy (12mi)  [fuel: 80g/hr]
+    Sun: easy (5mi)
+
+  W16 | taper         ~35mi
+    Mon: rest
+    Tue: easy_strides (5mi)
+    Wed: easy (5mi)
+    Thu: rest
+    Fri: easy (5mi)
+    Sat: long_easy (10mi)  [fuel: 80g/hr]
+    Sun: easy (5mi)
+
+============================================================================
+  MICHAEL — Marathon 16wk (NO TUNE-UPS — control baseline)
+  16 weeks | marathon | athlete_type=balanced
+  Phases: general(6w) → supportive(4w) → specific(4w) → taper(2w)
+============================================================================
+
+  W 1 | general       ~63mi
+    Mon: rest
+    Tue: easy (9mi)
+    Wed: threshold_cruise  [warmup 2.0km, work 5min, jog_rest 2min, work 5min, jog_rest 2min, work 5min, jog_rest 2min, work 5min, jog_rest 2min, work 5min, jog_rest 2min, work 5min, cooldown 2.0km]
+    Thu: easy_strides (9mi)
+    Fri: medium_long (8mi)
+    Sat: easy (9mi)
+    Sun: long_easy (14mi)  [fuel: 80g/hr]
+
+  W 2 | general       ~64mi
+    Mon: rest
+    Tue: easy (9mi)
+    Wed: steady_run (6mi)  [steady 10.5km]
+    Thu: easy_strides (9mi)
+    Fri: medium_long (10mi)
+    Sat: easy (9mi)
+    Sun: long_easy (16mi)  [fuel: 80g/hr]
+
+  W 3 | general       ~65mi
+    Mon: rest
+    Tue: easy (8mi)
+    Wed: vo2max_intervals  [warmup 2.0km, work 3min, jog_rest 3min, work 3min, jog_rest 3min, work 3min, jog_rest 3min, work 3min, jog_rest 3min, work 3min, cooldown 2.0km]
+    Thu: easy_strides (8mi)
+    Fri: medium_long (11mi)  [fuel: 80g/hr]
+    Sat: easy (8mi)
+    Sun: long_run_moderate (18mi)  [steady 16.8km, work 13.8km]  [fuel: 80g/hr]
+
+  W 4 | general      [CUTBACK]  ~55mi
+    Mon: rest
+    Tue: easy (9mi)
+    Wed: easy_strides (9mi)
+    Thu: rest
+    Fri: easy (9mi)
+    Sat: easy (9mi)
+    Sun: long_easy (14mi)  [fuel: 80g/hr]
+
+  W 5 | general       ~66mi
+    Mon: rest
+    Tue: easy (7mi)
+    Wed: micro_intervals  [warmup 2.0km, work 25min, cooldown 2.0km]
+    Thu: easy_strides (7mi)
+    Fri: medium_long (12mi)  [fuel: 80g/hr]
+    Sat: easy (7mi)
+    Sun: long_run_progression_finish (20mi)  [steady 20.3km, work 8.4km, work 5.1km]  [fuel: 80g/hr]
+
+  W 6 | general       ~66mi
+    Mon: rest
+    Tue: easy (6mi)
+    Wed: speed_support  [warmup 2.0km, work 1.6km, jog_rest 3min, work 1.6km, jog_rest 3min, work 1.6km, jog_rest 3min, work 1.6km, jog_rest 3min, work 1.6km, cooldown 2.0km]
+    Thu: easy_strides (6mi)
+    Fri: medium_long (13mi)  [fuel: 80g/hr]
+    Sat: easy (6mi)
+    Sun: long_fast_stepwise (21mi)  [work 10.6km, work 8.8km, work 8.8km, work 7.1km]  [fuel: 80g/hr]
+
+  W 7 | supportive    ~68mi
+    Mon: rest
+    Tue: easy_strides (9mi)
+    Wed: threshold_cruise  [warmup 2.0km, work 10min, jog_rest 3min, work 10min, jog_rest 3min, work 10min, cooldown 2.0km]
+    Thu: medium_long (13mi)  [fuel: 80g/hr]
+    Fri: regenerative  [warmup 2.0km, work 6.0km, cooldown 2.0km]
+    Sat: easy (9mi)
+    Sun: long_run_mp (19mi)  [easy 6.0km, work 14.5km, easy 11.7km]  [fuel: 80g/hr]
+
+  W 8 | supportive   [CUTBACK]  ~55mi
+    Mon: rest
+    Tue: easy (9mi)
+    Wed: easy_strides (9mi)
+    Thu: rest
+    Fri: easy (9mi)
+    Sat: easy (9mi)
+    Sun: long_easy (14mi)  [fuel: 80g/hr]
+
+  W 9 | supportive    ~65mi
+    Mon: rest
+    Tue: easy_strides (9mi)
+    Wed: micro_intervals  [warmup 2.0km, work 26min, cooldown 2.0km]
+    Thu: medium_long (12mi)  [fuel: 80g/hr]
+    Fri: regenerative  [warmup 2.0km, work 6.0km, cooldown 2.0km]
+    Sat: easy (9mi)
+    Sun: long_run_fatigue_resistance (18mi)  [steady 19.9km, work 18min, steady 6.1km]  [fuel: 80g/hr]
+
+  W10 | supportive    ~69mi
+    Mon: rest
+    Tue: easy_strides (9mi)
+    Wed: threshold_cruise  [warmup 2.0km, work 15min, jog_rest 3min, work 15min, cooldown 2.0km]
+    Thu: medium_long (13mi)  [fuel: 80g/hr]
+    Fri: regenerative  [warmup 2.0km, work 6.0km, cooldown 2.0km]
+    Sat: easy (9mi)
+    Sun: long_run_progression_finish (20mi)  [steady 20.3km, work 8.4km, work 5.1km]  [fuel: 80g/hr]
+
+  W11 | specific      ~70mi
+    Mon: rest
+    Tue: easy_strides (8mi)
+    Wed: marathon_pace_alt_km  [warmup 2.0km, work 2.0km, float 1.0km, work 2.0km, float 1.0km, work 2.0km, float 1.0km, work 2.0km, cooldown 2.0km]
+    Thu: medium_long (13mi)  [fuel: 80g/hr]
+    Fri: regenerative  [warmup 2.0km, work 6.0km, cooldown 2.0km]
+    Sat: easy (8mi)
+    Sun: long_run_mp (21mi)  [easy 6.0km, work 19.5km, easy 9.9km]  [fuel: 80g/hr]
+
+  W12 | specific     [CUTBACK]  ~55mi
+    Mon: rest
+    Tue: easy (9mi)
+    Wed: easy_strides (9mi)
+    Thu: rest
+    Fri: easy (9mi)
+    Sat: easy (9mi)
+    Sun: long_easy (14mi)  [fuel: 80g/hr]
+
+  W13 | specific      ~68mi
+    Mon: rest
+    Tue: easy_strides (9mi)
+    Wed: progression  [easy 4.9km, work 3.5km, work 3.5km, work 2.1km]
+    Thu: medium_long (13mi)  [fuel: 80g/hr]
+    Fri: regenerative  [warmup 2.0km, work 6.0km, cooldown 2.0km]
+    Sat: easy (9mi)
+    Sun: long_run_fatigue_resistance (19mi)  [steady 20.9km, work 18min, steady 6.4km]  [fuel: 80g/hr]
+
+  W14 | specific      ~70mi
+    Mon: rest
+    Tue: easy_strides (9mi)
+    Wed: marathon_pace_alt_km  [warmup 2.0km, work 2.5km, float 1.0km, work 2.5km, float 1.0km, work 2.5km, float 1.0km, work 2.5km, float 1.0km, work 2.5km, cooldown 2.0km]
+    Thu: medium_long (11mi)  [fuel: 80g/hr]
+    Fri: regenerative  [warmup 2.0km, work 6.0km, cooldown 2.0km]
+    Sat: easy (9mi)
+    Sun: long_run_progression_finish (18mi)  [steady 18.4km, work 7.7km, work 4.6km]  [fuel: 80g/hr]
+
+  W15 | taper         ~36mi
+    Mon: rest
+    Tue: easy_strides (5mi)
+    Wed: threshold_cruise  [warmup 2.0km, work 5min, jog_rest 2min, work 5min, jog_rest 2min, work 5min, cooldown 2.0km]
+    Thu: rest
+    Fri: easy (5mi)
+    Sat: easy (5mi)
+    Sun: long_easy (12mi)  [fuel: 80g/hr]
+
+  W16 | taper         ~35mi
+    Mon: rest
+    Tue: easy_strides (5mi)
+    Wed: easy (5mi)
+    Thu: rest
+    Fri: easy (5mi)
+    Sat: easy (5mi)
+    Sun: long_easy (10mi)

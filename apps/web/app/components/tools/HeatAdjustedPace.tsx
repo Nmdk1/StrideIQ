@@ -1,8 +1,9 @@
 "use client";
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import TimeInput from '@/components/ui/TimeInput';
 import { isFeatureEnabled, FEATURE_FLAGS } from '@/lib/featureFlags';
+import { sendToolTelemetry } from '@/lib/hooks/useToolTelemetry';
 
 export default function HeatAdjustedPace() {
   const [basePace, setBasePace] = useState('');
@@ -18,6 +19,11 @@ export default function HeatAdjustedPace() {
   const [elevationLoss, setElevationLoss] = useState('');
   const [results, setResults] = useState<any>(null);
   const [error, setError] = useState('');
+
+  useEffect(() => {
+    if (!results) return;
+    void sendToolTelemetry('tool_result_view', { tool: 'heat_adjusted_pace' });
+  }, [results]);
 
   // Calculate dew point from temperature and relative humidity
   // Using Magnus formula: Td = (b * α(T, RH)) / (a - α(T, RH))

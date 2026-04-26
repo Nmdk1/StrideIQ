@@ -92,25 +92,22 @@ class TestTrainingPaces:
     # These are used as benchmarks, not embedded in production code
     # Tolerance: ±30 seconds is acceptable for practical training purposes
     PACE_TESTS = [
-        # (rpi, easy, marathon, threshold, interval, rep) - from physics formulas
-        # DO NOT change these to lookup table values - tables are copyrighted
-        (30, 776, 631, 595, 513, 469),
-        (35, 660, 545, 514, 446, 410),
-        (40, 594, 495, 467, 408, 376),
-        (45, 544, 461, 435, 381, 353),
-        (50, 508, 435, 408, 357, 331),
-        (55, 474, 408, 385, 339, 316),
-        (60, 447, 385, 365, 321, 299),
-        (65, 420, 362, 340, 301, 280),
-        (70, 395, 342, 323, 286, 267),
+        # (rpi, easy, marathon, threshold, interval, rep) - seconds per mile
+        # Aligned 2026-04-10 to _RPI_PACE_TABLE (Daniels/Gilbert derivation 2026-04-04)
+        (30, 685, 662, 595, 529, 505),
+        (35, 636, 586, 539, 490, 466),
+        (40, 590, 526, 492, 453, 429),
+        (45, 538, 477, 448, 412, 388),
+        (50, 494, 437, 411, 378, 354),
+        (55, 458, 403, 380, 350, 326),
+        (60, 427, 374, 354, 326, 302),
+        (65, 400, 349, 332, 305, 281),
+        (70, 377, 328, 313, 288, 264),
     ]
     
-    # Tolerance in seconds - accounts for:
-    # 1. Natural training variation (runners don't hit exact paces)
-    # 2. Formula approximation at edge cases (highly non-linear at low RPI)
-    # 3. Practical irrelevance (moderate variance doesn't change training effect)
-    TOLERANCE = 55
-    TOLERANCE_EDGE_CASES = 100  # Higher tolerance for RPI < 40 where formulas diverge
+    # Tolerance in seconds — tight enough to catch calibration drift.
+    TOLERANCE = 15
+    TOLERANCE_EDGE_CASES = 30  # Higher for RPI < 40 where formulas diverge
 
     @pytest.mark.parametrize("rpi,easy,marathon,threshold,interval,rep", PACE_TESTS)
     def test_pace_accuracy(self, rpi, easy, marathon, threshold, interval, rep):

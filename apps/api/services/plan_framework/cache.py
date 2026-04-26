@@ -22,7 +22,7 @@ Usage:
 
 import json
 import logging
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any
 from uuid import UUID
 from datetime import datetime
 

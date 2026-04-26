@@ -9,8 +9,8 @@ import json
 from fastapi import APIRouter, Request, HTTPException, status, Header, Query, Depends
 from sqlalchemy.orm import Session
 from core.database import get_db
-from models import Athlete, Activity
-from services.strava_webhook import verify_webhook_signature, subscribe_to_webhooks, list_webhook_subscriptions, delete_webhook_subscription
+from models import Athlete
+from services.strava_webhook import verify_webhook_signature, subscribe_to_webhooks, list_webhook_subscriptions
 from tasks.strava_tasks import sync_strava_activities_task
 import logging
 

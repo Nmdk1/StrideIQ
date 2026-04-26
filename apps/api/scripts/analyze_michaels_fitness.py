@@ -139,7 +139,7 @@ def main():
             
             # Check for splits if available
             if hasattr(a, 'splits') and a.splits:
-                print(f"  Splits: Available")
+                print("  Splits: Available")
         
         if not nov_races:
             # Look around that date
