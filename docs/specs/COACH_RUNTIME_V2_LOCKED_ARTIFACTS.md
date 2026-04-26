@@ -1177,8 +1177,10 @@ Not blockers for Artifact 6 lock:
 
 ## Artifact 7 Status
 
-Artifact 7 replay rubric is in first-pass revision and not locked.
+Artifact 7 replay rubric is locked in
+`docs/specs/REPLAY_RUBRIC_SPEC.md`.
 
 ## Artifact 8 Status
 
-Artifact 8 canary and rollback gates are not drafted.
+Artifact 8 canary and rollback gates are locked in
+`docs/specs/COACH_RUNTIME_V2_ARTIFACT_8_CANARY_ROLLBACK.md`.
