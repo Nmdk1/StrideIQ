@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 from datetime import date, datetime, timedelta, timezone
 from typing import Any
@@ -8,6 +9,7 @@ from uuid import UUID, uuid4
 
 from sqlalchemy.orm import Session
 
+from core.config import settings
 from models import Activity, ActivitySplit, TrainingPlan
 from services.coaching.ledger import (
     SENSITIVE_FACT_FIELDS,
@@ -32,6 +34,8 @@ from services.timezone_utils import (
 ASSEMBLER_VERSION = "coach_runtime_v2_0_a_packet_assembler_001"
 MODE_CLASSIFIER_VERSION = "coach_mode_classifier_v2_0_a"
 LEDGER_COVERAGE_SHIM_THRESHOLD = 0.5
+
+logger = logging.getLogger(__name__)
 
 ARTIFACT5_MODES = (
     "observe_and_ask",
@@ -129,6 +133,16 @@ def _ledger_field_coverage(facts: dict[str, Any]) -> float:
         if (facts.get(field) or {}).get("value") is not None
     )
     return round(populated / len(VALID_FACT_FIELDS), 3)
+
+
+def _ledger_coverage_shim_threshold() -> float:
+    return float(
+        getattr(
+            settings,
+            "COACH_LEDGER_COVERAGE_SHIM_THRESHOLD",
+            LEDGER_COVERAGE_SHIM_THRESHOLD,
+        )
+    )
 
 
 def _conflict_suggested_question(conflict: PendingConflict) -> str:
@@ -1353,8 +1367,20 @@ def assemble_v2_packet(
     legacy_context, removed_temporal_lines_count = quiet_legacy_context_bridge(
         (legacy_athlete_state or "").strip()
     )
-    if ledger_field_coverage >= LEDGER_COVERAGE_SHIM_THRESHOLD or not legacy_context:
+    shim_threshold = _ledger_coverage_shim_threshold()
+    if ledger_field_coverage >= shim_threshold or not legacy_context:
         legacy_context = ""
+    else:
+        logger.warning(
+            "coach_runtime_v2_legacy_context_shim_active",
+            extra={
+                "athlete_id": str(athlete_id),
+                "ledger_field_coverage": ledger_field_coverage,
+                "threshold": shim_threshold,
+                "legacy_context_chars": len(legacy_context),
+                "removed_temporal_lines_count": removed_temporal_lines_count,
+            },
+        )
 
     data = {
         "conversation": {
@@ -1376,7 +1402,7 @@ def assemble_v2_packet(
                 "Deprecated shim only. Structured athlete_facts, recent_activities, "
                 "recent_threads, unknowns, calendar_context, and current_turn are the "
                 "primary athlete state. Empty when ledger coverage is at or above "
-                f"{LEDGER_COVERAGE_SHIM_THRESHOLD:.0%}."
+                f"{shim_threshold:.0%}."
             ),
             "removed_temporal_lines_count": removed_temporal_lines_count,
             "ledger_field_coverage": ledger_field_coverage,
@@ -1569,7 +1595,7 @@ def assemble_v2_packet(
                         "section": "athlete_fact_ledger",
                         "status": (
                             "complete"
-                            if ledger_field_coverage >= LEDGER_COVERAGE_SHIM_THRESHOLD
+                            if ledger_field_coverage >= shim_threshold
                             else "partial"
                         ),
                         "coverage_start": None,
