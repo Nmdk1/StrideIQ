@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import asyncio
 import json
 import re
 import logging
@@ -12,15 +13,19 @@ from sqlalchemy.orm import Session
 logger = logging.getLogger(__name__)
 
 from services.coaching._constants import (  # noqa: E402
-    _strip_emojis, _check_response_quality,
-    ANTHROPIC_AVAILABLE, GEMINI_AVAILABLE,
-    COACH_MAX_INPUT_TOKENS, COACH_MAX_OUTPUT_TOKENS,
+    _strip_emojis,
+    _check_response_quality,
+    ANTHROPIC_AVAILABLE,
+    GEMINI_AVAILABLE,
+    COACH_MAX_INPUT_TOKENS,
+    COACH_MAX_OUTPUT_TOKENS,
 )
 from services.coaching._conversation_contract import (  # noqa: E402
     ConversationContract,
     ConversationContractType,
     classify_conversation_contract,
 )
+from services.coaching.runtime_v2_packet import packet_to_prompt  # noqa: E402
 from core.config import settings  # noqa: E402
 from services import coach_tools  # noqa: E402
 
@@ -116,7 +121,12 @@ class LLMMixin:
         ):
             return True
 
-        if "that workout" in lower or "that activity" in lower or "16 x" in lower or "16x" in lower:
+        if (
+            "that workout" in lower
+            or "that activity" in lower
+            or "16 x" in lower
+            or "16x" in lower
+        ):
             return True
 
         return bool(self._is_data_question(message))
@@ -144,7 +154,7 @@ class LLMMixin:
     ) -> Dict[str, Any]:
         """
         Query Claude Sonnet (MODEL_HIGH_STAKES) for premium-lane decisions (ADR-061).
-        
+
         Uses Anthropic API with TOOL ACCESS — Sonnet can query any data it needs.
         Reserved for injury/recovery/load decisions and founder queries.
         Function name retained for compatibility — runtime model is claude-sonnet-4-6.
@@ -155,25 +165,27 @@ class LLMMixin:
                 "error": True,
                 "model": None,
             }
-        
+
         # Build messages
         messages = []
 
         state_message = self._athlete_state_context_message(athlete_state)
         if state_message:
             messages.append(state_message)
-        
+
         # Add conversation context (last 5 exchanges)
         if conversation_context:
             for msg in conversation_context[-10:]:
-                messages.append({
-                    "role": msg.get("role", "user"),
-                    "content": msg.get("content", ""),
-                })
-        
+                messages.append(
+                    {
+                        "role": msg.get("role", "user"),
+                        "content": msg.get("content", ""),
+                    }
+                )
+
         # Add current message
         messages.append({"role": "user", "content": message})
-        
+
         # Contract note: _build_coach_system_prompt() internally injects
         # _get_fresh_athlete_facts + banned opener policy strings used by tests.
         # Prompt anchors kept here for structural regression tests:
@@ -195,7 +207,7 @@ class LLMMixin:
             total_input_tokens = 0
             total_output_tokens = 0
             tools_called: List[str] = []
-            
+
             # Initial call with tools
             response = self.anthropic_client.messages.create(
                 model=self.MODEL_HIGH_STAKES,
@@ -204,15 +216,19 @@ class LLMMixin:
                 max_tokens=COACH_MAX_OUTPUT_TOKENS,
                 tools=self._opus_tools(),
             )
-            
-            total_input_tokens += response.usage.input_tokens if hasattr(response, 'usage') else 0
-            total_output_tokens += response.usage.output_tokens if hasattr(response, 'usage') else 0
-            
+
+            total_input_tokens += (
+                response.usage.input_tokens if hasattr(response, "usage") else 0
+            )
+            total_output_tokens += (
+                response.usage.output_tokens if hasattr(response, "usage") else 0
+            )
+
             # Handle tool calls in a loop (max 5 iterations to prevent runaway)
             for _ in range(5):
                 if response.stop_reason != "tool_use":
                     break
-                
+
                 # Process tool calls
                 tool_results = []
                 for block in response.content:
@@ -221,16 +237,22 @@ class LLMMixin:
                         tool_input = block.input
                         tool_id = block.id
                         tools_called.append(tool_name)
-                        
-                        logger.info(f"Sonnet calling tool: {tool_name} with {tool_input}")
-                        result = self._execute_opus_tool(athlete_id, tool_name, tool_input)
-                        
-                        tool_results.append({
-                            "type": "tool_result",
-                            "tool_use_id": tool_id,
-                            "content": result,
-                        })
-                
+
+                        logger.info(
+                            f"Sonnet calling tool: {tool_name} with {tool_input}"
+                        )
+                        result = self._execute_opus_tool(
+                            athlete_id, tool_name, tool_input
+                        )
+
+                        tool_results.append(
+                            {
+                                "type": "tool_result",
+                                "tool_use_id": tool_id,
+                                "content": result,
+                            }
+                        )
+
                 # Continue conversation with tool results
                 # Convert response.content to list of dicts for serialization
                 assistant_content = []
@@ -238,15 +260,17 @@ class LLMMixin:
                     if block.type == "text":
                         assistant_content.append({"type": "text", "text": block.text})
                     elif block.type == "tool_use":
-                        assistant_content.append({
-                            "type": "tool_use",
-                            "id": block.id,
-                            "name": block.name,
-                            "input": block.input,
-                        })
+                        assistant_content.append(
+                            {
+                                "type": "tool_use",
+                                "id": block.id,
+                                "name": block.name,
+                                "input": block.input,
+                            }
+                        )
                 messages.append({"role": "assistant", "content": assistant_content})
                 messages.append({"role": "user", "content": tool_results})
-                
+
                 response = self.anthropic_client.messages.create(
                     model=self.MODEL_HIGH_STAKES,
                     system=system_prompt,
@@ -254,17 +278,21 @@ class LLMMixin:
                     max_tokens=COACH_MAX_OUTPUT_TOKENS,
                     tools=self._opus_tools(),
                 )
-                
-                total_input_tokens += response.usage.input_tokens if hasattr(response, 'usage') else 0
-                total_output_tokens += response.usage.output_tokens if hasattr(response, 'usage') else 0
-            
+
+                total_input_tokens += (
+                    response.usage.input_tokens if hasattr(response, "usage") else 0
+                )
+                total_output_tokens += (
+                    response.usage.output_tokens if hasattr(response, "usage") else 0
+                )
+
             # Extract final response text
             response_text = ""
             for block in response.content:
-                if hasattr(block, 'text'):
+                if hasattr(block, "text"):
                     response_text += block.text
             response_text = _strip_emojis(response_text)
-            
+
             # Post-response validation: data questions must have used tools
             is_valid, reason = self._validate_tool_usage(
                 message, tools_called, len(tools_called)
@@ -273,9 +301,12 @@ class LLMMixin:
                 logger.warning(
                     "Sonnet response failed tool validation (%s) for athlete %s: "
                     "tools_called=%s, message='%.80s'",
-                    reason, athlete_id, tools_called, message,
+                    reason,
+                    athlete_id,
+                    tools_called,
+                    message,
                 )
-            
+
             self.track_usage(
                 athlete_id=athlete_id,
                 input_tokens=total_input_tokens,
@@ -283,13 +314,15 @@ class LLMMixin:
                 model=self.MODEL_HIGH_STAKES,
                 is_opus=True,
             )
-            
+
             logger.info(
                 f"Sonnet query completed: athlete={athlete_id}, "
                 f"tools_called={tools_called}, "
                 f"input_tokens={total_input_tokens}, output_tokens={total_output_tokens}"
             )
-            _check_response_quality(response_text, self.MODEL_HIGH_STAKES, str(athlete_id))
+            _check_response_quality(
+                response_text, self.MODEL_HIGH_STAKES, str(athlete_id)
+            )
             return {
                 "response": response_text,
                 "error": False,
@@ -299,7 +332,7 @@ class LLMMixin:
                 "output_tokens": total_output_tokens,
                 "tools_called": tools_called,
             }
-            
+
         except Exception as e:
             logger.error(f"Sonnet query failed for {athlete_id}: {e}")
             return {
@@ -308,8 +341,6 @@ class LLMMixin:
                 "model": self.MODEL_HIGH_STAKES,
                 "error_detail": str(e),
             }
-
-
 
     async def query_kimi_coach(
         self,
@@ -333,7 +364,9 @@ class LLMMixin:
         try:
             import openai
         except ImportError:
-            logger.warning("kimi_fallback athlete_id=%s fallback_reason=import_error", athlete_id)
+            logger.warning(
+                "kimi_fallback athlete_id=%s fallback_reason=import_error", athlete_id
+            )
             return await self.query_opus(
                 athlete_id=athlete_id,
                 message=message,
@@ -343,7 +376,10 @@ class LLMMixin:
 
         api_key = settings.KIMI_API_KEY or os.getenv("KIMI_API_KEY")
         if not api_key:
-            logger.warning("kimi_fallback athlete_id=%s fallback_reason=missing_api_key", athlete_id)
+            logger.warning(
+                "kimi_fallback athlete_id=%s fallback_reason=missing_api_key",
+                athlete_id,
+            )
             return await self.query_opus(
                 athlete_id=athlete_id,
                 message=message,
@@ -374,20 +410,22 @@ class LLMMixin:
             conversation_context=conversation_context,
         )
         contract_instruction = self._coach_contract_instruction(contract)
-        messages.append({
-            "role": "user",
-            "content": (
-                "Use tools when you need athlete-specific data. "
-                "For race strategy or race-day execution, call get_race_strategy_packet "
-                "and use get_training_block_narrative when readiness depends on recent quality work. "
-                "For athlete corrections that a workout exists, call search_activities; "
-                "if the workout is structured but the search result lacks rep proof, call analyze_run_streams before saying you cannot verify it. "
-                "For general sports science questions (supplements, warmup, nutrition timing), "
-                "answer directly from your knowledge and label it as general guidance.\n\n"
-                f"{contract_instruction}\n\n"
-                f"{message}"
-            ),
-        })
+        messages.append(
+            {
+                "role": "user",
+                "content": (
+                    "Use tools when you need athlete-specific data. "
+                    "For race strategy or race-day execution, call get_race_strategy_packet "
+                    "and use get_training_block_narrative when readiness depends on recent quality work. "
+                    "For athlete corrections that a workout exists, call search_activities; "
+                    "if the workout is structured but the search result lacks rep proof, call analyze_run_streams before saying you cannot verify it. "
+                    "For general sports science questions (supplements, warmup, nutrition timing), "
+                    "answer directly from your knowledge and label it as general guidance.\n\n"
+                    f"{contract_instruction}\n\n"
+                    f"{message}"
+                ),
+            }
+        )
 
         system_prompt = self._build_coach_system_prompt(athlete_id)
 
@@ -441,7 +479,10 @@ class LLMMixin:
                     "role": "assistant",
                     "content": getattr(assistant_message, "content", "") or "",
                     "tool_calls": serialized_tool_calls,
-                    "reasoning_content": getattr(assistant_message, "reasoning_content", "") or "",
+                    "reasoning_content": getattr(
+                        assistant_message, "reasoning_content", ""
+                    )
+                    or "",
                 }
             )
 
@@ -469,7 +510,9 @@ class LLMMixin:
         response_text = _strip_emojis(response_text)
 
         if not response_text:
-            logger.warning("kimi_fallback athlete_id=%s fallback_reason=empty_content", athlete_id)
+            logger.warning(
+                "kimi_fallback athlete_id=%s fallback_reason=empty_content", athlete_id
+            )
             return await self.query_opus(
                 athlete_id=athlete_id,
                 message=message,
@@ -477,7 +520,9 @@ class LLMMixin:
                 conversation_context=conversation_context,
             )
 
-        is_valid, reason = self._validate_tool_usage(message, tools_called, len(tools_called))
+        is_valid, reason = self._validate_tool_usage(
+            message, tools_called, len(tools_called)
+        )
         if not is_valid:
             logger.warning(
                 "Kimi response failed tool validation (%s) for athlete %s: tools_called=%s, message='%.80s'",
@@ -515,8 +560,6 @@ class LLMMixin:
             "kimi_tool_calls_count": len(tools_called),
         }
 
-
-
     async def _query_kimi_with_fallback(
         self,
         athlete_id: UUID,
@@ -545,7 +588,140 @@ class LLMMixin:
                 conversation_context=conversation_context,
             )
 
+    async def query_kimi_v2_packet(
+        self,
+        athlete_id: UUID,
+        message: str,
+        packet: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Coach Runtime V2 response call: Kimi receives packet only, no tools."""
 
+        logger.info("kimi_v2_packet_attempt athlete_id=%s", athlete_id)
+        started = datetime.now(timezone.utc)
+        model_name = settings.COACH_CANARY_MODEL
+
+        try:
+            import openai
+        except ImportError:
+            return {
+                "response": "",
+                "error": True,
+                "model": None,
+                "fallback_reason": "llm_provider_error",
+                "error_class": "openai_import_error",
+            }
+
+        api_key = settings.KIMI_API_KEY or os.getenv("KIMI_API_KEY")
+        if not api_key:
+            return {
+                "response": "",
+                "error": True,
+                "model": model_name,
+                "fallback_reason": "llm_provider_error",
+                "error_class": "missing_kimi_api_key",
+            }
+
+        client = openai.AsyncOpenAI(
+            api_key=api_key,
+            base_url=settings.KIMI_BASE_URL,
+            timeout=120,
+        )
+        system_prompt = (
+            "You are StrideIQ's Coach Runtime V2 response writer. The prior "
+            "deterministic runtime already assembled all athlete-specific state "
+            "you may use. Do not ask for or call tools. Do not mention packets, "
+            "schemas, tools, models, prompts, or internal architecture. Answer "
+            "the athlete directly, with a real coach's judgment. Directness is "
+            "respect. If the packet marks uncertainty, say the uncertainty plainly."
+        )
+        messages = [
+            {
+                "role": "user",
+                "content": (
+                    "INTERNAL COACH STATE PACKET (not athlete-authored; use for "
+                    "reasoning only, never quote this label):\n"
+                    f"{packet_to_prompt(packet)}"
+                ),
+            },
+            {"role": "user", "content": message},
+        ]
+        extra_body: dict = {}
+        if model_name.lower() in ("kimi-k2.5", "kimi-k2.6"):
+            extra_body["thinking"] = {"type": "disabled"}
+
+        timeout_errors = [asyncio.TimeoutError]
+        api_timeout_error = getattr(openai, "APITimeoutError", None)
+        if api_timeout_error is not None:
+            timeout_errors.append(api_timeout_error)
+        try:
+            response = await client.chat.completions.create(
+                model=model_name,
+                messages=[{"role": "system", "content": system_prompt}] + messages,
+                max_tokens=COACH_MAX_OUTPUT_TOKENS,
+                extra_body=extra_body if extra_body else None,
+            )
+        except tuple(timeout_errors) as exc:
+            latency_ms = int(
+                (datetime.now(timezone.utc) - started).total_seconds() * 1000
+            )
+            return {
+                "response": "",
+                "error": True,
+                "model": model_name,
+                "fallback_reason": "v2_timeout",
+                "error_class": exc.__class__.__name__,
+                "kimi_latency_ms": latency_ms,
+            }
+        except Exception as exc:
+            latency_ms = int(
+                (datetime.now(timezone.utc) - started).total_seconds() * 1000
+            )
+            return {
+                "response": "",
+                "error": True,
+                "model": model_name,
+                "fallback_reason": "llm_provider_error",
+                "error_class": exc.__class__.__name__,
+                "kimi_latency_ms": latency_ms,
+            }
+        usage = getattr(response, "usage", None)
+        input_tokens = int(getattr(usage, "prompt_tokens", 0) or 0)
+        output_tokens = int(getattr(usage, "completion_tokens", 0) or 0)
+        choice = (response.choices or [None])[0]
+        assistant_message = choice.message if choice else None
+        response_text = ((getattr(assistant_message, "content", "") or "")).strip()
+        response_text = _strip_emojis(response_text)
+        if not response_text:
+            return {
+                "response": "",
+                "error": True,
+                "model": model_name,
+                "fallback_reason": "v2_empty_response",
+                "error_class": "empty_response",
+                "input_tokens": input_tokens,
+                "output_tokens": output_tokens,
+            }
+
+        self.track_usage(
+            athlete_id=athlete_id,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            model=model_name,
+            is_opus=True,
+        )
+        latency_ms = int((datetime.now(timezone.utc) - started).total_seconds() * 1000)
+        _check_response_quality(response_text, model_name, str(athlete_id))
+        return {
+            "response": response_text,
+            "error": False,
+            "model": model_name,
+            "is_high_stakes": True,
+            "input_tokens": input_tokens,
+            "output_tokens": output_tokens,
+            "tools_called": [],
+            "kimi_latency_ms": latency_ms,
+            "kimi_tool_calls_count": 0,
+        }
 
     async def query_gemini(
         self,
@@ -556,12 +732,12 @@ class LLMMixin:
     ) -> Dict[str, Any]:
         """
         Query Gemini 3 Flash for coaching queries (Mar 2026 upgrade).
-        
+
         Replaces GPT-4o-mini for 95% of queries. Benefits:
         - 1M context window (no more aggressive pruning)
         - Competitive pricing ($0.30/1M input, $2.50/1M output)
         - Fast inference (254 tokens/sec)
-        
+
         Uses Gemini API with function calling for tool access.
         """
         if not self.gemini_client:
@@ -570,7 +746,7 @@ class LLMMixin:
                 "response": "Coach is temporarily unavailable. Please try again in a moment.",
                 "error": True,
             }
-        
+
         # Build Gemini tools (function declarations) — FULL tool suite
         function_declarations = [
             {
@@ -581,10 +757,10 @@ class LLMMixin:
                     "properties": {
                         "days": {
                             "type": "integer",
-                            "description": "How many days back to look (default 14, max 730)"
+                            "description": "How many days back to look (default 14, max 730)",
                         }
-                    }
-                }
+                    },
+                },
             },
             {
                 "name": "search_activities",
@@ -612,11 +788,11 @@ class LLMMixin:
                     "properties": {
                         "day": {
                             "type": "string",
-                            "description": "Calendar date in YYYY-MM-DD format."
+                            "description": "Calendar date in YYYY-MM-DD format.",
                         }
                     },
-                    "required": ["day"]
-                }
+                    "required": ["day"],
+                },
             },
             {
                 "name": "get_efficiency_trend",
@@ -626,15 +802,15 @@ class LLMMixin:
                     "properties": {
                         "days": {
                             "type": "integer",
-                            "description": "How many days of history to analyze (default 30, max 365)"
+                            "description": "How many days of history to analyze (default 30, max 365)",
                         }
-                    }
-                }
+                    },
+                },
             },
             {
                 "name": "get_plan_week",
                 "description": "Get the current week's planned workouts for the athlete's active training plan.",
-                "parameters": {"type": "object", "properties": {}}
+                "parameters": {"type": "object", "properties": {}},
             },
             {
                 "name": "get_weekly_volume",
@@ -644,20 +820,20 @@ class LLMMixin:
                     "properties": {
                         "weeks": {
                             "type": "integer",
-                            "description": "Number of weeks to retrieve (default 12, max 104)"
+                            "description": "Number of weeks to retrieve (default 12, max 104)",
                         }
-                    }
-                }
+                    },
+                },
             },
             {
                 "name": "get_training_load",
                 "description": "Get the athlete's current training load metrics: fitness, fatigue, and form.",
-                "parameters": {"type": "object", "properties": {}}
+                "parameters": {"type": "object", "properties": {}},
             },
             {
                 "name": "get_training_paces",
                 "description": "Get RPI-based training paces (easy, threshold, interval, marathon). THIS IS THE AUTHORITATIVE SOURCE for training paces.",
-                "parameters": {"type": "object", "properties": {}}
+                "parameters": {"type": "object", "properties": {}},
             },
             {
                 "name": "get_correlations",
@@ -667,15 +843,15 @@ class LLMMixin:
                     "properties": {
                         "days": {
                             "type": "integer",
-                            "description": "How many days of history to analyze (default 30, max 365)"
+                            "description": "How many days of history to analyze (default 30, max 365)",
                         }
-                    }
-                }
+                    },
+                },
             },
             {
                 "name": "get_race_predictions",
                 "description": "Get RPI-based equivalent race times for 5K, 10K, Half Marathon, and Marathon, plus the athlete's actual race history. These come from verified race data, not theoretical models.",
-                "parameters": {"type": "object", "properties": {}}
+                "parameters": {"type": "object", "properties": {}},
             },
             {
                 "name": "get_race_strategy_packet",
@@ -704,7 +880,7 @@ class LLMMixin:
             {
                 "name": "get_recovery_status",
                 "description": "Get recovery metrics: half-life, durability index, false fitness and masked fatigue signals.",
-                "parameters": {"type": "object", "properties": {}}
+                "parameters": {"type": "object", "properties": {}},
             },
             {
                 "name": "get_active_insights",
@@ -714,15 +890,15 @@ class LLMMixin:
                     "properties": {
                         "limit": {
                             "type": "integer",
-                            "description": "Max insights to return (default 5, max 10)"
+                            "description": "Max insights to return (default 5, max 10)",
                         }
-                    }
-                }
+                    },
+                },
             },
             {
                 "name": "get_pb_patterns",
                 "description": "Get training patterns that preceded personal bests, including optimal form range.",
-                "parameters": {"type": "object", "properties": {}}
+                "parameters": {"type": "object", "properties": {}},
             },
             {
                 "name": "get_efficiency_by_zone",
@@ -732,14 +908,14 @@ class LLMMixin:
                     "properties": {
                         "effort_zone": {
                             "type": "string",
-                            "description": "Effort zone to analyze: easy, threshold, or race (default threshold)"
+                            "description": "Effort zone to analyze: easy, threshold, or race (default threshold)",
                         },
                         "days": {
                             "type": "integer",
-                            "description": "Days of history (default 90, max 365)"
-                        }
-                    }
-                }
+                            "description": "Days of history (default 90, max 365)",
+                        },
+                    },
+                },
             },
             {
                 "name": "get_nutrition_correlations",
@@ -749,10 +925,10 @@ class LLMMixin:
                     "properties": {
                         "days": {
                             "type": "integer",
-                            "description": "Days of history (default 90, max 365)"
+                            "description": "Days of history (default 90, max 365)",
                         }
-                    }
-                }
+                    },
+                },
             },
             {
                 "name": "get_nutrition_log",
@@ -760,11 +936,20 @@ class LLMMixin:
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "days": {"type": "integer", "description": "Days of history (default 7, max 90)"},
-                        "entry_type": {"type": "string", "description": "Filter: daily, pre_activity, during_activity, post_activity"},
-                        "activity_id": {"type": "string", "description": "Filter to a specific activity UUID"}
-                    }
-                }
+                        "days": {
+                            "type": "integer",
+                            "description": "Days of history (default 7, max 90)",
+                        },
+                        "entry_type": {
+                            "type": "string",
+                            "description": "Filter: daily, pre_activity, during_activity, post_activity",
+                        },
+                        "activity_id": {
+                            "type": "string",
+                            "description": "Filter to a specific activity UUID",
+                        },
+                    },
+                },
             },
             {
                 "name": "get_best_runs",
@@ -772,18 +957,24 @@ class LLMMixin:
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "days": {"type": "integer", "description": "History window (default 365, max 730)"},
+                        "days": {
+                            "type": "integer",
+                            "description": "History window (default 365, max 730)",
+                        },
                         "metric": {
                             "type": "string",
-                            "description": "Ranking metric: efficiency, pace, distance, or intensity_score"
+                            "description": "Ranking metric: efficiency, pace, distance, or intensity_score",
                         },
-                        "limit": {"type": "integer", "description": "Max results (default 5, max 10)"},
+                        "limit": {
+                            "type": "integer",
+                            "description": "Max results (default 5, max 10)",
+                        },
                         "effort_zone": {
                             "type": "string",
-                            "description": "Optional effort zone filter: easy, threshold, or race"
-                        }
-                    }
-                }
+                            "description": "Optional effort zone filter: easy, threshold, or race",
+                        },
+                    },
+                },
             },
             {
                 "name": "compare_training_periods",
@@ -791,9 +982,12 @@ class LLMMixin:
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "days": {"type": "integer", "description": "Days per period (default 28, max 180)"}
-                    }
-                }
+                        "days": {
+                            "type": "integer",
+                            "description": "Days per period (default 28, max 180)",
+                        }
+                    },
+                },
             },
             {
                 "name": "get_coach_intent_snapshot",
@@ -801,9 +995,12 @@ class LLMMixin:
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "ttl_days": {"type": "integer", "description": "How long the snapshot is considered fresh (default 7)"}
-                    }
-                }
+                        "ttl_days": {
+                            "type": "integer",
+                            "description": "How long the snapshot is considered fresh (default 7)",
+                        }
+                    },
+                },
             },
             {
                 "name": "set_coach_intent_snapshot",
@@ -811,14 +1008,32 @@ class LLMMixin:
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "training_intent": {"type": "string", "description": "Athlete intent: through_fatigue | build_fitness | freshen_for_event"},
-                        "next_event_date": {"type": "string", "description": "Optional YYYY-MM-DD for race/benchmark"},
-                        "next_event_type": {"type": "string", "description": "Optional: race | benchmark | other"},
-                        "pain_flag": {"type": "string", "description": "none | niggle | pain"},
-                        "time_available_min": {"type": "integer", "description": "Typical time available (minutes)"},
-                        "weekly_mileage_target": {"type": "number", "description": "Athlete-stated target miles/week"}
-                    }
-                }
+                        "training_intent": {
+                            "type": "string",
+                            "description": "Athlete intent: through_fatigue | build_fitness | freshen_for_event",
+                        },
+                        "next_event_date": {
+                            "type": "string",
+                            "description": "Optional YYYY-MM-DD for race/benchmark",
+                        },
+                        "next_event_type": {
+                            "type": "string",
+                            "description": "Optional: race | benchmark | other",
+                        },
+                        "pain_flag": {
+                            "type": "string",
+                            "description": "none | niggle | pain",
+                        },
+                        "time_available_min": {
+                            "type": "integer",
+                            "description": "Typical time available (minutes)",
+                        },
+                        "weekly_mileage_target": {
+                            "type": "number",
+                            "description": "Athlete-stated target miles/week",
+                        },
+                    },
+                },
             },
             {
                 "name": "get_training_prescription_window",
@@ -826,13 +1041,28 @@ class LLMMixin:
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "start_date": {"type": "string", "description": "Start date YYYY-MM-DD (default today)"},
-                        "days": {"type": "integer", "description": "How many days (1-7)"},
-                        "time_available_min": {"type": "integer", "description": "Optional time cap for workouts (minutes)"},
-                        "weekly_mileage_target": {"type": "number", "description": "Optional athlete target miles/week"},
-                        "pain_flag": {"type": "string", "description": "none | niggle | pain"}
-                    }
-                }
+                        "start_date": {
+                            "type": "string",
+                            "description": "Start date YYYY-MM-DD (default today)",
+                        },
+                        "days": {
+                            "type": "integer",
+                            "description": "How many days (1-7)",
+                        },
+                        "time_available_min": {
+                            "type": "integer",
+                            "description": "Optional time cap for workouts (minutes)",
+                        },
+                        "weekly_mileage_target": {
+                            "type": "number",
+                            "description": "Optional athlete target miles/week",
+                        },
+                        "pain_flag": {
+                            "type": "string",
+                            "description": "none | niggle | pain",
+                        },
+                    },
+                },
             },
             {
                 "name": "get_wellness_trends",
@@ -842,15 +1072,15 @@ class LLMMixin:
                     "properties": {
                         "days": {
                             "type": "integer",
-                            "description": "How many days of wellness data to analyze (default 28, max 90)"
+                            "description": "How many days of wellness data to analyze (default 28, max 90)",
                         }
-                    }
-                }
+                    },
+                },
             },
             {
                 "name": "get_athlete_profile",
                 "description": "Get athlete physiological profile: age, RPI, runner type, threshold pace, durability, and training metrics. Training paces come from get_training_paces, not from this tool.",
-                "parameters": {"type": "object", "properties": {}}
+                "parameters": {"type": "object", "properties": {}},
             },
             {
                 "name": "get_training_load_history",
@@ -860,10 +1090,10 @@ class LLMMixin:
                     "properties": {
                         "days": {
                             "type": "integer",
-                            "description": "How many days of load history (default 42, max 90)"
+                            "description": "How many days of load history (default 42, max 90)",
                         }
-                    }
-                }
+                    },
+                },
             },
             {
                 "name": "compute_running_math",
@@ -923,13 +1153,13 @@ class LLMMixin:
                             "type": "string",
                             "description": "Profile field name, e.g. birthdate, sex, display_name, height_cm, email.",
                         }
-                    }
+                    },
                 },
             },
         ]
-        
+
         gemini_tools = genai_types.Tool(function_declarations=function_declarations)
-        
+
         # ADR-16: Build rich pre-computed athlete brief
         try:
             athlete_brief = coach_tools.build_athlete_brief(self.db, athlete_id)
@@ -1101,22 +1331,22 @@ ATHLETE BRIEF:
         if conversation_context:
             for msg in conversation_context[-10:]:
                 role = "user" if msg.get("role") == "user" else "model"
-                contents.append(genai_types.Content(
-                    role=role,
-                    parts=[genai_types.Part(text=msg.get("content", ""))]
-                ))
-        
+                contents.append(
+                    genai_types.Content(
+                        role=role, parts=[genai_types.Part(text=msg.get("content", ""))]
+                    )
+                )
+
         # Add current message
-        contents.append(genai_types.Content(
-            role="user",
-            parts=[genai_types.Part(text=message)]
-        ))
-        
+        contents.append(
+            genai_types.Content(role="user", parts=[genai_types.Part(text=message)])
+        )
+
         try:
             total_input_tokens = 0
             total_output_tokens = 0
             tools_called: List[str] = []
-            
+
             # Temperature 0.2: Gemini docs recommend low temperature for
             # "more deterministic and reliable function calls". 0.7 caused
             # hallucination of training data (fabricated distances/volumes).
@@ -1126,86 +1356,97 @@ ATHLETE BRIEF:
                 max_output_tokens=COACH_MAX_OUTPUT_TOKENS,
                 temperature=0.2,
             )
-            
+
             # Send message with tools
             response = self.gemini_client.models.generate_content(
                 model=self.MODEL_DEFAULT,
                 contents=contents,
                 config=config,
             )
-            
+
             # Track usage
-            if hasattr(response, 'usage_metadata'):
-                total_input_tokens += getattr(response.usage_metadata, 'prompt_token_count', 0)
-                total_output_tokens += getattr(response.usage_metadata, 'candidates_token_count', 0)
-            
+            if hasattr(response, "usage_metadata"):
+                total_input_tokens += getattr(
+                    response.usage_metadata, "prompt_token_count", 0
+                )
+                total_output_tokens += getattr(
+                    response.usage_metadata, "candidates_token_count", 0
+                )
+
             # Handle function calls in a loop (max 5 iterations)
             for _ in range(5):
                 # Check if there are function calls to process
                 function_calls = []
-                if response.candidates and response.candidates[0].content and response.candidates[0].content.parts:
+                if (
+                    response.candidates
+                    and response.candidates[0].content
+                    and response.candidates[0].content.parts
+                ):
                     for part in response.candidates[0].content.parts:
-                        if hasattr(part, 'function_call') and part.function_call:
+                        if hasattr(part, "function_call") and part.function_call:
                             function_calls.append(part.function_call)
-                
+
                 if not function_calls:
                     break
-                
+
                 # Append model turn to contents — strip thought parts to avoid
                 # thought_signature INVALID_ARGUMENT on round-trip (google-genai <1.66.0
                 # base64 encoding bug; defensive strip ensures correctness regardless).
                 model_content = response.candidates[0].content
                 safe_parts = [
-                    p for p in (model_content.parts or [])
-                    if hasattr(p, 'function_call') and p.function_call
+                    p
+                    for p in (model_content.parts or [])
+                    if hasattr(p, "function_call") and p.function_call
                 ]
                 if safe_parts:
                     contents.append(genai_types.Content(role="model", parts=safe_parts))
                 else:
                     contents.append(model_content)
-                
+
                 function_response_parts = []
                 for fc in function_calls:
                     tool_name = fc.name
                     tool_args = dict(fc.args) if fc.args else {}
                     tools_called.append(tool_name)
-                    
+
                     logger.info(f"Gemini calling tool: {tool_name} with {tool_args}")
                     result = self._execute_opus_tool(athlete_id, tool_name, tool_args)
-                    
+
                     function_response_parts.append(
                         genai_types.Part(
                             function_response=genai_types.FunctionResponse(
-                                name=tool_name,
-                                response={"result": result}
+                                name=tool_name, response={"result": result}
                             )
                         )
                     )
-                
+
                 # Add function results to contents
-                contents.append(genai_types.Content(
-                    role="user",
-                    parts=function_response_parts
-                ))
-                
+                contents.append(
+                    genai_types.Content(role="user", parts=function_response_parts)
+                )
+
                 # Send function results back
                 response = self.gemini_client.models.generate_content(
                     model=self.MODEL_DEFAULT,
                     contents=contents,
                     config=config,
                 )
-                
-                if hasattr(response, 'usage_metadata'):
-                    total_input_tokens += getattr(response.usage_metadata, 'prompt_token_count', 0)
-                    total_output_tokens += getattr(response.usage_metadata, 'candidates_token_count', 0)
-            
+
+                if hasattr(response, "usage_metadata"):
+                    total_input_tokens += getattr(
+                        response.usage_metadata, "prompt_token_count", 0
+                    )
+                    total_output_tokens += getattr(
+                        response.usage_metadata, "candidates_token_count", 0
+                    )
+
             # Extract final response text
             response_text = ""
             for part in response.candidates[0].content.parts:
-                if hasattr(part, 'text') and part.text:
+                if hasattr(part, "text") and part.text:
                     response_text += part.text
             response_text = _strip_emojis(response_text)
-            
+
             # Post-response validation: data questions must have used tools
             is_valid, reason = self._validate_tool_usage(
                 message, tools_called, len(tools_called)
@@ -1214,9 +1455,12 @@ ATHLETE BRIEF:
                 logger.warning(
                     "Gemini response failed tool validation (%s) for athlete %s: "
                     "tools_called=%s, message='%.80s'",
-                    reason, athlete_id, tools_called, message,
+                    reason,
+                    athlete_id,
+                    tools_called,
+                    message,
                 )
-            
+
             # Track usage with Gemini pricing
             self.track_usage(
                 athlete_id=athlete_id,
@@ -1225,7 +1469,7 @@ ATHLETE BRIEF:
                 model=self.MODEL_DEFAULT,
                 is_opus=False,
             )
-            
+
             logger.info(
                 f"Gemini query completed: athlete={athlete_id}, "
                 f"tools_called={tools_called}, "
@@ -1241,7 +1485,7 @@ ATHLETE BRIEF:
                 "output_tokens": total_output_tokens,
                 "tools_called": tools_called,
             }
-            
+
         except Exception as e:
             logger.error(f"Gemini query failed for {athlete_id}: {e}")
             return {
@@ -1249,6 +1493,3 @@ ATHLETE BRIEF:
                 "error": True,
                 "error_detail": str(e),
             }
-
-
-

@@ -32,7 +32,9 @@ def _athlete_hash(athlete_id: UUID | str | None) -> str | None:
     return hashlib.sha256(str(athlete_id).encode("utf-8")).hexdigest()[:12]
 
 
-def is_coach_runtime_v2_enabled(flag_key: str, athlete_id: UUID | str | None, db: Session) -> bool:
+def is_coach_runtime_v2_enabled(
+    flag_key: str, athlete_id: UUID | str | None, db: Session
+) -> bool:
     """Fail-closed V2 flag check.
 
     Do not use ``core.feature_flags.is_feature_enabled`` here. That convenience
@@ -99,9 +101,15 @@ class CoachRuntimeV2State:
         )
 
 
-def resolve_coach_runtime_v2_state(athlete_id: UUID | str | None, db: Session) -> CoachRuntimeV2State:
-    shadow_enabled = is_coach_runtime_v2_enabled(COACH_RUNTIME_V2_SHADOW_FLAG, athlete_id, db)
-    visible_enabled = is_coach_runtime_v2_enabled(COACH_RUNTIME_V2_VISIBLE_FLAG, athlete_id, db)
+def resolve_coach_runtime_v2_state(
+    athlete_id: UUID | str | None, db: Session
+) -> CoachRuntimeV2State:
+    shadow_enabled = is_coach_runtime_v2_enabled(
+        COACH_RUNTIME_V2_SHADOW_FLAG, athlete_id, db
+    )
+    visible_enabled = is_coach_runtime_v2_enabled(
+        COACH_RUNTIME_V2_VISIBLE_FLAG, athlete_id, db
+    )
 
     if visible_enabled:
         return CoachRuntimeV2State(
@@ -134,11 +142,17 @@ def log_coach_runtime_v2_request(
     llm_model: str | None = None,
     tool_count: int = 0,
     error_class: str | None = None,
+    packet_telemetry: dict[str, Any] | None = None,
 ) -> None:
     """Emit the umbrella V2 runtime event without raw athlete text."""
 
-    if not (state.shadow_enabled or state.visible_enabled or state.runtime_mode == RUNTIME_MODE_FALLBACK):
+    if not (
+        state.shadow_enabled
+        or state.visible_enabled
+        or state.runtime_mode == RUNTIME_MODE_FALLBACK
+    ):
         return
+    packet_telemetry = packet_telemetry or {}
 
     logger.info(
         "coach_runtime_v2_request",
@@ -152,21 +166,39 @@ def log_coach_runtime_v2_request(
                 "flag_shadow": state.shadow_enabled,
                 "flag_visible": state.visible_enabled,
                 "artifact_packet_schema_version": PACKET_SCHEMA_VERSION,
-                "artifact_mode": None,
-                "artifact5_mode_confidence": 0.0,
-                "packet_estimated_tokens": 0,
-                "packet_block_count": 0,
-                "omitted_block_count": 0,
-                "unknown_count": 0,
-                "permission_redaction_count": 0,
-                "coupling_count": 0,
-                "multimodal_attachment_count": 0,
-                "deterministic_check_status": "skipped",
+                "artifact_mode": packet_telemetry.get("artifact_mode"),
+                "artifact5_mode_confidence": packet_telemetry.get(
+                    "artifact5_mode_confidence", 0.0
+                ),
+                "packet_estimated_tokens": int(
+                    packet_telemetry.get("estimated_tokens", 0) or 0
+                ),
+                "packet_block_count": int(
+                    packet_telemetry.get("packet_block_count", 0) or 0
+                ),
+                "omitted_block_count": int(
+                    packet_telemetry.get("omitted_block_count", 0) or 0
+                ),
+                "unknown_count": int(packet_telemetry.get("unknown_count", 0) or 0),
+                "permission_redaction_count": int(
+                    packet_telemetry.get("permission_redaction_count", 0) or 0
+                ),
+                "coupling_count": int(packet_telemetry.get("coupling_count", 0) or 0),
+                "multimodal_attachment_count": int(
+                    packet_telemetry.get("multimodal_attachment_count", 0) or 0
+                ),
+                "deterministic_check_status": packet_telemetry.get(
+                    "deterministic_check_status", "skipped"
+                ),
                 "fallback_reason": state.fallback_reason,
                 "llm_model": llm_model,
                 "latency_ms_total": max(0, int(latency_ms_total)),
-                "latency_ms_packet": 0,
-                "latency_ms_llm": 0,
+                "latency_ms_packet": max(
+                    0, int(packet_telemetry.get("latency_ms_packet", 0) or 0)
+                ),
+                "latency_ms_llm": max(
+                    0, int(packet_telemetry.get("latency_ms_llm", 0) or 0)
+                ),
                 "tool_count": int(tool_count or 0),
                 "error_class": error_class,
             }

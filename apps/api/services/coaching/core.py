@@ -31,12 +31,18 @@ from services.coaching._constants import (  # noqa: E402
     GEMINI_AVAILABLE,
     _build_cross_training_context,
 )
-from services.coaching._conversation_contract import classify_conversation_contract  # noqa: E402
+from services.coaching._conversation_contract import (
+    classify_conversation_contract,
+)  # noqa: E402
 from services.coaching.runtime_v2 import (  # noqa: E402
     RUNTIME_MODE_VISIBLE,
     assert_runtime_metadata_consistent,
     log_coach_runtime_v2_request,
     resolve_coach_runtime_v2_state,
+)
+from services.coaching.runtime_v2_packet import (  # noqa: E402
+    V2PacketInvariantError,
+    assemble_v2_packet,
 )
 
 try:
@@ -81,7 +87,15 @@ from services.coaching._guardrails import GuardrailsMixin  # noqa: E402
 from services.coaching._prescriptions import PrescriptionMixin  # noqa: E402
 
 
-class AICoach(BudgetMixin, ToolsMixin, LLMMixin, ContextMixin, ThreadMixin, GuardrailsMixin, PrescriptionMixin):
+class AICoach(
+    BudgetMixin,
+    ToolsMixin,
+    LLMMixin,
+    ContextMixin,
+    ThreadMixin,
+    GuardrailsMixin,
+    PrescriptionMixin,
+):
     """
     AI Coach powered by Kimi K2.5 (all queries) with Claude Sonnet silent fallback.
 
@@ -93,7 +107,7 @@ class AICoach(BudgetMixin, ToolsMixin, LLMMixin, ContextMixin, ThreadMixin, Guar
     - Context-aware responses based on athlete data
     - Training methodology knowledge
     """
-    
+
     # System instructions for the AI coach
     SYSTEM_INSTRUCTIONS = """You are StrideIQ, an AI running coach. You provide personalized, data-driven guidance to runners.
 
@@ -250,8 +264,10 @@ Policy:
     # 95% of queries use Gemini 3 Flash (cost-efficient, 1M context)
     # 5% high-stakes queries use Claude Sonnet 4.6 (premium reasoning quality)
     MODEL_DEFAULT = "gemini-3-flash-preview"  # Standard coaching (95%) — March 2026; thought_signature fix applied in tool loop (defensive strip)
-    MODEL_HIGH_STAKES = "claude-sonnet-4-6"  # Premium Anthropic lane — Sonnet 4.6 (was Opus)
-    
+    MODEL_HIGH_STAKES = (
+        "claude-sonnet-4-6"  # Premium Anthropic lane — Sonnet 4.6 (was Opus)
+    )
+
     # Legacy aliases for backward compatibility
     MODEL_LOW = MODEL_DEFAULT
     MODEL_MEDIUM = MODEL_DEFAULT
@@ -264,24 +280,28 @@ Policy:
         self.db = db
         self.anthropic_client = None
         self.gemini_client = None
-        
+
         # Phase 4/5: Modular components
         self.router = MessageRouter()
         self.context_builder = ContextBuilder()
         self.conversation_manager = ConversationQualityManager()
-        
+
         # ADR-061: Load VIP athletes and model routing config
         self._load_vip_athletes()
-        self.model_routing_enabled = os.getenv("COACH_MODEL_ROUTING", "on").lower() == "on"
-        self.high_stakes_routing_enabled = os.getenv("COACH_HIGH_STAKES_ROUTING", "on").lower() == "on"
-        
+        self.model_routing_enabled = (
+            os.getenv("COACH_MODEL_ROUTING", "on").lower() == "on"
+        )
+        self.high_stakes_routing_enabled = (
+            os.getenv("COACH_HIGH_STAKES_ROUTING", "on").lower() == "on"
+        )
+
         # Initialize Anthropic client for high-stakes queries (ADR-061)
         if ANTHROPIC_AVAILABLE:
             anthropic_key = os.getenv("ANTHROPIC_API_KEY")
             if anthropic_key:
                 self.anthropic_client = Anthropic(api_key=anthropic_key)
                 logger.info("Anthropic client initialized for high-stakes routing")
-        
+
         # Initialize Gemini client for bulk queries (Feb 2026 migration)
         if GEMINI_AVAILABLE:
             google_key = os.getenv("GOOGLE_AI_API_KEY")
@@ -292,95 +312,142 @@ Policy:
                 self.gemini_client = None
         else:
             self.gemini_client = None
-    
-
 
     def classify_query_complexity(self, message: str) -> str:
         """
         Classify query complexity for model routing (Phase 11 - ADR-060, updated for 90/10).
-        
+
         Returns: 'low', 'medium', or 'high'
-        
+
         HIGH = Causal OR ambiguity OR multi-factor (any one triggers Opus)
         MEDIUM = Standard coaching (rule-based with data)
         LOW = Pure lookups/definitions (no reasoning needed)
-        
+
         Target: ~10% of queries should be HIGH (90% mini, 10% Opus)
         """
         message_lower = (message or "").lower()
-        
+
         # LOW: Pure data retrieval, no reasoning
         low_patterns = [
-            "what was my", "show me", "list my", "how far did i",
-            "yesterday", "last run", "this week's", "my last",
-            "what is a", "what does", "define", "what is my",
-            "personal best", "pb", "pr", "my pbs",
-            "what's my tsb", "what's my ctl", "what's my atl",
-            "show my plan", "recent runs", "my race predictions",
+            "what was my",
+            "show me",
+            "list my",
+            "how far did i",
+            "yesterday",
+            "last run",
+            "this week's",
+            "my last",
+            "what is a",
+            "what does",
+            "define",
+            "what is my",
+            "personal best",
+            "pb",
+            "pr",
+            "my pbs",
+            "what's my tsb",
+            "what's my ctl",
+            "what's my atl",
+            "show my plan",
+            "recent runs",
+            "my race predictions",
             "recovery status",
         ]
         if any(p in message_lower for p in low_patterns):
             return "low"
-        
+
         # HIGH: Any ONE of these signals triggers Opus for better reasoning
         # (Updated from AND to OR logic for 90/10 split)
-        
+
         # 1. Causal/synthesis questions - require real reasoning
         causal_patterns = [
-            "why am i", "why is my", "why do i", "why does my",
-            "what's causing", "what's driving", "what caused",
-            "what's holding", "what explains", "biggest factor",
-            "main driver", "what's the one thing", "what's wrong",
-            "what am i doing wrong", "what should i change",
-            "how do i improve", "how can i get faster",
-            "what's limiting", "what's preventing",
+            "why am i",
+            "why is my",
+            "why do i",
+            "why does my",
+            "what's causing",
+            "what's driving",
+            "what caused",
+            "what's holding",
+            "what explains",
+            "biggest factor",
+            "main driver",
+            "what's the one thing",
+            "what's wrong",
+            "what am i doing wrong",
+            "what should i change",
+            "how do i improve",
+            "how can i get faster",
+            "what's limiting",
+            "what's preventing",
         ]
         if any(p in message_lower for p in causal_patterns):
             return "high"
-        
+
         # 2. Ambiguity/confusion signals - need nuanced response
         ambiguity_signals = [
-            "but", "despite", "even though", "however", "yet",
-            "although", "not sure", "confused", "doesn't make sense",
-            "i thought", "shouldn't it", "expected", "supposed to",
-            "weird", "strange", "odd", "counterintuitive",
+            "but",
+            "despite",
+            "even though",
+            "however",
+            "yet",
+            "although",
+            "not sure",
+            "confused",
+            "doesn't make sense",
+            "i thought",
+            "shouldn't it",
+            "expected",
+            "supposed to",
+            "weird",
+            "strange",
+            "odd",
+            "counterintuitive",
         ]
         if any(s in message_lower for s in ambiguity_signals):
             return "high"
-        
+
         # 3. Multiple factors in one query - needs synthesis
         has_multiple_factors = (
-            message_lower.count(" and ") >= 2 or
-            message_lower.count(",") >= 2
+            message_lower.count(" and ") >= 2 or message_lower.count(",") >= 2
         )
         if has_multiple_factors:
             return "high"
-        
+
         # 4. Complex planning/decision queries - require judgment
         # Note: "should i" alone is too broad (catches "What pace should I run")
         # Only trigger on decision-making patterns with explicit uncertainty
         planning_patterns = [
-            "should i skip", "should i rest", "should i take",
-            "should i reduce", "should i increase", "should i change",
-            "is it okay to run", "is it safe to",
-            "would it be wise", "would it be better",
-            "given that", "considering that", "taking into account",
-            "what if i skip", "what if i run",
+            "should i skip",
+            "should i rest",
+            "should i take",
+            "should i reduce",
+            "should i increase",
+            "should i change",
+            "is it okay to run",
+            "is it safe to",
+            "would it be wise",
+            "would it be better",
+            "given that",
+            "considering that",
+            "taking into account",
+            "what if i skip",
+            "what if i run",
         ]
         if any(p in message_lower for p in planning_patterns):
             return "high"
-        
+
         # MEDIUM: Everything else (standard coaching)
         return "medium"
-    
+
     def classify_query(self, message: str) -> str:
         """Legacy: map new complexity to old simple/standard."""
         complexity = self.classify_query_complexity(message)
         return "simple" if complexity == "low" else "standard"
 
-
-
-    def get_model_for_query(self, query_type: str, athlete_id: Optional[UUID] = None, message: str = "") -> Tuple[str, bool]:
+    def get_model_for_query(
+        self, query_type: str, athlete_id: Optional[UUID] = None, message: str = ""
+    ) -> Tuple[str, bool]:
         """
         Select model for coach query.
 
@@ -416,22 +483,20 @@ Policy:
 
         logger.info("Routing to Kimi: universal")
         return self.MODEL_HIGH_STAKES, True
-    
 
-
-    def get_model_for_query_legacy(self, query_type: str, athlete_id: Optional[UUID] = None, message: str = "") -> str:
+    def get_model_for_query_legacy(
+        self, query_type: str, athlete_id: Optional[UUID] = None, message: str = ""
+    ) -> str:
         """
         Legacy method for backward compatibility.
         Returns just the model name (not the tuple).
         """
         model, _ = self.get_model_for_query(query_type, athlete_id, message)
         return model
-    
-
 
     async def chat(
-        self, 
-        athlete_id: UUID, 
+        self,
+        athlete_id: UUID,
         message: str,
         include_context: bool = True,
         is_synthetic_probe: bool = False,
@@ -439,18 +504,19 @@ Policy:
     ) -> Dict[str, Any]:
         """
         Send a message to the AI coach and get a response.
-        
+
         Args:
             athlete_id: The athlete's ID
             message: The user's message
             include_context: Whether to inject context from athlete data
             finding_id: Optional CorrelationFinding ID for briefing→coach deep link
-        
+
         Returns:
             Dict with response text and metadata
         """
         runtime_started_at = perf_counter()
         runtime_state = resolve_coach_runtime_v2_state(athlete_id, self.db)
+        packet_telemetry: Dict[str, Any] = {}
 
         def demote_visible_to_fallback(reason: str) -> None:
             nonlocal runtime_state
@@ -482,6 +548,7 @@ Policy:
                 llm_model=llm_model,
                 tool_count=tool_count,
                 error_class=error_class,
+                packet_telemetry=packet_telemetry,
             )
 
         def with_runtime_metadata(
@@ -508,6 +575,7 @@ Policy:
 
         # P1-D: Consent gate — no LLM dispatch without explicit opt-in.
         from services.consent import has_ai_consent as _has_consent
+
         if not _has_consent(athlete_id=athlete_id, db=self.db):
             return with_runtime_metadata(
                 {
@@ -552,7 +620,11 @@ Policy:
 
         lower = (message or "").lower()
         turn_id = str(uuid4())
-        detected_synthetic_probe = bool(is_synthetic_probe) or ("[synthetic_probe]" in lower) or ("forced mismatch probe" in lower)
+        detected_synthetic_probe = (
+            bool(is_synthetic_probe)
+            or ("[synthetic_probe]" in lower)
+            or ("forced mismatch probe" in lower)
+        )
         is_organic = not detected_synthetic_probe
 
         # Deterministic short-circuit for profile edit guidance:
@@ -615,7 +687,9 @@ Policy:
         baseline_needed = False
         used_baseline = False
         try:
-            history_thin, history_snapshot, baseline, baseline_needed = self._thin_history_and_baseline_flags(athlete_id)
+            history_thin, history_snapshot, baseline, baseline_needed = (
+                self._thin_history_and_baseline_flags(athlete_id)
+            )
             used_baseline = bool(history_thin and baseline and (not baseline_needed))
         except Exception:
             history_thin = False
@@ -655,15 +729,15 @@ Policy:
         # =========================================================================
         # These checks MUST run before any deterministic shortcuts to prevent
         # hijacking of opinion/timeline questions by keyword-based routing.
-        
+
         # Gate 1: Use MessageRouter for classification (Phase 4 modular)
         msg_type, _skip_deterministic_shortcuts = self.router.classify(message)
-        
+
         # OVERRIDE: Always skip deterministic shortcuts - let LLM synthesize all responses
         # for natural, contextualized, human-readable output. The shortcuts returned
         # raw data dumps that were hard to read and lacked coaching nuance.
         _skip_deterministic_shortcuts = True
-        
+
         # ADR-16: Removed canned clarification gate. The LLM with a rich brief
         # handles return-from-injury context naturally.
         if False and msg_type == MessageType.CLARIFICATION_NEEDED:
@@ -673,7 +747,7 @@ Policy:
                     "## Clarification Needed\n\n"
                     "I see you're in a **return-from-injury/break** context and asking about comparisons.\n\n"
                     "To give you an accurate answer, I need to know: **When did you return from injury or your last break?**\n\n"
-                    "Even roughly is fine (e.g., \"early January\", \"about 6 weeks ago\", \"January 10th\").\n\n"
+                    'Even roughly is fine (e.g., "early January", "about 6 weeks ago", "January 10th").\n\n'
                     "Once I know that, I'll scope my answer to your post-return period and give you evidence-backed receipts."
                 ),
                 "thread_id": thread_id,
@@ -684,7 +758,7 @@ Policy:
                 "baseline_needed": bool(baseline_needed),
                 "rebuild_plan_prompt": False,
             }
-        
+
         # =========================================================================
         # DETERMINISTIC SHORTCUTS (skipped for judgment questions)
         # =========================================================================
@@ -694,14 +768,20 @@ Policy:
         if not _skip_deterministic_shortcuts and self._is_prescription_request(message):
             # Load state (N=1 personalized zones) and intent snapshot freshness.
             load = coach_tools.get_training_load(self.db, athlete_id)
-            zone = (((load.get("data") or {}).get("tsb_zone") or {}).get("zone") or "").lower()
+            zone = (
+                ((load.get("data") or {}).get("tsb_zone") or {}).get("zone") or ""
+            ).lower()
 
-            snap = coach_tools.get_coach_intent_snapshot(self.db, athlete_id, ttl_days=7)
+            snap = coach_tools.get_coach_intent_snapshot(
+                self.db, athlete_id, ttl_days=7
+            )
             snap_data = (snap.get("data") or {}).get("snapshot") or {}
             snap_stale = bool((snap.get("data") or {}).get("is_stale", True))
 
             # Fatigue-triggered collaboration gate: ask before prescribing if intent is missing/stale.
-            if zone in ("overreaching", "overtraining_risk") and (snap_stale or not snap_data.get("training_intent")):
+            if zone in ("overreaching", "overtraining_risk") and (
+                snap_stale or not snap_data.get("training_intent")
+            ):
                 thread_id, _ = self.get_or_create_thread_with_state(athlete_id)
                 return {
                     "response": (
@@ -718,20 +798,20 @@ Policy:
 
             # Weekly prescriptions need athlete target mileage/time when available.
             start_iso, req_days = self._extract_prescription_window(message)
-# DISABLED:             if req_days >= 7 and (snap_stale or (snap_data.get("weekly_mileage_target") is None and snap_data.get("time_available_min") is None)):
-# DISABLED:                 thread_id, _ = self.get_or_create_thread_with_state(athlete_id)
-# DISABLED:                 return {
-# DISABLED:                     "response": (
-# DISABLED:                         "## Answer\n"
-# DISABLED:                         "To make this **self-guided** (not imposed), give me one constraint and I’ll generate an exact 7‑day microcycle.\n\n"
-# DISABLED:                         "Pick one:\n"
-# DISABLED:                         "- Target weekly mileage (e.g. `45 mpw`), or\n"
-# DISABLED:                         "- Typical time available per day (e.g. `45 min`).\n\n"
-# DISABLED:                         "Also: any pain signals (none / niggle / pain)?\n"
-# DISABLED:                     ),
-# DISABLED:                     "thread_id": thread_id,
-# DISABLED:                     "error": False,
-# DISABLED:                 }
+            # DISABLED:             if req_days >= 7 and (snap_stale or (snap_data.get("weekly_mileage_target") is None and snap_data.get("time_available_min") is None)):
+            # DISABLED:                 thread_id, _ = self.get_or_create_thread_with_state(athlete_id)
+            # DISABLED:                 return {
+            # DISABLED:                     "response": (
+            # DISABLED:                         "## Answer\n"
+            # DISABLED:                         "To make this **self-guided** (not imposed), give me one constraint and I’ll generate an exact 7‑day microcycle.\n\n"
+            # DISABLED:                         "Pick one:\n"
+            # DISABLED:                         "- Target weekly mileage (e.g. `45 mpw`), or\n"
+            # DISABLED:                         "- Typical time available per day (e.g. `45 min`).\n\n"
+            # DISABLED:                         "Also: any pain signals (none / niggle / pain)?\n"
+            # DISABLED:                     ),
+            # DISABLED:                     "thread_id": thread_id,
+            # DISABLED:                     "error": False,
+            # DISABLED:                 }
 
             # For weekly requests (7+ days), fall through to LLM for better formatting.
             # The LLM will use the prescription tool and synthesize a human-readable summary.
@@ -753,7 +833,15 @@ Policy:
                 }
 
         # Deterministic answers for high-risk questions (avoid "reckless" responses).
-        if not _skip_deterministic_shortcuts and any(phrase in lower for phrase in ("how far back", "how far can you look", "how far back can you look", "how far back do you go")):
+        if not _skip_deterministic_shortcuts and any(
+            phrase in lower
+            for phrase in (
+                "how far back",
+                "how far can you look",
+                "how far back can you look",
+                "how far back do you go",
+            )
+        ):
             return {
                 "response": (
                     "I can look back **up to ~2 years** (730 days) for run-history queries, and I can cite specific activities (date + activity id).\n\n"
@@ -764,8 +852,25 @@ Policy:
             }
 
         # Deterministic: analyze today's completed run (NOT a prescription).
-        if not _skip_deterministic_shortcuts and ("run today" in lower or "today's run" in lower or "my run today" in lower or "today felt" in lower) and any(
-            k in lower for k in ("what effect", "what did it do", "how did it go", "what impact", "what changed", "did it help")
+        if (
+            not _skip_deterministic_shortcuts
+            and (
+                "run today" in lower
+                or "today's run" in lower
+                or "my run today" in lower
+                or "today felt" in lower
+            )
+            and any(
+                k in lower
+                for k in (
+                    "what effect",
+                    "what did it do",
+                    "how did it go",
+                    "what impact",
+                    "what changed",
+                    "did it help",
+                )
+            )
         ):
             thread_id, _ = self.get_or_create_thread_with_state(athlete_id)
             return {
@@ -777,10 +882,23 @@ Policy:
         if not _skip_deterministic_shortcuts and (
             (
                 ("run today" in lower or "today's run" in lower or "today run" in lower)
-                and ("suggest" in lower or "what should" in lower or "any advice" in lower or "tips" in lower)
-            ) or (
+                and (
+                    "suggest" in lower
+                    or "what should" in lower
+                    or "any advice" in lower
+                    or "tips" in lower
+                )
+            )
+            or (
                 # Common follow-ups after a "today" recommendation: user disputes the plan distance.
-                ("plan" in lower and ("too short" in lower or "stupid" in lower or "way too short" in lower))
+                (
+                    "plan" in lower
+                    and (
+                        "too short" in lower
+                        or "stupid" in lower
+                        or "way too short" in lower
+                    )
+                )
             )
         ):
             # Production-beta reasoning hardening:
@@ -808,8 +926,14 @@ Policy:
 
         # Deterministic "most impactful run" to prevent vague/hallucinated definitions.
         # Guardrail: only run deterministically when the athlete is asking (avoid narrative misfires).
-        if not _skip_deterministic_shortcuts and "most impactful" in lower and "run" in lower:
-            if "?" in (message or "") or lower.startswith(("what", "which", "how", "show", "tell")):
+        if (
+            not _skip_deterministic_shortcuts
+            and "most impactful" in lower
+            and "run" in lower
+        ):
+            if "?" in (message or "") or lower.startswith(
+                ("what", "which", "how", "show", "tell")
+            ):
                 days = self._extract_days_lookback(lower) or 7
                 thread_id, _ = self.get_or_create_thread_with_state(athlete_id)
                 return {
@@ -819,14 +943,22 @@ Policy:
                 }
 
         # Deterministic "longest run" (common high-signal question).
-        if not _skip_deterministic_shortcuts and ("longest" in lower or "furthest" in lower) and "run" in lower:
+        if (
+            not _skip_deterministic_shortcuts
+            and ("longest" in lower or "furthest" in lower)
+            and "run" in lower
+        ):
             # Production-beta hardening:
             # Only answer this deterministically when it looks like an explicit QUESTION.
             # Otherwise, this can misfire on narrative messages like "That was my longest since coming back"
             # and create a trust-breaking scope error (e.g., defaulting to 365-day maxima).
-            if self._looks_like_direct_comparison_question(message, keyword="longest", noun="run"):
+            if self._looks_like_direct_comparison_question(
+                message, keyword="longest", noun="run"
+            ):
                 # If the athlete is in a return-from-injury / return-from-break context, do not assume window.
-                if self._has_return_context(lower) or self._thread_mentions_return_context(athlete_id):
+                if self._has_return_context(
+                    lower
+                ) or self._thread_mentions_return_context(athlete_id):
                     thread_id, _ = self.get_or_create_thread_with_state(athlete_id)
                     return {
                         "response": (
@@ -841,17 +973,27 @@ Policy:
                 days = self._extract_days_lookback(lower) or 365
                 thread_id, _ = self.get_or_create_thread_with_state(athlete_id)
                 return {
-                    "response": self._top_run_by(athlete_id, days=days, metric="distance", label="longest"),
+                    "response": self._top_run_by(
+                        athlete_id, days=days, metric="distance", label="longest"
+                    ),
                     "thread_id": thread_id,
                     "error": False,
                 }
 
         # Deterministic "hardest run" / "hardest workout" (ambiguous; we define it explicitly).
-        if not _skip_deterministic_shortcuts and ("hardest" in lower or "toughest" in lower) and ("run" in lower or "workout" in lower):
+        if (
+            not _skip_deterministic_shortcuts
+            and ("hardest" in lower or "toughest" in lower)
+            and ("run" in lower or "workout" in lower)
+        ):
             # Same misfire class as "longest": only do deterministic comparisons when asked.
-            if self._looks_like_direct_comparison_question(message, keyword="hardest", noun="run"):
+            if self._looks_like_direct_comparison_question(
+                message, keyword="hardest", noun="run"
+            ):
                 # If the athlete is in a return-from-break context, "hardest" can be ambiguous (relative to return block).
-                if self._has_return_context(lower) or self._thread_mentions_return_context(athlete_id):
+                if self._has_return_context(
+                    lower
+                ) or self._thread_mentions_return_context(athlete_id):
                     thread_id, _ = self.get_or_create_thread_with_state(athlete_id)
                     return {
                         "response": (
@@ -866,7 +1008,9 @@ Policy:
                 days = self._extract_days_lookback(lower) or 30
                 thread_id, _ = self.get_or_create_thread_with_state(athlete_id)
                 return {
-                    "response": self._top_run_by(athlete_id, days=days, metric="stress_proxy", label="hardest"),
+                    "response": self._top_run_by(
+                        athlete_id, days=days, metric="stress_proxy", label="hardest"
+                    ),
                     "thread_id": thread_id,
                     "error": False,
                 }
@@ -874,7 +1018,10 @@ Policy:
         # Phase 3 acceptance: if the athlete has no run data and asks about fitness trend,
         # respond explicitly with the required phrasing (avoid any implied metrics).
         try:
-            if not _skip_deterministic_shortcuts and "getting fitter" in (message or "").lower():
+            if (
+                not _skip_deterministic_shortcuts
+                and "getting fitter" in (message or "").lower()
+            ):
                 has_any_run = (
                     self.db.query(Activity.id)
                     .filter(Activity.athlete_id == athlete_id, Activity.sport == "run")
@@ -892,11 +1039,13 @@ Policy:
         except Exception:
             # Never block chat on this precheck; fall back to normal flow.
             pass
-        
+
         try:
             # ADR-061: Hybrid model routing with cost caps
             complexity = self.classify_query_complexity(message)
-            model, is_opus = self.get_model_for_query(complexity, athlete_id=athlete_id, message=message)
+            model, is_opus = self.get_model_for_query(
+                complexity, athlete_id=athlete_id, message=message
+            )
             is_vip = self.is_athlete_vip(athlete_id)
             is_high_stakes = is_high_stakes_query(message)
 
@@ -908,7 +1057,9 @@ Policy:
             )
 
             # Check overall budget before proceeding
-            budget_ok, budget_reason = self.check_budget(athlete_id, is_opus=is_opus, is_vip=is_vip)
+            budget_ok, budget_reason = self.check_budget(
+                athlete_id, is_opus=is_opus, is_vip=is_vip
+            )
             if not budget_ok:
                 logger.warning(f"Budget exceeded for {athlete_id}: {budget_reason}")
                 return with_runtime_metadata(
@@ -924,10 +1075,6 @@ Policy:
                     },
                     served_by_v1_reason="budget_exceeded",
                 )
-
-            # Universal Kimi K2.5 routing (Apr 2026).
-            # Every query goes through Kimi with Sonnet as silent fallback.
-            demote_visible_to_fallback("packet_assembly_error")
 
             athlete_state = self._build_athlete_state_for_opus(athlete_id)
 
@@ -947,7 +1094,8 @@ Policy:
                     history = history_data.get("messages", [])
                     conversation_context = [
                         {"role": m.get("role"), "content": m.get("content")}
-                        for m in history if m.get("role") in ("user", "assistant")
+                        for m in history
+                        if m.get("role") in ("user", "assistant")
                     ]
                 except Exception:
                     pass
@@ -970,28 +1118,114 @@ Policy:
             except Exception:
                 pass
 
-            result = await self._query_kimi_with_fallback(
-                athlete_id=athlete_id,
-                message=message,
-                athlete_state=athlete_state,
-                conversation_context=conversation_context,
-            )
+            served_by_v2 = False
+            if runtime_state.runtime_mode == RUNTIME_MODE_VISIBLE:
+                try:
+                    packet_started_at = perf_counter()
+                    packet = assemble_v2_packet(
+                        athlete_id=athlete_id,
+                        message=message,
+                        conversation_context=conversation_context,
+                        legacy_athlete_state=athlete_state,
+                        finding_id=finding_id,
+                    )
+                    packet_telemetry["latency_ms_packet"] = int(
+                        (perf_counter() - packet_started_at) * 1000
+                    )
+                    packet_telemetry.update(packet.get("telemetry") or {})
+                    packet_telemetry["artifact_mode"] = (
+                        packet.get("conversation_mode") or {}
+                    ).get("primary")
+                    packet_telemetry["artifact5_mode_confidence"] = {
+                        "high": 1.0,
+                        "medium": 0.7,
+                        "low": 0.4,
+                    }.get(
+                        (packet.get("conversation_mode") or {}).get("confidence"), 0.0
+                    )
+                    result = await self.query_kimi_v2_packet(
+                        athlete_id=athlete_id,
+                        message=message,
+                        packet=packet,
+                    )
+                    packet_telemetry["latency_ms_llm"] = int(
+                        result.get("kimi_latency_ms") or 0
+                    )
+                    if result.get("error"):
+                        packet_telemetry["deterministic_check_status"] = "skipped"
+                        demote_visible_to_fallback(
+                            result.get("fallback_reason") or "llm_provider_error"
+                        )
+                    else:
+                        guardrail_ok, guarded_v2_response = (
+                            self._finalize_response_with_deterministic_guardrails(
+                                athlete_id=athlete_id,
+                                user_message=message,
+                                response_text=result.get("response", ""),
+                                conversation_context=conversation_context,
+                                turn_id=turn_id,
+                                is_synthetic_probe=detected_synthetic_probe,
+                                is_organic=is_organic,
+                                pass_event="pass_v2_packet",
+                                stage="v2_packet",
+                            )
+                        )
+                        if guardrail_ok:
+                            packet_telemetry["deterministic_check_status"] = "passed"
+                            result["response"] = guarded_v2_response
+                            served_by_v2 = True
+                        else:
+                            packet_telemetry["deterministic_check_status"] = "failed"
+                            demote_visible_to_fallback("v2_guardrail_failed")
+                except V2PacketInvariantError as exc:
+                    logger.warning("coach_runtime_v2_packet_invariant_failed: %s", exc)
+                    packet_telemetry.setdefault(
+                        "latency_ms_packet",
+                        (
+                            int((perf_counter() - packet_started_at) * 1000)
+                            if "packet_started_at" in locals()
+                            else 0
+                        ),
+                    )
+                    packet_telemetry["deterministic_check_status"] = "failed"
+                    demote_visible_to_fallback("packet_assembly_error")
+                    result = {}
+                except Exception as exc:
+                    logger.warning("coach_runtime_v2_packet_path_failed: %s", exc)
+                    packet_telemetry["deterministic_check_status"] = "failed"
+                    demote_visible_to_fallback("llm_provider_error")
+                    result = {}
+            else:
+                result = {}
+
+            if not served_by_v2:
+                result = await self._query_kimi_with_fallback(
+                    athlete_id=athlete_id,
+                    message=message,
+                    athlete_state=athlete_state,
+                    conversation_context=conversation_context,
+                )
 
             if not result.get("error"):
                 tools_used = list(dict.fromkeys(result.get("tools_called") or []))
-                guarded_response = await self._finalize_response_with_turn_guard(
-                    athlete_id=athlete_id,
-                    user_message=message,
-                    response_text=result.get("response", ""),
-                    is_opus=True,
-                    conversation_context=conversation_context,
-                    turn_id=turn_id,
-                    is_synthetic_probe=detected_synthetic_probe,
-                    is_organic=is_organic,
-                )
+                if served_by_v2:
+                    guarded_response = result.get("response", "")
+                else:
+                    guarded_response = await self._finalize_response_with_turn_guard(
+                        athlete_id=athlete_id,
+                        user_message=message,
+                        response_text=result.get("response", ""),
+                        is_opus=True,
+                        conversation_context=conversation_context,
+                        turn_id=turn_id,
+                        is_synthetic_probe=detected_synthetic_probe,
+                        is_organic=is_organic,
+                    )
                 result["response"] = guarded_response
                 self._save_chat_messages(
-                    athlete_id, message, guarded_response,
+                    athlete_id,
+                    message,
+                    guarded_response,
                     model=result.get("model", "unknown"),
                     tools_used=tools_used,
                     conversation_contract=conversation_contract_type,
@@ -1010,7 +1244,7 @@ Policy:
                 error_class="llm_error" if result.get("error") else None,
             )
             return result
-            
+
         except Exception as e:
             logger.error(f"AI Coach error: {e}")
             return with_runtime_metadata(
@@ -1021,9 +1255,6 @@ Policy:
                 served_by_v1_reason="llm_provider_error",
                 error_class=e.__class__.__name__,
             )
-
-
-
 
 
 def get_ai_coach(db: Session) -> AICoach:

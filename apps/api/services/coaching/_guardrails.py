@@ -11,7 +11,10 @@ from sqlalchemy.orm import Session
 
 logger = logging.getLogger(__name__)
 
-from services.coaching._constants import _strip_emojis, _check_response_quality  # noqa: E402
+from services.coaching._constants import (
+    _strip_emojis,
+    _check_response_quality,
+)  # noqa: E402
 from services import coach_tools  # noqa: E402
 from services.coaching._conversation_contract import (  # noqa: E402
     build_conversation_contract_retry_instruction,
@@ -26,8 +29,12 @@ class GuardrailsMixin:
     def _maybe_update_units_preference(self, athlete_id: UUID, message: str) -> None:
         try:
             ml = (message or "").lower()
-            wants_miles = ("miles" in ml) and ("always" in ml or "not kilometers" in ml or "not km" in ml)
-            wants_km = ("kilometers" in ml or "km" in ml) and ("always" in ml or "not miles" in ml)
+            wants_miles = ("miles" in ml) and (
+                "always" in ml or "not kilometers" in ml or "not km" in ml
+            )
+            wants_km = ("kilometers" in ml or "km" in ml) and (
+                "always" in ml or "not miles" in ml
+            )
 
             if not (wants_miles or wants_km):
                 return
@@ -47,8 +54,6 @@ class GuardrailsMixin:
             except Exception:
                 pass
 
-
-
     def _maybe_update_intent_snapshot(self, athlete_id: UUID, message: str) -> None:
         """
         Best-effort extraction of athlete intent/constraints from free text.
@@ -65,9 +70,28 @@ class GuardrailsMixin:
             updates: Dict[str, Any] = {}
 
             # Intent keywords (athlete-led)
-            if any(k in ml for k in ("train through", "through fatigue", "cumulative fatigue", "build fatigue", "stack fatigue")):
+            if any(
+                k in ml
+                for k in (
+                    "train through",
+                    "through fatigue",
+                    "cumulative fatigue",
+                    "build fatigue",
+                    "stack fatigue",
+                )
+            ):
                 updates["training_intent"] = "through_fatigue"
-            elif any(k in ml for k in ("freshen", "taper", "peak", "sharpen", "race soon", "benchmark")):
+            elif any(
+                k in ml
+                for k in (
+                    "freshen",
+                    "taper",
+                    "peak",
+                    "sharpen",
+                    "race soon",
+                    "benchmark",
+                )
+            ):
                 updates["training_intent"] = "freshen_for_event"
 
             # Pain flags
@@ -87,7 +111,10 @@ class GuardrailsMixin:
                     pass
 
             # Weekly mileage target (mpw) - expanded to catch more patterns
-            m2 = re.search(r"\b(\d{2,3})\s*(mpw|miles per week|mi per week|miles?\s+(?:this|per|a)\s+week|this week)\b", ml)
+            m2 = re.search(
+                r"\b(\d{2,3})\s*(mpw|miles per week|mi per week|miles?\s+(?:this|per|a)\s+week|this week)\b",
+                ml,
+            )
             if m2:
                 try:
                     updates["weekly_mileage_target"] = float(m2.group(1))
@@ -122,8 +149,6 @@ class GuardrailsMixin:
             except Exception:
                 pass
 
-
-
     def _validate_tool_usage(
         self,
         message: str,
@@ -132,17 +157,17 @@ class GuardrailsMixin:
     ) -> tuple[bool, str]:
         """
         Validate that a data question called appropriate tools.
-        
+
         Returns:
             (is_valid, reason) - True if tool usage was appropriate, False with reason if not.
         """
         if not self._is_data_question(message):
             # Not a data question - no tool validation needed
             return True, "not_data_question"
-        
+
         if tool_calls_count == 0:
             return False, "no_tools_called"
-        
+
         # Check for core data tools
         data_tools = [
             "get_recent_runs",
@@ -162,10 +187,8 @@ class GuardrailsMixin:
         ]
         if not any(t in tools_called for t in data_tools):
             return False, "no_data_tools_called"
-        
+
         return True, "ok"
-
-
 
     def _is_profile_edit_intent(self, user_message: str) -> bool:
         lower = (user_message or "").lower()
@@ -173,11 +196,15 @@ class GuardrailsMixin:
             return False
         asks_location = any(
             token in lower
-            for token in ("where", "how do i change", "how do i edit", "update my", "fix my")
+            for token in (
+                "where",
+                "how do i change",
+                "how do i edit",
+                "update my",
+                "fix my",
+            )
         )
         return bool(self._PROFILE_TERMS_RE.search(lower)) and asks_location
-
-
 
     def _infer_profile_field_from_message(self, user_message: str) -> str:
         lower = (user_message or "").lower()
@@ -192,8 +219,6 @@ class GuardrailsMixin:
         if any(k in lower for k in ("name", "display name")):
             return "display_name"
         return "birthdate"
-
-
 
     def _infer_intent_band(self, text: str, *, is_user: bool) -> str:
         lower = (text or "").lower().strip()
@@ -212,11 +237,11 @@ class GuardrailsMixin:
         # Allow assistant correction style to be identified as apology.
         if self._APOLOGY_TERMS_RE.search(lower):
             return "apology"
-        if is_user and any(t in lower for t in ("wrong answer", "off topic", "not what i asked")):
+        if is_user and any(
+            t in lower for t in ("wrong answer", "off topic", "not what i asked")
+        ):
             return "apology"
         return "general"
-
-
 
     def _intent_bands_compatible(self, user_band: str, assistant_band: str) -> bool:
         compatibility = {
@@ -224,13 +249,32 @@ class GuardrailsMixin:
             "logistics": {"logistics", "profile"},
             "planning": {"planning", "analysis", "general"},
             "analysis": {"analysis", "planning", "general"},
-            "apology": {"apology", "general", "analysis", "planning", "logistics", "profile"},
-            "general": {"general", "analysis", "planning", "logistics", "profile", "apology"},
-            "unknown": {"general", "analysis", "planning", "logistics", "profile", "apology"},
+            "apology": {
+                "apology",
+                "general",
+                "analysis",
+                "planning",
+                "logistics",
+                "profile",
+            },
+            "general": {
+                "general",
+                "analysis",
+                "planning",
+                "logistics",
+                "profile",
+                "apology",
+            },
+            "unknown": {
+                "general",
+                "analysis",
+                "planning",
+                "logistics",
+                "profile",
+                "apology",
+            },
         }
         return assistant_band in compatibility.get(user_band, {"general"})
-
-
 
     def _record_turn_guard_event(
         self,
@@ -256,9 +300,9 @@ class GuardrailsMixin:
             is_organic,
         )
 
-
-
-    def _response_addresses_latest_turn(self, user_message: str, assistant_message: str) -> bool:
+    def _response_addresses_latest_turn(
+        self, user_message: str, assistant_message: str
+    ) -> bool:
         """Heuristic guardrail using intent bands to catch turn-mismatch responses."""
         user_lower = (user_message or "").lower().strip()
         assistant_lower = (assistant_message or "").lower().strip()
@@ -270,8 +314,12 @@ class GuardrailsMixin:
 
         # Profile edit questions must produce deterministic navigation guidance.
         if self._is_profile_edit_intent(user_message):
-            has_profile_path = ("/settings" in assistant_lower) or ("personal information" in assistant_lower)
-            return has_profile_path and self._intent_bands_compatible(user_band, assistant_band)
+            has_profile_path = ("/settings" in assistant_lower) or (
+                "personal information" in assistant_lower
+            )
+            return has_profile_path and self._intent_bands_compatible(
+                user_band, assistant_band
+            )
 
         # Correction/apology turns should not drift into unrelated workout analysis.
         if any(t in user_lower for t in ("sorry", "my bad", "apolog")):
@@ -279,9 +327,9 @@ class GuardrailsMixin:
 
         return self._intent_bands_compatible(user_band, assistant_band)
 
-
-
-    def _build_turn_relevance_fallback(self, athlete_id: UUID, user_message: str) -> str:
+    def _build_turn_relevance_fallback(
+        self, athlete_id: UUID, user_message: str
+    ) -> str:
         if self._is_profile_edit_intent(user_message):
             field = self._infer_profile_field_from_message(user_message)
             path = coach_tools.get_profile_edit_paths(self.db, athlete_id, field=field)
@@ -300,7 +348,74 @@ class GuardrailsMixin:
             "Please repeat your last question in one line and I'll answer it directly."
         )
 
+    def _finalize_response_with_deterministic_guardrails(
+        self,
+        *,
+        athlete_id: UUID,
+        user_message: str,
+        response_text: str,
+        conversation_context: List[Dict[str, str]],
+        turn_id: str,
+        is_synthetic_probe: bool,
+        is_organic: bool,
+        pass_event: str = "pass_initial",
+        stage: str = "initial",
+    ) -> Tuple[bool, str]:
+        """Run output checks that do not require a second LLM call."""
 
+        try:
+            normalized = self._normalize_response_for_ui(
+                user_message=user_message,
+                assistant_message=response_text or "",
+            )
+        except Exception as e:
+            logger.warning(f"Coach response normalization failed: {e}")
+            normalized = response_text or ""
+
+        candidate = _strip_emojis(normalized)
+        user_band = self._infer_intent_band(user_message, is_user=True)
+        candidate_band = self._infer_intent_band(candidate, is_user=False)
+        addresses_latest_turn = self._response_addresses_latest_turn(
+            user_message, candidate
+        )
+        contract_ok, contract_reason = validate_conversation_contract_response(
+            user_message,
+            candidate,
+            conversation_context=conversation_context,
+        )
+
+        if addresses_latest_turn and contract_ok:
+            self._record_turn_guard_event(
+                athlete_id=athlete_id,
+                event=pass_event,
+                user_band=user_band,
+                assistant_band=candidate_band,
+                turn_id=turn_id,
+                stage=stage,
+                is_synthetic_probe=is_synthetic_probe,
+                is_organic=is_organic,
+            )
+            return True, enforce_conversation_contract_output(
+                user_message,
+                candidate,
+                conversation_context=conversation_context,
+            )
+
+        self._record_turn_guard_event(
+            athlete_id=athlete_id,
+            event=(
+                f"contract_mismatch:{contract_reason}"
+                if addresses_latest_turn
+                else "mismatch_detected"
+            ),
+            user_band=user_band,
+            assistant_band=candidate_band,
+            turn_id=turn_id,
+            stage=stage,
+            is_synthetic_probe=is_synthetic_probe,
+            is_organic=is_organic,
+        )
+        return False, candidate
 
     async def _finalize_response_with_turn_guard(
         self,
@@ -327,7 +442,9 @@ class GuardrailsMixin:
         user_band = self._infer_intent_band(user_message, is_user=True)
         candidate_band = self._infer_intent_band(candidate, is_user=False)
 
-        addresses_latest_turn = self._response_addresses_latest_turn(user_message, candidate)
+        addresses_latest_turn = self._response_addresses_latest_turn(
+            user_message, candidate
+        )
         contract_ok, contract_reason = validate_conversation_contract_response(
             user_message,
             candidate,
@@ -401,7 +518,9 @@ class GuardrailsMixin:
                 conversation_context=conversation_context,
             )
         else:
-            logger.warning("Turn mismatch detected for athlete %s; retrying once", athlete_id)
+            logger.warning(
+                "Turn mismatch detected for athlete %s; retrying once", athlete_id
+            )
             retry_instruction = (
                 "Answer ONLY the athlete's latest message directly. "
                 "Do not continue prior topics. "
@@ -432,12 +551,17 @@ class GuardrailsMixin:
                     )
                 )
                 retried_band = self._infer_intent_band(retried, is_user=False)
-                retried_contract_ok, retried_contract_reason = validate_conversation_contract_response(
-                    user_message,
-                    retried,
-                    conversation_context=conversation_context,
+                retried_contract_ok, retried_contract_reason = (
+                    validate_conversation_contract_response(
+                        user_message,
+                        retried,
+                        conversation_context=conversation_context,
+                    )
                 )
-                if self._response_addresses_latest_turn(user_message, retried) and retried_contract_ok:
+                if (
+                    self._response_addresses_latest_turn(user_message, retried)
+                    and retried_contract_ok
+                ):
                     self._record_turn_guard_event(
                         athlete_id=athlete_id,
                         event="retry_success",
@@ -484,9 +608,9 @@ class GuardrailsMixin:
         )
         return fallback
 
-
-
-    def _normalize_response_for_ui(self, *, user_message: str, assistant_message: str) -> str:
+    def _normalize_response_for_ui(
+        self, *, user_message: str, assistant_message: str
+    ) -> str:
         """
         Make coach output consistent and readable across *all* questions.
 
@@ -528,6 +652,7 @@ class GuardrailsMixin:
         # Suppress internal prompt-contract leakage in user-facing prose.
         text = re.sub(r"(?mi)^\s*authoritative fact capsule.*$", "", text)
         text = re.sub(r"(?mi)^\s*response contract.*$", "", text)
+
         # Rewrite internal pace-comparison language into athlete-friendly prose.
         # Matches both standalone lines and bullet-list items (e.g. "- Recorded pace…").
         def _rewrite_pace_relation(m: re.Match) -> str:
@@ -542,6 +667,7 @@ class GuardrailsMixin:
                 return f"{prefix}Pace was about {amount} quicker than marathon rhythm."
             else:
                 return f"{prefix}Pace was about {amount} relative to marathon rhythm."
+
         text = re.sub(
             r"(?mi)^(?P<prefix>\s*[-*]\s*)?recorded pace vs marathon pace\s*:\s*"
             r"(?P<direction>slower|faster)?\s*(?:by\s*)?(?P<amount>[0-9:]+/mi(?:le)?)?\s*\.?\s*$",
@@ -560,8 +686,14 @@ class GuardrailsMixin:
         # Examples:
         #   "Receipts\n- 2026-...: ...\n"
         #   "Evidence:\n- 2026-...: ...\n"
-        text = re.sub(r"(?mi)(^|\n)(receipts|evidence)\s*:\s*\n", r"\1## Evidence\n", text)
-        text = re.sub(r"(?mi)(^|\n)(receipts|evidence)\s*\n(?=\s*[-*]\s*20\d{2}-\d{2}-\d{2})", r"\1## Evidence\n", text)
+        text = re.sub(
+            r"(?mi)(^|\n)(receipts|evidence)\s*:\s*\n", r"\1## Evidence\n", text
+        )
+        text = re.sub(
+            r"(?mi)(^|\n)(receipts|evidence)\s*\n(?=\s*[-*]\s*20\d{2}-\d{2}-\d{2})",
+            r"\1## Evidence\n",
+            text,
+        )
 
         if wants_ids:
             return text
@@ -576,7 +708,12 @@ class GuardrailsMixin:
             main, evidence = text, ""
 
         # Remove UUIDs from main. Prefer removing the whole "(activity id: ...)" clause if present.
-        main = re.sub(r"(?i)\s*\(?(planned workout|activity)\s*(id)?\s*:\s*%s\)?\s*" % self._UUID_RE.pattern, "", main)
+        main = re.sub(
+            r"(?i)\s*\(?(planned workout|activity)\s*(id)?\s*:\s*%s\)?\s*"
+            % self._UUID_RE.pattern,
+            "",
+            main,
+        )
         main = re.sub(self._UUID_RE, "", main)
         # Clean double spaces left behind.
         main = re.sub(r"[ \t]{2,}", " ", main).strip()
@@ -589,10 +726,9 @@ class GuardrailsMixin:
 
             evidence = re.sub(self._UUID_RE, _uuid_to_ref, evidence)
             # Also normalize any "Receipts" mention lingering inside evidence blocks.
-            evidence = re.sub(r"(?mi)(^|\n)##\s*Receipts\s*\n", r"\1## Evidence\n", evidence)
+            evidence = re.sub(
+                r"(?mi)(^|\n)##\s*Receipts\s*\n", r"\1## Evidence\n", evidence
+            )
             return (main + "\n\n" + evidence.strip()).strip()
 
         return main
-
-
-

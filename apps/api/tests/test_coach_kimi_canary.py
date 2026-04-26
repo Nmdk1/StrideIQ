@@ -10,6 +10,9 @@ from services.ai_coach import AICoach
 
 
 def _make_openai_module(create_impl):
+    class _APITimeoutError(Exception):
+        pass
+
     class _Completions:
         async def create(self, **kwargs):
             return await create_impl(**kwargs)
@@ -23,13 +26,15 @@ def _make_openai_module(create_impl):
             self.kwargs = kwargs
             self.chat = _Chat()
 
-    return SimpleNamespace(AsyncOpenAI=_Client)
+    return SimpleNamespace(AsyncOpenAI=_Client, APITimeoutError=_APITimeoutError)
 
 
 def _oai_response(*, content="", tool_calls=None, prompt_tokens=1, completion_tokens=1):
     message = SimpleNamespace(content=content, tool_calls=tool_calls or [])
     choice = SimpleNamespace(message=message)
-    usage = SimpleNamespace(prompt_tokens=prompt_tokens, completion_tokens=completion_tokens)
+    usage = SimpleNamespace(
+        prompt_tokens=prompt_tokens, completion_tokens=completion_tokens
+    )
     return SimpleNamespace(choices=[choice], usage=usage)
 
 
@@ -55,11 +60,19 @@ def test_kimi_tools_format_matches_openai_spec():
 async def test_kimi_coach_tool_call_loop(monkeypatch):
     coach = AICoach.__new__(AICoach)
     coach._build_coach_system_prompt = MagicMock(return_value="system")
-    coach._kimi_tools = MagicMock(return_value=[{"type": "function", "function": {"name": "get_recent_runs"}}])
+    coach._kimi_tools = MagicMock(
+        return_value=[{"type": "function", "function": {"name": "get_recent_runs"}}]
+    )
     coach._execute_opus_tool = MagicMock(return_value='{"ok": true}')
     coach._validate_tool_usage = MagicMock(return_value=(True, "ok"))
     coach.track_usage = MagicMock()
-    coach.query_opus = AsyncMock(return_value={"response": "fallback", "error": False, "model": "claude-sonnet-4-6"})
+    coach.query_opus = AsyncMock(
+        return_value={
+            "response": "fallback",
+            "error": False,
+            "model": "claude-sonnet-4-6",
+        }
+    )
 
     tool_call = SimpleNamespace(
         id="call-1",
@@ -67,8 +80,12 @@ async def test_kimi_coach_tool_call_loop(monkeypatch):
     )
     responses = iter(
         [
-            _oai_response(tool_calls=[tool_call], prompt_tokens=10, completion_tokens=5),
-            _oai_response(content="Evidence-backed answer.", prompt_tokens=11, completion_tokens=6),
+            _oai_response(
+                tool_calls=[tool_call], prompt_tokens=10, completion_tokens=5
+            ),
+            _oai_response(
+                content="Evidence-backed answer.", prompt_tokens=11, completion_tokens=6
+            ),
         ]
     )
     captured = []
@@ -79,9 +96,19 @@ async def test_kimi_coach_tool_call_loop(monkeypatch):
 
     monkeypatch.setitem(sys.modules, "openai", _make_openai_module(_create))
     from services import ai_coach as ai_coach_module
-    monkeypatch.setattr(ai_coach_module.settings, "KIMI_API_KEY", "kimi-key", raising=False)
-    monkeypatch.setattr(ai_coach_module.settings, "KIMI_BASE_URL", "https://api.moonshot.ai/v1", raising=False)
-    monkeypatch.setattr(ai_coach_module.settings, "COACH_CANARY_MODEL", "kimi-k2.6", raising=False)
+
+    monkeypatch.setattr(
+        ai_coach_module.settings, "KIMI_API_KEY", "kimi-key", raising=False
+    )
+    monkeypatch.setattr(
+        ai_coach_module.settings,
+        "KIMI_BASE_URL",
+        "https://api.moonshot.ai/v1",
+        raising=False,
+    )
+    monkeypatch.setattr(
+        ai_coach_module.settings, "COACH_CANARY_MODEL", "kimi-k2.6", raising=False
+    )
 
     result = await coach.query_kimi_coach(
         athlete_id=uuid4(),
@@ -103,18 +130,36 @@ async def test_kimi_coach_injects_athlete_state(monkeypatch):
     coach._execute_opus_tool = MagicMock()
     coach._validate_tool_usage = MagicMock(return_value=(True, "ok"))
     coach.track_usage = MagicMock()
-    coach.query_opus = AsyncMock(return_value={"response": "fallback", "error": False, "model": "claude-sonnet-4-6"})
+    coach.query_opus = AsyncMock(
+        return_value={
+            "response": "fallback",
+            "error": False,
+            "model": "claude-sonnet-4-6",
+        }
+    )
     captured = []
 
     async def _create(**kwargs):
         captured.append(kwargs)
-        return _oai_response(content="State-aware answer.", prompt_tokens=10, completion_tokens=5)
+        return _oai_response(
+            content="State-aware answer.", prompt_tokens=10, completion_tokens=5
+        )
 
     monkeypatch.setitem(sys.modules, "openai", _make_openai_module(_create))
     from services import ai_coach as ai_coach_module
-    monkeypatch.setattr(ai_coach_module.settings, "KIMI_API_KEY", "kimi-key", raising=False)
-    monkeypatch.setattr(ai_coach_module.settings, "KIMI_BASE_URL", "https://api.moonshot.ai/v1", raising=False)
-    monkeypatch.setattr(ai_coach_module.settings, "COACH_CANARY_MODEL", "kimi-k2.6", raising=False)
+
+    monkeypatch.setattr(
+        ai_coach_module.settings, "KIMI_API_KEY", "kimi-key", raising=False
+    )
+    monkeypatch.setattr(
+        ai_coach_module.settings,
+        "KIMI_BASE_URL",
+        "https://api.moonshot.ai/v1",
+        raising=False,
+    )
+    monkeypatch.setattr(
+        ai_coach_module.settings, "COACH_CANARY_MODEL", "kimi-k2.6", raising=False
+    )
 
     result = await coach.query_kimi_coach(
         athlete_id=uuid4(),
@@ -139,10 +184,18 @@ async def test_kimi_empty_content_falls_back_to_sonnet(monkeypatch):
     coach._execute_opus_tool = MagicMock()
     coach._validate_tool_usage = MagicMock(return_value=(True, "ok"))
     coach.track_usage = MagicMock()
-    coach.query_opus = AsyncMock(return_value={"response": "sonnet fallback", "error": False, "model": "claude-sonnet-4-6"})
+    coach.query_opus = AsyncMock(
+        return_value={
+            "response": "sonnet fallback",
+            "error": False,
+            "model": "claude-sonnet-4-6",
+        }
+    )
 
     async def _create(**kwargs):
-        message = SimpleNamespace(content="", tool_calls=[], reasoning_content="internal chain")
+        message = SimpleNamespace(
+            content="", tool_calls=[], reasoning_content="internal chain"
+        )
         return SimpleNamespace(
             choices=[SimpleNamespace(message=message)],
             usage=SimpleNamespace(prompt_tokens=1, completion_tokens=1),
@@ -150,9 +203,19 @@ async def test_kimi_empty_content_falls_back_to_sonnet(monkeypatch):
 
     monkeypatch.setitem(sys.modules, "openai", _make_openai_module(_create))
     from services import ai_coach as ai_coach_module
-    monkeypatch.setattr(ai_coach_module.settings, "KIMI_API_KEY", "kimi-key", raising=False)
-    monkeypatch.setattr(ai_coach_module.settings, "KIMI_BASE_URL", "https://api.moonshot.ai/v1", raising=False)
-    monkeypatch.setattr(ai_coach_module.settings, "COACH_CANARY_MODEL", "kimi-k2.6", raising=False)
+
+    monkeypatch.setattr(
+        ai_coach_module.settings, "KIMI_API_KEY", "kimi-key", raising=False
+    )
+    monkeypatch.setattr(
+        ai_coach_module.settings,
+        "KIMI_BASE_URL",
+        "https://api.moonshot.ai/v1",
+        raising=False,
+    )
+    monkeypatch.setattr(
+        ai_coach_module.settings, "COACH_CANARY_MODEL", "kimi-k2.6", raising=False
+    )
 
     result = await coach.query_kimi_coach(
         athlete_id=uuid4(),
@@ -169,7 +232,13 @@ async def test_kimi_empty_content_falls_back_to_sonnet(monkeypatch):
 async def test_kimi_coach_fallback_to_sonnet_on_error():
     coach = AICoach.__new__(AICoach)
     coach.query_kimi_coach = AsyncMock(side_effect=RuntimeError("network down"))
-    coach.query_opus = AsyncMock(return_value={"response": "sonnet fallback", "error": False, "model": "claude-sonnet-4-6"})
+    coach.query_opus = AsyncMock(
+        return_value={
+            "response": "sonnet fallback",
+            "error": False,
+            "model": "claude-sonnet-4-6",
+        }
+    )
 
     result = await coach._query_kimi_with_fallback(
         athlete_id=uuid4(),
@@ -194,6 +263,95 @@ def test_kimi_path_omits_temperature():
 
 
 @pytest.mark.asyncio
+async def test_kimi_v2_packet_call_disables_tools(monkeypatch):
+    coach = AICoach.__new__(AICoach)
+    coach.track_usage = MagicMock()
+    captured = []
+
+    async def _create(**kwargs):
+        captured.append(kwargs)
+        return _oai_response(
+            content="V2 packet answer.", prompt_tokens=10, completion_tokens=5
+        )
+
+    monkeypatch.setitem(sys.modules, "openai", _make_openai_module(_create))
+    from services import ai_coach as ai_coach_module
+
+    monkeypatch.setattr(
+        ai_coach_module.settings, "KIMI_API_KEY", "kimi-key", raising=False
+    )
+    monkeypatch.setattr(
+        ai_coach_module.settings,
+        "KIMI_BASE_URL",
+        "https://api.moonshot.ai/v1",
+        raising=False,
+    )
+    monkeypatch.setattr(
+        ai_coach_module.settings, "COACH_CANARY_MODEL", "kimi-k2.6", raising=False
+    )
+
+    result = await coach.query_kimi_v2_packet(
+        athlete_id=uuid4(),
+        message="Should I race?",
+        packet={
+            "schema_version": "coach_runtime_v2.packet.v1",
+            "conversation_mode": {"primary": "engage_and_reason"},
+        },
+    )
+
+    assert result["error"] is False
+    assert result["response"] == "V2 packet answer."
+    assert result["tools_called"] == []
+    assert "tools" not in captured[0]
+    assert "tool_choice" not in captured[0]
+    assert any(
+        "coach_runtime_v2.packet.v1" in str(message.get("content", ""))
+        for message in captured[0]["messages"]
+    )
+
+
+@pytest.mark.asyncio
+async def test_kimi_v2_packet_timeout_maps_to_v2_timeout(monkeypatch):
+    openai_module = None
+
+    async def _create(**kwargs):
+        raise openai_module.APITimeoutError("timed out")
+
+    openai_module = _make_openai_module(_create)
+    coach = AICoach.__new__(AICoach)
+    coach.track_usage = MagicMock()
+
+    monkeypatch.setitem(sys.modules, "openai", openai_module)
+    from services import ai_coach as ai_coach_module
+
+    monkeypatch.setattr(
+        ai_coach_module.settings, "KIMI_API_KEY", "kimi-key", raising=False
+    )
+    monkeypatch.setattr(
+        ai_coach_module.settings,
+        "KIMI_BASE_URL",
+        "https://api.moonshot.ai/v1",
+        raising=False,
+    )
+    monkeypatch.setattr(
+        ai_coach_module.settings, "COACH_CANARY_MODEL", "kimi-k2.6", raising=False
+    )
+
+    result = await coach.query_kimi_v2_packet(
+        athlete_id=uuid4(),
+        message="Should I race?",
+        packet={"schema_version": "coach_runtime_v2.packet.v1"},
+    )
+
+    assert result["error"] is True
+    assert result["fallback_reason"] == "v2_timeout"
+    assert result["error_class"] == "_APITimeoutError"
+    assert result["model"] == "kimi-k2.6"
+    assert "tools_called" not in result
+    coach.track_usage.assert_not_called()
+
+
+@pytest.mark.asyncio
 async def test_universal_kimi_routing(monkeypatch):
     """All queries now route to Kimi K2.5 — no canary gating."""
     coach = AICoach(db=MagicMock())
@@ -208,16 +366,29 @@ async def test_universal_kimi_routing(monkeypatch):
     coach._is_profile_edit_intent = MagicMock(return_value=False)
     coach._maybe_update_units_preference = MagicMock()
     coach._maybe_update_intent_snapshot = MagicMock()
-    coach._thin_history_and_baseline_flags = MagicMock(return_value=(False, {}, None, False))
+    coach._thin_history_and_baseline_flags = MagicMock(
+        return_value=(False, {}, None, False)
+    )
     coach.get_or_create_thread_with_state = MagicMock(return_value=("thread-1", False))
     coach.get_thread_history = MagicMock(return_value={"messages": []})
     coach._build_athlete_state_for_opus = MagicMock(return_value="state")
-    coach._query_kimi_with_fallback = AsyncMock(return_value={"response": "kimi", "error": False, "model": "kimi-k2.6"})
-    coach.query_opus = AsyncMock(return_value={"response": "sonnet", "error": False, "model": "claude-sonnet-4-6"})
-    coach._finalize_response_with_turn_guard = AsyncMock(side_effect=lambda **kwargs: kwargs["response_text"])
+    coach._query_kimi_with_fallback = AsyncMock(
+        return_value={"response": "kimi", "error": False, "model": "kimi-k2.6"}
+    )
+    coach.query_opus = AsyncMock(
+        return_value={
+            "response": "sonnet",
+            "error": False,
+            "model": "claude-sonnet-4-6",
+        }
+    )
+    coach._finalize_response_with_turn_guard = AsyncMock(
+        side_effect=lambda **kwargs: kwargs["response_text"]
+    )
     coach._save_chat_messages = MagicMock()
 
     import services.consent as consent_module
+
     monkeypatch.setattr(consent_module, "has_ai_consent", lambda athlete_id, db: True)
 
     result = await coach.chat(uuid4(), "My knee hurts. Should I run?")
