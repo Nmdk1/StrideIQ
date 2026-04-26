@@ -34,6 +34,7 @@ from services.timezone_utils import (
 ASSEMBLER_VERSION = "coach_runtime_v2_0_a_packet_assembler_001"
 MODE_CLASSIFIER_VERSION = "coach_mode_classifier_v2_0_a"
 LEDGER_COVERAGE_SHIM_THRESHOLD = 0.5
+LEGACY_CONTEXT_BRIDGE_MAX_CHARS = 3000
 
 logger = logging.getLogger(__name__)
 
@@ -1397,7 +1398,7 @@ def assemble_v2_packet(
         "unknowns": unknowns,
         "pending_conflicts": serialized_pending_conflicts,
         "_legacy_context_bridge_deprecated": {
-            "legacy_context_bridge": legacy_context[:12000],
+            "legacy_context_bridge": legacy_context[:LEGACY_CONTEXT_BRIDGE_MAX_CHARS],
             "bridge_note": (
                 "Deprecated shim only. Structured athlete_facts, recent_activities, "
                 "recent_threads, unknowns, calendar_context, and current_turn are the "
