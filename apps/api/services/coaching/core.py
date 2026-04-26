@@ -70,6 +70,7 @@ from services.coaching.runtime_v2_packet import (  # noqa: E402
     V2PacketInvariantError,
     assemble_v2_packet,
 )
+from services.coaching.ledger import PendingConflict  # noqa: E402
 from services.coaching.ledger_extraction import (  # noqa: E402
     extract_facts_from_turn_with_optional_llm,
     persist_proposed_facts,
@@ -1160,13 +1161,21 @@ Policy:
             served_by_v2 = False
             if runtime_state.runtime_mode == RUNTIME_MODE_VISIBLE:
                 try:
+                    pending_conflicts: list[PendingConflict] = []
                     proposed_facts = await extract_facts_from_turn_with_optional_llm(
                         athlete_id,
                         message,
                         source=f"turn_id:{turn_id}",
                     )
                     if proposed_facts:
-                        persist_proposed_facts(self.db, athlete_id, proposed_facts)
+                        persisted_results = persist_proposed_facts(
+                            self.db, athlete_id, proposed_facts
+                        )
+                        pending_conflicts = [
+                            result
+                            for result in persisted_results
+                            if isinstance(result, PendingConflict)
+                        ]
                         self.db.commit()
                     packet_started_at = perf_counter()
                     packet = assemble_v2_packet(
@@ -1176,6 +1185,7 @@ Policy:
                         conversation_context=conversation_context,
                         legacy_athlete_state=athlete_state,
                         finding_id=finding_id,
+                        pending_conflicts=pending_conflicts,
                     )
                     packet_telemetry["latency_ms_packet"] = int(
                         (perf_counter() - packet_started_at) * 1000
