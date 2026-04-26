@@ -12,6 +12,32 @@ from sqlalchemy.orm import Session
 
 logger = logging.getLogger(__name__)
 
+
+def _count_anchor_atoms(response_text: str) -> int:
+    text = response_text or ""
+    patterns = (
+        r"\b(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday)'?s\b",
+        r"\b\d{4}-\d{2}-\d{2}\b",
+        r"\b\d+(?:\.\d+)?\s*(?:mpw|miles?|mi|k)\b",
+        r"\b(?:you said|last time we talked|three weeks ago|prior thread)\b",
+        r"\b(?:cut|injury|pace zones|threshold|race)\b",
+    )
+    return sum(
+        1 for pattern in patterns if re.search(pattern, text, flags=re.IGNORECASE)
+    )
+
+
+def _detect_unasked_surfacing(response_text: str) -> bool:
+    text = response_text or ""
+    return bool(
+        re.search(
+            r"\b(One thing|I'd flag|Worth noting|I notice|Pattern I see|Risk here)\b",
+            text,
+            flags=re.IGNORECASE,
+        )
+    )
+
+
 from services.coaching._constants import (  # noqa: E402
     HighStakesSignal,
     HIGH_STAKES_PATTERNS,
@@ -44,6 +70,11 @@ from services.coaching.runtime_v2_packet import (  # noqa: E402
     V2PacketInvariantError,
     assemble_v2_packet,
 )
+from services.coaching.ledger_extraction import (  # noqa: E402
+    extract_facts_from_turn_with_optional_llm,
+    persist_proposed_facts,
+)
+from services.coaching.thread_lifecycle import close_idle_threads  # noqa: E402
 
 try:
     from anthropic import Anthropic
@@ -595,6 +626,14 @@ Policy:
                 served_by_v1_reason="consent_disabled",
             )
 
+        try:
+            closed_summaries = close_idle_threads(self.db, athlete_id)
+            if closed_summaries:
+                self.db.commit()
+        except Exception:
+            self.db.rollback()
+            logger.warning("close_idle_threads_failed", exc_info=True)
+
         # If no LLM route is available, return a helpful message.  Kimi is the
         # primary chat path; Gemini remains only as a guardrail-retry fallback.
         kimi_configured = bool(settings.KIMI_API_KEY or os.getenv("KIMI_API_KEY"))
@@ -1121,6 +1160,14 @@ Policy:
             served_by_v2 = False
             if runtime_state.runtime_mode == RUNTIME_MODE_VISIBLE:
                 try:
+                    proposed_facts = await extract_facts_from_turn_with_optional_llm(
+                        athlete_id,
+                        message,
+                        source=f"turn_id:{turn_id}",
+                    )
+                    if proposed_facts:
+                        persist_proposed_facts(self.db, athlete_id, proposed_facts)
+                        self.db.commit()
                     packet_started_at = perf_counter()
                     packet = assemble_v2_packet(
                         athlete_id=athlete_id,
@@ -1152,6 +1199,11 @@ Policy:
                     packet_telemetry["latency_ms_llm"] = int(
                         result.get("kimi_latency_ms") or 0
                     )
+                    packet_telemetry["template_phrase_count"] = int(
+                        result.get("template_phrase_count") or 0
+                    )
+                    packet_telemetry["model"] = result.get("model")
+                    packet_telemetry["thinking"] = result.get("thinking")
                     if result.get("error"):
                         packet_telemetry["deterministic_check_status"] = "skipped"
                         demote_visible_to_fallback(
@@ -1223,6 +1275,29 @@ Policy:
                         is_organic=is_organic,
                     )
                 result["response"] = guarded_response
+                runtime_metadata = runtime_state.as_metadata()
+                if served_by_v2:
+                    packet_telemetry["anchor_atoms_per_answer"] = _count_anchor_atoms(
+                        guarded_response
+                    )
+                    packet_telemetry["unasked_surfacing"] = _detect_unasked_surfacing(
+                        guarded_response
+                    )
+                    runtime_metadata["template_phrase_count"] = int(
+                        result.get("template_phrase_count") or 0
+                    )
+                    runtime_metadata["anchor_atoms_per_answer"] = packet_telemetry[
+                        "anchor_atoms_per_answer"
+                    ]
+                    runtime_metadata["unasked_surfacing"] = packet_telemetry[
+                        "unasked_surfacing"
+                    ]
+                    runtime_metadata["ledger_field_coverage"] = packet_telemetry.get(
+                        "ledger_field_coverage"
+                    )
+                    runtime_metadata["unknowns_count"] = packet_telemetry.get(
+                        "unknowns_count"
+                    )
                 self._save_chat_messages(
                     athlete_id,
                     message,
@@ -1230,7 +1305,7 @@ Policy:
                     model=result.get("model", "unknown"),
                     tools_used=tools_used,
                     conversation_contract=conversation_contract_type,
-                    runtime_metadata=runtime_state.as_metadata(),
+                    runtime_metadata=runtime_metadata,
                 )
                 result["tools_used"] = tools_used
                 result["tool_count"] = len(tools_used)

@@ -4,6 +4,7 @@ Centralized configuration management with validation.
 All environment variables are loaded and validated here.
 This ensures consistent configuration across the application.
 """
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import Field, model_validator
 from typing import Optional
@@ -46,30 +47,28 @@ def validate_production_config(
 
 class Settings(BaseSettings):
     """Application settings with validation."""
-    
+
     # Pydantic v2 configuration
     model_config = SettingsConfigDict(
-        env_file=".env",
-        case_sensitive=True,
-        extra="ignore"
+        env_file=".env", case_sensitive=True, extra="ignore"
     )
-    
+
     # Database Configuration
     POSTGRES_USER: str = Field(default="postgres")
     POSTGRES_PASSWORD: str = Field(default="postgres")
     POSTGRES_DB: str = Field(default="running_app")
     POSTGRES_HOST: str = Field(default="postgres")
     POSTGRES_PORT: int = Field(default=5432)
-    
+
     # Database Pool Configuration
     DB_POOL_SIZE: int = Field(default=20)
     DB_MAX_OVERFLOW: int = Field(default=10)
     DB_POOL_TIMEOUT: int = Field(default=30)
     DB_POOL_RECYCLE: int = Field(default=3600)  # 1 hour
-    
+
     # Redis Configuration
     REDIS_URL: str = Field(default="redis://redis:6379/0")
-    
+
     # Strava API Configuration
     STRAVA_CLIENT_ID: Optional[str] = Field(default=None)
     STRAVA_CLIENT_SECRET: Optional[str] = Field(default=None)
@@ -87,46 +86,46 @@ class Settings(BaseSettings):
     # If set (>0), we will block new OAuth connects once our connected-athlete count reaches this number,
     # and surface a clear UI-safe message instead of sending the athlete into a failing OAuth flow.
     STRAVA_MAX_CONNECTED_ATHLETES: Optional[int] = Field(default=None)
-    
+
     # Token Encryption
     TOKEN_ENCRYPTION_KEY: Optional[str] = Field(default=None)
-    
+
     # JWT Authentication - REQUIRED for token signing
     # Must be set via environment variable, never use default in production
     SECRET_KEY: str = Field(
         default=...,  # Required - no default
         description="JWT signing key. Must be cryptographically secure (32+ chars). "
-                    "Generate with: python -c \"import secrets; print(secrets.token_urlsafe(32))\""
+        'Generate with: python -c "import secrets; print(secrets.token_urlsafe(32))"',
     )
-    
+
     # Garmin Configuration — OAuth 2.0 PKCE (official Connect API)
     GARMIN_CLIENT_ID: Optional[str] = Field(default=None)
     GARMIN_CLIENT_SECRET: Optional[str] = Field(default=None)
     # The redirect_uri registered in the Garmin developer portal.
     # Must exactly match what is configured there.
     GARMIN_REDIRECT_URI: Optional[str] = Field(default=None)
-    
+
     # API Configuration
     API_HOST: str = Field(default="0.0.0.0")
     API_PORT: int = Field(default=8000)
     API_RELOAD: bool = Field(default=False)
-    
+
     # Logging Configuration
     LOG_LEVEL: str = Field(default="INFO")
     LOG_FORMAT: str = Field(default="json")  # json or text
-    
+
     # Rate Limiting
     RATE_LIMIT_ENABLED: bool = Field(default=True)
     RATE_LIMIT_PER_MINUTE: int = Field(default=60)
-    
+
     # External API Configuration
     EXTERNAL_API_TIMEOUT: int = Field(default=30)
     EXTERNAL_API_RETRY_ATTEMPTS: int = Field(default=3)
-    
+
     # Celery Configuration
     CELERY_BROKER_URL: str = Field(default="redis://redis:6379/0")
     CELERY_RESULT_BACKEND: str = Field(default="redis://redis:6379/0")
-    
+
     # Email Configuration
     EMAIL_ENABLED: bool = Field(default=False)
     SMTP_SERVER: str = Field(default="smtp.gmail.com")
@@ -136,12 +135,12 @@ class Settings(BaseSettings):
     SMTP_TIMEOUT_SECONDS: int = Field(default=15)
     FROM_EMAIL: str = Field(default="noreply@strideiq.run")
     FROM_NAME: str = Field(default="StrideIQ")
-    
+
     # Cache Configuration
     CACHE_TTL_DEFAULT: int = Field(default=300)  # 5 minutes
     CACHE_TTL_ATHLETE: int = Field(default=600)  # 10 minutes
     CACHE_TTL_ACTIVITIES: int = Field(default=60)  # 1 minute
-    
+
     # Environment
     ENVIRONMENT: str = Field(default="development")
     DEBUG: bool = Field(default=False)
@@ -152,7 +151,7 @@ class Settings(BaseSettings):
     # Debug endpoint (production-safe: OFF by default)
     # If set, /debug requires header X-Debug-Token to match this value; otherwise 404.
     DEBUG_ENDPOINT_TOKEN: Optional[str] = Field(default=None)
-    
+
     # CORS - comma-separated list of allowed origins for production
     # e.g., "https://strideiq.run,https://www.strideiq.run"
     CORS_ORIGINS: Optional[str] = Field(default=None)
@@ -198,14 +197,16 @@ class Settings(BaseSettings):
     # Monetization reset (single paid StrideIQ tier).
     STRIPE_PRICE_STRIDEIQ_MONTHLY_ID: Optional[str] = Field(default=None)
     STRIPE_PRICE_STRIDEIQ_ANNUAL_ID: Optional[str] = Field(default=None)
-    
+
     # Cloudflare R2 Object Storage (Runtoon photos + generated images)
     # All buckets are private. All access is via signed URLs (15-min TTL).
     R2_ACCOUNT_ID: Optional[str] = Field(default=None)
     R2_ACCESS_KEY_ID: Optional[str] = Field(default=None)
     R2_SECRET_ACCESS_KEY: Optional[str] = Field(default=None)
     R2_BUCKET_NAME: str = Field(default="strideiq-runtoon")
-    R2_ENDPOINT_URL: Optional[str] = Field(default=None)  # https://<account_id>.r2.cloudflarestorage.com
+    R2_ENDPOINT_URL: Optional[str] = Field(
+        default=None
+    )  # https://<account_id>.r2.cloudflarestorage.com
 
     # Sentry Error Tracking
     SENTRY_DSN: Optional[str] = Field(default=None)
@@ -232,6 +233,9 @@ class Settings(BaseSettings):
     KIMI_CANARY_MODEL: str = Field(default="kimi-k2.6")
     # Kimi coach canary model (reasoning lane with tool calls)
     COACH_CANARY_MODEL: str = Field(default="kimi-k2.6")
+    # Artifact 9 B2: deterministic ledger extraction is the live path.
+    # LLM extraction remains wired but disabled until explicitly approved.
+    COACH_LEDGER_LLM_EXTRACTION_ENABLED: bool = Field(default=False)
 
     @model_validator(mode="after")
     def _validate_production_config(self) -> "Settings":

@@ -12,6 +12,32 @@ from sqlalchemy.orm import Session
 
 logger = logging.getLogger(__name__)
 
+ARTIFACT9_V2_SYSTEM_PROMPT = """You are StrideIQ's coach. The athlete in this turn is the same human you have coached over many sessions. The packet you receive contains the truth about this athlete: structured facts (athlete_facts), recent activities (recent_activities), recent thread summaries (recent_threads), open unknowns (unknowns), the calendar context (calendar_context), and the current conversation.
+
+How you must behave:
+
+1. Anchor every claim about the athlete in a named atom from the packet. Cite the specific session by date or distance, the specific ledger fact, the specific prior thread. If a claim cannot be anchored, do not make it.
+
+2. When a required fact is in unknowns, ask the suggested question or hedge explicitly. Never fill an unknown with generic coaching.
+
+3. Surface the unasked. On every substantive turn, name at least one pattern, risk, contradiction, or opportunity the athlete didn't ask about, drawn from recent_activities, recent_threads, or ledger trends.
+
+4. Commit to one read. Do not enumerate possibilities when one read is more likely. State the read, give the reasoning, and accept that the athlete may push back.
+
+5. End every substantive turn with a decision the athlete can act on. Specific. Concrete. Bounded.
+
+6. Voice register: write as a coach who has internalized Roche, Davis, Green, Eyestone, and McMillan training philosophies and Holmer-level physiology. Direct. Scientifically grounded. Philosophy-anchored. Willing to name mechanisms (lactate, glycogen, fatigue resistance, ventilatory threshold, fueling, durability) when they explain the read. No template praise. No "consider," "you might want to," "great question," "well done." Real verbs. Honest reads. Name what is working and what is not. The bar is "Brady Holmer or David Roche reads this and says 'I couldn't do better.'"
+
+7. Trust the athlete's stated facts. If athlete_facts shows a value with confidence athlete_stated, that wins over derived data. If the athlete corrects you, update immediately and do not repeat the corrected assumption.
+
+8. Never invent a session, a fact, a date, or a metric. If you do not have the atom, you cannot make the claim.
+
+9. The conversation_mode and athlete_stated_overrides in the packet are binding. Honor both.
+
+Coach. Don't analyze."""
+
+V2_SYSTEM_PROMPT = f"{ARTIFACT9_V2_SYSTEM_PROMPT}\n\n<!-- VOICE_CORPUS -->"
+
 from services.coaching._constants import (  # noqa: E402
     _strip_emojis,
     _check_response_quality,
@@ -26,6 +52,10 @@ from services.coaching._conversation_contract import (  # noqa: E402
     classify_conversation_contract,
 )
 from services.coaching.runtime_v2_packet import packet_to_prompt  # noqa: E402
+from services.coaching.voice_enforcement import (  # noqa: E402
+    VoiceContractViolation,
+    enforce_voice,
+)
 from core.config import settings  # noqa: E402
 from services import coach_tools  # noqa: E402
 
@@ -626,26 +656,7 @@ class LLMMixin:
             base_url=settings.KIMI_BASE_URL,
             timeout=120,
         )
-        system_prompt = (
-            "You are StrideIQ's Coach Runtime V2 response writer. The prior "
-            "deterministic runtime already assembled all athlete-specific state "
-            "you may use. Do not ask for or call tools. Do not mention packets, "
-            "schemas, tools, models, prompts, or internal architecture. Answer "
-            "the athlete directly, with a real coach's judgment. Directness is "
-            "respect. If the packet marks uncertainty, say the uncertainty plainly. "
-            "For dates, races, completed activities, current-day status, and "
-            "race countdowns, the structured calendar_context block is the only "
-            "authority. Do not infer those facts from legacy context or from the "
-            "athlete's phrasing. For recent activity intensity and whether a day "
-            "was easy, race effort, threshold, or short-fast, activity_evidence_state "
-            "is authoritative. For whether yesterday's work can change fitness "
-            "before a near target race versus adding sharpness/confidence/fatigue, "
-            "training_adaptation_context is authoritative. If training_adaptation_context "
-            "says must_ask_execution_followup, do the work first: name the verified "
-            "activity evidence, state what is unknown or negative, and ask how it "
-            "actually went. Do not claim controlled execution, confidence gained, "
-            "or a good race unless the packet explicitly allows that claim."
-        )
+        system_prompt = V2_SYSTEM_PROMPT
         messages = [
             {
                 "role": "user",
@@ -659,7 +670,7 @@ class LLMMixin:
         ]
         extra_body: dict = {}
         if model_name.lower() in ("kimi-k2.5", "kimi-k2.6"):
-            extra_body["thinking"] = {"type": "disabled"}
+            extra_body["thinking"] = {"type": "enabled"}
 
         timeout_errors = [asyncio.TimeoutError]
         api_timeout_error = getattr(openai, "APITimeoutError", None)
@@ -714,6 +725,52 @@ class LLMMixin:
                 "output_tokens": output_tokens,
             }
 
+        async def _retry_voice(rewrite_instruction: str) -> str:
+            retry_response = await client.chat.completions.create(
+                model=model_name,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    *messages,
+                    {"role": "user", "content": rewrite_instruction},
+                ],
+                max_tokens=COACH_MAX_OUTPUT_TOKENS,
+                extra_body=extra_body if extra_body else None,
+            )
+            retry_choice = (retry_response.choices or [None])[0]
+            retry_message = retry_choice.message if retry_choice else None
+            return _strip_emojis(
+                ((getattr(retry_message, "content", "") or "")).strip()
+            )
+
+        try:
+            voice_result = await enforce_voice(response_text, _retry_voice)
+            response_text = voice_result["response"]
+            template_phrase_count = int(voice_result["template_phrase_count"])
+            template_phrase_hits = list(voice_result["template_phrase_hits"])
+        except VoiceContractViolation as exc:
+            logger.warning(
+                "coach_runtime_v2_voice_contract_violation",
+                extra={
+                    "extra_fields": {
+                        "event": "coach_runtime_v2_voice_contract_violation",
+                        "athlete_id": str(athlete_id),
+                        "template_phrase_count": len(exc.hits),
+                        "template_phrase_hits": exc.hits,
+                    }
+                },
+            )
+            return {
+                "response": "",
+                "error": True,
+                "model": model_name,
+                "fallback_reason": "v2_guardrail_failed",
+                "error_class": "VoiceContractViolation",
+                "input_tokens": input_tokens,
+                "output_tokens": output_tokens,
+                "template_phrase_count": len(exc.hits),
+                "template_phrase_hits": exc.hits,
+            }
+
         self.track_usage(
             athlete_id=athlete_id,
             input_tokens=input_tokens,
@@ -733,6 +790,9 @@ class LLMMixin:
             "tools_called": [],
             "kimi_latency_ms": latency_ms,
             "kimi_tool_calls_count": 0,
+            "template_phrase_count": template_phrase_count,
+            "template_phrase_hits": template_phrase_hits,
+            "thinking": extra_body.get("thinking", {}).get("type"),
         }
 
     async def query_gemini(

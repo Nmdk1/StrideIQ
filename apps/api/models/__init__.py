@@ -1,15 +1,115 @@
 """models package — re-exports all ORM models for backward compatibility."""
 
-from .activity import Activity, StrengthExerciseSet, PerformanceEvent, ActivitySplit, ActivityStream, PersonalBest, BestEffort, ActivityFeedback, ActivityReflection, CachedStreamAnalysis  # noqa: F401
+from .activity import (
+    Activity,
+    StrengthExerciseSet,
+    PerformanceEvent,
+    ActivitySplit,
+    ActivityStream,
+    PersonalBest,
+    BestEffort,
+    ActivityFeedback,
+    ActivityReflection,
+    CachedStreamAnalysis,
+)  # noqa: F401
 from .route import AthleteRoute  # noqa: F401
 from .training_block import TrainingBlock  # noqa: F401
-from .athlete import Athlete, AthleteFuelingProfile, AthleteRaceResultAnchor, AthleteTrainingPaceProfile, AthleteGoal, AthleteCalibratedModel, AthleteWorkoutResponse, AthleteOverride, AthleteLearning, AthleteAdaptationThresholds, AthletePhoto, AthleteFact, AthleteInvestigationConfig  # noqa: F401
-from .checkin import DailyCheckin, BodyComposition, WorkPattern, IntakeQuestionnaire, DailyReadiness  # noqa: F401
-from .coaching import CoachActionProposal, CoachingKnowledgeEntry, CoachingRecommendation, RecommendationOutcome, CoachChat, CoachIntentSnapshot, CoachUsage, CoachBriefing, CoachBriefingInput  # noqa: F401
-from .correlation import AthleteFinding, InsightFeedback, ThresholdCalibrationLog, SelfRegulationLog, InsightLog, NarrationLog, CorrelationFinding, CorrelationMediator, NarrativeFeedback, AutoDiscoveryRun, AutoDiscoveryExperiment, AutoDiscoveryCandidate, AutoDiscoveryReviewLog, N1InsightSuppression, AutoDiscoveryChangeLog, AutoDiscoveryScanCoverage  # noqa: F401
-from .nutrition import NutritionGoal, NutritionEntry, USDAFood, FuelingProduct, MealTemplate, AthleteFoodOverride  # noqa: F401
-from .plan import WorkoutTemplate, WorkoutSelectionAuditEvent, TrainingPlan, PlannedWorkout, PlanModificationLog, TrainingAvailability, CalendarNote, CalendarInsight, WorkoutDefinition, PhaseDefinition, ScalingRule, PlanTemplate, PlanAdaptationProposal, PlanPreview  # noqa: F401
-from .system import InviteAllowlist, Subscription, StripeEvent, PlanPurchase, InviteAuditEvent, AdminAuditEvent, AthleteIngestionState, AthleteDataImportJob, FeatureFlag, ConsentAuditLog, Purchase, RacePromoCode, GarminDay, PageView, ToolTelemetryEvent, RuntoonImage, ExperienceAuditLog  # noqa: F401
+from .athlete_facts import AthleteFacts, AthleteFactsAudit  # noqa: F401
+from .athlete import (
+    Athlete,
+    AthleteFuelingProfile,
+    AthleteRaceResultAnchor,
+    AthleteTrainingPaceProfile,
+    AthleteGoal,
+    AthleteCalibratedModel,
+    AthleteWorkoutResponse,
+    AthleteOverride,
+    AthleteLearning,
+    AthleteAdaptationThresholds,
+    AthletePhoto,
+    AthleteFact,
+    AthleteInvestigationConfig,
+)  # noqa: F401
+from .checkin import (
+    DailyCheckin,
+    BodyComposition,
+    WorkPattern,
+    IntakeQuestionnaire,
+    DailyReadiness,
+)  # noqa: F401
+from .coaching import (
+    CoachActionProposal,
+    CoachingKnowledgeEntry,
+    CoachingRecommendation,
+    RecommendationOutcome,
+    CoachChat,
+    CoachThreadSummary,
+    CoachIntentSnapshot,
+    CoachUsage,
+    CoachBriefing,
+    CoachBriefingInput,
+)  # noqa: F401
+from .correlation import (
+    AthleteFinding,
+    InsightFeedback,
+    ThresholdCalibrationLog,
+    SelfRegulationLog,
+    InsightLog,
+    NarrationLog,
+    CorrelationFinding,
+    CorrelationMediator,
+    NarrativeFeedback,
+    AutoDiscoveryRun,
+    AutoDiscoveryExperiment,
+    AutoDiscoveryCandidate,
+    AutoDiscoveryReviewLog,
+    N1InsightSuppression,
+    AutoDiscoveryChangeLog,
+    AutoDiscoveryScanCoverage,
+)  # noqa: F401
+from .nutrition import (
+    NutritionGoal,
+    NutritionEntry,
+    USDAFood,
+    FuelingProduct,
+    MealTemplate,
+    AthleteFoodOverride,
+)  # noqa: F401
+from .plan import (
+    WorkoutTemplate,
+    WorkoutSelectionAuditEvent,
+    TrainingPlan,
+    PlannedWorkout,
+    PlanModificationLog,
+    TrainingAvailability,
+    CalendarNote,
+    CalendarInsight,
+    WorkoutDefinition,
+    PhaseDefinition,
+    ScalingRule,
+    PlanTemplate,
+    PlanAdaptationProposal,
+    PlanPreview,
+)  # noqa: F401
+from .system import (
+    InviteAllowlist,
+    Subscription,
+    StripeEvent,
+    PlanPurchase,
+    InviteAuditEvent,
+    AdminAuditEvent,
+    AthleteIngestionState,
+    AthleteDataImportJob,
+    FeatureFlag,
+    ConsentAuditLog,
+    Purchase,
+    RacePromoCode,
+    GarminDay,
+    PageView,
+    ToolTelemetryEvent,
+    RuntoonImage,
+    ExperienceAuditLog,
+)  # noqa: F401
 from .strength_v1 import StrengthRoutine, StrengthGoal, BodyAreaSymptomLog  # noqa: F401
 
 __all__ = [
@@ -25,6 +125,8 @@ __all__ = [
     "CachedStreamAnalysis",
     "AthleteRoute",
     "TrainingBlock",
+    "AthleteFacts",
+    "AthleteFactsAudit",
     "Athlete",
     "AthleteFuelingProfile",
     "AthleteRaceResultAnchor",
@@ -48,6 +150,7 @@ __all__ = [
     "CoachingRecommendation",
     "RecommendationOutcome",
     "CoachChat",
+    "CoachThreadSummary",
     "CoachIntentSnapshot",
     "CoachUsage",
     "CoachBriefing",

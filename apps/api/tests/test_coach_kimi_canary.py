@@ -263,7 +263,7 @@ def test_kimi_path_omits_temperature():
 
 
 @pytest.mark.asyncio
-async def test_kimi_v2_packet_call_disables_tools(monkeypatch):
+async def test_kimi_v2_packet_call_disables_tools_and_enables_thinking(monkeypatch):
     coach = AICoach.__new__(AICoach)
     coach.track_usage = MagicMock()
     captured = []
@@ -304,6 +304,12 @@ async def test_kimi_v2_packet_call_disables_tools(monkeypatch):
     assert result["tools_called"] == []
     assert "tools" not in captured[0]
     assert "tool_choice" not in captured[0]
+    assert captured[0]["extra_body"] == {"thinking": {"type": "enabled"}}
+    assert "<!-- VOICE_CORPUS -->" in captured[0]["messages"][0]["content"]
+    assert (
+        "You are StrideIQ's coach. The athlete in this turn is the same human"
+        in captured[0]["messages"][0]["content"]
+    )
     assert any(
         "coach_runtime_v2.packet.v1" in str(message.get("content", ""))
         for message in captured[0]["messages"]

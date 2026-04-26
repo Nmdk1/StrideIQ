@@ -17,12 +17,14 @@ from core.auth import require_tier
 from models import Athlete, CoachChat
 from services.ai_coach import AICoach
 from services.coaching._conversation_contract import classify_conversation_contract
+from services.coaching.thread_lifecycle import close_thread
 
 router = APIRouter(prefix="/v1/coach", tags=["AI Coach"])
 
 
 class ChatRequest(BaseModel):
     """Request to chat with AI coach."""
+
     message: str
     include_context: bool = True
     is_synthetic_probe: bool = False
@@ -31,6 +33,7 @@ class ChatRequest(BaseModel):
 
 class ChatResponse(BaseModel):
     """Response from AI coach."""
+
     response: str
     thread_id: Optional[str] = None
     error: bool = False
@@ -49,6 +52,7 @@ class ChatResponse(BaseModel):
 
 class ContextResponse(BaseModel):
     """Athlete context that would be sent to AI."""
+
     context: str
 
 
@@ -79,7 +83,7 @@ async def chat_with_coach(
 ):
     """
     Send a message to the AI coach and get a response.
-    
+
     The coach has access to your training data and provides
     personalized advice based on your actual performance.
     """
@@ -94,8 +98,10 @@ async def chat_with_coach(
     tools_used = list(result.get("tools_used") or result.get("tools_called") or [])
     conversation_contract = result.get("conversation_contract")
     if not conversation_contract:
-        conversation_contract = classify_conversation_contract(request.message).contract_type.value
-    
+        conversation_contract = classify_conversation_contract(
+            request.message
+        ).contract_type.value
+
     return ChatResponse(
         response=result.get("response", ""),
         thread_id=result.get("thread_id"),
@@ -130,6 +136,7 @@ async def chat_with_coach_stream(
     """
 
     import logging as _logging
+
     _log = _logging.getLogger(__name__)
 
     COACH_STREAM_TIMEOUT_S = 120  # hard ceiling for LLM + tool calls
@@ -148,7 +155,9 @@ async def chat_with_coach_stream(
                 )
             )
 
-            yield b"event: meta\ndata: " + json.dumps({"type": "meta"}).encode("utf-8") + b"\n\n"
+            yield b"event: meta\ndata: " + json.dumps({"type": "meta"}).encode(
+                "utf-8"
+            ) + b"\n\n"
 
             elapsed = 0.0
             while True:
@@ -158,27 +167,43 @@ async def chat_with_coach_stream(
                 elapsed += 2.0
                 if elapsed >= COACH_STREAM_TIMEOUT_S:
                     task.cancel()
-                    _log.warning("Coach stream timed out after %ss for athlete %s", COACH_STREAM_TIMEOUT_S, athlete.id)
-                    yield b"event: delta\ndata: " + json.dumps({
-                        "type": "delta",
-                        "delta": "\n\nSorry — thinking took too long. Please try again or simplify your question.",
-                    }).encode("utf-8") + b"\n\n"
-                    yield b"event: done\ndata: " + json.dumps({"type": "done", "timed_out": True}).encode("utf-8") + b"\n\n"
+                    _log.warning(
+                        "Coach stream timed out after %ss for athlete %s",
+                        COACH_STREAM_TIMEOUT_S,
+                        athlete.id,
+                    )
+                    yield b"event: delta\ndata: " + json.dumps(
+                        {
+                            "type": "delta",
+                            "delta": "\n\nSorry — thinking took too long. Please try again or simplify your question.",
+                        }
+                    ).encode("utf-8") + b"\n\n"
+                    yield b"event: done\ndata: " + json.dumps(
+                        {"type": "done", "timed_out": True}
+                    ).encode("utf-8") + b"\n\n"
                     return
-                yield b"event: heartbeat\ndata: " + json.dumps({"type": "heartbeat"}).encode("utf-8") + b"\n\n"
+                yield b"event: heartbeat\ndata: " + json.dumps(
+                    {"type": "heartbeat"}
+                ).encode("utf-8") + b"\n\n"
 
             result = await task
             text = (result.get("response") or "").strip()
             timed_out = bool(result.get("timed_out", False))
-            tools_used = list(result.get("tools_used") or result.get("tools_called") or [])
+            tools_used = list(
+                result.get("tools_used") or result.get("tools_called") or []
+            )
             conversation_contract = result.get("conversation_contract")
             if not conversation_contract:
-                conversation_contract = classify_conversation_contract(request.message).contract_type.value
+                conversation_contract = classify_conversation_contract(
+                    request.message
+                ).contract_type.value
 
             chunk_size = 220
             for i in range(0, len(text), chunk_size):
                 delta = text[i : i + chunk_size]
-                yield b"event: delta\ndata: " + json.dumps({"type": "delta", "delta": delta}).encode("utf-8") + b"\n\n"
+                yield b"event: delta\ndata: " + json.dumps(
+                    {"type": "delta", "delta": delta}
+                ).encode("utf-8") + b"\n\n"
                 await asyncio.sleep(0)
 
             yield b"event: done\ndata: " + json.dumps(
@@ -189,7 +214,9 @@ async def chat_with_coach_stream(
                     "history_thin": bool(result.get("history_thin", False)),
                     "used_baseline": bool(result.get("used_baseline", False)),
                     "baseline_needed": bool(result.get("baseline_needed", False)),
-                    "rebuild_plan_prompt": bool(result.get("rebuild_plan_prompt", False)),
+                    "rebuild_plan_prompt": bool(
+                        result.get("rebuild_plan_prompt", False)
+                    ),
                     "tools_used": tools_used,
                     "tool_count": int(result.get("tool_count") or len(tools_used)),
                     "conversation_contract": conversation_contract,
@@ -200,14 +227,20 @@ async def chat_with_coach_stream(
             ).encode("utf-8") + b"\n\n"
 
         except asyncio.CancelledError:
-            yield b"event: done\ndata: " + json.dumps({"type": "done", "timed_out": True}).encode("utf-8") + b"\n\n"
+            yield b"event: done\ndata: " + json.dumps(
+                {"type": "done", "timed_out": True}
+            ).encode("utf-8") + b"\n\n"
         except Exception as exc:
             _log.exception("Coach stream generator crashed: %s", exc)
-            yield b"event: error\ndata: " + json.dumps({
-                "type": "error",
-                "error": "An unexpected error occurred. Please try again.",
-            }).encode("utf-8") + b"\n\n"
-            yield b"event: done\ndata: " + json.dumps({"type": "done", "timed_out": True}).encode("utf-8") + b"\n\n"
+            yield b"event: error\ndata: " + json.dumps(
+                {
+                    "type": "error",
+                    "error": "An unexpected error occurred. Please try again.",
+                }
+            ).encode("utf-8") + b"\n\n"
+            yield b"event: done\ndata: " + json.dumps(
+                {"type": "done", "timed_out": True}
+            ).encode("utf-8") + b"\n\n"
 
     return StreamingResponse(
         _gen(),
@@ -232,12 +265,18 @@ async def new_conversation(
     Marks existing open chat sessions as inactive.
     Next chat message will create a new conversation.
     """
-    # Mark all active open sessions as inactive
-    db.query(CoachChat).filter(
-        CoachChat.athlete_id == athlete.id,
-        CoachChat.context_type == "open",
-        CoachChat.is_active.is_(True),
-    ).update({"is_active": False})
+    # Explicit close: summarize active open sessions before starting fresh.
+    active_threads = (
+        db.query(CoachChat)
+        .filter(
+            CoachChat.athlete_id == athlete.id,
+            CoachChat.context_type == "open",
+            CoachChat.is_active.is_(True),
+        )
+        .all()
+    )
+    for thread in active_threads:
+        close_thread(db, thread, reason="explicit_close")
     db.commit()
     return NewConversationResponse(ok=True)
 
@@ -250,12 +289,12 @@ async def get_coach_context(
 ):
     """
     Preview the context that would be sent to the AI coach.
-    
+
     Useful for understanding what data the coach has access to.
     """
     coach = AICoach(db)
     context = coach.build_context(athlete.id, window_days=days)
-    
+
     return ContextResponse(context=context)
 
 
@@ -266,7 +305,7 @@ async def get_suggested_questions(
 ):
     """
     Get structured suggested questions based on current athlete state.
-    
+
     Returns list of {title, description, prompt} objects with real data.
     """
     coach = AICoach(db)
