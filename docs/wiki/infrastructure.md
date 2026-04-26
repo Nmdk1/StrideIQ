@@ -55,10 +55,10 @@ Single Hostinger KVM 8 droplet (8 vCPU, 32GB RAM) running all services. Producti
 ### Deployment
 
 ```bash
-cd /opt/strideiq/repo && git pull origin main && docker compose -f docker-compose.prod.yml up -d --build
+cd /opt/strideiq/repo && git pull origin main && GIT_SHA=$(git rev-parse HEAD) docker compose -f docker-compose.prod.yml up -d --build
 ```
 
-This single command pulls, rebuilds ALL containers (api, worker, beat, web), and restarts them with the new image. **Do not** use `docker restart` — it restarts containers with the old image, silently leaving worker/beat running stale code.
+This single command pulls, labels rebuilt API/web images with the exact Git revision, rebuilds ALL containers (api, worker, beat, web), and restarts them with the new image. `docker-compose.prod.yml` passes `GIT_SHA` into `apps/api/Dockerfile` and `apps/web/Dockerfile`, which set `org.opencontainers.image.revision`. **Do not** use `docker restart` — it restarts containers with the old image, silently leaving worker/beat running stale code.
 
 **CI must be green before deploy** — this is non-negotiable from the Operating Contract.
 
