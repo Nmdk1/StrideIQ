@@ -80,6 +80,28 @@ def test_v2_guard_accepts_profile_edit_route_answer():
     assert reason is None
 
 
+def test_v2_guard_does_not_classify_race_answer_as_profile_from_age_language():
+    coach = _coach_for_v2_guard()
+
+    ok, response, reason = coach._finalize_v2_response_with_turn_guard(
+        athlete_id=uuid4(),
+        user_message="Is 39:15 realistic for Saturday with 253 feet of gain?",
+        response_text=(
+            "At 57, this is where I would set the target: 39:15 is realistic "
+            "if you keep the first mile controlled. The 253 feet of course gain "
+            "means the pacing should be effort-based on the early hill, then close."
+        ),
+        conversation_context=[],
+        turn_id="turn-race",
+        is_synthetic_probe=False,
+        is_organic=True,
+    )
+
+    assert ok is True
+    assert "253 feet" in response
+    assert reason is None
+
+
 def test_v2_guard_rejects_conversation_contract_mismatch():
     coach = _coach_for_v2_guard()
 

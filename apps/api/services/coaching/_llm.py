@@ -883,6 +883,7 @@ class LLMMixin:
         assistant_message = choice.message if choice else None
         response_text = ((getattr(assistant_message, "content", "") or "")).strip()
         thinking_retry_used = False
+        empty_retry_used = False
         if (
             not response_text
             and extra_body.get("thinking", {}).get("type") == "enabled"
@@ -914,6 +915,82 @@ class LLMMixin:
             response_text = (
                 (getattr(retry_message, "content", "") or "")
             ).strip()
+        if not response_text:
+            empty_retry_used = True
+            try:
+                empty_retry_client = openai.AsyncOpenAI(
+                    api_key=api_key,
+                    base_url=settings.KIMI_BASE_URL,
+                    timeout=V2_PACKET_TIMEOUT_RETRY_SECONDS,
+                )
+                empty_retry_response = await empty_retry_client.chat.completions.create(
+                    model=model_name,
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {
+                            "role": "user",
+                            "content": (
+                                "INTERNAL COMPACT COACH STATE PACKET "
+                                "(empty-response recovery; use for reasoning only):\n"
+                                f"{packet_to_prompt(packet, profile='timeout_retry')}"
+                            ),
+                        },
+                        {"role": "user", "content": message},
+                        {
+                            "role": "user",
+                            "content": (
+                                "Your previous completion returned empty content. "
+                                "Return a concise plain-text coach answer now."
+                            ),
+                        },
+                    ],
+                    max_tokens=V2_PACKET_TIMEOUT_RETRY_MAX_OUTPUT_TOKENS,
+                    extra_body=extra_body if extra_body else None,
+                )
+                empty_retry_usage = getattr(empty_retry_response, "usage", None)
+                input_tokens += int(
+                    getattr(empty_retry_usage, "prompt_tokens", 0) or 0
+                )
+                output_tokens += int(
+                    getattr(empty_retry_usage, "completion_tokens", 0) or 0
+                )
+                empty_retry_choice = (empty_retry_response.choices or [None])[0]
+                empty_retry_message = (
+                    empty_retry_choice.message if empty_retry_choice else None
+                )
+                response_text = (
+                    (getattr(empty_retry_message, "content", "") or "")
+                ).strip()
+            except tuple(timeout_errors) as retry_exc:
+                latency_ms = int(
+                    (datetime.now(timezone.utc) - started).total_seconds() * 1000
+                )
+                return {
+                    "response": "",
+                    "error": True,
+                    "model": model_name,
+                    "fallback_reason": "v2_timeout",
+                    "error_class": retry_exc.__class__.__name__,
+                    "input_tokens": input_tokens,
+                    "output_tokens": output_tokens,
+                    "kimi_latency_ms": latency_ms,
+                    "empty_retry_used": empty_retry_used,
+                }
+            except Exception as retry_exc:
+                latency_ms = int(
+                    (datetime.now(timezone.utc) - started).total_seconds() * 1000
+                )
+                return {
+                    "response": "",
+                    "error": True,
+                    "model": model_name,
+                    "fallback_reason": "llm_provider_error",
+                    "error_class": retry_exc.__class__.__name__,
+                    "input_tokens": input_tokens,
+                    "output_tokens": output_tokens,
+                    "kimi_latency_ms": latency_ms,
+                    "empty_retry_used": empty_retry_used,
+                }
         response_text = _strip_emojis(response_text)
         if not response_text:
             return {
@@ -924,6 +1001,7 @@ class LLMMixin:
                 "error_class": "empty_response",
                 "input_tokens": input_tokens,
                 "output_tokens": output_tokens,
+                "empty_retry_used": empty_retry_used,
             }
 
         async def _retry_voice(rewrite_instruction: str) -> str:
@@ -996,6 +1074,7 @@ class LLMMixin:
             "thinking": extra_body.get("thinking", {}).get("type"),
             "thinking_retry_used": thinking_retry_used,
             "timeout_retry_used": timeout_retry_used,
+            "empty_retry_used": empty_retry_used,
         }
 
     async def query_gemini(

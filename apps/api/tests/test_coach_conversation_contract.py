@@ -179,6 +179,19 @@ def test_decision_point_requires_tradeoff_and_default_recommendation():
     assert ok_reason == "ok"
 
 
+def test_decision_point_accepts_natural_coaching_without_exact_labels():
+    valid, reason = validate_conversation_contract_response(
+        "Should I run easy or rest with a sore calf?",
+        (
+            "Run easy only if the calf stays dull and fades during the warmup, "
+            "but stop and rest instead if it sharpens or changes your stride."
+        ),
+    )
+
+    assert valid is True
+    assert reason == "ok"
+
+
 def test_correction_dispute_requires_verification_language():
     user_message = "You are wrong, that race is in my activity history."
 

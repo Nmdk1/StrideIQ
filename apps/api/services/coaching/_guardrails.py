@@ -221,7 +221,9 @@ class GuardrailsMixin:
         if not lower:
             return "unknown"
 
-        if self._is_profile_edit_intent(lower):
+        if is_user and self._is_profile_edit_intent(lower):
+            return "profile"
+        if not is_user and ("/settings" in lower or "personal information" in lower):
             return "profile"
         if self._LOGISTICS_TERMS_RE.search(lower):
             return "logistics"
