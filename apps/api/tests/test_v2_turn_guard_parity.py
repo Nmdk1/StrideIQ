@@ -129,3 +129,25 @@ def test_v2_guard_enforces_conversation_contract_output(monkeypatch):
         "Late pace drift likely came from fatigue.",
         conversation_context=[],
     )
+
+
+def test_v2_guard_trims_quick_check_before_contract_validation():
+    coach = _coach_for_v2_guard()
+    long_response = " ".join(
+        ["Focus the next easy run on recovery and relaxed mechanics."] * 12
+    )
+
+    ok, response, reason = coach._finalize_v2_response_with_turn_guard(
+        athlete_id=uuid4(),
+        user_message="Quick check — what should my next easy run focus on? Keep it brief.",
+        response_text=long_response,
+        conversation_context=[],
+        turn_id="turn-6",
+        is_synthetic_probe=False,
+        is_organic=True,
+    )
+
+    assert ok is True
+    assert len(response.split()) <= 80
+    assert reason is None
+    assert coach._record_turn_guard_event.call_args.kwargs["event"] == "pass_v2_packet"

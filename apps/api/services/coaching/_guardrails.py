@@ -365,15 +365,20 @@ class GuardrailsMixin:
             logger.warning(f"Coach V2 response normalization failed: {e}")
             normalized = response_text or ""
         candidate = _strip_emojis(normalized)
+        contract_candidate = enforce_conversation_contract_output(
+            user_message,
+            candidate,
+            conversation_context=conversation_context,
+        )
         user_band = self._infer_intent_band(user_message, is_user=True)
-        candidate_band = self._infer_intent_band(candidate, is_user=False)
+        candidate_band = self._infer_intent_band(contract_candidate, is_user=False)
 
         addresses_latest_turn = self._response_addresses_latest_turn(
-            user_message, candidate
+            user_message, contract_candidate
         )
         contract_ok, contract_reason = validate_conversation_contract_response(
             user_message,
-            candidate,
+            contract_candidate,
             conversation_context=conversation_context,
         )
         if addresses_latest_turn and contract_ok:
@@ -387,15 +392,7 @@ class GuardrailsMixin:
                 is_synthetic_probe=is_synthetic_probe,
                 is_organic=is_organic,
             )
-            return (
-                True,
-                enforce_conversation_contract_output(
-                    user_message,
-                    candidate,
-                    conversation_context=conversation_context,
-                ),
-                None,
-            )
+            return (True, contract_candidate, None)
 
         failure_reason = (
             f"conversation_contract:{contract_reason}"
@@ -412,7 +409,7 @@ class GuardrailsMixin:
             is_synthetic_probe=is_synthetic_probe,
             is_organic=is_organic,
         )
-        return False, candidate, failure_reason
+        return False, contract_candidate, failure_reason
 
     async def _finalize_response_with_turn_guard(
         self,
