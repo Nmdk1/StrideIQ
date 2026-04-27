@@ -82,6 +82,7 @@ def test_v2_packet_includes_compact_nutrition_context_for_current_food_query(
 
     assert block["status"] == "complete"
     assert data["query_type"] == "current_log"
+    assert "Answer the logged-nutrition question directly" in data["response_guidance"]
     assert data["coverage"]["start_date"] == today.isoformat()
     assert data["coverage"]["end_date"] == today.isoformat()
     assert data["coverage"]["interpretation"] == "partial_logs_additive_not_complete_day_total"

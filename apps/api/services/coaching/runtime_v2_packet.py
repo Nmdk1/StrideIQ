@@ -217,6 +217,29 @@ def _nutrition_entry_row(entry: NutritionEntry) -> dict[str, Any]:
     }
 
 
+def _nutrition_response_guidance(kind: str) -> str:
+    if kind in {"current_log", "date_range_yesterday", "date_range_week"}:
+        return (
+            "Answer the logged-nutrition question directly. Do not connect the "
+            "read to training, races, workouts, or old threads unless the athlete "
+            "explicitly asks for that linkage."
+        )
+    if kind == "pattern_mining":
+        return (
+            "Look for compact nutrition patterns, but name the limits of the "
+            "logged window before making any training linkage."
+        )
+    if kind == "body_composition":
+        return (
+            "Tie nutrition to the body-composition goal only as far as the logged "
+            "window supports; do not imply unlogged intake is known."
+        )
+    return (
+        "Use the nutrition slice for the athlete's fueling question and avoid "
+        "unrelated context unless it changes the fueling decision."
+    )
+
+
 def _summarize_nutrition_entries(
     entries: list[NutritionEntry],
     *,
@@ -301,6 +324,7 @@ def build_nutrition_context_state(
             "generated_at": generated_at,
             "data": {
                 "query_type": kind,
+                "response_guidance": _nutrition_response_guidance(kind),
                 "coverage": {
                     "entries_found": 0,
                     "entries_returned": 0,
@@ -346,6 +370,7 @@ def build_nutrition_context_state(
         }
         data = {
             "query_type": kind,
+            "response_guidance": _nutrition_response_guidance(kind),
             "coverage": coverage,
             "today": summary["today"],
             "by_date": summary["by_date"],
@@ -384,6 +409,7 @@ def build_nutrition_context_state(
             "generated_at": generated_at,
             "data": {
                 "query_type": kind,
+                "response_guidance": _nutrition_response_guidance(kind),
                 "coverage": {
                     "entries_found": 0,
                     "entries_returned": 0,

@@ -660,6 +660,7 @@ def test_v2_packet_adds_unavailable_nutrition_context_for_relevant_query_without
 
     assert block["status"] == "unavailable"
     assert data["query_type"] == "current_log"
+    assert "Answer the logged-nutrition question directly" in data["response_guidance"]
     assert data["coverage"]["interpretation"] == "nutrition_db_unavailable"
     assert packet["telemetry"]["packet_block_count"] == 10
 
