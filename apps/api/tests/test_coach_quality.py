@@ -15,9 +15,7 @@ import os
 import sys
 import uuid
 from datetime import date, datetime, timedelta, timezone
-from unittest.mock import MagicMock, patch, call
-
-import pytest
+from unittest.mock import MagicMock, patch
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -904,8 +902,8 @@ class TestToolEnforcement:
         assert "ZERO-HALLUCINATION" in source, (
             "Gemini prompt missing ZERO-HALLUCINATION rule"
         )
-        assert "USE THEM PROACTIVELY" in source, (
-            "Gemini prompt missing proactive tool usage instruction"
+        assert "USE THEM WHEN RELEVANT" in source, (
+            "Gemini prompt missing relevant tool usage instruction"
         )
 
     def test_zero_hallucination_rule_in_opus_prompt(self):

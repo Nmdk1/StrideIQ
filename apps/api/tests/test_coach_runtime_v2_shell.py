@@ -28,6 +28,7 @@ from services.coaching.runtime_v2_packet import (
     assemble_v2_packet,
     classify_conversation_mode,
     extract_same_turn_overrides,
+    packet_to_prompt,
 )
 from services.coaching import runtime_v2
 from services.coaching import runtime_v2_packet as packet_module
@@ -207,7 +208,7 @@ def _visible_state():
 
 
 @pytest.mark.asyncio
-async def test_flags_off_chat_is_v1_passthrough_with_metadata(monkeypatch):
+async def test_flags_off_chat_fails_closed_without_v1(monkeypatch):
     import services.consent as consent_module
 
     coach = _coach_with_v1_path()
@@ -231,23 +232,19 @@ async def test_flags_off_chat_is_v1_passthrough_with_metadata(monkeypatch):
 
     result = await coach.chat(uuid4(), "My knee hurts. Should I run?")
 
-    assert result["response"] == "kimi"
+    assert "legacy coach" in result["response"]
+    assert result["error"] is True
     assert result["runtime_version"] == RUNTIME_VERSION_V1
     assert result["runtime_mode"] == RUNTIME_MODE_OFF
     assert result["fallback_reason"] is None
-    coach._query_kimi_with_fallback.assert_awaited_once()
+    coach._query_kimi_with_fallback.assert_not_awaited()
     coach.query_opus.assert_not_awaited()
     extract_spy.assert_not_awaited()
-    _, kwargs = coach._save_chat_messages.call_args
-    assert kwargs["runtime_metadata"] == {
-        "runtime_version": RUNTIME_VERSION_V1,
-        "runtime_mode": RUNTIME_MODE_OFF,
-        "fallback_reason": None,
-    }
+    coach._save_chat_messages.assert_not_called()
 
 
 @pytest.mark.asyncio
-async def test_shadow_mode_does_not_call_coach_llm_twice(monkeypatch):
+async def test_shadow_mode_fails_closed_without_v1(monkeypatch):
     import services.consent as consent_module
 
     coach = _coach_with_v1_path()
@@ -267,7 +264,8 @@ async def test_shadow_mode_does_not_call_coach_llm_twice(monkeypatch):
 
     assert result["runtime_mode"] == RUNTIME_MODE_SHADOW
     assert result["runtime_version"] == RUNTIME_VERSION_V1
-    coach._query_kimi_with_fallback.assert_awaited_once()
+    assert result["error"] is True
+    coach._query_kimi_with_fallback.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -317,7 +315,7 @@ async def test_visible_mode_uses_v2_packet_path_when_success(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_visible_mode_demotes_to_v1_when_v2_turn_guard_fails(monkeypatch):
+async def test_visible_mode_fails_closed_when_v2_turn_guard_fails(monkeypatch):
     import services.consent as consent_module
 
     coach = _coach_with_v1_path()
@@ -343,16 +341,16 @@ async def test_visible_mode_demotes_to_v1_when_v2_turn_guard_fails(monkeypatch):
 
     result = await coach.chat(uuid4(), "Should I postpone threshold tomorrow?")
 
-    assert result["response"] == "kimi"
-    assert result["runtime_mode"] == RUNTIME_MODE_FALLBACK
-    assert result["runtime_version"] == RUNTIME_VERSION_V1
+    assert "stopped instead of guessing" in result["response"]
+    assert result["runtime_mode"] == RUNTIME_MODE_VISIBLE
+    assert result["runtime_version"] == RUNTIME_VERSION_V2
     assert result["fallback_reason"] == "v2_guardrail_failed"
     coach.query_kimi_v2_packet.assert_awaited_once()
-    coach._query_kimi_with_fallback.assert_awaited_once()
+    coach._query_kimi_with_fallback.assert_not_awaited()
 
 
 @pytest.mark.asyncio
-async def test_visible_packet_assembly_failure_falls_back_to_v1(monkeypatch):
+async def test_visible_packet_assembly_failure_fails_closed_without_v1(monkeypatch):
     import services.consent as consent_module
 
     coach = _coach_with_v1_path()
@@ -370,16 +368,16 @@ async def test_visible_packet_assembly_failure_falls_back_to_v1(monkeypatch):
 
     result = await coach.chat(uuid4(), "Talk me through race week.")
 
-    assert result["response"] == "kimi"
-    assert result["runtime_mode"] == RUNTIME_MODE_FALLBACK
-    assert result["runtime_version"] == RUNTIME_VERSION_V1
+    assert "stopped instead of guessing" in result["response"]
+    assert result["runtime_mode"] == RUNTIME_MODE_VISIBLE
+    assert result["runtime_version"] == RUNTIME_VERSION_V2
     assert result["fallback_reason"] == "packet_assembly_error"
     coach.query_kimi_v2_packet.assert_not_awaited()
-    coach._query_kimi_with_fallback.assert_awaited_once()
+    coach._query_kimi_with_fallback.assert_not_awaited()
 
 
 @pytest.mark.asyncio
-async def test_visible_v2_empty_response_falls_back_to_v1(monkeypatch):
+async def test_visible_v2_empty_response_fails_closed_without_v1(monkeypatch):
     import services.consent as consent_module
 
     coach = _coach_with_v1_path()
@@ -400,16 +398,16 @@ async def test_visible_v2_empty_response_falls_back_to_v1(monkeypatch):
 
     result = await coach.chat(uuid4(), "Talk me through race week.")
 
-    assert result["response"] == "kimi"
-    assert result["runtime_mode"] == RUNTIME_MODE_FALLBACK
-    assert result["runtime_version"] == RUNTIME_VERSION_V1
+    assert "stopped instead of guessing" in result["response"]
+    assert result["runtime_mode"] == RUNTIME_MODE_VISIBLE
+    assert result["runtime_version"] == RUNTIME_VERSION_V2
     assert result["fallback_reason"] == "v2_empty_response"
     coach.query_kimi_v2_packet.assert_awaited_once()
-    coach._query_kimi_with_fallback.assert_awaited_once()
+    coach._query_kimi_with_fallback.assert_not_awaited()
 
 
 @pytest.mark.asyncio
-async def test_visible_v2_timeout_falls_back_to_v1(monkeypatch):
+async def test_visible_v2_timeout_fails_closed_without_v1(monkeypatch):
     import services.consent as consent_module
 
     coach = _coach_with_v1_path()
@@ -431,16 +429,16 @@ async def test_visible_v2_timeout_falls_back_to_v1(monkeypatch):
 
     result = await coach.chat(uuid4(), "Talk me through race week.")
 
-    assert result["response"] == "kimi"
-    assert result["runtime_mode"] == RUNTIME_MODE_FALLBACK
-    assert result["runtime_version"] == RUNTIME_VERSION_V1
+    assert "stopped instead of guessing" in result["response"]
+    assert result["runtime_mode"] == RUNTIME_MODE_VISIBLE
+    assert result["runtime_version"] == RUNTIME_VERSION_V2
     assert result["fallback_reason"] == "v2_timeout"
     coach.query_kimi_v2_packet.assert_awaited_once()
-    coach._query_kimi_with_fallback.assert_awaited_once()
+    coach._query_kimi_with_fallback.assert_not_awaited()
 
 
 @pytest.mark.asyncio
-async def test_visible_profile_short_circuit_persists_fallback_metadata(monkeypatch):
+async def test_visible_profile_short_circuit_persists_v2_metadata(monkeypatch):
     import services.consent as consent_module
 
     coach = _coach_with_v1_path()
@@ -459,19 +457,19 @@ async def test_visible_profile_short_circuit_persists_fallback_metadata(monkeypa
 
     result = await coach.chat(uuid4(), "Where do I change my birthdate?")
 
-    assert result["runtime_mode"] == RUNTIME_MODE_FALLBACK
-    assert result["runtime_version"] == RUNTIME_VERSION_V1
-    assert result["fallback_reason"] == "deterministic_short_circuit"
+    assert result["runtime_mode"] == RUNTIME_MODE_VISIBLE
+    assert result["runtime_version"] == RUNTIME_VERSION_V2
+    assert result["fallback_reason"] is None
     _, kwargs = coach._save_chat_messages.call_args
     assert kwargs["runtime_metadata"] == {
-        "runtime_version": RUNTIME_VERSION_V1,
-        "runtime_mode": RUNTIME_MODE_FALLBACK,
-        "fallback_reason": "deterministic_short_circuit",
+        "runtime_version": RUNTIME_VERSION_V2,
+        "runtime_mode": RUNTIME_MODE_VISIBLE,
+        "fallback_reason": None,
     }
 
 
 @pytest.mark.asyncio
-async def test_visible_consent_disabled_response_does_not_claim_v2(monkeypatch):
+async def test_visible_consent_disabled_response_fails_closed_without_v1(monkeypatch):
     import services.consent as consent_module
 
     coach = _coach_with_v1_path()
@@ -484,14 +482,14 @@ async def test_visible_consent_disabled_response_does_not_claim_v2(monkeypatch):
 
     result = await coach.chat(uuid4(), "Can you coach me?")
 
-    assert result["runtime_mode"] == RUNTIME_MODE_FALLBACK
-    assert result["runtime_version"] == RUNTIME_VERSION_V1
+    assert result["runtime_mode"] == RUNTIME_MODE_VISIBLE
+    assert result["runtime_version"] == RUNTIME_VERSION_V2
     assert result["fallback_reason"] == "consent_disabled"
     coach._query_kimi_with_fallback.assert_not_awaited()
 
 
 @pytest.mark.asyncio
-async def test_visible_budget_exceeded_response_does_not_claim_v2(monkeypatch):
+async def test_visible_budget_exceeded_response_fails_closed_without_v1(monkeypatch):
     import services.consent as consent_module
 
     coach = _coach_with_v1_path()
@@ -505,8 +503,8 @@ async def test_visible_budget_exceeded_response_does_not_claim_v2(monkeypatch):
 
     result = await coach.chat(uuid4(), "What should I run today?")
 
-    assert result["runtime_mode"] == RUNTIME_MODE_FALLBACK
-    assert result["runtime_version"] == RUNTIME_VERSION_V1
+    assert result["runtime_mode"] == RUNTIME_MODE_VISIBLE
+    assert result["runtime_version"] == RUNTIME_VERSION_V2
     assert result["fallback_reason"] == "budget_exceeded"
     coach._query_kimi_with_fallback.assert_not_awaited()
 
@@ -552,7 +550,7 @@ def test_runtime_request_log_payload_is_structured_and_redacted(monkeypatch):
 
     runtime_v2.log_coach_runtime_v2_request(
         athlete_id=uuid4(),
-        state=_visible_state().as_fallback("packet_assembly_error"),
+        state=_visible_state().with_failure_reason("packet_assembly_error"),
         thread_id="thread-1",
         latency_ms_total=12,
         llm_model="kimi-k2.6",
@@ -568,8 +566,8 @@ def test_runtime_request_log_payload_is_structured_and_redacted(monkeypatch):
     logger_info.assert_called_once()
     event = logger_info.call_args.kwargs["extra"]["extra_fields"]
     assert event["event"] == "coach_runtime_v2_request"
-    assert event["runtime_mode"] == RUNTIME_MODE_FALLBACK
-    assert event["runtime_version"] == RUNTIME_VERSION_V1
+    assert event["runtime_mode"] == RUNTIME_MODE_VISIBLE
+    assert event["runtime_version"] == RUNTIME_VERSION_V2
     assert event["flag_shadow"] is True
     assert event["flag_visible"] is True
     assert event["artifact_packet_schema_version"] == "coach_runtime_v2.packet.v1"
@@ -739,6 +737,166 @@ def test_v2_packet_omits_deprecated_legacy_shim_when_packet_still_over_budget(
     assert shim["data"]["legacy_context_bridge"] == ""
     assert packet["telemetry"]["legacy_context_bridge_omitted_for_budget"] is True
     assert packet["telemetry"]["estimated_tokens"] <= 5000
+
+
+def test_v2_packet_preserves_pasted_table_by_trimming_older_context(monkeypatch):
+    table_message = (
+        "here is the race last year, it should help\n"
+        "1\t6:28.9\t6:28.9\t1.00\t6:29\t6:21\t147\t161\t69\t10\t404\tNo Weight\n"
+        "2\t6:38.3\t13:07\t1.00\t6:38\t6:40\t160\t165\t30\t46\t376\tNo Weight\n"
+        "3\t6:34.5\t19:42\t1.00\t6:35\t6:34\t155\t159\t39\t39\t390\tNo Weight\n"
+        "4\t6:38.0\t26:20\t1.00\t6:38\t6:38\t163\t167\t39\t52\t377\tNo Weight\n"
+        "5\t6:46.1\t33:06\t1.00\t6:46\t6:41\t167\t173\t43\t13\t390\tNo Weight\n"
+        "6\t6:38.0\t39:44\t1.00\t6:38\t6:43\t161\t169\t30\t79\t377\tNo Weight\n"
+        "Summary\t51:19\t51:19\t6.37\t8:04\t8:02\t153\t173\t253\t253\t315\tNo Weight"
+    )
+    conversation_context = [
+        {"role": "user", "content": f"prior user message {index} " * 80}
+        for index in range(8)
+    ]
+    bulky_atoms = [
+        {
+            "activity_id": f"activity-{index}",
+            "type": "threshold_intervals",
+            "date": "2026-04-16",
+            "distance": {"meters": 12000, "miles": 7.46},
+            "duration": {"seconds": 3600},
+            "avg_pace": {"display": "6:20/mi", "seconds_per_mile": 380},
+            "notable_features": [{"type": "pace_drift", "detail": "x" * 500}],
+            "structured_workout_summary": {
+                "observed_work_rep_count": 4,
+                "reps": [{"distance_m": 2538, "avg_pace": "6:20/mi"}] * 4,
+            },
+        }
+        for index in range(10)
+    ]
+    monkeypatch.setattr(
+        packet_module,
+        "_empty_recent_activities",
+        lambda generated_at: {
+            "schema_version": "coach_runtime_v2.recent_activities.v1",
+            "status": "complete",
+            "generated_at": generated_at,
+            "window_days": 14,
+            "ordered": "most_recent_first",
+            "data": {"recent_activities": bulky_atoms, "aggregates": {}},
+            "token_budget": {
+                "target_tokens": 1500,
+                "max_tokens": 2500,
+                "estimated_tokens": 4000,
+            },
+            "provenance": [],
+            "unknowns": [],
+        },
+    )
+
+    packet = assemble_v2_packet(
+        athlete_id=uuid4(),
+        message=table_message,
+        conversation_context=conversation_context,
+        legacy_athlete_state="Durable non-temporal legacy context.\n" * 200,
+    )
+
+    assert packet["blocks"]["conversation"]["data"]["user_message"] == table_message
+    table_evidence = packet["blocks"]["conversation"]["data"][
+        "same_turn_table_evidence"
+    ]
+    assert table_evidence["status"] == "parsed"
+    assert table_evidence["derived"]["gain_by_split_ft"] == [69, 30, 39, 39, 43, 30]
+    assert table_evidence["derived"]["total_elevation_gain_ft"] == 253
+    assert table_evidence["derived"]["max_gain_split_number"] == 1
+    assert packet["telemetry"]["estimated_tokens"] <= 5000
+    assert packet["telemetry"]["omitted_block_count"] >= 1
+    assert any(
+        item["block"] == "conversation.recent_context"
+        for item in packet["omitted_blocks"]
+    )
+
+
+def test_v2_packet_prompt_compacts_audit_metadata_for_llm():
+    packet = assemble_v2_packet(
+        athlete_id=uuid4(),
+        message="Should I race this 10K?",
+        conversation_context=[{"role": "assistant", "content": "Prior answer"}],
+        legacy_athlete_state="Durable non-temporal context.",
+    )
+
+    prompt = packet_to_prompt(packet)
+    audit_prompt = packet_to_prompt(packet, profile="audit")
+
+    assert "Should I race this 10K?" in prompt
+    assert "provenance" not in prompt
+    assert "token_budget" not in prompt
+    assert "_legacy_context_bridge_deprecated" not in prompt
+    assert len(prompt) < len(audit_prompt)
+
+
+def test_v2_packet_prompt_surfaces_parsed_table_elevation_gain():
+    message = (
+        "69 30 39 39 43 30 that is the gain by mile\n"
+        "1\t6:28.9\t6:28.9\t1.00\t6:29\t6:21\t147\t161\t69\t10\n"
+        "2\t6:38.3\t13:07\t1.00\t6:38\t6:40\t160\t165\t30\t46\n"
+        "3\t6:34.5\t19:42\t1.00\t6:35\t6:34\t155\t159\t39\t39\n"
+        "4\t6:38.0\t26:20\t1.00\t6:38\t6:38\t163\t167\t39\t52\n"
+        "5\t6:46.1\t33:06\t1.00\t6:46\t6:41\t167\t173\t43\t13\n"
+        "6\t6:38.0\t39:44\t1.00\t6:38\t6:43\t161\t169\t30\t79\n"
+        "Summary\t51:19\t51:19\t6.37\t8:04\t8:02\t153\t173\t253\t253"
+    )
+
+    packet = assemble_v2_packet(
+        athlete_id=uuid4(),
+        message=message,
+        conversation_context=[],
+        legacy_athlete_state="",
+    )
+    prompt = packet_to_prompt(packet)
+
+    assert '"gain_by_split_ft": [69, 30, 39, 39, 43, 30]' in prompt
+    assert '"total_elevation_gain_ft": 253' in prompt
+    assert '"max_gain_split_number": 1' in prompt
+    assert '"total_elevation_gain_ft": 682' not in prompt
+
+
+def test_v2_packet_uses_recent_user_course_correction_over_poisoned_assistant_claim():
+    conversation_context = [
+        {
+            "role": "user",
+            "content": "wrong - you aren't looking at the elevation gain data",
+        },
+        {
+            "role": "assistant",
+            "content": "You're right. Last year's splits had 682 ft total gain.",
+        },
+        {
+            "role": "user",
+            "content": "69 30 39 39 43 30 that is the gain by mile",
+        },
+        {
+            "role": "assistant",
+            "content": "You're right. Gain by mile was 69, 30, 39, 39, 43, 30.",
+        },
+        {
+            "role": "user",
+            "content": "no it doesn't. it has 253 feet of gain and loss",
+        },
+    ]
+
+    packet = assemble_v2_packet(
+        athlete_id=uuid4(),
+        message="is it realistic to set 39:15 as goal for Saturday",
+        conversation_context=conversation_context,
+        legacy_athlete_state="",
+    )
+    conversation = packet["blocks"]["conversation"]["data"]
+    prompt = packet_to_prompt(packet)
+
+    evidence = conversation["same_turn_table_evidence"]
+    assert evidence["status"] == "parsed_partial"
+    assert evidence["derived"]["gain_by_split_ft"] == [69, 30, 39, 39, 43, 30]
+    assert evidence["derived"]["total_elevation_gain_ft"] == 253
+    assert "682 ft total gain" not in str(conversation["recent_context"])
+    assert '"total_elevation_gain_ft": 253' in prompt
+    assert "682 ft total gain" not in prompt
 
 
 def test_v2_packet_calendar_context_is_authoritative_and_quiets_bridge():
