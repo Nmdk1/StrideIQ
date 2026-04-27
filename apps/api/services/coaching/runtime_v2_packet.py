@@ -36,6 +36,7 @@ MODE_CLASSIFIER_VERSION = "coach_mode_classifier_v2_0_a"
 LEDGER_COVERAGE_SHIM_THRESHOLD = 0.5
 LEGACY_CONTEXT_BRIDGE_MAX_CHARS = 3000
 ACTIVITY_EVIDENCE_RECENT_ROWS_LIMIT = 4
+PACKET_MAX_ESTIMATED_TOKENS = 5000
 
 logger = logging.getLogger(__name__)
 
@@ -135,6 +136,62 @@ def _ledger_field_coverage(facts: dict[str, Any]) -> float:
         if (facts.get(field) or {}).get("value") is not None
     )
     return round(populated / len(VALID_FACT_FIELDS), 3)
+
+
+def _trim_v2_data_to_budget(data: dict[str, Any]) -> tuple[int, list[dict[str, Any]]]:
+    """Fit packet data under budget while preserving the current athlete turn."""
+
+    omitted: list[dict[str, Any]] = []
+
+    def estimate() -> int:
+        return _estimated_tokens(data)
+
+    def record(block: str, reason: str) -> None:
+        omitted.append({"block": block, "reason": reason})
+
+    token_estimate = estimate()
+    conversation = data.get("conversation") or {}
+    recent_context = list(conversation.get("recent_context") or [])
+    if token_estimate > PACKET_MAX_ESTIMATED_TOKENS and len(recent_context) > 2:
+        conversation["recent_context"] = recent_context[-2:]
+        record("conversation.recent_context", "trimmed_to_last_2_for_packet_budget")
+        token_estimate = estimate()
+    if token_estimate > PACKET_MAX_ESTIMATED_TOKENS and conversation.get(
+        "recent_context"
+    ):
+        conversation["recent_context"] = []
+        record("conversation.recent_context", "omitted_for_packet_budget")
+        token_estimate = estimate()
+
+    recent_activities = data.get("recent_activities") or {}
+    activity_rows = list(recent_activities.get("recent_activities") or [])
+    if token_estimate > PACKET_MAX_ESTIMATED_TOKENS and len(activity_rows) > 3:
+        recent_activities["recent_activities"] = activity_rows[:3]
+        record("recent_activities.recent_activities", "trimmed_to_3_for_packet_budget")
+        token_estimate = estimate()
+    activity_rows = list(recent_activities.get("recent_activities") or [])
+    if token_estimate > PACKET_MAX_ESTIMATED_TOKENS and len(activity_rows) > 1:
+        recent_activities["recent_activities"] = activity_rows[:1]
+        record("recent_activities.recent_activities", "trimmed_to_1_for_packet_budget")
+        token_estimate = estimate()
+
+    activity_evidence = data.get("activity_evidence_state") or {}
+    evidence_rows = list(activity_evidence.get("recent_activities") or [])
+    if token_estimate > PACKET_MAX_ESTIMATED_TOKENS and evidence_rows:
+        activity_evidence["recent_activities"] = []
+        record(
+            "activity_evidence_state.recent_activities",
+            "omitted_duplicate_rows_for_packet_budget",
+        )
+        token_estimate = estimate()
+
+    recent_threads = data.get("recent_threads") or []
+    if token_estimate > PACKET_MAX_ESTIMATED_TOKENS and len(recent_threads) > 1:
+        data["recent_threads"] = recent_threads[:1]
+        record("recent_threads", "trimmed_to_1_for_packet_budget")
+        token_estimate = estimate()
+
+    return token_estimate, omitted
 
 
 def _ledger_coverage_shim_threshold() -> float:
@@ -999,6 +1056,231 @@ def quiet_legacy_context_bridge(legacy_context: str) -> tuple[str, int]:
     return "\n".join(kept_lines).strip(), removed_count
 
 
+def _parse_optional_int(value: str | None) -> int | None:
+    if value is None:
+        return None
+    cleaned = str(value).strip().replace(",", "")
+    if not re.fullmatch(r"-?\d+", cleaned):
+        return None
+    return int(cleaned)
+
+
+def _parse_optional_float(value: str | None) -> float | None:
+    if value is None:
+        return None
+    cleaned = str(value).strip().replace(",", "")
+    if not re.fullmatch(r"-?\d+(\.\d+)?", cleaned):
+        return None
+    return float(cleaned)
+
+
+def parse_same_turn_table_evidence(message: str) -> dict[str, Any] | None:
+    """Parse athlete-pasted Garmin lap tables into stable current-turn evidence."""
+
+    rows: list[dict[str, Any]] = []
+    summary: dict[str, Any] = {}
+    for line in (message or "").splitlines():
+        parts = [part for part in re.split(r"\s+", line.strip()) if part]
+        if len(parts) < 9:
+            continue
+        first = parts[0].strip()
+        if first.isdigit():
+            split_number = int(first)
+            distance_mi = _parse_optional_float(parts[3])
+            elevation_gain_ft = _parse_optional_int(parts[8])
+            elevation_loss_ft = _parse_optional_int(parts[9] if len(parts) > 9 else None)
+            rows.append(
+                {
+                    "split_number": split_number,
+                    "split_time": parts[1],
+                    "cumulative_time": parts[2],
+                    "distance_mi": distance_mi,
+                    "avg_pace": parts[4],
+                    "grade_adjusted_pace": parts[5] if len(parts) > 5 else None,
+                    "avg_hr": _parse_optional_int(parts[6] if len(parts) > 6 else None),
+                    "max_hr": _parse_optional_int(parts[7] if len(parts) > 7 else None),
+                    "elevation_gain_ft": elevation_gain_ft,
+                    "elevation_loss_ft": elevation_loss_ft,
+                }
+            )
+        elif first.lower() == "summary":
+            summary = {
+                "split_time": parts[1],
+                "distance_mi": _parse_optional_float(parts[3]),
+                "avg_pace": parts[4],
+                "grade_adjusted_pace": parts[5] if len(parts) > 5 else None,
+                "avg_hr": _parse_optional_int(parts[6] if len(parts) > 6 else None),
+                "max_hr": _parse_optional_int(parts[7] if len(parts) > 7 else None),
+                "total_elevation_gain_ft": _parse_optional_int(
+                    parts[8] if len(parts) > 8 else None
+                ),
+                "total_elevation_loss_ft": _parse_optional_int(
+                    parts[9] if len(parts) > 9 else None
+                ),
+            }
+
+    if len(rows) < 2:
+        return None
+    gain_by_split = [
+        row["elevation_gain_ft"]
+        for row in rows
+        if row.get("elevation_gain_ft") is not None
+    ]
+    if not gain_by_split:
+        return None
+    total_gain = summary.get("total_elevation_gain_ft")
+    if total_gain is None:
+        total_gain = sum(gain_by_split)
+    max_gain_row = max(rows, key=lambda row: row.get("elevation_gain_ft") or -1)
+    return {
+        "schema_version": "coach_runtime_v2.same_turn_table_evidence.v1",
+        "status": "parsed",
+        "source": "athlete_pasted_current_turn",
+        "table_type": "garmin_lap_splits",
+        "column_interpretation": {
+            "col_1": "split_number",
+            "col_2": "split_time",
+            "col_3": "cumulative_time",
+            "col_4": "distance_mi",
+            "col_5": "avg_pace",
+            "col_6": "grade_adjusted_pace",
+            "col_7": "avg_hr",
+            "col_8": "max_hr",
+            "col_9": "elevation_gain_ft",
+            "col_10": "elevation_loss_ft",
+        },
+        "rows": rows,
+        "summary": summary,
+        "derived": {
+            "gain_by_split_ft": gain_by_split,
+            "total_elevation_gain_ft": total_gain,
+            "max_gain_split_number": max_gain_row.get("split_number"),
+            "max_gain_ft": max_gain_row.get("elevation_gain_ft"),
+        },
+    }
+
+
+def _extract_gain_sequence(text: str) -> list[int]:
+    if "gain by mile" not in (text or "").lower():
+        return []
+    values = [int(match) for match in re.findall(r"\b\d{1,3}\b", text or "")]
+    return values[:12]
+
+
+def _extract_total_gain_ft(text: str) -> int | None:
+    lower = (text or "").lower()
+    patterns = (
+        r"\b(\d{2,4})\s*(?:feet|ft)\s+of\s+(?:gain|elevation)",
+        r"\b(\d{2,4})\s*(?:feet|ft)\s+gain",
+        r"\bgain(?:\s+and\s+loss)?\D{0,20}\b(\d{2,4})\s*(?:feet|ft)",
+        r"\b(\d{2,4})\s*(?:feet|ft)\s+of\s+gain\s+and\s+loss",
+    )
+    for pattern in patterns:
+        match = re.search(pattern, lower)
+        if match:
+            return int(match.group(1))
+    return None
+
+
+def _conversation_text(entry: Any) -> str:
+    if isinstance(entry, dict):
+        return str(entry.get("content") or "")
+    return str(getattr(entry, "content", "") or "")
+
+
+def _conversation_role(entry: Any) -> str:
+    if isinstance(entry, dict):
+        return str(entry.get("role") or "")
+    return str(getattr(entry, "role", "") or "")
+
+
+def _same_turn_table_evidence_from_context(
+    message: str, conversation_context: list[dict[str, str]]
+) -> dict[str, Any] | None:
+    evidence = parse_same_turn_table_evidence(message)
+    if evidence:
+        return evidence
+
+    latest_total_gain: int | None = _extract_total_gain_ft(message)
+    latest_gain_sequence = _extract_gain_sequence(message)
+    for entry in reversed(conversation_context or []):
+        if _conversation_role(entry) != "user":
+            continue
+        text = _conversation_text(entry)
+        evidence = parse_same_turn_table_evidence(text)
+        if evidence:
+            evidence = dict(evidence)
+            evidence["source"] = "athlete_pasted_recent_context"
+            return evidence
+        if latest_total_gain is None:
+            latest_total_gain = _extract_total_gain_ft(text)
+        if not latest_gain_sequence:
+            latest_gain_sequence = _extract_gain_sequence(text)
+
+    if latest_total_gain is None and not latest_gain_sequence:
+        return None
+    return {
+        "schema_version": "coach_runtime_v2.same_turn_table_evidence.v1",
+        "status": "parsed_partial",
+        "source": "athlete_stated_recent_context",
+        "table_type": "course_elevation_correction",
+        "column_interpretation": {},
+        "rows": [],
+        "summary": {},
+        "derived": {
+            "gain_by_split_ft": latest_gain_sequence,
+            "total_elevation_gain_ft": latest_total_gain,
+            "max_gain_split_number": (
+                latest_gain_sequence.index(max(latest_gain_sequence)) + 1
+                if latest_gain_sequence
+                else None
+            ),
+            "max_gain_ft": max(latest_gain_sequence) if latest_gain_sequence else None,
+        },
+    }
+
+
+def _sanitize_recent_context_for_v2(
+    conversation_context: list[dict[str, str]],
+    *,
+    same_turn_table_evidence: dict[str, Any] | None,
+) -> list[dict[str, str]]:
+    recent_context = list(conversation_context[-8:])
+    if not same_turn_table_evidence:
+        return recent_context
+    corrected_gain = (
+        (same_turn_table_evidence.get("derived") or {}).get("total_elevation_gain_ft")
+    )
+    if not corrected_gain:
+        return recent_context
+
+    sanitized: list[dict[str, str]] = []
+    for entry in recent_context:
+        role = _conversation_role(entry)
+        content = _conversation_text(entry)
+        if role == "assistant":
+            gain_claims = [
+                int(match.group(1))
+                for match in re.finditer(
+                    r"\b(\d{2,4})\s*(?:ft|feet)\b.{0,30}\bgain\b",
+                    content,
+                    flags=re.IGNORECASE,
+                )
+            ]
+            gain_claims.extend(
+                int(match.group(1))
+                for match in re.finditer(
+                    r"\bgain\b.{0,30}\b(\d{2,4})\s*(?:ft|feet)\b",
+                    content,
+                    flags=re.IGNORECASE,
+                )
+            )
+            if any(value != corrected_gain for value in gain_claims):
+                continue
+        sanitized.append(entry)
+    return sanitized
+
+
 def extract_same_turn_overrides(message: str) -> list[dict[str, Any]]:
     lower = (message or "").lower()
     extracted_at = _utc_now_iso()
@@ -1305,6 +1587,13 @@ def assemble_v2_packet(
 ) -> dict[str, Any]:
     generated_at = _utc_now_iso()
     same_turn_overrides = extract_same_turn_overrides(message)
+    same_turn_table_evidence = _same_turn_table_evidence_from_context(
+        message, conversation_context
+    )
+    sanitized_recent_context = _sanitize_recent_context_for_v2(
+        conversation_context,
+        same_turn_table_evidence=same_turn_table_evidence,
+    )
     conversation_mode = classify_conversation_mode(message, same_turn_overrides)
     if conversation_mode["primary"] not in ARTIFACT5_MODES:
         raise V2PacketInvariantError(f"invalid_mode:{conversation_mode['primary']}")
@@ -1388,8 +1677,9 @@ def assemble_v2_packet(
     data = {
         "conversation": {
             "user_message": message,
-            "recent_context": conversation_context[-8:],
+            "recent_context": sanitized_recent_context,
             "finding_id": finding_id,
+            "same_turn_table_evidence": same_turn_table_evidence,
         },
         "calendar_context": calendar_context["data"],
         "activity_evidence_state": activity_evidence["data"],
@@ -1412,12 +1702,15 @@ def assemble_v2_packet(
         },
     }
     token_estimate = _estimated_tokens(data)
-    if token_estimate > 5000 and data["_legacy_context_bridge_deprecated"][
+    if token_estimate > PACKET_MAX_ESTIMATED_TOKENS and data[
+        "_legacy_context_bridge_deprecated"
+    ][
         "legacy_context_bridge"
     ]:
         data["_legacy_context_bridge_deprecated"]["legacy_context_bridge"] = ""
         legacy_context_omitted_for_budget = True
         token_estimate = _estimated_tokens(data)
+    token_estimate, budget_omissions = _trim_v2_data_to_budget(data)
     packet = {
         "schema_version": PACKET_SCHEMA_VERSION,
         "packet_id": str(uuid4()),
@@ -1436,8 +1729,16 @@ def assemble_v2_packet(
                 "status": "complete",
                 "generated_at": generated_at,
                 "as_of": generated_at,
-                "selected_sections": ["current_turn", "recent_context"],
-                "available_sections": ["current_turn", "recent_context"],
+                "selected_sections": [
+                    "current_turn",
+                    "recent_context",
+                    "same_turn_table_evidence",
+                ],
+                "available_sections": [
+                    "current_turn",
+                    "recent_context",
+                    "same_turn_table_evidence",
+                ],
                 "data": data["conversation"],
                 "completeness": [],
                 "unknowns": [],
@@ -1642,7 +1943,10 @@ def assemble_v2_packet(
                 "completeness": [],
                 "unknowns": recent_activities["unknowns"],
                 "provenance": recent_activities["provenance"],
-                "token_budget": recent_activities["token_budget"],
+                "token_budget": {
+                    **recent_activities["token_budget"],
+                    "estimated_tokens": _estimated_tokens(data["recent_activities"]),
+                },
             },
             "recent_threads": {
                 "schema_version": recent_threads["schema_version"],
@@ -1665,7 +1969,10 @@ def assemble_v2_packet(
                         "derivation_chain": ["coach_thread_summary"],
                     }
                 ],
-                "token_budget": recent_threads["token_budget"],
+                "token_budget": {
+                    **recent_threads["token_budget"],
+                    "estimated_tokens": _estimated_tokens(data["recent_threads"]),
+                },
             },
             "_legacy_context_bridge_deprecated": {
                 "schema_version": "coach_runtime_v2.block.legacy_context_bridge_deprecated.v1",
@@ -1718,11 +2025,11 @@ def assemble_v2_packet(
                 },
             },
         },
-        "omitted_blocks": [],
+        "omitted_blocks": budget_omissions,
         "telemetry": {
             "estimated_tokens": token_estimate,
             "packet_block_count": 9,
-            "omitted_block_count": 0,
+            "omitted_block_count": len(budget_omissions),
             "unknown_count": (
                 len(calendar_context["unknowns"])
                 + len(activity_evidence["unknowns"])
@@ -1744,14 +2051,78 @@ def assemble_v2_packet(
             "template_phrase_count": 0,
             "generic_fallback_count": 0,
             "model": None,
-            "thinking": "enabled_for_kimi_k2_6",
+            "thinking": "disabled_for_kimi_k2_6",
             "voice_alignment_judge_score": None,
         },
     }
-    if token_estimate > 5000:
+    if token_estimate > PACKET_MAX_ESTIMATED_TOKENS:
         raise V2PacketInvariantError("packet_token_budget_exceeded")
     return packet
 
 
-def packet_to_prompt(packet: dict[str, Any]) -> str:
-    return json.dumps(packet, ensure_ascii=True, sort_keys=True, default=str)
+def _block_for_llm(block: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "status": block.get("status"),
+        "data": block.get("data"),
+        "unknowns": block.get("unknowns") or [],
+    }
+
+
+def _compact_packet_for_llm(packet: dict[str, Any]) -> dict[str, Any]:
+    blocks = packet.get("blocks") or {}
+    conversation_mode = dict(packet.get("conversation_mode") or {})
+    conversation_mode.pop("provenance", None)
+    return {
+        "schema_version": packet.get("schema_version"),
+        "packet_profile": packet.get("packet_profile"),
+        "generated_at": packet.get("generated_at"),
+        "conversation_mode": conversation_mode,
+        "athlete_stated_overrides": packet.get("athlete_stated_overrides") or [],
+        "pending_conflicts": packet.get("pending_conflicts") or [],
+        "blocks": {
+            key: _block_for_llm(block)
+            for key, block in blocks.items()
+            if key != "_legacy_context_bridge_deprecated"
+        },
+        "omitted_blocks": packet.get("omitted_blocks") or [],
+        "telemetry": {
+            "estimated_tokens": (packet.get("telemetry") or {}).get(
+                "estimated_tokens"
+            ),
+            "ledger_field_coverage": (packet.get("telemetry") or {}).get(
+                "ledger_field_coverage"
+            ),
+            "unknowns_count": (packet.get("telemetry") or {}).get("unknowns_count"),
+        },
+    }
+
+
+def _timeout_retry_packet_for_llm(packet: dict[str, Any]) -> dict[str, Any]:
+    compact = _compact_packet_for_llm(packet)
+    blocks = compact.get("blocks") or {}
+    keep_blocks = {
+        "conversation",
+        "calendar_context",
+        "activity_evidence_state",
+        "training_adaptation_context",
+        "athlete_facts",
+        "unknowns",
+    }
+    compact["blocks"] = {
+        key: value for key, value in blocks.items() if key in keep_blocks
+    }
+    compact["timeout_retry_instruction"] = (
+        "Use only this compact packet and the athlete's latest message. "
+        "Answer directly; if key evidence is missing, say what is missing."
+    )
+    return compact
+
+
+def packet_to_prompt(packet: dict[str, Any], *, profile: str = "compact") -> str:
+    if profile == "timeout_retry":
+        payload = _timeout_retry_packet_for_llm(packet)
+    elif profile == "audit":
+        payload = packet
+    else:
+        payload = _compact_packet_for_llm(packet)
+    return json.dumps(payload, ensure_ascii=True, sort_keys=True, default=str)

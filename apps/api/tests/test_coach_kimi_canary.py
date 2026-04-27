@@ -263,7 +263,7 @@ def test_kimi_path_omits_temperature():
 
 
 @pytest.mark.asyncio
-async def test_kimi_v2_packet_call_disables_tools_and_enables_thinking(monkeypatch):
+async def test_kimi_v2_packet_call_disables_tools_and_thinking(monkeypatch):
     coach = AICoach.__new__(AICoach)
     coach.track_usage = MagicMock()
     captured = []
@@ -304,8 +304,8 @@ async def test_kimi_v2_packet_call_disables_tools_and_enables_thinking(monkeypat
     assert result["tools_called"] == []
     assert "tools" not in captured[0]
     assert "tool_choice" not in captured[0]
-    assert captured[0]["extra_body"] == {"thinking": {"type": "enabled"}}
-    assert captured[0]["max_tokens"] >= 2500
+    assert captured[0]["extra_body"] == {"thinking": {"type": "disabled"}}
+    assert captured[0]["max_tokens"] <= 1200
     assert "<!-- VOICE_CORPUS -->" in captured[0]["messages"][0]["content"]
     assert (
         "You are StrideIQ's coach. The athlete in this turn is the same human"
@@ -320,8 +320,10 @@ async def test_kimi_v2_packet_call_disables_tools_and_enables_thinking(monkeypat
 @pytest.mark.asyncio
 async def test_kimi_v2_packet_timeout_maps_to_v2_timeout(monkeypatch):
     openai_module = None
+    captured = []
 
     async def _create(**kwargs):
+        captured.append(kwargs)
         raise openai_module.APITimeoutError("timed out")
 
     openai_module = _make_openai_module(_create)
@@ -354,29 +356,75 @@ async def test_kimi_v2_packet_timeout_maps_to_v2_timeout(monkeypatch):
     assert result["fallback_reason"] == "v2_timeout"
     assert result["error_class"] == "_APITimeoutError"
     assert result["model"] == "kimi-k2.6"
+    assert result["timeout_retry_used"] is True
+    assert len(captured) == 2
     assert "tools_called" not in result
     coach.track_usage.assert_not_called()
 
 
 @pytest.mark.asyncio
-async def test_kimi_v2_packet_retries_without_thinking_on_empty_content(monkeypatch):
+async def test_kimi_v2_packet_timeout_retries_with_compact_packet(monkeypatch):
+    openai_module = None
     coach = AICoach.__new__(AICoach)
     coach.track_usage = MagicMock()
     captured = []
-    responses = iter(
-        [
-            _oai_response(content="", prompt_tokens=10, completion_tokens=1),
-            _oai_response(
-                content="V2 packet answer after retry.",
-                prompt_tokens=10,
-                completion_tokens=5,
-            ),
-        ]
-    )
 
     async def _create(**kwargs):
         captured.append(kwargs)
-        return next(responses)
+        if len(captured) == 1:
+            raise openai_module.APITimeoutError("timed out")
+        return _oai_response(
+            content="Compact retry answer.", prompt_tokens=10, completion_tokens=5
+        )
+
+    openai_module = _make_openai_module(_create)
+    monkeypatch.setitem(sys.modules, "openai", openai_module)
+    from services import ai_coach as ai_coach_module
+
+    monkeypatch.setattr(
+        ai_coach_module.settings, "KIMI_API_KEY", "kimi-key", raising=False
+    )
+    monkeypatch.setattr(
+        ai_coach_module.settings,
+        "KIMI_BASE_URL",
+        "https://api.moonshot.ai/v1",
+        raising=False,
+    )
+    monkeypatch.setattr(
+        ai_coach_module.settings, "COACH_CANARY_MODEL", "kimi-k2.6", raising=False
+    )
+
+    result = await coach.query_kimi_v2_packet(
+        athlete_id=uuid4(),
+        message="Race table question",
+        packet={
+            "schema_version": "coach_runtime_v2.packet.v1",
+            "blocks": {
+                "conversation": {
+                    "data": {"user_message": "Race table question"},
+                    "provenance": [{"large": "audit-only"}],
+                }
+            },
+        },
+    )
+
+    assert result["error"] is False
+    assert result["response"] == "Compact retry answer."
+    assert result["timeout_retry_used"] is True
+    assert "INTERNAL COMPACT COACH STATE PACKET" in captured[1]["messages"][1]["content"]
+    assert "timeout_retry_instruction" in captured[1]["messages"][1]["content"]
+    assert captured[1]["max_tokens"] <= 700
+    coach.track_usage.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_kimi_v2_packet_empty_content_fails_without_thinking_retry(monkeypatch):
+    coach = AICoach.__new__(AICoach)
+    coach.track_usage = MagicMock()
+    captured = []
+    async def _create(**kwargs):
+        captured.append(kwargs)
+        return _oai_response(content="", prompt_tokens=10, completion_tokens=1)
 
     monkeypatch.setitem(sys.modules, "openai", _make_openai_module(_create))
     from services import ai_coach as ai_coach_module
@@ -400,19 +448,17 @@ async def test_kimi_v2_packet_retries_without_thinking_on_empty_content(monkeypa
         packet={"schema_version": "coach_runtime_v2.packet.v1"},
     )
 
-    assert result["error"] is False
-    assert result["response"] == "V2 packet answer after retry."
-    assert result["thinking_retry_used"] is True
-    assert captured[0]["extra_body"] == {"thinking": {"type": "enabled"}}
-    assert captured[1]["extra_body"] == {"thinking": {"type": "disabled"}}
-    assert captured[0]["max_tokens"] >= 2500
-    assert captured[1]["max_tokens"] >= 2500
-    coach.track_usage.assert_called_once()
+    assert result["error"] is True
+    assert result["fallback_reason"] == "v2_empty_response"
+    assert len(captured) == 1
+    assert captured[0]["extra_body"] == {"thinking": {"type": "disabled"}}
+    assert captured[0]["max_tokens"] <= 1200
+    coach.track_usage.assert_not_called()
 
 
 @pytest.mark.asyncio
 async def test_universal_kimi_routing(monkeypatch):
-    """All queries now route to Kimi K2.5 — no canary gating."""
+    """Visible coach traffic routes to V2 packet Kimi, not the legacy fallback path."""
     coach = AICoach(db=MagicMock())
     coach.router = MagicMock()
     coach.router.classify = MagicMock(return_value=(None, False))
@@ -434,6 +480,14 @@ async def test_universal_kimi_routing(monkeypatch):
     coach._query_kimi_with_fallback = AsyncMock(
         return_value={"response": "kimi", "error": False, "model": "kimi-k2.6"}
     )
+    coach.query_kimi_v2_packet = AsyncMock(
+        return_value={
+            "response": "v2 kimi",
+            "error": False,
+            "model": "kimi-k2.6",
+            "tools_called": [],
+        }
+    )
     coach.query_opus = AsyncMock(
         return_value={
             "response": "sonnet",
@@ -444,13 +498,30 @@ async def test_universal_kimi_routing(monkeypatch):
     coach._finalize_response_with_turn_guard = AsyncMock(
         side_effect=lambda **kwargs: kwargs["response_text"]
     )
+    coach._finalize_v2_response_with_turn_guard = MagicMock(
+        side_effect=lambda **kwargs: (True, kwargs["response_text"], None)
+    )
     coach._save_chat_messages = MagicMock()
 
     import services.consent as consent_module
+    from services.coaching import core as coach_core
+    from services.coaching.runtime_v2 import CoachRuntimeV2State
 
     monkeypatch.setattr(consent_module, "has_ai_consent", lambda athlete_id, db: True)
+    monkeypatch.setattr(
+        coach_core,
+        "resolve_coach_runtime_v2_state",
+        lambda athlete_id, db: CoachRuntimeV2State(
+            runtime_mode="visible",
+            runtime_version="v2",
+            shadow_enabled=True,
+            visible_enabled=True,
+        ),
+    )
 
     result = await coach.chat(uuid4(), "My knee hurts. Should I run?")
     assert result["error"] is False
-    coach._query_kimi_with_fallback.assert_awaited_once()
+    assert result["response"] == "v2 kimi"
+    coach.query_kimi_v2_packet.assert_awaited_once()
+    coach._query_kimi_with_fallback.assert_not_awaited()
     coach.query_opus.assert_not_awaited()

@@ -526,20 +526,20 @@ Policy:
         runtime_state = resolve_coach_runtime_v2_state(athlete_id, self.db)
         packet_telemetry: Dict[str, Any] = {}
 
-        def demote_visible_to_fallback(reason: str) -> None:
+        def mark_v2_failure(reason: str) -> None:
             nonlocal runtime_state
             if runtime_state.runtime_mode != RUNTIME_MODE_VISIBLE:
                 return
             logger.warning(
-                "coach_runtime_v2_visible_fallback",
+                "coach_runtime_v2_visible_fail_closed",
                 extra={
                     "extra_fields": {
-                        "event": "coach_runtime_v2_visible_fallback",
+                        "event": "coach_runtime_v2_visible_fail_closed",
                         "fallback_reason": reason,
                     }
                 },
             )
-            runtime_state = runtime_state.as_fallback(reason)
+            runtime_state = runtime_state.with_failure_reason(reason)
 
         def emit_runtime_request_event(
             *,
@@ -569,7 +569,7 @@ Policy:
             error_class: Optional[str] = None,
         ) -> Dict[str, Any]:
             if served_by_v1_reason:
-                demote_visible_to_fallback(served_by_v1_reason)
+                mark_v2_failure(served_by_v1_reason)
             metadata = runtime_state.as_metadata()
             assert_runtime_metadata_consistent(metadata)
             payload.update(metadata)
@@ -580,6 +580,19 @@ Policy:
                 error_class=error_class,
             )
             return payload
+
+        def v2_fail_closed_response(reason: str) -> Dict[str, Any]:
+            mark_v2_failure(reason)
+            return {
+                "response": (
+                    "I can't safely answer that yet. V2 could not complete the turn "
+                    "without risking a wrong answer, so I stopped instead of guessing."
+                ),
+                "error": False,
+                "model": "coach-runtime-v2",
+                "tools_called": [],
+                "fallback_reason": reason,
+            }
 
         # P1-D: Consent gate — no LLM dispatch without explicit opt-in.
         from services.consent import has_ai_consent as _has_consent
@@ -625,6 +638,19 @@ Policy:
                 },
                 served_by_v1_reason="no_llm_configured",
                 error_class="no_llm_configured",
+            )
+
+        if runtime_state.runtime_mode != RUNTIME_MODE_VISIBLE:
+            return with_runtime_metadata(
+                {
+                    "response": (
+                        "Coach V2 is the only supported coach runtime. It is not "
+                        "enabled for this account yet, so I stopped instead of "
+                        "serving the legacy coach."
+                    ),
+                    "error": True,
+                },
+                error_class="v2_not_enabled",
             )
 
         # Persist units preference if the athlete explicitly requests it.
@@ -673,7 +699,6 @@ Policy:
                 is_synthetic_probe=detected_synthetic_probe,
                 is_organic=is_organic,
             )
-            demote_visible_to_fallback("deterministic_short_circuit")
             self._save_chat_messages(
                 athlete_id,
                 message,
@@ -1192,7 +1217,7 @@ Policy:
                     packet_telemetry["thinking"] = result.get("thinking")
                     if result.get("error"):
                         packet_telemetry["deterministic_check_status"] = "skipped"
-                        demote_visible_to_fallback(
+                        result = v2_fail_closed_response(
                             result.get("fallback_reason") or "llm_provider_error"
                         )
                     else:
@@ -1216,8 +1241,7 @@ Policy:
                             packet_telemetry["v2_guardrail_failure_reason"] = (
                                 guard_reason
                             )
-                            demote_visible_to_fallback("v2_guardrail_failed")
-                            result = {}
+                            result = v2_fail_closed_response("v2_guardrail_failed")
                 except V2PacketInvariantError as exc:
                     logger.warning("coach_runtime_v2_packet_invariant_failed: %s", exc)
                     packet_telemetry.setdefault(
@@ -1229,27 +1253,22 @@ Policy:
                         ),
                     )
                     packet_telemetry["deterministic_check_status"] = "failed"
-                    demote_visible_to_fallback("packet_assembly_error")
-                    result = {}
+                    result = v2_fail_closed_response("packet_assembly_error")
                 except Exception as exc:
                     logger.warning("coach_runtime_v2_packet_path_failed: %s", exc)
                     packet_telemetry["deterministic_check_status"] = "failed"
-                    demote_visible_to_fallback("llm_provider_error")
-                    result = {}
+                    result = v2_fail_closed_response("llm_provider_error")
             else:
                 result = {}
 
-            if not served_by_v2:
-                result = await self._query_kimi_with_fallback(
-                    athlete_id=athlete_id,
-                    message=message,
-                    athlete_state=athlete_state,
-                    conversation_context=conversation_context,
-                )
+            if not served_by_v2 and not result:
+                result = v2_fail_closed_response("v2_unserved")
 
             if not result.get("error"):
                 tools_used = list(dict.fromkeys(result.get("tools_called") or []))
-                if served_by_v2:
+                if result.get("model") == "coach-runtime-v2":
+                    guarded_response = result.get("response", "")
+                elif served_by_v2:
                     guarded_response = result.get("response", "")
                 else:
                     guarded_response = await self._finalize_response_with_turn_guard(
