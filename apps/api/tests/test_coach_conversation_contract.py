@@ -192,6 +192,20 @@ def test_decision_point_accepts_natural_coaching_without_exact_labels():
     assert reason == "ok"
 
 
+def test_workout_warmup_followup_does_not_become_race_day_from_thread_context():
+    contract = classify_conversation_contract(
+        "If my legs feel flat in the warmup, what is the decision rule?",
+        conversation_context=[
+            {
+                "role": "assistant",
+                "content": "Saturday is the Coke 10K, so keep the week light.",
+            }
+        ],
+    )
+
+    assert contract.contract_type == ConversationContractType.DECISION_POINT
+
+
 def test_correction_dispute_requires_verification_language():
     user_message = "You are wrong, that race is in my activity history."
 
