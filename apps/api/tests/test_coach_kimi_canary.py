@@ -404,7 +404,7 @@ async def test_kimi_v2_packet_retries_without_thinking_on_empty_content(monkeypa
     assert result["response"] == "V2 packet answer after retry."
     assert result["thinking_retry_used"] is True
     assert captured[0]["extra_body"] == {"thinking": {"type": "enabled"}}
-    assert captured[1]["extra_body"] is None
+    assert captured[1]["extra_body"] == {"thinking": {"type": "disabled"}}
     assert captured[0]["max_tokens"] >= 2500
     assert captured[1]["max_tokens"] >= 2500
     coach.track_usage.assert_called_once()
