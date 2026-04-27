@@ -115,8 +115,6 @@ def _is_race_day_followup(text: str) -> bool:
             "5:55",
             "bicarb",
             "maurten",
-            "warmup",
-            "warm up",
             "packet pickup",
             "mile",
             "split",
@@ -219,7 +217,19 @@ def classify_conversation_contract(
             max_words=260,
         )
 
-    if any(token in lower for token in ("should i", "do i", "am i", "move", "postpone", "shift", "choose")):
+    if any(
+        token in lower
+        for token in (
+            "should i",
+            "do i",
+            "am i",
+            "move",
+            "postpone",
+            "shift",
+            "choose",
+            "decision",
+        )
+    ):
         return ConversationContract(
             contract_type=ConversationContractType.DECISION_POINT,
             outcome_target="Clarify the tradeoff and give a decision frame.",
