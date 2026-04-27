@@ -259,7 +259,11 @@ def _limit_words(text: str, max_words: int) -> str:
     words = (text or "").split()
     if len(words) <= max_words:
         return (text or "").strip()
-    return " ".join(words[:max_words]).rstrip(" ,;:") + "."
+    truncated = " ".join(words[:max_words]).rstrip(" ,;:")
+    sentence_end = max(truncated.rfind("."), truncated.rfind("!"), truncated.rfind("?"))
+    if sentence_end >= max(0, len(truncated) // 4):
+        return truncated[: sentence_end + 1].strip()
+    return truncated + "."
 
 
 def validate_conversation_contract_response(
