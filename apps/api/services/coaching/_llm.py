@@ -844,7 +844,7 @@ class LLMMixin:
                 model=model_name,
                 messages=[{"role": "system", "content": system_prompt}] + messages,
                 max_tokens=V2_PACKET_MAX_OUTPUT_TOKENS,
-                extra_body=None,
+                extra_body={"thinking": {"type": "disabled"}},
             )
             thinking_retry_used = True
             retry_usage = getattr(retry_response, "usage", None)
