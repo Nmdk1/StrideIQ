@@ -158,7 +158,10 @@ from services.coaching._constants import (  # noqa: E402
     _check_response_quality,
     COACH_MAX_OUTPUT_TOKENS,
 )
-V2_PACKET_MAX_OUTPUT_TOKENS = max(COACH_MAX_OUTPUT_TOKENS, 2500)
+V2_PACKET_MAX_OUTPUT_TOKENS = min(COACH_MAX_OUTPUT_TOKENS, 1200)
+V2_PACKET_TIMEOUT_SECONDS = 30
+V2_PACKET_TIMEOUT_RETRY_SECONDS = 12
+V2_PACKET_TIMEOUT_RETRY_MAX_OUTPUT_TOKENS = 700
 from services.coaching._conversation_contract import (  # noqa: E402
     ConversationContract,
     ConversationContractType,
@@ -767,7 +770,7 @@ class LLMMixin:
         client = openai.AsyncOpenAI(
             api_key=api_key,
             base_url=settings.KIMI_BASE_URL,
-            timeout=120,
+            timeout=V2_PACKET_TIMEOUT_SECONDS,
         )
         system_prompt = V2_SYSTEM_PROMPT
         messages = [
@@ -783,12 +786,13 @@ class LLMMixin:
         ]
         extra_body: dict = {}
         if model_name.lower() in ("kimi-k2.5", "kimi-k2.6"):
-            extra_body["thinking"] = {"type": "enabled"}
+            extra_body["thinking"] = {"type": "disabled"}
 
         timeout_errors = [asyncio.TimeoutError]
         api_timeout_error = getattr(openai, "APITimeoutError", None)
         if api_timeout_error is not None:
             timeout_errors.append(api_timeout_error)
+        timeout_retry_used = False
         try:
             response = await client.chat.completions.create(
                 model=model_name,
@@ -797,17 +801,69 @@ class LLMMixin:
                 extra_body=extra_body if extra_body else None,
             )
         except tuple(timeout_errors) as exc:
-            latency_ms = int(
-                (datetime.now(timezone.utc) - started).total_seconds() * 1000
+            timeout_retry_used = True
+            logger.warning(
+                "kimi_v2_packet_timeout_retrying_compact",
+                extra={
+                    "extra_fields": {
+                        "event": "kimi_v2_packet_timeout_retrying_compact",
+                        "athlete_id": str(athlete_id),
+                        "model": model_name,
+                        "error_class": exc.__class__.__name__,
+                    }
+                },
             )
-            return {
-                "response": "",
-                "error": True,
-                "model": model_name,
-                "fallback_reason": "v2_timeout",
-                "error_class": exc.__class__.__name__,
-                "kimi_latency_ms": latency_ms,
-            }
+            retry_client = openai.AsyncOpenAI(
+                api_key=api_key,
+                base_url=settings.KIMI_BASE_URL,
+                timeout=V2_PACKET_TIMEOUT_RETRY_SECONDS,
+            )
+            retry_messages = [
+                {
+                    "role": "user",
+                    "content": (
+                        "INTERNAL COMPACT COACH STATE PACKET "
+                        "(timeout recovery; use for reasoning only):\n"
+                        f"{packet_to_prompt(packet, profile='timeout_retry')}"
+                    ),
+                },
+                {"role": "user", "content": message},
+            ]
+            try:
+                response = await retry_client.chat.completions.create(
+                    model=model_name,
+                    messages=[{"role": "system", "content": system_prompt}]
+                    + retry_messages,
+                    max_tokens=V2_PACKET_TIMEOUT_RETRY_MAX_OUTPUT_TOKENS,
+                    extra_body=extra_body if extra_body else None,
+                )
+                messages = retry_messages
+            except tuple(timeout_errors) as retry_exc:
+                latency_ms = int(
+                    (datetime.now(timezone.utc) - started).total_seconds() * 1000
+                )
+                return {
+                    "response": "",
+                    "error": True,
+                    "model": model_name,
+                    "fallback_reason": "v2_timeout",
+                    "error_class": retry_exc.__class__.__name__,
+                    "kimi_latency_ms": latency_ms,
+                    "timeout_retry_used": timeout_retry_used,
+                }
+            except Exception as retry_exc:
+                latency_ms = int(
+                    (datetime.now(timezone.utc) - started).total_seconds() * 1000
+                )
+                return {
+                    "response": "",
+                    "error": True,
+                    "model": model_name,
+                    "fallback_reason": "llm_provider_error",
+                    "error_class": retry_exc.__class__.__name__,
+                    "kimi_latency_ms": latency_ms,
+                    "timeout_retry_used": timeout_retry_used,
+                }
         except Exception as exc:
             latency_ms = int(
                 (datetime.now(timezone.utc) - started).total_seconds() * 1000
@@ -827,7 +883,10 @@ class LLMMixin:
         assistant_message = choice.message if choice else None
         response_text = ((getattr(assistant_message, "content", "") or "")).strip()
         thinking_retry_used = False
-        if not response_text and extra_body:
+        if (
+            not response_text
+            and extra_body.get("thinking", {}).get("type") == "enabled"
+        ):
             logger.warning(
                 "kimi_v2_packet_empty_with_thinking_retrying_without_thinking",
                 extra={
@@ -936,6 +995,7 @@ class LLMMixin:
             "template_phrase_hits": template_phrase_hits,
             "thinking": extra_body.get("thinking", {}).get("type"),
             "thinking_retry_used": thinking_retry_used,
+            "timeout_retry_used": timeout_retry_used,
         }
 
     async def query_gemini(

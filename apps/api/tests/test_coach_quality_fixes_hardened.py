@@ -5,6 +5,44 @@ from uuid import uuid4
 from unittest.mock import AsyncMock, MagicMock
 
 from models import Activity, ActivitySplit, ActivityStream, AthleteFact, CoachChat
+from services.coaching.runtime_v2 import (
+    CoachRuntimeV2State,
+    RUNTIME_MODE_VISIBLE,
+    RUNTIME_VERSION_V2,
+)
+
+
+def _enable_visible_v2(monkeypatch):
+    import services.consent as consent_module
+    from services.coaching import core as coach_core
+
+    monkeypatch.setattr(consent_module, "has_ai_consent", lambda athlete_id, db: True)
+    monkeypatch.setattr(
+        coach_core,
+        "resolve_coach_runtime_v2_state",
+        lambda athlete_id, db: CoachRuntimeV2State(
+            runtime_mode=RUNTIME_MODE_VISIBLE,
+            runtime_version=RUNTIME_VERSION_V2,
+            shadow_enabled=True,
+            visible_enabled=True,
+        ),
+    )
+    monkeypatch.setattr(
+        coach_core,
+        "extract_facts_from_turn_with_optional_llm",
+        AsyncMock(return_value=[]),
+    )
+    monkeypatch.setattr(
+        coach_core,
+        "assemble_v2_packet",
+        lambda **kwargs: {
+            "conversation_mode": {
+                "primary": "engage_and_reason",
+                "confidence": "high",
+            },
+            "telemetry": {},
+        },
+    )
 
 
 def _make_activity(*, athlete_id, name="Test Run"):
@@ -301,10 +339,11 @@ class TestPromptAndOutputHardening:
         assert "BAN CANNED OPENERS" in captured["system"]
         assert "Here's what the data actually shows" in captured["system"]
 
-    def test_final_chat_response_is_emoji_sanitized(self):
+    def test_final_chat_response_is_emoji_sanitized(self, monkeypatch):
         import asyncio
         from services.ai_coach import AICoach
 
+        _enable_visible_v2(monkeypatch)
         coach = AICoach(db=MagicMock())
         coach.router = MagicMock()
         coach.router.classify = MagicMock(return_value=(None, False))
@@ -315,7 +354,8 @@ class TestPromptAndOutputHardening:
         coach.get_or_create_thread_with_state = MagicMock(return_value=("thread-1", False))
         coach.get_thread_history = MagicMock(return_value={"messages": []})
         coach._build_athlete_state_for_opus = MagicMock(return_value="state")
-        coach._query_kimi_with_fallback = AsyncMock(return_value={"response": "Great work 🔥", "error": False, "model": "kimi-k2.6"})
+        coach.query_kimi_v2_packet = AsyncMock(return_value={"response": "Great work 🔥", "error": False, "model": "kimi-k2.6", "tools_called": []})
+        coach._query_kimi_with_fallback = AsyncMock()
         coach._normalize_response_for_ui = MagicMock(side_effect=lambda user_message, assistant_message: assistant_message)
         coach._save_chat_messages = MagicMock()
         coach._maybe_update_units_preference = MagicMock()
@@ -327,6 +367,7 @@ class TestPromptAndOutputHardening:
         coach._save_chat_messages.assert_called_once()
         saved_response = coach._save_chat_messages.call_args[0][2]
         assert "🔥" not in saved_response
+        coach._query_kimi_with_fallback.assert_not_awaited()
 
     def test_split_tool_registered_for_opus_and_gemini(self):
         from services.ai_coach import AICoach
@@ -352,10 +393,11 @@ class TestPromptAndOutputHardening:
         assert "database" not in lower
         assert "pipeline" not in lower
 
-    def test_profile_intent_short_circuits_to_deterministic_path(self):
+    def test_profile_intent_short_circuits_to_deterministic_path(self, monkeypatch):
         import asyncio
         from services.ai_coach import AICoach
 
+        _enable_visible_v2(monkeypatch)
         coach = AICoach(db=MagicMock())
         coach.router = MagicMock()
         coach.router.classify = MagicMock(return_value=(None, False))
@@ -394,10 +436,11 @@ class TestPromptAndOutputHardening:
         )
         assert ok is False
 
-    def test_turn_guard_emits_telemetry_events(self):
+    def test_turn_guard_emits_telemetry_events(self, monkeypatch):
         import asyncio
         from services.ai_coach import AICoach
 
+        _enable_visible_v2(monkeypatch)
         coach = AICoach(db=MagicMock())
         coach.router = MagicMock()
         coach.router.classify = MagicMock(return_value=(None, False))
@@ -408,12 +451,10 @@ class TestPromptAndOutputHardening:
         coach.get_or_create_thread_with_state = MagicMock(return_value=("thread-1", False))
         coach.get_thread_history = MagicMock(return_value={"messages": []})
         coach._build_athlete_state_for_opus = MagicMock(return_value="state")
-        coach._query_kimi_with_fallback = AsyncMock(
-            side_effect=[
-                {"response": "Your splits looked controlled across miles.", "error": False, "model": "kimi-k2.6"},
-                {"response": "Negative split pattern remains strong.", "error": False, "model": "kimi-k2.6"},
-            ]
+        coach.query_kimi_v2_packet = AsyncMock(
+            return_value={"response": "Your splits looked controlled across miles.", "error": False, "model": "kimi-k2.6", "tools_called": []}
         )
+        coach._query_kimi_with_fallback = AsyncMock()
         coach._save_chat_messages = MagicMock()
         coach._maybe_update_units_preference = MagicMock()
         coach._maybe_update_intent_snapshot = MagicMock()
@@ -422,10 +463,10 @@ class TestPromptAndOutputHardening:
         out = asyncio.run(coach.chat(uuid4(), "How do I cancel my subscription?"))
         assert out["error"] is False
         events = [call.kwargs.get("event") for call in coach._record_turn_guard_event.call_args_list]
-        assert "mismatch_detected" in events
-        assert "fallback_used" in events
+        assert any(event.startswith("v2_guardrail_failed:") for event in events)
         for call in coach._record_turn_guard_event.call_args_list:
             assert "turn_id" in call.kwargs
-            assert call.kwargs.get("stage") in {"initial", "retry", "fallback"}
+            assert call.kwargs.get("stage") == "v2_packet"
             assert "is_synthetic_probe" in call.kwargs
             assert "is_organic" in call.kwargs
+        coach._query_kimi_with_fallback.assert_not_awaited()

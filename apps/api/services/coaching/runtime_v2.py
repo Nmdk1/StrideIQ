@@ -100,6 +100,9 @@ class CoachRuntimeV2State:
             fallback_reason=reason,
         )
 
+    def with_failure_reason(self, reason: str) -> "CoachRuntimeV2State":
+        return replace(self, fallback_reason=reason)
+
 
 def resolve_coach_runtime_v2_state(
     athlete_id: UUID | str | None, db: Session

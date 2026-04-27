@@ -4,6 +4,11 @@ from unittest.mock import MagicMock, patch, AsyncMock
 
 from services.ai_coach import AICoach
 from services.coaching._constants import count_hedge_phrases, _check_response_quality
+from services.coaching.runtime_v2 import (
+    RUNTIME_MODE_VISIBLE,
+    RUNTIME_VERSION_V2,
+    CoachRuntimeV2State,
+)
 
 
 def _coach_stub() -> AICoach:
@@ -223,20 +228,57 @@ def _build_chat_coach() -> AICoach:
     coach.get_or_create_thread_with_state = MagicMock(return_value=("thread-1", False))
     coach.get_thread_history = MagicMock(return_value={"messages": []})
     coach.get_model_for_query = MagicMock(return_value=(AICoach.MODEL_HIGH_STAKES, True))
+    coach.check_budget = MagicMock(return_value=(True, "ok"))
     coach.is_high_stakes_query = MagicMock(return_value=False)
     coach._build_athlete_state_for_opus = MagicMock(return_value="state")
+    coach._record_turn_guard_event = MagicMock()
+    coach._query_kimi_with_fallback = AsyncMock()
     # _user_explicitly_requested_ids is needed by _normalize_response_for_ui
     coach._user_explicitly_requested_ids = AICoach._user_explicitly_requested_ids.__get__(coach, AICoach)
     coach._normalize_response_for_ui = AICoach._normalize_response_for_ui.__get__(coach, AICoach)
     return coach
 
 
-def test_chat_kimi_success_normalizes_response():
-    """Kimi success path must run _normalize_response_for_ui before returning.
+def _enable_visible_v2(monkeypatch):
+    import services.consent as consent_module
+    from services.coaching import core as coach_core
 
-    This proves the Coach Output Contract v1 normalization is live for
+    monkeypatch.setattr(consent_module, "has_ai_consent", lambda athlete_id, db: True)
+    monkeypatch.setattr(
+        coach_core,
+        "resolve_coach_runtime_v2_state",
+        lambda athlete_id, db: CoachRuntimeV2State(
+            runtime_mode=RUNTIME_MODE_VISIBLE,
+            runtime_version=RUNTIME_VERSION_V2,
+            shadow_enabled=True,
+            visible_enabled=True,
+        ),
+    )
+    monkeypatch.setattr(
+        coach_core,
+        "extract_facts_from_turn_with_optional_llm",
+        AsyncMock(return_value=[]),
+    )
+    monkeypatch.setattr(
+        coach_core,
+        "assemble_v2_packet",
+        lambda **kwargs: {
+            "conversation_mode": {
+                "primary": "engage_and_reason",
+                "confidence": "high",
+            },
+            "telemetry": {},
+        },
+    )
+
+
+def test_chat_v2_success_normalizes_response(monkeypatch):
+    """V2 success path must run _normalize_response_for_ui before returning.
+
+    This proves the Coach Output Contract normalization is live for
     production chat responses (the critical gap fixed in this refactor).
     """
+    _enable_visible_v2(monkeypatch)
     coach = _build_chat_coach()
 
     dirty_response = (
@@ -246,10 +288,11 @@ def test_chat_kimi_success_normalizes_response():
         "Recorded pace vs marathon pace: slower by 0:09/mi.\n"
         "You had a strong controlled session today. Keep tomorrow easy to protect recovery."
     )
-    coach._query_kimi_with_fallback = AsyncMock(return_value={
+    coach.query_kimi_v2_packet = AsyncMock(return_value={
         "response": dirty_response,
         "error": False,
         "model": "kimi-k2.6",
+        "tools_called": [],
     })
 
     result = asyncio.run(
@@ -269,35 +312,44 @@ def test_chat_kimi_success_normalizes_response():
     coach._save_chat_messages.assert_called_once()
     saved_text = coach._save_chat_messages.call_args[0][2]
     assert "authoritative fact capsule" not in saved_text
+    coach._query_kimi_with_fallback.assert_not_awaited()
 
 
-def test_chat_kimi_failure_returns_error_without_saving_chat():
-    """When Kimi (and its Sonnet fallback) fails, chat() must fail closed."""
+def test_chat_v2_failure_fails_closed_without_saving_chat(monkeypatch):
+    """When V2 Kimi fails, chat() must fail closed without serving V1."""
+    _enable_visible_v2(monkeypatch)
     coach = _build_chat_coach()
 
-    coach._query_kimi_with_fallback = AsyncMock(return_value={
-        "response": "Coach is temporarily unavailable. Please try again in a moment.",
+    coach.query_kimi_v2_packet = AsyncMock(return_value={
+        "response": "",
         "error": True,
-        "error_detail": "Kimi + Sonnet both failed",
+        "model": "kimi-k2.6",
+        "fallback_reason": "v2_timeout",
     })
 
     result = asyncio.run(
         coach.chat(athlete_id=uuid4(), message="How is my training going?")
     )
 
-    assert result.get("error") is True
-    assert "unavailable" in result["response"].lower() or "error" in result["response"].lower()
-    coach._save_chat_messages.assert_not_called()
+    assert result.get("error") is False
+    assert result["runtime_mode"] == RUNTIME_MODE_VISIBLE
+    assert result["runtime_version"] == RUNTIME_VERSION_V2
+    assert result["fallback_reason"] == "v2_timeout"
+    assert "stopped instead of guessing" in result["response"]
+    coach._save_chat_messages.assert_called_once()
+    coach._query_kimi_with_fallback.assert_not_awaited()
 
 
-def test_chat_kimi_success_saves_model_name():
-    """Kimi success path must persist model name in _save_chat_messages call."""
+def test_chat_v2_success_saves_model_name(monkeypatch):
+    """V2 Kimi success path must persist model name in _save_chat_messages."""
+    _enable_visible_v2(monkeypatch)
     coach = _build_chat_coach()
 
-    coach._query_kimi_with_fallback = AsyncMock(return_value={
+    coach.query_kimi_v2_packet = AsyncMock(return_value={
         "response": "Manageable fatigue — keep tomorrow easy.",
         "error": False,
         "model": "kimi-k2.6",
+        "tools_called": [],
     })
 
     result = asyncio.run(
@@ -310,25 +362,20 @@ def test_chat_kimi_success_saves_model_name():
     assert call_kwargs.kwargs.get("model") == "kimi-k2.6" or (
         len(call_kwargs.args) > 3 and call_kwargs.args[3] == "kimi-k2.6"
     )
+    coach._query_kimi_with_fallback.assert_not_awaited()
 
 
-def test_turn_guard_retries_contract_failure_before_saving_response():
+def test_v2_turn_guard_fails_closed_on_contract_failure(monkeypatch):
+    _enable_visible_v2(monkeypatch)
     coach = _build_chat_coach()
-    coach.anthropic_client = object()
-    coach.query_opus = AsyncMock(
-        return_value={
-            "response": "Decision: postpone threshold. Tradeoff: fresher legs but one less hard stimulus. Default: move it 24 hours.",
-            "error": False,
-            "model": "claude-sonnet-4-6",
-        }
-    )
 
     long_unframed_response = " ".join(["You have options."] * 80)
-    coach._query_kimi_with_fallback = AsyncMock(
+    coach.query_kimi_v2_packet = AsyncMock(
         return_value={
             "response": long_unframed_response,
             "error": False,
             "model": "kimi-k2.6",
+            "tools_called": [],
         }
     )
 
@@ -337,7 +384,7 @@ def test_turn_guard_retries_contract_failure_before_saving_response():
     )
 
     assert result.get("error") is False
-    assert "Decision:" in result["response"]
-    assert "Tradeoff:" in result["response"]
-    assert "Default:" in result["response"]
-    coach.query_opus.assert_awaited_once()
+    assert result["runtime_mode"] == RUNTIME_MODE_VISIBLE
+    assert result["fallback_reason"] == "v2_guardrail_failed"
+    assert "stopped instead of guessing" in result["response"]
+    coach._query_kimi_with_fallback.assert_not_awaited()
