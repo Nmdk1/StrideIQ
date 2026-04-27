@@ -27,6 +27,18 @@ TEMPLATE_PHRASE_BLOCKLIST = (
     "you've got this",
     "trust the process",
     "listen to your body",
+    "athlete_facts",
+    "calendar_context",
+    "nutrition_context",
+    "same_turn_table_evidence",
+    "unknown in your profile",
+    "retrieved evidence",
+    "context block",
+    "packet",
+    "runtime",
+    "tool",
+    "i don't have access to",
+    "i do not have access to",
 )
 
 

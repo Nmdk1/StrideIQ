@@ -100,6 +100,8 @@ The coach sees nutrition via two mechanisms:
 1. **Athlete brief** (`services/coach_tools/brief.py` → `build_athlete_brief`): "Nutrition Snapshot" section includes today's totals, goal type, day tier, multiplier, and calorie/macro targets
 2. **Tools**: `get_nutrition_correlations` (relevant findings) and `get_nutrition_log` (recent entries) — coach can look up nutrition data on request
 
+As of Apr 27, 2026, the visible **Coach Runtime V2 packet** path has a selective `nutrition_context` retrieval slice in `services/coaching/runtime_v2_packet.py`. It is not a static nutrition encyclopedia: the block is added only when the latest athlete turn is about food logging, nutrition trends, fueling, race fueling, body-composition goals, or similar nutrition planning. The assembler queries `nutrition_entry` for the bounded athlete-local window implied by the question (today, yesterday, recent week/pattern window), returns capped rows plus additive per-date totals, and marks all totals as logged-so-far partial records rather than complete-day proof. Kimi receives that compact slice inside the V2 packet and still receives no tool definitions. Visible answers are additionally guarded by `services/coaching/voice_enforcement.py` and `services/coaching/qualitative_eval.py` so they should not expose implementation words like `packet`, `calendar_context`, `nutrition_context`, `runtime`, or `tool`; missing data should be phrased as “I don’t see logged entries” rather than “I do not have access.”
+
 ## Reporting
 
 ### Nutrition Page Tabs
@@ -217,4 +219,6 @@ When the product library is combined with workout targets, the system can comput
 - `apps/api/routers/nutrition.py`
 - `apps/api/services/nutrition_parser.py`
 - `apps/api/services/nutrition_targets.py`
+- `apps/api/services/coaching/runtime_v2_packet.py`
+- `apps/api/services/coaching/voice_enforcement.py`
 - `apps/web/app/nutrition/page.tsx`

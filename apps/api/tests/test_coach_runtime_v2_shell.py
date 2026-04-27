@@ -646,6 +646,52 @@ def test_v2_packet_assembler_builds_packet_without_raw_tools():
     assert "tools" not in packet
 
 
+def test_v2_packet_adds_unavailable_nutrition_context_for_relevant_query_without_db():
+    packet = assemble_v2_packet(
+        athlete_id=uuid4(),
+        db=None,
+        message="Can you see what I have eaten so far today?",
+        conversation_context=[],
+        legacy_athlete_state="",
+    )
+
+    block = packet["blocks"]["nutrition_context"]
+    data = block["data"]
+
+    assert block["status"] == "unavailable"
+    assert data["query_type"] == "current_log"
+    assert data["coverage"]["interpretation"] == "nutrition_db_unavailable"
+    assert packet["telemetry"]["packet_block_count"] == 10
+
+
+def test_v2_packet_does_not_add_nutrition_context_for_unrelated_turn_without_db():
+    packet = assemble_v2_packet(
+        athlete_id=uuid4(),
+        db=None,
+        message="Should I run easy today?",
+        conversation_context=[],
+        legacy_athlete_state="",
+    )
+    prompt = packet_to_prompt(packet)
+
+    assert "nutrition_context" not in packet["blocks"]
+    assert "nutrition_context" not in prompt
+    assert packet["telemetry"]["packet_block_count"] == 9
+
+
+def test_v2_packet_routes_body_composition_queries_to_nutrition_context():
+    packet = assemble_v2_packet(
+        athlete_id=uuid4(),
+        db=None,
+        message="How should I adjust nutrition for body composition goals?",
+        conversation_context=[],
+        legacy_athlete_state="",
+    )
+
+    assert packet["conversation_mode"]["query_class"] == "weight_loss_planning"
+    assert packet["blocks"]["nutrition_context"]["data"]["query_type"] == "body_composition"
+
+
 def test_v2_packet_empties_deprecated_legacy_shim_when_ledger_coverage_high(
     monkeypatch,
 ):

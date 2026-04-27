@@ -21,6 +21,17 @@ def test_each_blocklist_phrase_detected():
         assert phrase in result["hits"]
 
 
+def test_visible_internal_packet_language_is_detected():
+    result = check_response(
+        "The packet has no nutrition_context, but calendar_context says you walked."
+    )
+
+    assert result["ok"] is False
+    assert "packet" in result["hits"]
+    assert "nutrition_context" in result["hits"]
+    assert "calendar_context" in result["hits"]
+
+
 @pytest.mark.asyncio
 async def test_enforce_voice_retries_until_rewritten_response_succeeds():
     calls = []

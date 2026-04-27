@@ -1,6 +1,7 @@
 from datetime import date
 
 from models import NutritionEntry
+from services.coaching.runtime_v2_packet import assemble_v2_packet, packet_to_prompt
 
 
 def _entry(test_athlete, *, target_date, calories, notes, entry_type="daily"):
@@ -53,3 +54,78 @@ def test_nutrition_log_empty_response_includes_coverage(db_session, test_athlete
     assert result["data"]["entries"] == []
     assert result["data"]["summary"]["coverage"]["entries_returned"] == 0
     assert result["evidence"][0]["value"].startswith("No nutrition entries")
+
+
+def test_v2_packet_includes_compact_nutrition_context_for_current_food_query(
+    db_session,
+    test_athlete,
+):
+    today = date.today()
+    db_session.add_all(
+        [
+            _entry(test_athlete, target_date=today, calories=500, notes="Breakfast"),
+            _entry(test_athlete, target_date=today, calories=1200, notes="Lunch"),
+        ]
+    )
+    db_session.commit()
+
+    packet = assemble_v2_packet(
+        athlete_id=test_athlete.id,
+        db=db_session,
+        message="can you see what i have eaten so far today?",
+        conversation_context=[],
+        legacy_athlete_state="",
+    )
+    block = packet["blocks"]["nutrition_context"]
+    data = block["data"]
+    prompt = packet_to_prompt(packet)
+
+    assert block["status"] == "complete"
+    assert data["query_type"] == "current_log"
+    assert data["coverage"]["start_date"] == today.isoformat()
+    assert data["coverage"]["end_date"] == today.isoformat()
+    assert data["coverage"]["interpretation"] == "partial_logs_additive_not_complete_day_total"
+    assert data["today"]["calories"] == 1700
+    assert data["today"]["entry_count"] == 2
+    assert [entry["notes"] for entry in data["entries"]] == ["Lunch", "Breakfast"]
+    assert "nutrition_context" in prompt
+    assert "Breakfast" in prompt
+    assert "Lunch" in prompt
+    assert "get_nutrition_log" not in prompt
+
+
+def test_v2_packet_omits_nutrition_context_when_not_relevant(
+    db_session,
+    test_athlete,
+):
+    packet = assemble_v2_packet(
+        athlete_id=test_athlete.id,
+        db=db_session,
+        message="Should I run easy today?",
+        conversation_context=[],
+        legacy_athlete_state="",
+    )
+    prompt = packet_to_prompt(packet)
+
+    assert "nutrition_context" not in packet["blocks"]
+    assert "nutrition_context" not in prompt
+
+
+def test_v2_packet_nutrition_context_handles_empty_current_log(
+    db_session,
+    test_athlete,
+):
+    packet = assemble_v2_packet(
+        athlete_id=test_athlete.id,
+        db=db_session,
+        message="how many calories have I logged today?",
+        conversation_context=[],
+        legacy_athlete_state="",
+    )
+    data = packet["blocks"]["nutrition_context"]["data"]
+
+    assert data["query_type"] == "current_log"
+    assert data["coverage"]["entries_found"] == 0
+    assert data["today"]["calories"] == 0
+    assert data["today"]["entry_count"] == 0
+    assert data["entries"] == []

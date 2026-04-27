@@ -10,7 +10,7 @@ from uuid import UUID, uuid4
 from sqlalchemy.orm import Session
 
 from core.config import settings
-from models import Activity, ActivitySplit, TrainingPlan
+from models import Activity, ActivitySplit, NutritionEntry, TrainingPlan
 from services.coaching.ledger import (
     SENSITIVE_FACT_FIELDS,
     VALID_FACT_FIELDS,
@@ -36,6 +36,7 @@ MODE_CLASSIFIER_VERSION = "coach_mode_classifier_v2_0_a"
 LEDGER_COVERAGE_SHIM_THRESHOLD = 0.5
 LEGACY_CONTEXT_BRIDGE_MAX_CHARS = 3000
 ACTIVITY_EVIDENCE_RECENT_ROWS_LIMIT = 4
+NUTRITION_CONTEXT_ENTRY_LIMIT = 12
 PACKET_MAX_ESTIMATED_TOKENS = 5000
 
 logger = logging.getLogger(__name__)
@@ -112,6 +113,294 @@ def _empty_recent_threads() -> dict[str, Any]:
         "recent_threads": [],
         "token_budget": {"max_tokens": 2000, "estimated_tokens": 1},
     }
+
+
+def _detect_nutrition_context_kind(message: str) -> str | None:
+    lower = (message or "").lower()
+    pattern_terms = (
+        "trend",
+        "pattern",
+        "grouping",
+        "similar",
+        "correlat",
+        "compare",
+        "block",
+    )
+    body_comp_terms = (
+        "body composition",
+        "body comp",
+        "weight",
+        "cut",
+        "deficit",
+        "lean mass",
+        "lose pounds",
+        "drop pounds",
+    )
+    race_fueling_terms = ("race morning", "race fueling", "bicarb", "maurten")
+    workout_fueling_terms = (
+        "fuel",
+        "fueling",
+        "gel",
+        "gels",
+        "hydration",
+        "electrolyte",
+        "caffeine",
+        "stomach",
+        "gut",
+        "slosh",
+    )
+    food_log_terms = (
+        "eat",
+        "eaten",
+        "ate",
+        "food",
+        "meal",
+        "breakfast",
+        "lunch",
+        "dinner",
+        "snack",
+        "calorie",
+        "calories",
+        "macro",
+        "macros",
+        "protein",
+        "carb",
+        "carbs",
+        "fat",
+        "nutrition",
+        "logged",
+    )
+    if any(term in lower for term in pattern_terms) and any(
+        term in lower for term in food_log_terms + workout_fueling_terms
+    ):
+        return "pattern_mining"
+    if any(term in lower for term in body_comp_terms):
+        return "body_composition"
+    if any(term in lower for term in race_fueling_terms):
+        return "race_fueling"
+    if any(term in lower for term in workout_fueling_terms):
+        return "training_day_fueling"
+    if any(term in lower for term in food_log_terms):
+        if "yesterday" in lower:
+            return "date_range_yesterday"
+        if any(
+            term in lower
+            for term in ("last week", "this week", "past week", "7 days")
+        ):
+            return "date_range_week"
+        return "current_log"
+    return None
+
+
+def _nutrition_date_window(kind: str, today: date) -> tuple[date, date]:
+    if kind == "date_range_yesterday":
+        yesterday = today - timedelta(days=1)
+        return yesterday, yesterday
+    if kind in {"date_range_week", "pattern_mining", "body_composition"}:
+        return today - timedelta(days=6), today
+    return today, today
+
+
+def _nutrition_entry_row(entry: NutritionEntry) -> dict[str, Any]:
+    return {
+        "date": entry.date.isoformat() if entry.date else None,
+        "entry_type": entry.entry_type or "daily",
+        "notes": (entry.notes or "")[:100],
+        "calories": round(float(entry.calories or 0)),
+        "protein_g": round(float(entry.protein_g or 0)),
+        "carbs_g": round(float(entry.carbs_g or 0)),
+        "fat_g": round(float(entry.fat_g or 0)),
+        "caffeine_mg": round(float(entry.caffeine_mg or 0)),
+        "fluid_ml": round(float(entry.fluid_ml or 0)),
+        "macro_source": entry.macro_source,
+        "linked_activity_id": str(entry.activity_id) if entry.activity_id else None,
+    }
+
+
+def _summarize_nutrition_entries(
+    entries: list[NutritionEntry],
+    *,
+    today: date,
+) -> dict[str, Any]:
+    by_date: dict[str, dict[str, float]] = {}
+    for entry in entries:
+        if not entry.date:
+            continue
+        key = entry.date.isoformat()
+        totals = by_date.setdefault(
+            key,
+            {
+                "calories": 0.0,
+                "protein_g": 0.0,
+                "carbs_g": 0.0,
+                "fat_g": 0.0,
+                "caffeine_mg": 0.0,
+                "fluid_ml": 0.0,
+                "entry_count": 0.0,
+            },
+        )
+        totals["calories"] += float(entry.calories or 0)
+        totals["protein_g"] += float(entry.protein_g or 0)
+        totals["carbs_g"] += float(entry.carbs_g or 0)
+        totals["fat_g"] += float(entry.fat_g or 0)
+        totals["caffeine_mg"] += float(entry.caffeine_mg or 0)
+        totals["fluid_ml"] += float(entry.fluid_ml or 0)
+        totals["entry_count"] += 1
+
+    def rounded(values: dict[str, float]) -> dict[str, Any]:
+        return {
+            "calories": round(values.get("calories", 0)),
+            "protein_g": round(values.get("protein_g", 0)),
+            "carbs_g": round(values.get("carbs_g", 0)),
+            "fat_g": round(values.get("fat_g", 0)),
+            "caffeine_mg": round(values.get("caffeine_mg", 0)),
+            "fluid_ml": round(values.get("fluid_ml", 0)),
+            "entry_count": int(values.get("entry_count", 0)),
+            "is_complete_day_total": False,
+        }
+
+    normalized_by_date = {
+        day: rounded(values) for day, values in sorted(by_date.items(), reverse=True)
+    }
+    today_key = today.isoformat()
+    today_totals = normalized_by_date.get(
+        today_key,
+        {
+            "calories": 0,
+            "protein_g": 0,
+            "carbs_g": 0,
+            "fat_g": 0,
+            "caffeine_mg": 0,
+            "fluid_ml": 0,
+            "entry_count": 0,
+            "is_complete_day_total": False,
+        },
+    )
+    return {
+        "today": {"date": today_key, **today_totals},
+        "by_date": normalized_by_date,
+    }
+
+
+def build_nutrition_context_state(
+    *,
+    athlete_id: UUID,
+    db: Session | None,
+    message: str,
+    now_utc: datetime | None = None,
+) -> dict[str, Any] | None:
+    kind = _detect_nutrition_context_kind(message)
+    if kind is None:
+        return None
+
+    generated_at = _utc_now_iso()
+    if db is None:
+        return {
+            "schema_version": "coach_runtime_v2.nutrition_context.v1",
+            "status": "unavailable",
+            "generated_at": generated_at,
+            "data": {
+                "query_type": kind,
+                "coverage": {
+                    "entries_found": 0,
+                    "entries_returned": 0,
+                    "interpretation": "nutrition_db_unavailable",
+                },
+                "entries": [],
+                "known_limitations": ["Nutrition database session unavailable."],
+            },
+            "unknowns": [
+                {
+                    "field": "nutrition_log",
+                    "reason": "db_unavailable",
+                    "suggested_question": "What did you eat, and when did you eat it?",
+                }
+            ],
+            "provenance": [],
+        }
+
+    try:
+        tz_name = get_athlete_timezone_from_db(db, athlete_id)
+        today = athlete_local_today(tz_name, now_utc=now_utc)
+        start_date, end_date = _nutrition_date_window(kind, today)
+        base_query = db.query(NutritionEntry).filter(
+            NutritionEntry.athlete_id == athlete_id,
+            NutritionEntry.date >= start_date,
+            NutritionEntry.date <= end_date,
+        )
+        entries_found = base_query.count()
+        entries = (
+            base_query
+            .order_by(NutritionEntry.date.desc(), NutritionEntry.created_at.desc())
+            .limit(NUTRITION_CONTEXT_ENTRY_LIMIT)
+            .all()
+        )
+        summary = _summarize_nutrition_entries(entries, today=today)
+        coverage = {
+            "start_date": start_date.isoformat(),
+            "end_date": end_date.isoformat(),
+            "entries_found": entries_found,
+            "entries_returned": len(entries),
+            "entry_limit": NUTRITION_CONTEXT_ENTRY_LIMIT,
+            "interpretation": "partial_logs_additive_not_complete_day_total",
+        }
+        data = {
+            "query_type": kind,
+            "coverage": coverage,
+            "today": summary["today"],
+            "by_date": summary["by_date"],
+            "entries": [_nutrition_entry_row(entry) for entry in entries],
+            "known_limitations": [
+                "Nutrition entries are logged-so-far records, not proof of full-day intake.",
+                "Unlogged food is not visible in this slice.",
+            ],
+        }
+        return {
+            "schema_version": "coach_runtime_v2.nutrition_context.v1",
+            "status": "complete",
+            "generated_at": generated_at,
+            "data": data,
+            "unknowns": [],
+            "provenance": [
+                {
+                    "field_path": "blocks.nutrition_context.data",
+                    "source_system": "nutrition_entry",
+                    "source_id": str(athlete_id),
+                    "source_timestamp": generated_at,
+                    "observed_at": generated_at,
+                    "confidence": "high",
+                    "derivation_chain": ["nutrition_entry.date_range_query"],
+                }
+            ],
+        }
+    except Exception as exc:
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        return {
+            "schema_version": "coach_runtime_v2.nutrition_context.v1",
+            "status": "unavailable",
+            "generated_at": generated_at,
+            "data": {
+                "query_type": kind,
+                "coverage": {
+                    "entries_found": 0,
+                    "entries_returned": 0,
+                    "interpretation": "nutrition_lookup_failed",
+                },
+                "entries": [],
+                "known_limitations": [f"Nutrition lookup failed: {type(exc).__name__}"],
+            },
+            "unknowns": [
+                {
+                    "field": "nutrition_log",
+                    "reason": "lookup_failed",
+                    "suggested_question": "What did you eat, and when did you eat it?",
+                }
+            ],
+            "provenance": [],
+        }
 
 
 def _athlete_facts_payload(db: Session | None, athlete_id: UUID) -> dict[str, Any]:
@@ -1655,6 +1944,12 @@ def assemble_v2_packet(
         if db is not None
         else _empty_recent_threads()
     )
+    nutrition_context = build_nutrition_context_state(
+        athlete_id=athlete_id,
+        db=db,
+        message=message,
+        now_utc=now_utc,
+    )
     legacy_context, removed_temporal_lines_count = quiet_legacy_context_bridge(
         (legacy_athlete_state or "").strip()
     )
@@ -1701,6 +1996,8 @@ def assemble_v2_packet(
             "ledger_field_coverage": ledger_field_coverage,
         },
     }
+    if nutrition_context is not None:
+        data["nutrition_context"] = nutrition_context["data"]
     token_estimate = _estimated_tokens(data)
     if token_estimate > PACKET_MAX_ESTIMATED_TOKENS and data[
         "_legacy_context_bridge_deprecated"
@@ -1948,6 +2245,57 @@ def assemble_v2_packet(
                     "estimated_tokens": _estimated_tokens(data["recent_activities"]),
                 },
             },
+            **(
+                {
+                    "nutrition_context": {
+                        "schema_version": "coach_runtime_v2.block.nutrition_context.v1",
+                        "status": nutrition_context["status"],
+                        "generated_at": generated_at,
+                        "as_of": generated_at,
+                        "selected_sections": [
+                            "query_matched_nutrition_slice",
+                            "date_range_totals",
+                            "bounded_entries",
+                        ],
+                        "available_sections": [
+                            "current_log",
+                            "date_range_log",
+                            "training_day_fueling",
+                            "race_fueling",
+                            "body_composition",
+                            "pattern_mining",
+                        ],
+                        "data": data["nutrition_context"],
+                        "completeness": [
+                            {
+                                "section": "nutrition_context",
+                                "status": nutrition_context["status"],
+                                "coverage_start": (
+                                    (data["nutrition_context"] or {}).get("coverage")
+                                    or {}
+                                ).get("start_date"),
+                                "coverage_end": (
+                                    (data["nutrition_context"] or {}).get("coverage")
+                                    or {}
+                                ).get("end_date"),
+                                "expected_window": "only the nutrition slice relevant to the athlete's latest question",
+                                "detail": "Live nutrition rows are partial logged-so-far records, not complete-day proof.",
+                            }
+                        ],
+                        "unknowns": nutrition_context["unknowns"],
+                        "provenance": nutrition_context["provenance"],
+                        "token_budget": {
+                            "target_tokens": 450,
+                            "max_tokens": 800,
+                            "estimated_tokens": _estimated_tokens(
+                                data["nutrition_context"]
+                            ),
+                        },
+                    }
+                }
+                if nutrition_context is not None
+                else {}
+            ),
             "recent_threads": {
                 "schema_version": recent_threads["schema_version"],
                 "status": recent_threads["status"],
@@ -2028,13 +2376,14 @@ def assemble_v2_packet(
         "omitted_blocks": budget_omissions,
         "telemetry": {
             "estimated_tokens": token_estimate,
-            "packet_block_count": 9,
+            "packet_block_count": None,
             "omitted_block_count": len(budget_omissions),
             "unknown_count": (
                 len(calendar_context["unknowns"])
                 + len(activity_evidence["unknowns"])
                 + len(training_adaptation_context["unknowns"])
                 + len(recent_activities["unknowns"])
+                + (len(nutrition_context["unknowns"]) if nutrition_context else 0)
                 + len(unknowns)
             ),
             "unknowns_count": len(unknowns),
@@ -2057,6 +2406,7 @@ def assemble_v2_packet(
     }
     if token_estimate > PACKET_MAX_ESTIMATED_TOKENS:
         raise V2PacketInvariantError("packet_token_budget_exceeded")
+    packet["telemetry"]["packet_block_count"] = len(packet["blocks"])
     return packet
 
 
@@ -2106,6 +2456,7 @@ def _timeout_retry_packet_for_llm(packet: dict[str, Any]) -> dict[str, Any]:
         "activity_evidence_state",
         "training_adaptation_context",
         "athlete_facts",
+        "nutrition_context",
         "unknowns",
     }
     compact["blocks"] = {

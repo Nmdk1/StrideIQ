@@ -52,6 +52,19 @@ def detect_query_class(message: str) -> str:
     lower = (message or "").lower()
     if any(
         term in lower
+        for term in (
+            "weight",
+            "cut",
+            "drop pounds",
+            "lose pounds",
+            "mass reduction",
+            "body composition",
+            "body comp",
+        )
+    ):
+        return "weight_loss_planning"
+    if any(
+        term in lower
         for term in ("interval", "repetition", "rep pace", "5k pace", "threshold pace")
     ):
         return "interval_pace_question"
@@ -81,11 +94,6 @@ def detect_query_class(message: str) -> str:
         for term in ("race", "5k", "10k", "half marathon", "marathon", "pace plan")
     ):
         return "race_planning"
-    if any(
-        term in lower
-        for term in ("weight", "cut", "drop pounds", "lose pounds", "mass reduction")
-    ):
-        return "weight_loss_planning"
     return "general"
 
 

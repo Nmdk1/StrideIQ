@@ -25,6 +25,10 @@ def test_query_class_detection_routes_common_questions():
         detect_query_class("I want to drop pounds this summer")
         == "weight_loss_planning"
     )
+    assert (
+        detect_query_class("How should nutrition support body composition goals?")
+        == "weight_loss_planning"
+    )
 
 
 def test_missing_required_field_surfaces_unknown_with_question(db_session):
