@@ -147,6 +147,20 @@ def test_quick_check_rejects_and_trims_essay_response():
     assert len(trimmed.split()) <= contract.max_words
 
 
+def test_quick_check_trim_prefers_clean_sentence_boundary():
+    user_message = "Quick check — keep it brief: should I run easy today?"
+    long_response = (
+        "Stay under the easy ceiling and keep the first half controlled. "
+        "The point is absorbing the prior hard work, not proving fitness again. "
+        + " ".join(["This final sentence keeps going without a clean stop"] * 20)
+    )
+
+    trimmed = enforce_conversation_contract_output(user_message, long_response)
+
+    assert trimmed.endswith("again.")
+    assert "This final sentence" not in trimmed
+
+
 def test_decision_point_requires_tradeoff_and_default_recommendation():
     user_message = "Should I postpone threshold tomorrow?"
 
