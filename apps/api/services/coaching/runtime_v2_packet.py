@@ -2444,10 +2444,44 @@ def _block_for_llm(block: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _direct_nutrition_log_prompt(blocks: dict[str, Any]) -> bool:
+    nutrition_data = ((blocks.get("nutrition_context") or {}).get("data") or {})
+    return nutrition_data.get("query_type") in {
+        "current_log",
+        "date_range_yesterday",
+        "date_range_week",
+    }
+
+
+def _scoped_conversation_block_for_llm(block: dict[str, Any]) -> dict[str, Any]:
+    compact = _block_for_llm(block)
+    data = dict(compact.get("data") or {})
+    data["recent_context"] = []
+    data["scope_note"] = (
+        "Direct nutrition-log answer: use the current turn and nutrition_context only."
+    )
+    compact["data"] = data
+    return compact
+
+
 def _compact_packet_for_llm(packet: dict[str, Any]) -> dict[str, Any]:
     blocks = packet.get("blocks") or {}
     conversation_mode = dict(packet.get("conversation_mode") or {})
     conversation_mode.pop("provenance", None)
+    direct_nutrition_log = _direct_nutrition_log_prompt(blocks)
+    if direct_nutrition_log:
+        compact_blocks = {
+            "conversation": _scoped_conversation_block_for_llm(
+                blocks.get("conversation") or {}
+            ),
+            "nutrition_context": _block_for_llm(blocks.get("nutrition_context") or {}),
+        }
+    else:
+        compact_blocks = {
+            key: _block_for_llm(block)
+            for key, block in blocks.items()
+            if key != "_legacy_context_bridge_deprecated"
+        }
     return {
         "schema_version": packet.get("schema_version"),
         "packet_profile": packet.get("packet_profile"),
@@ -2455,12 +2489,11 @@ def _compact_packet_for_llm(packet: dict[str, Any]) -> dict[str, Any]:
         "conversation_mode": conversation_mode,
         "athlete_stated_overrides": packet.get("athlete_stated_overrides") or [],
         "pending_conflicts": packet.get("pending_conflicts") or [],
-        "blocks": {
-            key: _block_for_llm(block)
-            for key, block in blocks.items()
-            if key != "_legacy_context_bridge_deprecated"
-        },
+        "blocks": compact_blocks,
         "omitted_blocks": packet.get("omitted_blocks") or [],
+        "prompt_scope": (
+            "direct_nutrition_log_only" if direct_nutrition_log else "full_compact"
+        ),
         "telemetry": {
             "estimated_tokens": (packet.get("telemetry") or {}).get(
                 "estimated_tokens"

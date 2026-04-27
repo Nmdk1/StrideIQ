@@ -90,6 +90,11 @@ def test_v2_packet_includes_compact_nutrition_context_for_current_food_query(
     assert data["today"]["entry_count"] == 2
     assert [entry["notes"] for entry in data["entries"]] == ["Lunch", "Breakfast"]
     assert "nutrition_context" in prompt
+    assert "direct_nutrition_log_only" in prompt
+    assert "calendar_context" not in prompt
+    assert "activity_evidence_state" not in prompt
+    assert "training_adaptation_context" not in prompt
+    assert "recent_threads" not in prompt
     assert "Breakfast" in prompt
     assert "Lunch" in prompt
     assert "get_nutrition_log" not in prompt
