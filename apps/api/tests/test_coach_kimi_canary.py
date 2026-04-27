@@ -418,12 +418,17 @@ async def test_kimi_v2_packet_timeout_retries_with_compact_packet(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_kimi_v2_packet_empty_content_fails_without_thinking_retry(monkeypatch):
+async def test_kimi_v2_packet_empty_content_retries_with_compact_packet(monkeypatch):
     coach = AICoach.__new__(AICoach)
     coach.track_usage = MagicMock()
     captured = []
+
     async def _create(**kwargs):
         captured.append(kwargs)
+        if len(captured) == 2:
+            return _oai_response(
+                content="Empty retry answer.", prompt_tokens=8, completion_tokens=4
+            )
         return _oai_response(content="", prompt_tokens=10, completion_tokens=1)
 
     monkeypatch.setitem(sys.modules, "openai", _make_openai_module(_create))
@@ -448,12 +453,15 @@ async def test_kimi_v2_packet_empty_content_fails_without_thinking_retry(monkeyp
         packet={"schema_version": "coach_runtime_v2.packet.v1"},
     )
 
-    assert result["error"] is True
-    assert result["fallback_reason"] == "v2_empty_response"
-    assert len(captured) == 1
+    assert result["error"] is False
+    assert result["response"] == "Empty retry answer."
+    assert result["empty_retry_used"] is True
+    assert len(captured) == 2
     assert captured[0]["extra_body"] == {"thinking": {"type": "disabled"}}
     assert captured[0]["max_tokens"] <= 1200
-    coach.track_usage.assert_not_called()
+    assert "INTERNAL COMPACT COACH STATE PACKET" in captured[1]["messages"][1]["content"]
+    assert captured[1]["max_tokens"] <= 700
+    coach.track_usage.assert_called_once()
 
 
 @pytest.mark.asyncio

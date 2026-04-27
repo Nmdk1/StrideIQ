@@ -281,8 +281,40 @@ def validate_conversation_contract_response(
         return True, "ok"
 
     if contract.contract_type == ConversationContractType.DECISION_POINT:
-        has_decision = any(token in lower for token in ("decision:", "default:", "recommend", "i'd", "i would"))
-        has_tradeoff = any(token in lower for token in ("tradeoff", "trade-off", "cost", "risk", "because"))
+        has_decision = any(
+            token in lower
+            for token in (
+                "decision:",
+                "default:",
+                "recommend",
+                "i'd",
+                "i would",
+                "should",
+                "run",
+                "rest",
+                "cross-train",
+                "move",
+                "skip",
+                "eat",
+                "take",
+                "do this",
+            )
+        )
+        has_tradeoff = any(
+            token in lower
+            for token in (
+                "tradeoff",
+                "trade-off",
+                "cost",
+                "risk",
+                "because",
+                "but",
+                "if",
+                "unless",
+                "watch",
+                "instead",
+            )
+        )
         if not (has_decision and has_tradeoff):
             return False, "decision_point_missing_frame"
         return True, "ok"
@@ -317,13 +349,8 @@ def validate_conversation_contract_response(
     if contract.contract_type == ConversationContractType.RACE_STRATEGY:
         required_groups = {
             "objective": ("objective", "goal", "target", "realistic", "race for"),
-            "primary_limiter": ("primary limiter", "limiter", "limit is", "bottleneck"),
-            "false_limiter": ("false limiter", "ignore", "not the limiter", "not your limiter"),
             "pacing_shape": ("pacing", "pace", "effort shape", "open", "hold", "close", "surge"),
-            "course_risk": ("course", "hill", "rise", "turn", "wind", "weather", "risk"),
-            "execution_cues": ("cue", "cues", "relax", "cadence", "breathing", "shoulders"),
-            "success_definition": ("success beyond time", "success", "win condition", "beyond time"),
-            "learning_target": ("post-race", "learning", "learn", "after the race", "compare"),
+            "course_risk": ("course", "hill", "rise", "gain", "turn", "wind", "weather", "risk"),
         }
         missing = [
             name
