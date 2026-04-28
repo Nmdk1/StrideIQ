@@ -79,14 +79,18 @@ def test_race_strategy_packet_assembles_current_race_context(db_session, test_at
     db_session.add(plan)
     db_session.flush()
 
+    workout_date = today + timedelta(days=2)
     db_session.add(
         PlannedWorkout(
             athlete_id=test_athlete.id,
             plan_id=plan.id,
-            scheduled_date=today + timedelta(days=2),
+            scheduled_date=workout_date,
+            week_number=1,
+            day_of_week=(workout_date.weekday() + 1) % 7,
             title="5K sharpening workout",
             workout_type="quality",
             workout_subtype="threshold",
+            phase="build",
             target_distance_km=10.0,
             completed=False,
         )
