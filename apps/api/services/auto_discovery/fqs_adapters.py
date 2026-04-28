@@ -288,28 +288,28 @@ class AthleteFindingFQSAdapter:
         }
 
     def _confidence(self, finding: "AthleteFinding") -> float:
-        tier_score = _CONFIDENCE_TIER_MAP.get(finding.confidence, 0.4)
-        recency = _recency_score(finding.last_confirmed_at)
+        tier_score = _CONFIDENCE_TIER_MAP.get(getattr(finding, "confidence", None), 0.4)
+        recency = _recency_score(getattr(finding, "last_confirmed_at", None))
         return round(tier_score * recency, 4)
 
     def _specificity(self, finding: "AthleteFinding") -> float:
         # Receipts richness: number of keys in receipts dict.
-        receipts = finding.receipts or {}
+        receipts = getattr(finding, "receipts", None) or {}
         receipt_count = len(receipts) if isinstance(receipts, dict) else 0
         receipt_score = min(1.0, receipt_count / 5.0)
         # Sentence length heuristic: longer sentences are usually more specific.
-        sentence = finding.sentence or ""
+        sentence = getattr(finding, "sentence", None) or ""
         word_count = len(sentence.split())
         sentence_score = min(1.0, word_count / 40.0)
         return round(0.6 * receipt_score + 0.4 * sentence_score, 4)
 
     def _stability(self, finding: "AthleteFinding") -> float:
         # Penalise superseded findings; active findings get recency weight.
-        if not finding.is_active:
+        if not getattr(finding, "is_active", True):
             return 0.2
-        recency = _recency_score(finding.last_confirmed_at)
+        recency = _recency_score(getattr(finding, "last_confirmed_at", None))
         # Longevity bonus: found > 30 days ago and still active.
-        first = finding.first_detected_at
+        first = getattr(finding, "first_detected_at", None)
         if first:
             if first.tzinfo is None:
                 first = first.replace(tzinfo=timezone.utc)

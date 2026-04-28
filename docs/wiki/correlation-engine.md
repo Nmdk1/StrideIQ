@@ -102,6 +102,8 @@ Located in `services/auto_discovery/`:
 
 Models: `AutoDiscoveryRun`, `AutoDiscoveryExperiment`, `AutoDiscoveryCandidate`, `AutoDiscoveryChangeLog`, `AutoDiscoveryScanCoverage`.
 
+The tuning loop scores transient `RaceInputFinding` investigation outputs as well as persisted `AthleteFinding` rows. Transient findings do not have persistence timestamps, so `AthleteFindingFQSAdapter` treats missing recency/longevity fields as low-confidence inferred stability instead of failing the nightly/manual run.
+
 The engine runs nightly and has produced: ~100 promoted findings, 62 stability annotations, 20 interaction candidates (as of Apr 6, 2026 manual trigger — nightly schedule confirmed working via beat startup dispatch fix).
 
 ### Fingerprint Bridge

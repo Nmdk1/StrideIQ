@@ -272,6 +272,22 @@ class TestAthleteFindingScoreList:
         )
         assert aggregate == expected
 
+    def test_transient_race_input_finding_without_persistence_timestamps_scores(self):
+        """Registry tuning scores transient investigation findings, not just ORM rows."""
+        from services.race_input_analysis import RaceInputFinding
+
+        finding = RaceInputFinding(
+            layer="B",
+            finding_type="race_input",
+            sentence="Threshold sessions clustered before stronger race inputs.",
+            receipts={"sessions": 4, "window_days": 42},
+            confidence="suggestive",
+        )
+
+        aggregate = self.adapter.score_finding_list([finding])
+
+        assert 0.0 < aggregate <= 1.0
+
 
 class TestRescanExperimentsHaveRealScores:
     """WS2: orchestrator must persist real FQS scores on rescan experiments."""
