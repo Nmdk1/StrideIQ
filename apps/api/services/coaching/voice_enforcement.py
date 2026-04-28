@@ -85,7 +85,7 @@ async def enforce_voice(
 ) -> dict[str, Any]:
     current = response_text or ""
     total_hits: list[str] = []
-    for _ in range(max_retries + 1):
+    for attempt in range(max_retries + 1):
         check = check_response(current)
         hits = list(check["hits"])
         if not hits:
@@ -96,7 +96,7 @@ async def enforce_voice(
                 "retried": bool(total_hits),
             }
         total_hits.extend(hits)
-        if len(total_hits) > max_retries * max(1, len(hits)):
+        if attempt >= max_retries:
             break
         instruction = (
             "Rewrite the whole answer as final athlete-facing coaching prose. "

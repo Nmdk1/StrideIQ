@@ -63,6 +63,28 @@ async def test_enforce_voice_raises_after_max_retry_hits():
     assert "great question" in exc.value.hits
 
 
+@pytest.mark.asyncio
+async def test_enforce_voice_uses_all_retries_before_failing():
+    calls = []
+    responses = iter(
+        [
+            "The unasked: this still mentions the packet.",
+            "Run easy today. Keep it boring.",
+        ]
+    )
+
+    async def retry(instruction: str) -> str:
+        calls.append(instruction)
+        return next(responses)
+
+    result = await enforce_voice("Great question.", retry, max_retries=2)
+
+    assert result["response"] == "Run easy today. Keep it boring."
+    assert len(calls) == 2
+    assert "the unasked:" in calls[1].lower()
+    assert "packet" in calls[1].lower()
+
+
 def test_tier3_payload_and_scores_penalize_template_hits():
     case = {
         "id": "artifact7-case",
