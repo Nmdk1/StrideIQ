@@ -10,6 +10,8 @@ from services.ai_coach import AICoach
 
 
 def _make_openai_module(create_impl):
+    clients = []
+
     class _APITimeoutError(Exception):
         pass
 
@@ -25,8 +27,13 @@ def _make_openai_module(create_impl):
         def __init__(self, **kwargs):
             self.kwargs = kwargs
             self.chat = _Chat()
+            clients.append(self)
 
-    return SimpleNamespace(AsyncOpenAI=_Client, APITimeoutError=_APITimeoutError)
+    return SimpleNamespace(
+        AsyncOpenAI=_Client,
+        APITimeoutError=_APITimeoutError,
+        clients=clients,
+    )
 
 
 def _oai_response(*, content="", tool_calls=None, prompt_tokens=1, completion_tokens=1):
@@ -271,7 +278,7 @@ async def test_kimi_v2_packet_call_disables_tools_and_thinking(monkeypatch):
     async def _create(**kwargs):
         captured.append(kwargs)
         return _oai_response(
-            content="V2 packet answer.", prompt_tokens=10, completion_tokens=5
+            content="V2 answer.", prompt_tokens=10, completion_tokens=5
         )
 
     monkeypatch.setitem(sys.modules, "openai", _make_openai_module(_create))
@@ -300,12 +307,13 @@ async def test_kimi_v2_packet_call_disables_tools_and_thinking(monkeypatch):
     )
 
     assert result["error"] is False
-    assert result["response"] == "V2 packet answer."
+    assert result["response"] == "V2 answer."
     assert result["tools_called"] == []
     assert "tools" not in captured[0]
     assert "tool_choice" not in captured[0]
     assert captured[0]["extra_body"] == {"thinking": {"type": "disabled"}}
     assert captured[0]["max_tokens"] <= 1200
+    assert sys.modules["openai"].clients[0].kwargs["max_retries"] == 0
     assert "<!-- VOICE_CORPUS -->" in captured[0]["messages"][0]["content"]
     assert (
         "You are StrideIQ's coach. The athlete in this turn is the same human"
@@ -358,6 +366,8 @@ async def test_kimi_v2_packet_timeout_maps_to_v2_timeout(monkeypatch):
     assert result["model"] == "kimi-k2.6"
     assert result["timeout_retry_used"] is True
     assert len(captured) == 2
+    assert [client.kwargs["max_retries"] for client in openai_module.clients] == [0, 0]
+    assert [client.kwargs["timeout"] for client in openai_module.clients] == [30, 12]
     assert "tools_called" not in result
     coach.track_usage.assert_not_called()
 
@@ -414,6 +424,7 @@ async def test_kimi_v2_packet_timeout_retries_with_compact_packet(monkeypatch):
     assert "INTERNAL COMPACT COACH STATE PACKET" in captured[1]["messages"][1]["content"]
     assert "timeout_retry_instruction" in captured[1]["messages"][1]["content"]
     assert captured[1]["max_tokens"] <= 700
+    assert [client.kwargs["max_retries"] for client in openai_module.clients] == [0, 0]
     coach.track_usage.assert_called_once()
 
 

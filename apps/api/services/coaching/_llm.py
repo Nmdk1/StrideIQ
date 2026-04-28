@@ -777,6 +777,7 @@ class LLMMixin:
             api_key=api_key,
             base_url=settings.KIMI_BASE_URL,
             timeout=V2_PACKET_TIMEOUT_SECONDS,
+            max_retries=0,
         )
         system_prompt = V2_SYSTEM_PROMPT
         messages = [
@@ -823,6 +824,7 @@ class LLMMixin:
                 api_key=api_key,
                 base_url=settings.KIMI_BASE_URL,
                 timeout=V2_PACKET_TIMEOUT_RETRY_SECONDS,
+                max_retries=0,
             )
             retry_messages = [
                 {
