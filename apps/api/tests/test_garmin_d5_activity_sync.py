@@ -404,14 +404,18 @@ class TestActivityTypeFiltering:
             assert result == "created", f"{garmin_type} should be created"
 
     def test_unmapped_sport_is_skipped(self):
-        raw = {**_RUNNING_RAW, "activityType": "GOLF", "summaryId": "sum-golf-001"}
+        raw = {
+            **_RUNNING_RAW,
+            "activityType": "UNDERWATER_BASKETWEAVING",
+            "summaryId": "sum-unmapped-001",
+        }
         result = self._run_item(raw)
         assert result == "skipped"
 
-    def test_swimming_is_skipped(self):
+    def test_swimming_is_created(self):
         raw = {**_RUNNING_RAW, "activityType": "SWIMMING", "summaryId": "sum-swim-001"}
         result = self._run_item(raw)
-        assert result == "skipped"
+        assert result == "created"
 
     def test_missing_summary_id_is_skipped(self):
         raw = {k: v for k, v in _RUNNING_RAW.items() if k != "summaryId"}
@@ -691,10 +695,14 @@ class TestLastGarminSyncUpdate:
         mock_db.query.return_value.filter.return_value.first.return_value = None
         mock_db.query.return_value.filter.return_value.all.return_value = []
 
-        golf_raw = {**_RUNNING_RAW, "activityType": "GOLF", "summaryId": "sum-golf-skip"}
+        unmapped_raw = {
+            **_RUNNING_RAW,
+            "activityType": "UNDERWATER_BASKETWEAVING",
+            "summaryId": "sum-unmapped-skip",
+        }
         with patch("tasks.garmin_webhook_tasks.get_db_sync", return_value=mock_db), \
              patch("tasks.garmin_webhook_tasks._find_athlete_in_db", return_value=mock_athlete):
-            process_garmin_activity_task.run(ATHLETE_ID, golf_raw)
+            process_garmin_activity_task.run(ATHLETE_ID, unmapped_raw)
 
         assert mock_athlete.last_garmin_sync is not None
 
@@ -739,7 +747,11 @@ class TestLastGarminSyncUpdate:
         mock_db = _make_mock_db()
         mock_athlete = _make_mock_athlete()
 
-        golf_raw = {**_RUNNING_RAW, "activityType": "GOLF", "summaryId": "sum-golf-nobriefing"}
+        unmapped_raw = {
+            **_RUNNING_RAW,
+            "activityType": "UNDERWATER_BASKETWEAVING",
+            "summaryId": "sum-unmapped-nobriefing",
+        }
         mock_db.query.return_value.filter.return_value.first.return_value = None
         mock_db.query.return_value.filter.return_value.all.return_value = []
 
@@ -747,7 +759,7 @@ class TestLastGarminSyncUpdate:
              patch("tasks.garmin_webhook_tasks._find_athlete_in_db", return_value=mock_athlete), \
              patch("services.home_briefing_cache.mark_briefing_dirty") as mock_dirty, \
              patch("tasks.home_briefing_tasks.enqueue_briefing_refresh") as mock_enq:
-            process_garmin_activity_task.run(ATHLETE_ID, golf_raw)
+            process_garmin_activity_task.run(ATHLETE_ID, unmapped_raw)
 
         mock_dirty.assert_not_called()
         mock_enq.assert_not_called()

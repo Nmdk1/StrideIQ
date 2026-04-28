@@ -267,7 +267,7 @@ class TestV1PostActivitiesResponseShape:
             assert isinstance(data["average_speed"], (int, float))
             # Optional but commonly present
             assert "strava_id" in data
-            assert "pace_per_mile" in data
+            assert "pace_s_per_km" in data
             assert "duration_formatted" in data
 
 

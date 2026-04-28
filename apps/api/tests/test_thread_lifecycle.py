@@ -286,10 +286,10 @@ async def test_chat_invokes_close_idle_threads_persists_summary(
     db_session.refresh(idle_thread)
 
     monkeypatch.delenv("KIMI_API_KEY", raising=False)
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("GOOGLE_AI_API_KEY", raising=False)
     monkeypatch.setattr(consent_module, "has_ai_consent", lambda athlete_id, db: True)
     monkeypatch.setattr(coach_core.settings, "KIMI_API_KEY", "", raising=False)
-    monkeypatch.setattr(coach_core.settings, "ANTHROPIC_API_KEY", "", raising=False)
-    monkeypatch.setattr(coach_core.settings, "GOOGLE_AI_API_KEY", "", raising=False)
 
     coach = AICoach(db_session)
     coach.anthropic_client = None

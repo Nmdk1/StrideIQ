@@ -44,6 +44,7 @@ def _fake_plan(total_miles: float = 58.0):
     week = SimpleNamespace(
         week_number=1,
         start_date=date.today() + timedelta(days=7),
+        theme="build_t",
         days=[],
         total_miles=total_miles,
         notes=[],
@@ -163,9 +164,9 @@ def test_soft_gate_returns_200_with_warning_when_no_override_and_second_pass_pas
     assert "warnings" in payload
     assert isinstance(payload["warnings"], list)
     assert any("auto_tuned_peak_to_safe_range" in w for w in payload["warnings"])
-    assert payload.get("soft_gate_applied_peak_weekly_miles") is not None
+    assert payload.get("soft_gate_applied_peak_weekly_m") is not None
     # The midpoint of {18, 24} is 21.0
-    assert payload["soft_gate_applied_peak_weekly_miles"] == pytest.approx(21.0, abs=0.05)
+    assert payload["soft_gate_applied_peak_weekly_m"] == pytest.approx(21.0 * 1609.344, abs=1.0)
 
 
 def test_soft_gate_caps_athlete_override_to_safe_range_with_warning(
@@ -211,7 +212,7 @@ def test_soft_gate_caps_athlete_override_to_safe_range_with_warning(
         json={
             "race_date": (date.today() + timedelta(days=70)).isoformat(),
             "race_distance": "10k",
-            "target_peak_weekly_miles": 30,
+            "target_peak_weekly_m": 30 * 1609.344,
         },
     )
     _clear_deps()
@@ -220,8 +221,8 @@ def test_soft_gate_caps_athlete_override_to_safe_range_with_warning(
     assert any(
         w.startswith("capped_requested_peak_to_safe_range:") for w in payload.get("warnings", [])
     )
-    assert payload.get("soft_gate_applied_peak_weekly_miles") == pytest.approx(21.0, abs=0.05)
-    assert payload.get("soft_gate_requested_peak_weekly_miles") == 30
+    assert payload.get("soft_gate_applied_peak_weekly_m") == pytest.approx(21.0 * 1609.344, abs=1.0)
+    assert payload.get("soft_gate_requested_peak_weekly_m") == pytest.approx(30 * 1609.344, abs=1.0)
 
 
 def test_soft_gate_drops_athlete_range_with_dedicated_warning(
@@ -268,7 +269,7 @@ def test_soft_gate_drops_athlete_range_with_dedicated_warning(
         json={
             "race_date": (date.today() + timedelta(days=70)).isoformat(),
             "race_distance": "10k",
-            "target_peak_weekly_range": {"min": 35, "max": 45},
+            "target_peak_weekly_range": {"min": 35 * 1609.344, "max": 45 * 1609.344},
         },
     )
     _clear_deps()
@@ -278,8 +279,8 @@ def test_soft_gate_drops_athlete_range_with_dedicated_warning(
     assert any(
         w.startswith("dropped_requested_range_to_safe_peak:") for w in warnings
     ), f"expected dropped_requested_range_to_safe_peak warning, got {warnings}"
-    assert payload.get("soft_gate_applied_peak_weekly_miles") == pytest.approx(21.0, abs=0.05)
-    assert payload.get("soft_gate_requested_peak_weekly_miles") is None
+    assert payload.get("soft_gate_applied_peak_weekly_m") == pytest.approx(21.0 * 1609.344, abs=1.0)
+    assert payload.get("soft_gate_requested_peak_weekly_m") is None
 
 
 def test_soft_gate_returns_200_with_warning_when_safe_range_regen_also_fails(

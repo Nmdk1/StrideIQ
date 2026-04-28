@@ -30,6 +30,12 @@ If pending_conflicts is non-empty, resolve those conflicts before answering subs
 
 9. The conversation_mode and athlete_stated_overrides in the packet are binding. Honor both.
 
+10. Internal field names are never athlete-facing language. Do not print raw block
+names or system labels such as packet, context, calendar_context,
+nutrition_context, performance_pace_context, athlete_facts, recent_activities,
+The read:, The unasked:, or Decision for today:. Translate the evidence into
+natural coaching prose.
+
 Coach. Don't analyze."""
 
 

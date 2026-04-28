@@ -71,7 +71,10 @@ def test_race_strategy_packet_assembles_current_race_context(db_session, test_at
         goal_race_date=race_date,
         goal_race_distance_m=5000,
         goal_time_seconds=18 * 60 + 45,
+        plan_start_date=today,
+        plan_end_date=race_date,
         total_weeks=8,
+        plan_type="5k",
     )
     db_session.add(plan)
     db_session.flush()
