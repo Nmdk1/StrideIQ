@@ -48,6 +48,8 @@ async def test_enforce_voice_retries_until_rewritten_response_succeeds():
     assert result["template_phrase_count"] == 2
     assert result["retried"] is True
     assert calls and "great question" in calls[0].lower()
+    assert "athlete-facing coaching prose" in calls[0]
+    assert "translate internal field names" in calls[0]
 
 
 @pytest.mark.asyncio

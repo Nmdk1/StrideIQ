@@ -99,8 +99,12 @@ async def enforce_voice(
         if len(total_hits) > max_retries * max(1, len(hits)):
             break
         instruction = (
-            "Rewrite the answer without these forbidden template phrases: "
-            f"{', '.join(hits)}. Keep the athlete-specific facts and decision."
+            "Rewrite the whole answer as final athlete-facing coaching prose. "
+            "Do not mention, quote, or explain these forbidden phrases/system "
+            f"terms: {', '.join(hits)}. Remove visible headings such as "
+            "The read, The unasked, and Decision for today. Keep the "
+            "athlete-specific facts and the decision, but translate internal "
+            "field names into natural language."
         )
         current = await _call_retry(retry_callable, instruction)
     raise VoiceContractViolation(total_hits)
