@@ -2683,13 +2683,44 @@ def _direct_nutrition_log_prompt(blocks: dict[str, Any]) -> bool:
     }
 
 
-def _scoped_conversation_block_for_llm(block: dict[str, Any]) -> dict[str, Any]:
+def _direct_performance_pace_prompt(blocks: dict[str, Any]) -> bool:
+    if "performance_pace_context" not in blocks:
+        return False
+    conversation_data = ((blocks.get("conversation") or {}).get("data") or {})
+    message = str(conversation_data.get("user_message") or "").lower()
+    direct_pace_terms = (
+        "what pace",
+        "which pace",
+        "pace should",
+        "should i run",
+        "threshold workout",
+        "threshold pace",
+        "tempo pace",
+        "interval pace",
+        "easy pace",
+        "marathon pace",
+    )
+    return any(term in message for term in direct_pace_terms) and not any(
+        term in message
+        for term in (
+            "too much",
+            "too hard",
+            "too easy",
+            "should i run easy",
+            "race",
+        )
+    )
+
+
+def _scoped_conversation_block_for_llm(
+    block: dict[str, Any],
+    *,
+    scope_note: str = "Use the current turn and scoped context only.",
+) -> dict[str, Any]:
     compact = _block_for_llm(block)
     data = dict(compact.get("data") or {})
     data["recent_context"] = []
-    data["scope_note"] = (
-        "Direct nutrition-log answer: use the current turn and nutrition_context only."
-    )
+    data["scope_note"] = scope_note
     compact["data"] = data
     return compact
 
@@ -2699,12 +2730,30 @@ def _compact_packet_for_llm(packet: dict[str, Any]) -> dict[str, Any]:
     conversation_mode = dict(packet.get("conversation_mode") or {})
     conversation_mode.pop("provenance", None)
     direct_nutrition_log = _direct_nutrition_log_prompt(blocks)
+    direct_performance_pace = _direct_performance_pace_prompt(blocks)
     if direct_nutrition_log:
         compact_blocks = {
             "conversation": _scoped_conversation_block_for_llm(
-                blocks.get("conversation") or {}
+                blocks.get("conversation") or {},
+                scope_note=(
+                    "Direct nutrition-log answer: use the current turn and "
+                    "nutrition_context only."
+                ),
             ),
             "nutrition_context": _block_for_llm(blocks.get("nutrition_context") or {}),
+        }
+    elif direct_performance_pace:
+        compact_blocks = {
+            "conversation": _scoped_conversation_block_for_llm(
+                blocks.get("conversation") or {},
+                scope_note=(
+                    "Direct pace answer: use the current turn and "
+                    "performance_pace_context only."
+                ),
+            ),
+            "performance_pace_context": _block_for_llm(
+                blocks.get("performance_pace_context") or {}
+            ),
         }
     else:
         compact_blocks = {
@@ -2722,7 +2771,13 @@ def _compact_packet_for_llm(packet: dict[str, Any]) -> dict[str, Any]:
         "blocks": compact_blocks,
         "omitted_blocks": packet.get("omitted_blocks") or [],
         "prompt_scope": (
-            "direct_nutrition_log_only" if direct_nutrition_log else "full_compact"
+            "direct_nutrition_log_only"
+            if direct_nutrition_log
+            else (
+                "direct_performance_pace_only"
+                if direct_performance_pace
+                else "full_compact"
+            )
         ),
         "telemetry": {
             "estimated_tokens": (packet.get("telemetry") or {}).get(

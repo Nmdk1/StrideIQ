@@ -820,8 +820,13 @@ def test_v2_packet_uses_performance_pace_context_for_race_planning(monkeypatch):
     )
 
     training_block = training_packet["blocks"]["performance_pace_context"]
+    training_prompt = packet_to_prompt(training_packet)
     assert training_block["status"] == "complete"
     assert training_block["data"]["training_paces"]["threshold"] == "6:31/mi"
+    assert "direct_performance_pace_only" in training_prompt
+    assert "performance_pace_context" in training_prompt
+    assert "calendar_context" not in training_prompt
+    assert "recent_activities" not in training_prompt
 
 
 def test_v2_packet_empties_deprecated_legacy_shim_when_ledger_coverage_high(
