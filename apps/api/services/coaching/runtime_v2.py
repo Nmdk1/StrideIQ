@@ -14,6 +14,7 @@ logger = logging.getLogger(__name__)
 
 COACH_RUNTIME_V2_SHADOW_FLAG = "coach.runtime_v2.shadow"
 COACH_RUNTIME_V2_VISIBLE_FLAG = "coach.runtime_v2.visible"
+COACH_RUNTIME_V2_DEFAULT_SITEWIDE = True
 
 RUNTIME_MODE_OFF = "off"
 RUNTIME_MODE_SHADOW = "shadow"
@@ -107,6 +108,17 @@ class CoachRuntimeV2State:
 def resolve_coach_runtime_v2_state(
     athlete_id: UUID | str | None, db: Session
 ) -> CoachRuntimeV2State:
+    if COACH_RUNTIME_V2_DEFAULT_SITEWIDE and athlete_id:
+        # V2 is now the production coach, not a founder/pilot rollout. Keep the
+        # flag rows for audit/config visibility, but never block a real athlete
+        # from the only supported chat runtime because a rollout allowlist drifted.
+        return CoachRuntimeV2State(
+            runtime_mode=RUNTIME_MODE_VISIBLE,
+            runtime_version=RUNTIME_VERSION_V2,
+            shadow_enabled=True,
+            visible_enabled=True,
+        )
+
     shadow_enabled = is_coach_runtime_v2_enabled(
         COACH_RUNTIME_V2_SHADOW_FLAG, athlete_id, db
     )

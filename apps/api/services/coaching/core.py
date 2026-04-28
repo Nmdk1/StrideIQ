@@ -644,13 +644,12 @@ Policy:
             return with_runtime_metadata(
                 {
                     "response": (
-                        "Coach V2 is the only supported coach runtime. It is not "
-                        "enabled for this account yet, so I stopped instead of "
-                        "serving the legacy coach."
+                        "AI Coach is temporarily unavailable. I stopped instead of "
+                        "risking a wrong answer."
                     ),
                     "error": True,
                 },
-                error_class="v2_not_enabled",
+                error_class="coach_unavailable",
             )
 
         # Persist units preference if the athlete explicitly requests it.

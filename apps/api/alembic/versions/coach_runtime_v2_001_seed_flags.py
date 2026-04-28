@@ -57,27 +57,27 @@ def upgrade() -> None:
                 gen_random_uuid(),
                 'coach.runtime_v2.shadow',
                 'Coach Runtime V2 shadow',
-                'Founder/pilot shadow gate for Coach Runtime V2. Disabled by default; explicit founder allowlist only until reviewed.',
-                false,
+                'Legacy audit flag for Coach Runtime V2 shadow. V2 is now the site-wide default coach runtime.',
+                true,
                 false,
                 NULL,
-                0,
+                100,
                 '[]'::jsonb
             ),
             (
                 gen_random_uuid(),
                 'coach.runtime_v2.visible',
                 'Coach Runtime V2 visible',
-                'Founder/pilot visible gate for Coach Runtime V2. Disabled by default; explicit founder allowlist only until reviewed.',
-                false,
+                'Coach Runtime V2 visible is the site-wide production coach runtime.',
+                true,
                 false,
                 NULL,
-                0,
+                100,
                 '[]'::jsonb
             )
         ON CONFLICT (key) DO UPDATE SET
-            enabled = false,
-            rollout_percentage = 0,
+            enabled = true,
+            rollout_percentage = 100,
             allowed_athlete_ids = '[]'::jsonb,
             updated_at = now();
         """

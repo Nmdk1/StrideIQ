@@ -146,7 +146,7 @@ def test_runtime_resolver_uses_visible_over_shadow(monkeypatch):
     assert state.visible_enabled is True
 
 
-def test_runtime_resolver_distinguishes_off_and_shadow(monkeypatch):
+def test_runtime_resolver_defaults_sitewide_visible_even_when_flags_disabled(monkeypatch):
     flags = {
         COACH_RUNTIME_V2_SHADOW_FLAG: True,
         COACH_RUNTIME_V2_VISIBLE_FLAG: False,
@@ -155,12 +155,13 @@ def test_runtime_resolver_distinguishes_off_and_shadow(monkeypatch):
         runtime_v2, "FeatureFlagService", lambda db: _FlagService(flags)
     )
 
-    shadow_state = resolve_coach_runtime_v2_state(uuid4(), MagicMock())
-    assert shadow_state.runtime_mode == RUNTIME_MODE_SHADOW
-    assert shadow_state.runtime_version == RUNTIME_VERSION_V1
+    state = resolve_coach_runtime_v2_state(uuid4(), MagicMock())
+    assert state.runtime_mode == RUNTIME_MODE_VISIBLE
+    assert state.runtime_version == RUNTIME_VERSION_V2
+    assert state.visible_enabled is True
 
     monkeypatch.setattr(runtime_v2, "FeatureFlagService", lambda db: _FlagService({}))
-    off_state = resolve_coach_runtime_v2_state(uuid4(), MagicMock())
+    off_state = resolve_coach_runtime_v2_state(None, MagicMock())
     assert off_state.runtime_mode == RUNTIME_MODE_OFF
     assert off_state.runtime_version == RUNTIME_VERSION_V1
 
@@ -208,11 +209,19 @@ def _visible_state():
 
 
 @pytest.mark.asyncio
-async def test_flags_off_chat_fails_closed_without_v1(monkeypatch):
+async def test_sitewide_default_chat_uses_v2_even_when_flags_off(monkeypatch):
     import services.consent as consent_module
 
     coach = _coach_with_v1_path()
     extract_spy = AsyncMock(return_value=[])
+    response_spy = AsyncMock(
+        return_value={
+            "response": "V2 answer.",
+            "model": "kimi-k2.6",
+            "tools_called": [],
+            "thinking": False,
+        }
+    )
     monkeypatch.setattr(consent_module, "has_ai_consent", lambda athlete_id, db: True)
     monkeypatch.setattr(
         coach_core,
@@ -222,25 +231,31 @@ async def test_flags_off_chat_fails_closed_without_v1(monkeypatch):
     monkeypatch.setattr(
         coach_core,
         "resolve_coach_runtime_v2_state",
-        lambda athlete_id, db: CoachRuntimeV2State(
-            runtime_mode=RUNTIME_MODE_OFF,
-            runtime_version=RUNTIME_VERSION_V1,
-            shadow_enabled=False,
-            visible_enabled=False,
-        ),
+        lambda athlete_id, db: resolve_coach_runtime_v2_state(athlete_id, db),
+    )
+    monkeypatch.setattr(
+        coach_core,
+        "assemble_v2_packet",
+        MagicMock(return_value={"schema_version": "coach_runtime_v2.packet.v1"}),
+    )
+    monkeypatch.setattr(coach, "query_kimi_v2_packet", response_spy)
+    monkeypatch.setattr(
+        coach,
+        "_finalize_v2_response_with_turn_guard",
+        MagicMock(return_value=(True, "V2 answer.", None)),
     )
 
     result = await coach.chat(uuid4(), "My knee hurts. Should I run?")
 
-    assert "legacy coach" in result["response"]
-    assert result["error"] is True
-    assert result["runtime_version"] == RUNTIME_VERSION_V1
-    assert result["runtime_mode"] == RUNTIME_MODE_OFF
+    assert result["response"] == "V2 answer."
+    assert result.get("error") is not True
+    assert result["runtime_version"] == RUNTIME_VERSION_V2
+    assert result["runtime_mode"] == RUNTIME_MODE_VISIBLE
     assert result["fallback_reason"] is None
     coach._query_kimi_with_fallback.assert_not_awaited()
     coach.query_opus.assert_not_awaited()
-    extract_spy.assert_not_awaited()
-    coach._save_chat_messages.assert_not_called()
+    extract_spy.assert_awaited_once()
+    coach._save_chat_messages.assert_called_once()
 
 
 @pytest.mark.asyncio
@@ -1351,6 +1366,6 @@ def test_v2_seed_migration_creates_required_flags_safely():
 
     assert "'coach.runtime_v2.shadow'" in text
     assert "'coach.runtime_v2.visible'" in text
-    assert "enabled = false" in text
-    assert "rollout_percentage = 0" in text
+    assert "enabled = true" in text
+    assert "rollout_percentage = 100" in text
     assert "allowed_athlete_ids = '[]'::jsonb" in text
