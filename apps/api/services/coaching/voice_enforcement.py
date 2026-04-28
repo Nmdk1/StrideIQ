@@ -67,6 +67,37 @@ def check_response(response_text: str) -> dict[str, Any]:
     return {"ok": not hits, "hits": hits}
 
 
+def _deterministic_visible_cleanup(response_text: str) -> str:
+    cleaned = response_text or ""
+    cleaned = re.sub(
+        r"(?im)^\s*(?:the read|the unasked|decision for today)\s*:\s*",
+        "",
+        cleaned,
+    )
+    replacements = {
+        "athlete_facts": "your profile memory",
+        "calendar_context": "the calendar data",
+        "nutrition_context": "the nutrition data",
+        "performance_pace_context": "the pace data",
+        "same_turn_table_evidence": "the table you shared",
+        "retrieved evidence": "the evidence I checked",
+        "context block": "the available context",
+        "runtime": "the coach",
+    }
+    for phrase, replacement in replacements.items():
+        pattern = r"(?<!\w)" + re.escape(phrase) + r"(?!\w)"
+        cleaned = re.sub(pattern, replacement, cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(
+        r"(?<!\w)(?:the\s+)?packet(?!\w)",
+        "the data here",
+        cleaned,
+        flags=re.IGNORECASE,
+    )
+    cleaned = re.sub(r"(?im)^\s*consider\s+", "", cleaned)
+    cleaned = re.sub(r"[ \t]{2,}", " ", cleaned)
+    return cleaned.strip()
+
+
 async def _call_retry(
     retry_callable: Callable[[str], Any],
     instruction: str,
@@ -95,6 +126,19 @@ async def enforce_voice(
                 "template_phrase_hits": total_hits,
                 "retried": bool(total_hits),
             }
+        cleaned = _deterministic_visible_cleanup(current)
+        if cleaned != current:
+            cleaned_check = check_response(cleaned)
+            if cleaned_check["ok"]:
+                total_hits.extend(hits)
+                return {
+                    "response": cleaned,
+                    "template_phrase_count": len(total_hits),
+                    "template_phrase_hits": total_hits,
+                    "retried": bool(total_hits),
+                }
+            current = cleaned
+            hits = list(cleaned_check["hits"])
         total_hits.extend(hits)
         if attempt >= max_retries:
             break

@@ -53,6 +53,27 @@ async def test_enforce_voice_retries_until_rewritten_response_succeeds():
 
 
 @pytest.mark.asyncio
+async def test_enforce_voice_cleans_visible_system_labels_without_llm_retry():
+    calls = []
+
+    async def retry(instruction: str) -> str:
+        calls.append(instruction)
+        return "Should not be called."
+
+    result = await enforce_voice(
+        "The unasked: the packet says threshold is 6:31/mi.\n"
+        "Consider keeping it controlled.",
+        retry,
+    )
+
+    assert result["response"] == (
+        "the data here says threshold is 6:31/mi.\nkeeping it controlled."
+    )
+    assert result["retried"] is True
+    assert calls == []
+
+
+@pytest.mark.asyncio
 async def test_enforce_voice_raises_after_max_retry_hits():
     async def retry(instruction: str) -> str:
         return "You've got this. Trust the process."
@@ -68,7 +89,7 @@ async def test_enforce_voice_uses_all_retries_before_failing():
     calls = []
     responses = iter(
         [
-            "The unasked: this still mentions the packet.",
+            "Great question. The unasked: this still mentions the packet.",
             "Run easy today. Keep it boring.",
         ]
     )
@@ -81,8 +102,7 @@ async def test_enforce_voice_uses_all_retries_before_failing():
 
     assert result["response"] == "Run easy today. Keep it boring."
     assert len(calls) == 2
-    assert "the unasked:" in calls[1].lower()
-    assert "packet" in calls[1].lower()
+    assert "great question" in calls[1].lower()
 
 
 def test_tier3_payload_and_scores_penalize_template_hits():
