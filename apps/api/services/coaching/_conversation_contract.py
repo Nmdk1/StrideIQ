@@ -32,6 +32,7 @@ _CORRECTION_RE = re.compile(
     r"you(?:'re| are) wrong|that(?:'s| is) wrong|not true|"
     r"that(?:'s| is) not how|"
     r"you can see it|it(?:'s| is) in (?:my )?(?:activity|training|plan|history)|"
+    r"you have my (?:pace zones|paces|rpi)|"
     r"i (?:just )?checked|actually\b|today is|today\s+is"
     r"|do(?:n't| not) treat|do(?:n't| not) use|not a fair|not a clean"
     r")\b",
@@ -75,34 +76,19 @@ def _context_to_text(conversation_context: Sequence[Any] | str | None) -> str:
 
 def _has_same_day_race_context(text: str) -> bool:
     lower = (text or "").lower()
-    raceish = any(
-        token in lower
-        for token in (
-            "race",
-            "5k",
-            "10k",
-            "half marathon",
-            "marathon",
-            "tune up",
-            "tune-up",
+    return bool(
+        re.search(
+            r"\b("
+            r"(?:race|5k|10k|half marathon|marathon|tune[- ]?up)\s+"
+            r"(?:today|this morning|tonight|in [1-4] hours?)|"
+            r"(?:today|this morning|tonight)\s+"
+            r"(?:is|is my|i have|i'm racing|i am racing|racing)?\s*"
+            r"(?:race|5k|10k|half marathon|marathon|tune[- ]?up)|"
+            r"packet pickup"
+            r")\b",
+            lower,
         )
     )
-    same_day = any(
-        token in lower
-        for token in (
-            "today",
-            "this morning",
-            "tonight",
-            "in 1 hour",
-            "in 2 hours",
-            "in 3 hours",
-            "in 4 hours",
-            "packet pickup",
-            "warmup",
-            "warm up",
-        )
-    )
-    return raceish and same_day
 
 
 def _is_race_day_followup(text: str) -> bool:

@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from core.config import settings
 from models import Activity, ActivitySplit, NutritionEntry, TrainingPlan
+from services.coach_tools.performance import get_race_predictions, get_training_paces
 from services.coaching.ledger import (
     SENSITIVE_FACT_FIELDS,
     VALID_FACT_FIELDS,
@@ -37,6 +38,7 @@ LEDGER_COVERAGE_SHIM_THRESHOLD = 0.5
 LEGACY_CONTEXT_BRIDGE_MAX_CHARS = 3000
 ACTIVITY_EVIDENCE_RECENT_ROWS_LIMIT = 4
 NUTRITION_CONTEXT_ENTRY_LIMIT = 12
+PERFORMANCE_PACE_HISTORY_LIMIT = 5
 PACKET_MAX_ESTIMATED_TOKENS = 5000
 
 logger = logging.getLogger(__name__)
@@ -427,6 +429,174 @@ def build_nutrition_context_state(
             ],
             "provenance": [],
         }
+
+
+def _performance_pace_context_relevant(message: str, query_class: str) -> bool:
+    lower = (message or "").lower()
+    if query_class in {"race_planning", "interval_pace_question"}:
+        return True
+
+    def contains_phrase(term: str) -> bool:
+        return bool(re.search(rf"(?<!\w){re.escape(term)}(?!\w)", lower))
+
+    pace_or_intensity_terms = (
+        "pace",
+        "paces",
+        "pace zone",
+        "pace zones",
+        "rpi",
+        "threshold",
+        "tempo",
+        "interval",
+        "repetition",
+        "rep pace",
+        "easy pace",
+        "easy run",
+        "marathon pace",
+        "10k pace",
+        "5k time",
+        "sub 40",
+        "sub-40",
+        "39:30",
+    )
+    training_context_terms = (
+        "workout",
+        "session",
+        "training",
+        "too hard",
+        "too easy",
+        "intensity",
+        "effort",
+        "run today",
+        "should i run",
+    )
+    return any(contains_phrase(term) for term in pace_or_intensity_terms) or (
+        any(contains_phrase(term) for term in training_context_terms)
+        and any(
+            contains_phrase(term)
+            for term in (
+                "hard",
+                "easy",
+                "threshold",
+                "tempo",
+                "interval",
+                "pace",
+                "effort",
+            )
+        )
+    )
+
+
+def _compact_race_history(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    compact = []
+    for row in rows[:PERFORMANCE_PACE_HISTORY_LIMIT]:
+        compact.append(
+            {
+                "distance": row.get("distance"),
+                "time": row.get("time"),
+                "time_seconds": row.get("time_seconds"),
+                "date": row.get("date"),
+                "is_race": row.get("is_race"),
+            }
+        )
+    return compact
+
+
+def build_performance_pace_context_state(
+    *,
+    athlete_id: UUID,
+    db: Session | None,
+    message: str,
+    query_class: str,
+) -> dict[str, Any] | None:
+    if not _performance_pace_context_relevant(message, query_class):
+        return None
+
+    generated_at = _utc_now_iso()
+    unavailable = {
+        "schema_version": "coach_runtime_v2.performance_pace_context.v1",
+        "status": "unavailable",
+        "generated_at": generated_at,
+        "data": {
+            "query_type": query_class,
+            "coverage": "unavailable",
+            "rpi": None,
+            "training_paces": {},
+            "race_equivalents": {},
+            "race_history": [],
+            "response_guidance": (
+                "If RPI pace anchors are unavailable, say exactly what is missing. "
+                "Do not invent training or race paces."
+            ),
+        },
+        "unknowns": [
+            {
+                "field": "pace_zones",
+                "reason": "rpi_pace_context_unavailable",
+                "suggested_question": "What recent race or time trial should anchor your paces?",
+            }
+        ],
+        "provenance": [],
+    }
+    if db is None:
+        return unavailable
+
+    try:
+        training = get_training_paces(db, athlete_id)
+        predictions = get_race_predictions(db, athlete_id)
+    except Exception:
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        return unavailable
+
+    training_data = training.get("data") if training.get("ok") else {}
+    prediction_data = predictions.get("data") if predictions.get("ok") else {}
+    rpi = training_data.get("rpi") or prediction_data.get("rpi")
+    if not rpi:
+        return unavailable
+
+    return {
+        "schema_version": "coach_runtime_v2.performance_pace_context.v1",
+        "status": "complete",
+        "generated_at": generated_at,
+        "data": {
+            "query_type": query_class,
+            "coverage": "rpi_training_paces_and_race_equivalents",
+            "rpi": rpi,
+            "training_paces": training_data.get("paces") or {},
+            "raw_seconds_per_mile": training_data.get("raw_seconds_per_mile") or {},
+            "race_equivalents": prediction_data.get("predictions") or {},
+            "race_history": _compact_race_history(
+                list(prediction_data.get("race_history") or [])
+            ),
+            "response_guidance": (
+                "RPI training paces and race equivalents are authoritative pace "
+                "anchors for training intensity, workout execution, easy-run discipline, "
+                "and race planning when present. Do not ask the athlete to provide "
+                "pace zones just because the durable ledger field is empty. If the "
+                "athlete says the RPI paces are stale, treat that as a correction and ask "
+                "what changed."
+            ),
+        },
+        "unknowns": [],
+        "provenance": [
+            {
+                "field_path": "blocks.performance_pace_context.data",
+                "source_system": "rpi_pace_services",
+                "source_id": str(athlete_id),
+                "source_timestamp": generated_at,
+                "observed_at": generated_at,
+                "confidence": "high",
+                "derivation_chain": [
+                    "athlete.rpi",
+                    "get_training_paces",
+                    "get_race_predictions",
+                ],
+            }
+        ],
+    }
 
 
 def _athlete_facts_payload(db: Session | None, athlete_id: UUID) -> dict[str, Any]:
@@ -1912,6 +2082,7 @@ def assemble_v2_packet(
     conversation_mode = classify_conversation_mode(message, same_turn_overrides)
     if conversation_mode["primary"] not in ARTIFACT5_MODES:
         raise V2PacketInvariantError(f"invalid_mode:{conversation_mode['primary']}")
+    query_class = conversation_mode.get("query_class") or "general"
 
     calendar_context = build_calendar_context_state(
         athlete_id=athlete_id,
@@ -1949,9 +2120,19 @@ def assemble_v2_packet(
     unknowns = compute_unknowns(
         db,
         athlete_id,
-        conversation_mode.get("query_class") or "general",
+        query_class,
         now_utc=now_utc,
     )
+    performance_pace_context = build_performance_pace_context_state(
+        athlete_id=athlete_id,
+        db=db,
+        message=message,
+        query_class=query_class,
+    )
+    if performance_pace_context and performance_pace_context["status"] == "complete":
+        unknowns = [
+            unknown for unknown in unknowns if unknown.get("field") != "pace_zones"
+        ]
     serialized_pending_conflicts = _serialize_pending_conflicts(pending_conflicts)
     conflict_fields = {conflict["field"] for conflict in serialized_pending_conflicts}
     if conflict_fields:
@@ -2024,6 +2205,8 @@ def assemble_v2_packet(
     }
     if nutrition_context is not None:
         data["nutrition_context"] = nutrition_context["data"]
+    if performance_pace_context is not None:
+        data["performance_pace_context"] = performance_pace_context["data"]
     token_estimate = _estimated_tokens(data)
     if token_estimate > PACKET_MAX_ESTIMATED_TOKENS and data[
         "_legacy_context_bridge_deprecated"
@@ -2273,6 +2456,48 @@ def assemble_v2_packet(
             },
             **(
                 {
+                    "performance_pace_context": {
+                        "schema_version": "coach_runtime_v2.block.performance_pace_context.v1",
+                        "status": performance_pace_context["status"],
+                        "generated_at": generated_at,
+                        "as_of": generated_at,
+                        "selected_sections": [
+                            "rpi_training_paces",
+                            "rpi_race_equivalents",
+                            "recent_race_history",
+                        ],
+                        "available_sections": [
+                            "training_paces",
+                            "race_equivalents",
+                            "race_history",
+                        ],
+                        "data": data["performance_pace_context"],
+                        "completeness": [
+                            {
+                                "section": "performance_pace_context",
+                                "status": performance_pace_context["status"],
+                                "coverage_start": None,
+                                "coverage_end": generated_at,
+                                "expected_window": "current RPI plus training paces and recent verified race anchors",
+                                "detail": "Authoritative RPI-derived pace/race-equivalent context for training intensity, workout execution, race planning, and pace-zone disputes.",
+                            }
+                        ],
+                        "unknowns": performance_pace_context["unknowns"],
+                        "provenance": performance_pace_context["provenance"],
+                        "token_budget": {
+                            "target_tokens": 350,
+                            "max_tokens": 650,
+                            "estimated_tokens": _estimated_tokens(
+                                data["performance_pace_context"]
+                            ),
+                        },
+                    }
+                }
+                if performance_pace_context is not None
+                else {}
+            ),
+            **(
+                {
                     "nutrition_context": {
                         "schema_version": "coach_runtime_v2.block.nutrition_context.v1",
                         "status": nutrition_context["status"],
@@ -2410,6 +2635,11 @@ def assemble_v2_packet(
                 + len(training_adaptation_context["unknowns"])
                 + len(recent_activities["unknowns"])
                 + (len(nutrition_context["unknowns"]) if nutrition_context else 0)
+                + (
+                    len(performance_pace_context["unknowns"])
+                    if performance_pace_context
+                    else 0
+                )
                 + len(unknowns)
             ),
             "unknowns_count": len(unknowns),
@@ -2516,6 +2746,7 @@ def _timeout_retry_packet_for_llm(packet: dict[str, Any]) -> dict[str, Any]:
         "training_adaptation_context",
         "athlete_facts",
         "nutrition_context",
+        "performance_pace_context",
         "unknowns",
     }
     compact["blocks"] = {

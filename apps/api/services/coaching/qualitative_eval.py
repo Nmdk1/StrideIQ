@@ -41,6 +41,7 @@ SYSTEM_LANGUAGE_TERMS = (
     "tool",
     "calendar_context",
     "nutrition_context",
+    "performance_pace_context",
     "retrieved evidence",
     "confidence athlete_stated",
     "context block",

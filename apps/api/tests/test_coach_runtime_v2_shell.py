@@ -634,11 +634,12 @@ def test_v2_packet_assembler_builds_packet_without_raw_tools():
 
     assert packet["schema_version"] == "coach_runtime_v2.packet.v1"
     assert packet["conversation_mode"]["primary"] == "racing_preparation_judgment"
-    assert packet["telemetry"]["packet_block_count"] == 9
+    assert packet["telemetry"]["packet_block_count"] == 10
     assert "activity_evidence_state" in packet["blocks"]
     assert "training_adaptation_context" in packet["blocks"]
     assert "athlete_facts" in packet["blocks"]
     assert "recent_activities" in packet["blocks"]
+    assert "performance_pace_context" in packet["blocks"]
     assert "recent_threads" in packet["blocks"]
     assert "unknowns" in packet["blocks"]
     assert "athlete_context" not in packet["blocks"]
@@ -665,7 +666,7 @@ def test_v2_packet_adds_unavailable_nutrition_context_for_relevant_query_without
     assert packet["telemetry"]["packet_block_count"] == 10
 
 
-def test_v2_packet_does_not_add_nutrition_context_for_unrelated_turn_without_db():
+def test_v2_packet_adds_performance_pace_context_for_training_turn_without_db():
     packet = assemble_v2_packet(
         athlete_id=uuid4(),
         db=None,
@@ -677,7 +678,9 @@ def test_v2_packet_does_not_add_nutrition_context_for_unrelated_turn_without_db(
 
     assert "nutrition_context" not in packet["blocks"]
     assert "nutrition_context" not in prompt
-    assert packet["telemetry"]["packet_block_count"] == 9
+    assert "performance_pace_context" in packet["blocks"]
+    assert packet["blocks"]["performance_pace_context"]["status"] == "unavailable"
+    assert packet["telemetry"]["packet_block_count"] == 10
 
 
 def test_v2_packet_routes_body_composition_queries_to_nutrition_context():
@@ -691,6 +694,134 @@ def test_v2_packet_routes_body_composition_queries_to_nutrition_context():
 
     assert packet["conversation_mode"]["query_class"] == "weight_loss_planning"
     assert packet["blocks"]["nutrition_context"]["data"]["query_type"] == "body_composition"
+
+
+def test_v2_packet_uses_performance_pace_context_for_race_planning(monkeypatch):
+    athlete_id = uuid4()
+    monkeypatch.setattr(
+        packet_module,
+        "build_calendar_context_state",
+        lambda **kwargs: {
+            "status": "complete",
+            "data": {
+                "today_local": "2026-04-28",
+                "upcoming_race": {
+                    "name": "Coke 10K",
+                    "date": "2026-05-02",
+                    "distance_m": 10000,
+                    "days_until_race": 4,
+                    "is_today": False,
+                },
+                "recent_activities": [],
+            },
+            "unknowns": [],
+            "provenance": [],
+        },
+    )
+    monkeypatch.setattr(
+        packet_module,
+        "build_activity_evidence_state",
+        lambda **kwargs: {"status": "complete", "data": {}, "unknowns": [], "provenance": []},
+    )
+    monkeypatch.setattr(
+        packet_module,
+        "build_training_adaptation_context",
+        lambda **kwargs: {"status": "complete", "data": {}, "unknowns": [], "provenance": []},
+    )
+    monkeypatch.setattr(
+        packet_module,
+        "compute_recent_activities",
+        lambda *args, **kwargs: {
+            "schema_version": "test.recent_activities",
+            "status": "complete",
+            "data": {},
+            "unknowns": [],
+            "provenance": [],
+            "token_budget": {"target_tokens": 1, "max_tokens": 1},
+        },
+    )
+    monkeypatch.setattr(
+        packet_module,
+        "recent_threads_block",
+        lambda *args, **kwargs: packet_module._empty_recent_threads(),
+    )
+    monkeypatch.setattr(packet_module, "_athlete_facts_payload", lambda db, aid: {})
+    monkeypatch.setattr(
+        packet_module,
+        "get_training_paces",
+        lambda db, aid: {
+            "ok": True,
+            "data": {
+                "rpi": 50.2,
+                "paces": {
+                    "easy": "8:11/mi",
+                    "threshold": "6:31/mi",
+                    "interval": "6:00/mi",
+                    "repetition": "5:36/mi",
+                },
+                "raw_seconds_per_mile": {"threshold": 391, "interval": 360},
+            },
+        },
+    )
+    monkeypatch.setattr(
+        packet_module,
+        "get_race_predictions",
+        lambda db, aid: {
+            "ok": True,
+            "data": {
+                "rpi": 50.2,
+                "predictions": {
+                    "10K": {
+                        "equivalent_time": "39:38",
+                        "equivalent_pace": "6:23/mi",
+                        "time_seconds": 2378,
+                    }
+                },
+                "race_history": [
+                    {
+                        "distance": "5K",
+                        "time": "19:29",
+                        "time_seconds": 1169,
+                        "date": "2026-04-25",
+                        "is_race": True,
+                    }
+                ],
+            },
+        },
+    )
+
+    packet = assemble_v2_packet(
+        athlete_id=athlete_id,
+        db=MagicMock(),
+        message="I'm hoping to get sub 40 at the Coke 10K, ideally sub 39:30.",
+        conversation_context=[],
+        legacy_athlete_state="",
+    )
+    prompt = packet_to_prompt(packet)
+
+    block = packet["blocks"]["performance_pace_context"]
+    assert block["status"] == "complete"
+    assert block["data"]["training_paces"]["threshold"] == "6:31/mi"
+    assert block["data"]["race_equivalents"]["10K"]["equivalent_time"] == "39:38"
+    assert "training intensity" in block["data"]["response_guidance"]
+    assert all(
+        unknown.get("field") != "pace_zones"
+        for unknown in packet["blocks"]["unknowns"]["data"]
+    )
+    assert "performance_pace_context" in prompt
+    assert "get_training_paces" not in prompt
+
+    training_packet = assemble_v2_packet(
+        athlete_id=athlete_id,
+        db=MagicMock(),
+        message="What pace should I run my threshold workout at tomorrow?",
+        conversation_context=[],
+        legacy_athlete_state="",
+    )
+
+    training_block = training_packet["blocks"]["performance_pace_context"]
+    assert training_block["status"] == "complete"
+    assert training_block["data"]["training_paces"]["threshold"] == "6:31/mi"
 
 
 def test_v2_packet_empties_deprecated_legacy_shim_when_ledger_coverage_high(

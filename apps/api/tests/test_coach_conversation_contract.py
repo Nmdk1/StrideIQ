@@ -111,6 +111,23 @@ def test_5k_tactical_correction_beats_race_day_followup():
     assert contract.contract_type == ConversationContractType.CORRECTION_DISPUTE
 
 
+def test_pace_zone_correction_beats_thread_carried_race_day_context():
+    contract = classify_conversation_contract(
+        "you have my pace zones using the rpi and last weekend's 5k time",
+        conversation_context=[
+            {
+                "role": "assistant",
+                "content": (
+                    "Today you logged nutrition. The Coke 10K is in five days, "
+                    "and sub-40 is the goal."
+                ),
+            }
+        ],
+    )
+
+    assert contract.contract_type == ConversationContractType.CORRECTION_DISPUTE
+
+
 def test_race_day_contract_requires_execution_packet():
     user_message = "I have a 5K this morning and I'm taking bicarb."
 
