@@ -150,6 +150,8 @@ class TestPerAthleteLoopEnablement:
              patch("services.auto_discovery.orchestrator.run_auto_discovery_for_athlete") as mock_run:
 
             MockFFS.return_value._get_flag.return_value = {
+                "enabled": True,
+                "rollout_percentage": 0,
                 "allowed_athlete_ids": [athlete_1, athlete_2]
             }
             mock_run.return_value = MagicMock(id=uuid.uuid4(), status="completed", experiment_count=0)
@@ -166,6 +168,44 @@ class TestPerAthleteLoopEnablement:
         assert athlete_2 in rescan_calls
         assert athlete_1 in interaction_calls
         assert athlete_2 in interaction_calls
+
+    def test_rollout_targets_real_platform_athletes_beyond_allowlist(self):
+        """
+        Once rollout is above 0%, the nightly task must enumerate platform
+        athletes instead of treating the allowlist as the whole universe.
+        """
+        founder_id = uuid.uuid4()
+        platform_id = uuid.uuid4()
+        targeted: List[str] = []
+
+        def mock_run(athlete_id, db, enabled_loops):
+            targeted.append(str(athlete_id))
+            return MagicMock(id=uuid.uuid4(), status="completed", experiment_count=0)
+
+        with patch("services.auto_discovery.feature_flags.is_auto_discovery_enabled", return_value=True), \
+             patch("services.auto_discovery.feature_flags.is_rescan_enabled", return_value=True), \
+             patch("services.auto_discovery.feature_flags.is_interaction_enabled", return_value=False), \
+             patch("services.auto_discovery.feature_flags.is_tuning_enabled", return_value=False), \
+             patch("services.plan_framework.feature_flags.FeatureFlagService") as MockFFS, \
+             patch("services.auto_discovery.orchestrator.run_auto_discovery_for_athlete", side_effect=mock_run):
+
+            MockFFS.return_value._get_flag.return_value = {
+                "enabled": True,
+                "rollout_percentage": 100,
+                "allowed_athlete_ids": [str(founder_id)],
+            }
+
+            from tasks.auto_discovery_tasks import run_auto_discovery_nightly
+            with patch("tasks.auto_discovery_tasks.SessionLocal") as mock_db_factory:
+                mock_db = MagicMock()
+                mock_db.query.return_value.filter.return_value.all.return_value = [
+                    (founder_id,),
+                    (platform_id,),
+                ]
+                mock_db_factory.return_value = mock_db
+                run_auto_discovery_nightly.run()
+
+        assert targeted == [str(founder_id), str(platform_id)]
 
 
 # ─────────────────────────────────────────────────────────────────────────────

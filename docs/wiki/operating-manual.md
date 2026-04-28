@@ -35,6 +35,10 @@ The `FRIENDLY_NAMES` dict in `services/intelligence/n1_insight_generator.py` map
 
 100+ mappings. Used by the Manual, home page, and weekly digest email.
 
+### Weekly Digest
+
+The weekly digest no longer runs a raw 90-day correlation scan directly into an email. `tasks/digest_tasks.py` reads persisted, eligible `CorrelationFinding` rows through the shared `get_surfaceable_findings()` chokepoint, requires at least two eligible findings, and suppresses the send when there is not enough athlete-safe signal. `services/email_service.py` validates LLM output before sending; scratchpad/filtering language, raw `r=` / `n=` statistics, markdown notes, and internal reasoning are rejected and replaced with safe deterministic bullets from the same eligible findings.
+
 ### Findings Lifecycle on the Manual
 
 The Manual automatically reflects lifecycle changes:
@@ -54,7 +58,7 @@ When the correlation engine discovers a new pattern or an existing one resolves,
 
 ## Known Issues
 
-- **Weekly digest bypasses Manual intelligence:** The email runs raw correlations instead of pulling from the Manual's curated findings. Long-term fix: wire digest to confirmed findings and Manual changes.
+- **Manual-to-digest storytelling is still basic:** The digest now uses the shared eligible-finding gate, but the prose is still a compact weekly summary rather than a rich Manual change narrative.
 
 ## What's Next
 

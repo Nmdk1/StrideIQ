@@ -102,6 +102,10 @@ Located in `services/auto_discovery/`:
 
 Models: `AutoDiscoveryRun`, `AutoDiscoveryExperiment`, `AutoDiscoveryCandidate`, `AutoDiscoveryChangeLog`, `AutoDiscoveryScanCoverage`.
 
+Nightly targeting is driven by `tasks/auto_discovery_tasks.py`. With `auto_discovery.enabled` at `rollout_percentage=0`, the task runs only the flag's `allowed_athlete_ids`. With rollout above 0, it enumerates real platform athletes (`Athlete.is_demo=false`, `Athlete.is_blocked=false`) and then lets each per-athlete flag check apply the rollout hash and loop gates. This keeps founder-only pilots possible while allowing platform-wide nightly discovery without manually listing every athlete.
+
+The run report is assigned after candidate-memory upserts and Phase 1 mutation handling so `phase1_mutations` persists with the `AutoDiscoveryRun` row whenever live mutation actually runs. Mutation details are also captured in `AutoDiscoveryChangeLog` for audit and revert.
+
 The tuning loop scores transient `RaceInputFinding` investigation outputs as well as persisted `AthleteFinding` rows. Transient findings do not have persistence timestamps, so `AthleteFindingFQSAdapter` treats missing recency/longevity fields as low-confidence inferred stability instead of failing the nightly/manual run.
 
 The engine runs nightly and has produced: ~100 promoted findings, 62 stability annotations, 20 interaction candidates (as of Apr 6, 2026 manual trigger — nightly schedule confirmed working via beat startup dispatch fix).

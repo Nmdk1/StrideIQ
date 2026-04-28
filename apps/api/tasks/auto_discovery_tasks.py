@@ -1,9 +1,11 @@
 """
-AutoDiscovery Nightly Task — Phase 0B (founder-only, shadow mode).
+AutoDiscovery Nightly Task.
 
 Scheduled at 04:00 UTC (before morning intelligence).
 Gated by feature flag `auto_discovery.enabled`.
-Runs only for athletes in the flag's `allowed_athlete_ids` list.
+Targets the allowlist when rollout is 0%, and real platform athletes when
+rollout is above 0%. Per-athlete feature flag checks still decide whether each
+loop family runs.
 
 WS1 fix: loop-family enablement is evaluated per athlete, not once
 globally from the first eligible athlete.
@@ -21,6 +23,43 @@ from core.database import SessionLocal
 logger = logging.getLogger(__name__)
 
 
+def _target_athlete_ids_from_flag(flag: Optional[dict], db) -> List[UUID]:
+    """Resolve nightly target athletes from the master AutoDiscovery flag.
+
+    `allowed_athlete_ids` remains the explicit pilot mechanism. Once rollout is
+    above 0%, enumerate real platform accounts and let `is_feature_enabled`
+    apply the consistent-hash percentage gate per athlete.
+    """
+    if not flag or not flag.get("enabled", False):
+        return []
+
+    allowed_ids = [UUID(str(a)) for a in flag.get("allowed_athlete_ids", [])]
+    rollout = int(flag.get("rollout_percentage") or 0)
+    if rollout <= 0:
+        return allowed_ids
+
+    from models import Athlete
+
+    rows = (
+        db.query(Athlete.id)
+        .filter(
+            Athlete.is_demo == False,  # noqa: E712
+            Athlete.is_blocked == False,  # noqa: E712
+        )
+        .all()
+    )
+    platform_ids = [row[0] for row in rows]
+
+    seen = set()
+    target_ids: List[UUID] = []
+    for athlete_id in [*allowed_ids, *platform_ids]:
+        key = str(athlete_id)
+        if key not in seen:
+            target_ids.append(UUID(key))
+            seen.add(key)
+    return target_ids
+
+
 @celery_app.task(
     name="tasks.run_auto_discovery_nightly",
     bind=True,
@@ -30,7 +69,7 @@ logger = logging.getLogger(__name__)
 )
 def run_auto_discovery_nightly(self, athlete_ids: Optional[List[str]] = None):
     """
-    Founder-only nightly AutoDiscovery shadow pass.
+    Nightly AutoDiscovery pass.
 
     Loop-family enablement is resolved per-athlete so that future partial
     rollouts (e.g. enable interaction scan for athlete A only) work without
@@ -54,8 +93,7 @@ def run_auto_discovery_nightly(self, athlete_ids: Optional[List[str]] = None):
             target_ids = [UUID(a) for a in athlete_ids]
         else:
             flag = flag_svc._get_flag(FLAG_SYSTEM_ENABLED)
-            allowed = flag.get("allowed_athlete_ids", []) if flag else []
-            target_ids = [UUID(str(a)) for a in allowed]
+            target_ids = _target_athlete_ids_from_flag(flag, db)
 
         if not target_ids:
             logger.info("AutoDiscovery: no eligible athletes; skipping run")

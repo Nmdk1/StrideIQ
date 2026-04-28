@@ -4,26 +4,28 @@ Scheduled Digest Tasks
 Weekly email digests with coached interpretation of correlation findings.
 Runs via Celery Beat scheduler.
 
-Architecture: raw correlation findings are passed through an LLM coaching
-prompt that filters for actionability, resolves contradictions, and
-translates to athlete language.  The templated for-loop is kept as a
-degraded fallback if the LLM call fails.
+Architecture: eligible persisted findings are passed through an LLM coaching
+prompt that translates to athlete language. If there are too few eligible
+findings, or if generation fails validation, the digest is suppressed or falls
+back to safe deterministic bullets. Raw correlation scans never go straight to
+email.
 """
 
-from datetime import datetime, timedelta
 from typing import Dict, List
 from celery import Task
 from sqlalchemy.orm import Session
 from core.database import get_db_sync
 from tasks import celery_app
 from models import Athlete
-from services.correlation_engine import analyze_correlations
+from services.correlation_persistence import get_surfaceable_findings, mark_surfaced
 from services.email_service import email_service
-from services.fingerprint_context import _SUPPRESSED_SIGNALS, _ENVIRONMENT_SIGNALS
 from services.n1_insight_generator import friendly_signal_name
 import logging
 
 logger = logging.getLogger(__name__)
+
+MIN_DIGEST_FINDINGS = 2
+MAX_DIGEST_FINDINGS = 5
 
 
 def _build_findings_context(correlations: List[dict]) -> str:
@@ -42,6 +44,21 @@ def _build_findings_context(correlations: List[dict]) -> str:
             f"sample={sample} runs"
         )
     return "\n".join(lines) if lines else "(no significant correlations found)"
+
+
+def _finding_to_digest_dict(finding) -> dict:
+    """Convert a persisted eligible CorrelationFinding into digest input."""
+    return {
+        "id": str(finding.id),
+        "input_name": finding.input_name,
+        "output_metric": finding.output_metric,
+        "direction": finding.direction,
+        "correlation_coefficient": float(finding.correlation_coefficient or 0),
+        "sample_size": int(finding.sample_size or 0),
+        "times_confirmed": int(finding.times_confirmed or 0),
+        "confidence": float(finding.confidence or 0),
+        "category": finding.category,
+    }
 
 
 @celery_app.task(name="tasks.send_weekly_digest", bind=True)
@@ -63,24 +80,23 @@ def send_weekly_digest_task(self: Task, athlete_id: str) -> Dict:
             return {"status": "skipped", "message": "No email address"}
 
         try:
-            correlation_result = analyze_correlations(
-                athlete_id=str(athlete.id),
-                days=90,
+            findings = get_surfaceable_findings(
+                athlete_id=athlete.id,
                 db=db,
+                min_confirmations=3,
+                limit=MAX_DIGEST_FINDINGS,
             )
 
-            if "error" in correlation_result:
-                logger.info("Skipping digest for %s: %s", athlete.email, correlation_result["error"])
-                return {"status": "skipped", "message": correlation_result["error"]}
+            if len(findings) < MIN_DIGEST_FINDINGS:
+                logger.info(
+                    "Skipping weekly digest for %s: only %d eligible findings",
+                    athlete.email,
+                    len(findings),
+                )
+                return {"status": "skipped", "message": "Not enough eligible findings"}
 
-            _suppressed = _SUPPRESSED_SIGNALS | _ENVIRONMENT_SIGNALS
-            all_correlations = [
-                c for c in correlation_result.get("correlations", [])
-                if c.get("input_name") not in _suppressed
-            ]
-            all_correlations.sort(key=lambda x: abs(x.get("correlation_coefficient", 0)), reverse=True)
-
-            findings_context = _build_findings_context(all_correlations[:20])
+            all_correlations = [_finding_to_digest_dict(f) for f in findings]
+            findings_context = _build_findings_context(all_correlations)
 
             success = email_service.send_coached_digest(
                 to_email=athlete.email,
@@ -92,6 +108,8 @@ def send_weekly_digest_task(self: Task, athlete_id: str) -> Dict:
             )
 
             if success:
+                mark_surfaced([f.id for f in findings], db)
+                db.commit()
                 return {
                     "status": "success",
                     "athlete_id": str(athlete.id),

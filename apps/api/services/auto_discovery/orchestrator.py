@@ -252,7 +252,6 @@ def run_auto_discovery_for_athlete(
     run.experiment_count = len(experiment_rows)
     run.kept_count = sum(1 for e in experiment_rows if e.kept)
     run.discarded_count = sum(1 for e in experiment_rows if not e.kept)
-    run.report = report
 
     # ── WS2: Upsert durable cross-run candidates ────────────────────────────
     _upsert_candidates(
@@ -275,6 +274,10 @@ def run_auto_discovery_for_athlete(
     )
     if phase1_summary:
         report["phase1_mutations"] = phase1_summary
+
+    # Assign after candidate upserts and live mutations. Those steps may flush
+    # the session; assigning the final object here guarantees JSON persistence.
+    run.report = report
 
     db.commit()
     logger.info(

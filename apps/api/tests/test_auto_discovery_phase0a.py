@@ -407,6 +407,37 @@ class TestAutoDiscoveryIntegration:
         for section in required_sections:
             assert section in report, f"Report missing required section: {section}"
 
+    def test_phase1_mutation_summary_persists_after_intermediate_flush(self, db_session, test_athlete):
+        from services.auto_discovery.orchestrator import run_auto_discovery_for_athlete
+
+        phase1_summary = {
+            "mutation_live": True,
+            "findings_promoted": [{"input_name": "daily_carbs_g"}],
+            "stability_annotated": 1,
+            "interactions_promoted": [],
+            "tuning_applied": [],
+            "change_log_ids": ["change-1"],
+            "auto_disabled_loops": [],
+            "error": None,
+        }
+
+        def flush_during_candidate_upsert(*args, **kwargs):
+            db_session.flush()
+
+        with patch("services.auto_discovery.orchestrator.run_multiwindow_rescan", return_value=[]), \
+             patch("services.auto_discovery.orchestrator._upsert_candidates", side_effect=flush_during_candidate_upsert), \
+             patch("services.auto_discovery.orchestrator._run_phase1_mutations", return_value=phase1_summary):
+            with patch.object(db_session, "rollback"):
+                run = run_auto_discovery_for_athlete(
+                    athlete_id=test_athlete.id,
+                    db=db_session,
+                    enabled_loops=["correlation_rescan"],
+                )
+
+        db_session.expire(run, ["report"])
+        assert run.report["phase1_mutations"]["mutation_live"] is True
+        assert run.report["phase1_mutations"]["change_log_ids"] == ["change-1"]
+
     def test_no_surface_guarantee_is_false(self, db_session, test_athlete, mock_rescan_results):
         from services.auto_discovery.orchestrator import run_auto_discovery_for_athlete
 

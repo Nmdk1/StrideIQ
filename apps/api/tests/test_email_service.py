@@ -108,3 +108,78 @@ class TestEmailServiceSend:
         sent_msg = mock_smtp.send_message.call_args[0][0]
         assert "performancefocused.com" not in sent_msg["From"]
         assert "strideiq.run" in sent_msg["From"]
+
+
+class TestWeeklyDigestEmail:
+    def test_invalid_llm_scratchpad_uses_safe_fallback(self):
+        """Internal filtering notes must never be sent as the digest body."""
+        svc = _service()
+        scratchpad = (
+            "Here are the findings that survive the filters:\n"
+            "Actionable & non-obvious:**\n"
+            "1. **Running cadence** (r=+0.52, n=47) — actionable\n"
+            "Surviving findings:** cadence\n"
+            "Keep going."
+        )
+        correlations = [
+            {
+                "input_name": "avg_cadence",
+                "output_metric": "efficiency",
+                "category": "what_works",
+                "correlation_coefficient": 0.52,
+                "sample_size": 47,
+                "times_confirmed": 4,
+            },
+            {
+                "input_name": "pre_run_carbs_g",
+                "output_metric": "efficiency",
+                "category": "pattern",
+                "correlation_coefficient": 0.42,
+                "sample_size": 22,
+                "times_confirmed": 3,
+            },
+        ]
+
+        svc.send_email = MagicMock(return_value=True)
+        with patch("core.llm_client.resolve_briefing_model", return_value="test-model"), \
+             patch("core.llm_client.call_llm", return_value={"text": scratchpad}):
+            assert svc.send_coached_digest(
+                to_email="athlete@example.com",
+                athlete_name="Michael",
+                findings_context="- cadence",
+                analysis_period_days=90,
+                total_correlations=len(correlations),
+                all_correlations=correlations,
+            )
+
+        send_args = svc.send_email.call_args.args
+        html_body = send_args[2]
+        text_body = send_args[3]
+        assert "Actionable" not in html_body
+        assert "Surviving findings" not in html_body
+        assert "r=+0.52" not in text_body
+        assert "Running cadence" in html_body
+
+    def test_valid_llm_digest_is_escaped_before_send(self):
+        svc = _service()
+        valid_body = (
+            "• Cadence is one of your more repeatable performance signals across 47 runs.\n"
+            "• Pre-run fueling is worth watching because it keeps recurring in your data."
+        )
+
+        svc.send_email = MagicMock(return_value=True)
+        with patch("core.llm_client.resolve_briefing_model", return_value="test-model"), \
+             patch("core.llm_client.call_llm", return_value={"text": valid_body}):
+            assert svc.send_coached_digest(
+                to_email="athlete@example.com",
+                athlete_name="<Michael>",
+                findings_context="- cadence",
+                analysis_period_days=90,
+                total_correlations=2,
+                all_correlations=[],
+            )
+
+        html_body = svc.send_email.call_args.args[2]
+        assert "Hey &lt;Michael&gt;" in html_body
+        assert "<Michael>" not in html_body
+        assert "<li>Cadence is one of your more repeatable performance signals across 47 runs.</li>" in html_body

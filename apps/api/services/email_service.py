@@ -8,6 +8,8 @@ Configured via settings: SMTP_SERVER, SMTP_PORT, SMTP_USERNAME, SMTP_PASSWORD,
 FROM_EMAIL, FROM_NAME, EMAIL_ENABLED.
 """
 
+import html
+import re
 import smtplib
 import ssl
 from email.mime.text import MIMEText
@@ -42,11 +44,10 @@ def _direction_phrase(raw_key: str, positive_is_good: bool) -> str:
 
 _DIGEST_COACHING_SYSTEM = """\
 You are writing a brief weekly email from StrideIQ to a runner.  You receive
-their statistically confirmed correlation findings from the last 90 days.
+their athlete-facing eligible correlation findings from the last 90 days.
 
-Your job is NOT to relay every finding.  Your job is to be a good coach: pick
-only the findings that are genuinely useful and write 3-5 short bullet points
-in plain coaching language.
+Your job is to translate already-filtered findings into 2-5 short bullet
+points in plain coaching language.
 
 FILTERING RULES — exclude findings that fail ANY of these:
 1. ACTIONABLE — can the athlete change this?  Environmental factors they
@@ -74,9 +75,70 @@ WRITING RULES:
 - Do NOT add greetings, sign-offs, or preamble — just the bullet points.
   The email wrapper handles salutation and closing.
 - Output plain text, one bullet per line, each starting with "• ".
-- If fewer than 2 findings survive the filter, say:
-  "Your data is still accumulating.  Check back next week."\
+- Do NOT show your filtering process. Do not mention excluded findings,
+  borderline findings, caveats, raw r/n/p values, or internal reasoning.
+- Do NOT use Markdown bolding.
 """
+
+
+_DIGEST_FORBIDDEN_PATTERNS = [
+    r"\br\s*=",
+    r"\bn\s*=",
+    r"\bp\s*[<=>]",
+    r"\binternal\s*:",
+    r"\bactionable\b",
+    r"\bnon-obvious\b",
+    r"\bsurviv(?:e|ing|ed)\b",
+    r"\bexclude\b",
+    r"\binclude\b",
+    r"\bborderline\b",
+    r"\bcounterintuitive\b",
+    r"\btautolog",
+    r"\bworth flagging\b",
+    r"\bi(?:'|’)ll\b",
+    r"\bthat's\b",
+    r"\bkeep going\b",
+    r"\*\*",
+]
+
+
+def _digest_body_is_valid(body: str) -> bool:
+    """Guard against sending LLM scratchpads as athlete email copy."""
+    if not body:
+        return False
+
+    text = body.strip()
+    if len(text) > 900:
+        return False
+
+    lowered = text.lower()
+    if any(re.search(pattern, lowered) for pattern in _DIGEST_FORBIDDEN_PATTERNS):
+        return False
+
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    if not (2 <= len(lines) <= 5):
+        return False
+
+    for line in lines:
+        if not line.startswith("• "):
+            return False
+        if len(line) > 220:
+            return False
+
+    return True
+
+
+def _clean_digest_lines(body: str) -> List[str]:
+    """Return display-ready digest lines without bullet prefixes."""
+    lines = []
+    for line in body.splitlines():
+        clean = line.strip()
+        if not clean:
+            continue
+        clean = clean.removeprefix("•").lstrip(" -*").strip()
+        if clean:
+            lines.append(clean)
+    return lines
 
 
 class EmailService:
@@ -162,8 +224,9 @@ class EmailService:
         """
         Send weekly digest using an LLM coaching filter.
 
-        The LLM receives the raw findings and returns 3-5 coached bullets.
-        On LLM failure, falls back to the deterministic template.
+        The LLM receives eligible findings and returns coached bullets. Invalid
+        model output falls back to deterministic bullets rather than sending
+        internal filtering notes to the athlete.
         """
         coached_body = self._generate_coached_body(findings_context)
 
@@ -172,7 +235,7 @@ class EmailService:
                 to_email, athlete_name, coached_body, analysis_period_days
             )
 
-        logger.warning("LLM digest generation failed — using template fallback for %s", to_email)
+        logger.warning("LLM digest generation failed validation — using safe fallback for %s", to_email)
         return self._send_template_fallback(
             to_email, athlete_name, all_correlations, analysis_period_days
         )
@@ -203,6 +266,9 @@ class EmailService:
             if not body or len(body) < 20:
                 logger.warning("LLM returned empty or too-short digest body")
                 return None
+            if not _digest_body_is_valid(body):
+                logger.warning("LLM returned invalid weekly digest body")
+                return None
             return body
         except Exception as exc:
             logger.error("LLM digest call failed: %s", exc)
@@ -216,16 +282,14 @@ class EmailService:
         analysis_period_days: int,
     ) -> bool:
         subject = "Your Weekly Performance Insights"
-        name = athlete_name or "there"
+        name = html.escape(athlete_name or "there")
 
         bullets_html = ""
-        for line in coached_body.split("\n"):
-            line = line.strip()
-            if not line:
-                continue
-            clean = line.lstrip("•-* ").strip()
-            if clean:
-                bullets_html += f"<li>{clean}</li>\n"
+        for clean in _clean_digest_lines(coached_body):
+            bullets_html += f"<li>{html.escape(clean)}</li>\n"
+
+        if not bullets_html:
+            return False
 
         html_content = (
             f"<h2>Hey {name},</h2>\n"
@@ -253,52 +317,21 @@ class EmailService:
         all_correlations: List[dict],
         analysis_period_days: int,
     ) -> bool:
-        """Old for-loop template — used only when the LLM call fails."""
+        """Safe deterministic fallback used only when the LLM output is invalid."""
         subject = "Your Weekly Performance Insights"
+        bullets = self._build_safe_digest_bullets(all_correlations)
+        if len(bullets) < 2:
+            logger.info("Suppressing weekly digest fallback: fewer than 2 safe bullets")
+            return False
 
-        what_works = sorted(
-            [c for c in all_correlations if c.get("direction") == "negative"],
-            key=lambda x: abs(x.get("correlation_coefficient", 0)),
-            reverse=True,
-        )
-        what_doesnt_work = sorted(
-            [c for c in all_correlations if c.get("direction") == "positive"],
-            key=lambda x: abs(x.get("correlation_coefficient", 0)),
-            reverse=True,
-        )
-
+        escaped_name = html.escape(athlete_name or "there")
         html_parts = [
-            f"<h2>Hey {athlete_name or 'there'},</h2>",
-            f"<p>Here's what the data says about your performance over the last {analysis_period_days} days.</p>",
+            f"<h2>Hey {escaped_name},</h2>",
+            f"<p>Here's what your data revealed over the last {analysis_period_days} days.</p>",
+            "<ul>",
+            *[f"<li>{html.escape(b)}</li>" for b in bullets],
+            "</ul>",
         ]
-
-        if what_works:
-            html_parts.append("<h3>What's Working</h3><ul>")
-            for c in what_works[:5]:
-                raw_key = c["input_name"]
-                name = friendly_signal_name(raw_key)
-                sample = c["sample_size"]
-                dw = _direction_phrase(raw_key, positive_is_good=True)
-                label = f"{dw}{name}" if dw else name.capitalize()
-                html_parts.append(
-                    f"<li><strong>{label}</strong> is one of your strongest "
-                    f"efficiency drivers — confirmed over {sample} runs.</li>"
-                )
-            html_parts.append("</ul>")
-
-        if what_doesnt_work:
-            html_parts.append("<h3>What Doesn't Work</h3><ul>")
-            for c in what_doesnt_work[:3]:
-                raw_key = c["input_name"]
-                name = friendly_signal_name(raw_key)
-                sample = c["sample_size"]
-                dw = _direction_phrase(raw_key, positive_is_good=False)
-                label = f"{dw}{name}" if dw else name.capitalize()
-                html_parts.append(
-                    f"<li><strong>{label}</strong> is dragging your efficiency "
-                    f"down — confirmed across {sample} runs.</li>"
-                )
-            html_parts.append("</ul>")
 
         html_parts.append("<p>Keep going.</p><p>— StrideIQ</p>")
         html_content = "\n".join(html_parts)
@@ -309,6 +342,43 @@ class EmailService:
             f"Keep going.\n— StrideIQ"
         )
         return self.send_email(to_email, subject, html_content, text_content)
+
+    def _build_safe_digest_bullets(self, correlations: List[dict]) -> List[str]:
+        """Build short athlete-safe bullets from already eligible findings."""
+        ordered = sorted(
+            correlations,
+            key=lambda c: (c.get("times_confirmed") or 0, abs(c.get("correlation_coefficient") or 0)),
+            reverse=True,
+        )
+
+        bullets: List[str] = []
+        for c in ordered[:5]:
+            raw_key = c.get("input_name") or "this signal"
+            name = friendly_signal_name(raw_key)
+            sample = int(c.get("sample_size") or 0)
+            confirmations = int(c.get("times_confirmed") or 0)
+            evidence = (
+                f"{sample} runs and {confirmations} confirmations"
+                if confirmations > 0
+                else f"{sample} runs"
+            )
+            category = c.get("category")
+
+            if category == "what_works":
+                bullets.append(
+                    f"{name.capitalize()} is showing up as one of your better-performance signals, based on {evidence}."
+                )
+            elif category == "what_doesnt":
+                bullets.append(
+                    f"{name.capitalize()} is showing up when performance dips, based on {evidence}; treat it as a watch item this week."
+                )
+            else:
+                output_name = friendly_signal_name(c.get("output_metric") or "performance").lower()
+                bullets.append(
+                    f"{name.capitalize()} is meaningfully linked with {output_name}, based on {evidence}; watch it, don't force it."
+                )
+
+        return bullets
 
 
 # Singleton instance
