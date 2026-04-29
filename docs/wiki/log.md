@@ -1,5 +1,29 @@
 # Wiki Log
 
+## [2026-04-29] V2 system prompt: global contract rules added — correction priority, domain-additive, no domain-structure headers
+
+**Trigger:** Step 2 of Global Coach Contract plan (`c:\Users\mbsha\.cursor\plans\global_coach_contract_af6b52cc.plan.md`). Post-deploy log audit (Step 1) confirmed zero fail-closed events. Step 2 tightens the V2 system prompt to match the global contract, closing gaps that caused domain-siloing, missing correction-first behavior, and potential domain-structure header output.
+
+**Changes in `services/coaching/_llm.py`:**
+1. `ARTIFACT9_V2_SYSTEM_PROMPT` updated with four new rules:
+   - **Correction/pushback as highest-priority state** (explicit, not just implied by repair rule)
+   - **Domain-additive rule** — training, nutrition, recovery, race, calendar must all be addressed if named in the athlete's message; no silent narrowing
+   - **Bounded answer over collapse** — partial evidence → bounded answer; not "I can't answer"
+   - **No domain-structure headers** — `Timeline:`, `Warmup:`, `Mile by mile:`, `Objective:`, `Limiter:`, `Pacing shape:`, `Course risk:` banned from V2 output
+2. One-question-per-turn cap made explicit in rule 2 (was implied).
+3. Global contract stated as a named summary at the top of the prompt.
+4. `_coach_contract_instruction()` (V1 tool path only, dead for chat) stripped of mandatory structure language (`Timeline:`, `Warmup:`, `Mile by mile:`, `Cue:`, `include objective, limiter, pacing shape...`). Now guidance-only.
+
+**Qualitative production smoke (all V2, zero fail-closed):**
+- Correction/dispute scenario: named data mismatch first, reframed taper question, one follow-up
+- Multi-domain (race + recovery + sleep + nutrition): addressed all domains in one response, no headers
+- Original fail-closed scenario (race week + heavy legs + shakeout): expert supercompensation explanation with concrete guidance, one follow-up
+
+**Files changed:** `services/coaching/_llm.py`
+**Tests:** 72/72 green
+
+---
+
 ## [2026-04-29] Coach contract validation gates removed — fail-closed bug fixed
 
 **Trigger:** AI coach repeatedly showing "I can't safely answer that yet. V2 could not complete the turn without risking a wrong answer, so I stopped instead of guessing." on legitimate coaching questions including basic training questions. Root cause identified as the conversation contract system.

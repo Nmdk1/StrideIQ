@@ -51,15 +51,23 @@ Three context builders serve different surfaces:
 
 ### System Prompt
 
-The system prompt assembled in `services/coaching/core.py` includes:
+The V2 system prompt (`ARTIFACT9_V2_SYSTEM_PROMPT` in `services/coaching/_llm.py`) is the **only** system prompt served to athletes as of Apr 29, 2026. `V2_SYSTEM_PROMPT = ARTIFACT9_V2_SYSTEM_PROMPT + V2_VOICE_CORPUS`.
 
-- **Athlete calibration:** Adapts to experience level — experienced athletes don't get default conservatism
-- **Data verification discipline:** Must query actual data before making pace/split comparisons
-- **Fatigue threshold context:** During build phases, thresholds are context not warnings
-- **N=1 principles:** No population statistics, no template narratives
-- **Anti-hallucination:** Never infer from workout titles, never guess relative dates
-- **General knowledge allowed:** The hallucination rule applies to athlete-specific facts; standard sports science, supplement timing, and warmup protocols should be answered directly and labeled as general when athlete history is absent.
-- **Direct race-day voice:** Same-day race threads use execution mode, not planning mode: timeline, warmup, supplement/fueling timing when relevant, mile-by-mile effort cues, and a mental cue. The prompt now asks for the literal plain-text labels `Timeline:`, `Warmup:`, `Mile by mile:`, and `Cue:` on the first pass, forbids hedge voice such as "still aggressive", and directs the coach to reason from recent workout evidence when RPI pace models conflict with what the athlete actually ran.
+**Global contract (Apr 29, 2026):** Answer the athlete's latest turn directly, using the best available evidence, in natural coaching language, while preserving trust when evidence is missing, disputed, partial, or contradictory.
+
+Key rules now explicitly in the prompt:
+
+- **Answer first:** Use available evidence naturally (dates, distances, paces, HR, nutrition rows, goals). No unsupported claims.
+- **One follow-up cap:** Ask at most one follow-up question per turn; only when a missing fact truly blocks the answer.
+- **Correction is highest-priority state:** When the athlete corrects a prior claim, repair trust before adding anything new. Do not repeat the disputed claim.
+- **Domain-additive:** If the message touches training, nutrition, recovery, race, calendar, or memory together, address all relevant domains — never narrow silently to one.
+- **Bounded answer over collapse:** When evidence is partial, give the best bounded answer the evidence supports. Do not collapse to "I can't answer" when a directional answer is possible.
+- **No domain-structure headers:** Never produce `Timeline:`, `Warmup:`, `Mile by mile:`, `Objective:`, `Limiter:`, `Pacing shape:`, `Course risk:`, or similar checklist labels. Natural coaching prose only.
+- **Voice register:** Roche, Davis, Green, Eyestone, McMillan philosophies; Holmer-level physiology. Direct, mechanism-naming, no template praise.
+- **Conversation mode is backstage:** Use it to choose scale and caution; do not expose it or let it override the athlete's latest message.
+- **Never expose machinery:** No raw block names, system labels, or internal field names in athlete-facing output.
+
+The older V1 `_coach_contract_instruction()` in `_llm.py` is guidance-only for the dead V1 tool path; mandatory structure instructions (e.g. `Timeline:`, `Warmup:`, `Mile by mile:`, `Cue:`) were removed from it on Apr 29 to match the validator removal from `_conversation_contract.py`.
 
 ### Coach Tools
 
