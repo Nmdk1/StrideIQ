@@ -438,6 +438,7 @@ def build_nutrition_context_state(
     kind = _detect_nutrition_context_kind(message)
     if kind is None:
         return None
+    message_lower = (message or "").lower()
 
     generated_at = _utc_now_iso()
     if db is None:

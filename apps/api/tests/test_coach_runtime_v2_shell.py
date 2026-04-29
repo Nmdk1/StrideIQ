@@ -682,6 +682,67 @@ def test_v2_packet_adds_unavailable_nutrition_context_for_relevant_query_without
     assert packet["telemetry"]["packet_block_count"] == 10
 
 
+def test_named_day_nutrition_context_db_path_includes_requested_labels(monkeypatch):
+    today = date(2026, 4, 28)
+    monday = date(2026, 4, 27)
+
+    entries = [
+        SimpleNamespace(
+            id=i,
+            date=monday if i < 2 else today,
+            created_at=datetime(2026, 4, 28, 12, i, tzinfo=timezone.utc),
+            entry_type="food",
+            notes="Monday food" if i < 2 else "Today food",
+            calories=100,
+            protein_g=10,
+            carbs_g=20,
+            fat_g=5,
+            caffeine_mg=0,
+            fluid_ml=0,
+            macro_source="manual",
+            activity_id=None,
+        )
+        for i in range(4)
+    ]
+
+    class _FakeQuery:
+        def filter(self, *args, **kwargs):
+            return self
+
+        def order_by(self, *args, **kwargs):
+            return self
+
+        def all(self):
+            return entries
+
+    class _FakeDb:
+        def query(self, *args, **kwargs):
+            return _FakeQuery()
+
+    monkeypatch.setattr(
+        packet_module, "get_athlete_timezone_from_db", lambda db, athlete_id: "UTC"
+    )
+    block = packet_module.build_nutrition_context_state(
+        athlete_id=uuid4(),
+        db=_FakeDb(),
+        message=(
+            "Monday and today are my typical daily food intake. What do you "
+            "think of it to support my lifting and running?"
+        ),
+        now_utc=datetime(2026, 4, 28, 18, tzinfo=timezone.utc),
+    )
+
+    data = block["data"]
+    assert block["status"] == "complete"
+    assert data["query_type"] == "date_range_named_days"
+    assert data["coverage"]["requested_named_dates"] == [
+        {"label": "Monday", "date": monday.isoformat()},
+        {"label": "today", "date": today.isoformat()},
+    ]
+    assert set(data["by_date"]) == {monday.isoformat(), today.isoformat()}
+    assert "name each requested day explicitly" in data["response_guidance"]
+
+
 def test_v2_packet_adds_performance_pace_context_for_training_turn_without_db():
     packet = assemble_v2_packet(
         athlete_id=uuid4(),
