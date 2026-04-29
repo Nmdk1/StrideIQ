@@ -232,6 +232,33 @@ def _mentioned_weekday_dates(message_lower: str, today: date) -> list[date]:
     return sorted(set(dates))
 
 
+def _requested_named_dates(message_lower: str, today: date) -> list[dict[str, str]]:
+    named_dates: list[dict[str, str]] = []
+    seen: set[tuple[str, date]] = set()
+    for name, weekday in _WEEKDAY_INDEX.items():
+        if not re.search(r"(?<!\w)" + name + r"(?!\w)", message_lower):
+            continue
+        delta = (today.weekday() - weekday) % 7
+        target = today - timedelta(days=delta)
+        key = (name, target)
+        if key in seen:
+            continue
+        seen.add(key)
+        named_dates.append({"label": name.title(), "date": target.isoformat()})
+    if re.search(r"(?<!\w)today(?!\w)", message_lower):
+        key = ("today", today)
+        if key not in seen:
+            seen.add(key)
+            named_dates.append({"label": "today", "date": today.isoformat()})
+    if re.search(r"(?<!\w)yesterday(?!\w)", message_lower):
+        target = today - timedelta(days=1)
+        key = ("yesterday", target)
+        if key not in seen:
+            seen.add(key)
+            named_dates.append({"label": "yesterday", "date": target.isoformat()})
+    return named_dates
+
+
 def _nutrition_date_window(
     kind: str,
     today: date,
@@ -266,10 +293,16 @@ def _nutrition_entry_row(entry: NutritionEntry) -> dict[str, Any]:
 
 
 def _nutrition_response_guidance(kind: str) -> str:
+    if kind == "date_range_named_days":
+        return (
+            "Answer from the logged nutrition rows, name each requested day explicitly, "
+            "compare the named days when more than one is requested, and preserve any "
+            "training, lifting, recovery, race, or body-composition linkage the athlete "
+            "explicitly included in the question."
+        )
     if kind in {
         "current_log",
         "date_range_yesterday",
-        "date_range_named_days",
         "date_range_week",
     }:
         return (
@@ -458,6 +491,10 @@ def build_nutrition_context_state(
             "entry_limit": NUTRITION_CONTEXT_ENTRY_LIMIT,
             "interpretation": "partial_logs_additive_not_complete_day_total",
         }
+        if kind == "date_range_named_days":
+            coverage["requested_named_dates"] = _requested_named_dates(
+                message_lower, today
+            )
         data = {
             "query_type": kind,
             "response_guidance": _nutrition_response_guidance(kind),

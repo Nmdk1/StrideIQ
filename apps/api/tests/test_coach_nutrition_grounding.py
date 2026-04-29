@@ -204,6 +204,11 @@ def test_v2_named_day_nutrition_summary_uses_all_rows_before_entry_cap(
 
     assert data["by_date"][monday.isoformat()]["calories"] == 600
     assert data["by_date"][today.isoformat()]["calories"] == 3600
+    assert data["coverage"]["requested_named_dates"] == [
+        {"label": "Monday", "date": monday.isoformat()},
+        {"label": "today", "date": today.isoformat()},
+    ]
+    assert "name each requested day explicitly" in data["response_guidance"]
     assert any(note.startswith("Monday") for note in returned_notes)
     assert any(note.startswith("Today") for note in returned_notes)
     assert data["coverage"]["entries_found"] == 24
