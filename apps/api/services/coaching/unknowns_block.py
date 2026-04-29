@@ -12,7 +12,9 @@ QUERY_REQUIRED_FIELDS = {
     "interval_pace_question": ["pace_zones", "recent_injuries"],
     "nutrition_planning": ["gut_sensitivity", "standing_overrides"],
     "injury_assessment": ["recent_injuries", "weekly_volume_mpw"],
-    "volume_question": ["weekly_volume_mpw", "current_block_phase"],
+    # Volume and phase are usually derivable from recent activity/calendar context.
+    # Do not force athlete-facing questions from static ledger gaps.
+    "volume_question": [],
     "race_planning": ["target_event", "pace_zones", "recent_injuries"],
     "weight_loss_planning": ["current_weight_lbs", "target_weight_lbs", "cut_active"],
     "general": [],

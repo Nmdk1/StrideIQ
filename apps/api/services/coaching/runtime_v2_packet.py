@@ -119,6 +119,14 @@ def _empty_recent_threads() -> dict[str, Any]:
 
 def _detect_nutrition_context_kind(message: str) -> str | None:
     lower = (message or "").lower()
+
+    def has_any(terms: tuple[str, ...]) -> bool:
+        for term in terms:
+            pattern = r"(?<!\w)" + re.escape(term) + r"(?!\w)"
+            if re.search(pattern, lower, flags=re.IGNORECASE):
+                return True
+        return False
+
     pattern_terms = (
         "trend",
         "pattern",
@@ -172,19 +180,24 @@ def _detect_nutrition_context_kind(message: str) -> str | None:
         "nutrition",
         "logged",
     )
-    if any(term in lower for term in pattern_terms) and any(
-        term in lower for term in food_log_terms + workout_fueling_terms
-    ):
+    if has_any(pattern_terms) and has_any(food_log_terms + workout_fueling_terms):
         return "pattern_mining"
-    if any(term in lower for term in body_comp_terms):
+    if has_any(body_comp_terms):
         return "body_composition"
-    if any(term in lower for term in race_fueling_terms):
+    if has_any(race_fueling_terms):
         return "race_fueling"
-    if any(term in lower for term in workout_fueling_terms):
+    if has_any(workout_fueling_terms):
         return "training_day_fueling"
-    if any(term in lower for term in food_log_terms):
+    if has_any(food_log_terms):
+        if "yesterday" in lower and "today" in lower:
+            return "date_range_named_days"
         if "yesterday" in lower:
             return "date_range_yesterday"
+        if any(
+            re.search(r"(?<!\w)" + name + r"(?!\w)", lower)
+            for name in _WEEKDAY_INDEX
+        ):
+            return "date_range_named_days"
         if any(
             term in lower
             for term in ("last week", "this week", "past week", "7 days")
@@ -194,10 +207,43 @@ def _detect_nutrition_context_kind(message: str) -> str | None:
     return None
 
 
-def _nutrition_date_window(kind: str, today: date) -> tuple[date, date]:
+_WEEKDAY_INDEX = {
+    "monday": 0,
+    "tuesday": 1,
+    "wednesday": 2,
+    "thursday": 3,
+    "friday": 4,
+    "saturday": 5,
+    "sunday": 6,
+}
+
+
+def _mentioned_weekday_dates(message_lower: str, today: date) -> list[date]:
+    dates: list[date] = []
+    for name, weekday in _WEEKDAY_INDEX.items():
+        if not re.search(r"(?<!\w)" + name + r"(?!\w)", message_lower):
+            continue
+        delta = (today.weekday() - weekday) % 7
+        dates.append(today - timedelta(days=delta))
+    if re.search(r"(?<!\w)today(?!\w)", message_lower):
+        dates.append(today)
+    if re.search(r"(?<!\w)yesterday(?!\w)", message_lower):
+        dates.append(today - timedelta(days=1))
+    return sorted(set(dates))
+
+
+def _nutrition_date_window(
+    kind: str,
+    today: date,
+    message: str = "",
+) -> tuple[date, date]:
     if kind == "date_range_yesterday":
         yesterday = today - timedelta(days=1)
         return yesterday, yesterday
+    if kind == "date_range_named_days":
+        dates = _mentioned_weekday_dates((message or "").lower(), today)
+        if dates:
+            return min(dates), max(dates)
     if kind in {"date_range_week", "pattern_mining", "body_composition"}:
         return today - timedelta(days=6), today
     return today, today
@@ -220,11 +266,16 @@ def _nutrition_entry_row(entry: NutritionEntry) -> dict[str, Any]:
 
 
 def _nutrition_response_guidance(kind: str) -> str:
-    if kind in {"current_log", "date_range_yesterday", "date_range_week"}:
+    if kind in {
+        "current_log",
+        "date_range_yesterday",
+        "date_range_named_days",
+        "date_range_week",
+    }:
         return (
-            "Answer the logged-nutrition question directly. Do not connect the "
-            "read to training, races, workouts, or old threads unless the athlete "
-            "explicitly asks for that linkage."
+            "Answer from the logged nutrition rows, but preserve any training, "
+            "lifting, recovery, race, or body-composition linkage the athlete "
+            "explicitly included in the question."
         )
     if kind == "pattern_mining":
         return (
@@ -348,7 +399,7 @@ def build_nutrition_context_state(
     try:
         tz_name = get_athlete_timezone_from_db(db, athlete_id)
         today = athlete_local_today(tz_name, now_utc=now_utc)
-        start_date, end_date = _nutrition_date_window(kind, today)
+        start_date, end_date = _nutrition_date_window(kind, today, message)
         base_query = db.query(NutritionEntry).filter(
             NutritionEntry.athlete_id == athlete_id,
             NutritionEntry.date >= start_date,
@@ -2676,11 +2727,43 @@ def _block_for_llm(block: dict[str, Any]) -> dict[str, Any]:
 
 def _direct_nutrition_log_prompt(blocks: dict[str, Any]) -> bool:
     nutrition_data = ((blocks.get("nutrition_context") or {}).get("data") or {})
-    return nutrition_data.get("query_type") in {
-        "current_log",
-        "date_range_yesterday",
-        "date_range_week",
-    }
+    if nutrition_data.get("query_type") != "current_log":
+        return False
+    conversation_data = ((blocks.get("conversation") or {}).get("data") or {})
+    message = str(conversation_data.get("user_message") or "").lower()
+    broader_context_terms = (
+        "run",
+        "ran",
+        "running",
+        "training",
+        "workout",
+        "lift",
+        "lifting",
+        "strength",
+        "race",
+        "recovery",
+        "recover",
+        "fatigue",
+        "fueling",
+        "fuel",
+        "support",
+        "last few days",
+        "trend",
+        "pattern",
+        "compare",
+        "different from",
+        "similar",
+        "block",
+        "monday",
+        "tuesday",
+        "wednesday",
+        "thursday",
+        "friday",
+        "saturday",
+        "sunday",
+        "yesterday",
+    )
+    return not any(term in message for term in broader_context_terms)
 
 
 def _direct_performance_pace_prompt(blocks: dict[str, Any]) -> bool:

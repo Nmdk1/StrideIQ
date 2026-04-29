@@ -67,11 +67,6 @@ function formatToolLabel(toolName: string): string {
     .replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
-function formatContractLabel(contract?: string | null): string | null {
-  if (!contract || contract === 'general') return null;
-  return contract.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
-}
-
 function CoachTrustControls({
   message,
   onCorrect,
@@ -80,8 +75,7 @@ function CoachTrustControls({
   onCorrect: () => void;
 }) {
   const tools = message.toolsUsed || [];
-  const contractLabel = formatContractLabel(message.conversationContract);
-  const hasTrustMetadata = tools.length > 0 || contractLabel;
+  const hasTrustMetadata = tools.length > 0;
   const hasAnswer = Boolean((message.content || '').trim());
 
   if (!hasTrustMetadata && !hasAnswer) return null;
@@ -102,11 +96,6 @@ function CoachTrustControls({
           {tools.length > 3 && (
             <Badge variant="outline" className="border-slate-700 text-[11px] text-slate-300">
               +{tools.length - 3} more
-            </Badge>
-          )}
-          {contractLabel && (
-            <Badge variant="outline" className="border-slate-700 bg-slate-950/40 text-[11px] text-slate-300">
-              {contractLabel}
             </Badge>
           )}
         </div>

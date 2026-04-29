@@ -74,6 +74,37 @@ async def test_enforce_voice_cleans_visible_system_labels_without_llm_retry():
 
 
 @pytest.mark.asyncio
+async def test_enforce_voice_cleans_decision_for_today_label_without_llm_retry():
+    calls = []
+
+    async def retry(instruction: str) -> str:
+        calls.append(instruction)
+        return "Should not be called."
+
+    result = await enforce_voice(
+        "Decision for today: Run 20-30 minutes easy tomorrow.",
+        retry,
+    )
+
+    assert result["response"] == "Run 20-30 minutes easy tomorrow."
+    assert result["template_phrase_hits"] == ["decision for today:"]
+    assert calls == []
+
+
+@pytest.mark.asyncio
+async def test_enforce_voice_cleans_internal_block_names_without_llm_retry():
+    result = await enforce_voice(
+        "Looking at your recent_activities and recent_threads, you should run easy.",
+        lambda instruction: "Should not be called.",
+    )
+
+    assert result["response"] == (
+        "Looking at your training data and our recent conversation, you should run easy."
+    )
+    assert result["template_phrase_hits"] == ["recent_activities", "recent_threads"]
+
+
+@pytest.mark.asyncio
 async def test_enforce_voice_raises_after_max_retry_hits():
     async def retry(instruction: str) -> str:
         return "You've got this. Trust the process."

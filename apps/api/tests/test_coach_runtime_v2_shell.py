@@ -1,4 +1,5 @@
 import inspect
+import json
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
@@ -676,7 +677,7 @@ def test_v2_packet_adds_unavailable_nutrition_context_for_relevant_query_without
 
     assert block["status"] == "unavailable"
     assert data["query_type"] == "current_log"
-    assert "Answer the logged-nutrition question directly" in data["response_guidance"]
+    assert "preserve any training" in data["response_guidance"]
     assert data["coverage"]["interpretation"] == "nutrition_db_unavailable"
     assert packet["telemetry"]["packet_block_count"] == 10
 
@@ -1027,6 +1028,97 @@ def test_v2_packet_prompt_compacts_audit_metadata_for_llm():
     assert "token_budget" not in prompt
     assert "_legacy_context_bridge_deprecated" not in prompt
     assert len(prompt) < len(audit_prompt)
+
+
+def test_run_load_fatigue_question_does_not_scope_prompt_to_nutrition_only():
+    message = (
+        "What effect did today's run have on my fitness and fatigue? Was the "
+        "effort appropriate for where I am in my training? What should I do "
+        "tomorrow based on how today loaded me?"
+    )
+
+    packet = assemble_v2_packet(
+        athlete_id=uuid4(),
+        message=message,
+        conversation_context=[],
+        legacy_athlete_state="Durable non-temporal context.",
+    )
+    prompt_payload = json.loads(packet_to_prompt(packet))
+
+    assert "nutrition_context" not in packet["blocks"]
+    assert prompt_payload["prompt_scope"] == "full_compact"
+    assert "recent_activities" in prompt_payload["blocks"]
+    assert "training_adaptation_context" in prompt_payload["blocks"]
+
+
+def test_food_log_plus_run_recovery_question_keeps_full_compact_prompt_scope():
+    message = (
+        "Given today's food log and today's run, am I underfueling or fine "
+        "for recovery?"
+    )
+
+    packet = assemble_v2_packet(
+        athlete_id=uuid4(),
+        db=None,
+        message=message,
+        conversation_context=[],
+        legacy_athlete_state="Durable non-temporal context.",
+    )
+    prompt_payload = json.loads(packet_to_prompt(packet))
+
+    assert "nutrition_context" in packet["blocks"]
+    assert packet["blocks"]["nutrition_context"]["data"]["query_type"] == "current_log"
+    assert prompt_payload["prompt_scope"] == "full_compact"
+    assert "nutrition_context" in prompt_payload["blocks"]
+    assert "recent_activities" in prompt_payload["blocks"]
+    assert "training_adaptation_context" in prompt_payload["blocks"]
+
+
+def test_monday_and_today_nutrition_question_uses_named_day_range_and_full_context():
+    message = (
+        "Monday and today are my typical daily food intake. What do you think "
+        "of it to support my lifting and running?"
+    )
+
+    packet = assemble_v2_packet(
+        athlete_id=uuid4(),
+        db=None,
+        message=message,
+        conversation_context=[],
+        legacy_athlete_state="Durable non-temporal context.",
+    )
+    prompt_payload = json.loads(packet_to_prompt(packet))
+
+    assert packet["blocks"]["nutrition_context"]["data"]["query_type"] == (
+        "date_range_named_days"
+    )
+    assert prompt_payload["prompt_scope"] == "full_compact"
+    assert "nutrition_context" in prompt_payload["blocks"]
+    assert "recent_activities" in prompt_payload["blocks"]
+    assert "training_adaptation_context" in prompt_payload["blocks"]
+
+
+def test_volume_pushback_does_not_force_static_ledger_unknowns():
+    packet = assemble_v2_packet(
+        athlete_id=uuid4(),
+        message=(
+            "why would you ask me a stupid question like that? why do you "
+            "think my volume is dropping this week?"
+        ),
+        conversation_context=[
+            {
+                "role": "assistant",
+                "content": "What's driving the volume drop this week?",
+            }
+        ],
+        legacy_athlete_state="Durable non-temporal context.",
+    )
+    prompt_payload = json.loads(packet_to_prompt(packet))
+
+    assert packet["conversation_mode"]["query_class"] == "volume_question"
+    assert prompt_payload["blocks"]["unknowns"]["data"] == []
+    assert "recent_activities" in prompt_payload["blocks"]
+    assert "calendar_context" in prompt_payload["blocks"]
 
 
 def test_v2_packet_prompt_surfaces_parsed_table_elevation_gain():
