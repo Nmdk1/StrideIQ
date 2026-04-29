@@ -122,7 +122,7 @@ class TestClosedFindingsGroupedInOneLine:
                 lifecycle_state_updated_at=NOW - timedelta(days=90),
             ),
         ]
-        result = _format_closed_summary(closed)
+        result = _format_closed_summary(closed, now=NOW)
         assert "Previously solved:" in result
         assert "long runs" in result
         assert "sleep duration" in result
@@ -356,7 +356,7 @@ class TestTTLExpiryReEvaluation:
             )
             mock_lspec.return_value = False
 
-            results = classify_lifecycle_states(ATHLETE_ID, mock_db)
+            results = classify_lifecycle_states(ATHLETE_ID, mock_db, now=NOW)
 
         assert results[finding.id] == "emerging", (
             "Finding should revert to emerging after supporting fact expires"

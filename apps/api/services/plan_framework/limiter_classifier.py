@@ -104,6 +104,8 @@ def _get_limiter_type_for_finding(finding) -> Optional[str]:
 def classify_lifecycle_states(
     athlete_id: UUID,
     db: Session,
+    *,
+    now: Optional[datetime] = None,
 ) -> Dict[int, str]:
     """Classify lifecycle state for all active correlation findings.
 
@@ -120,10 +122,13 @@ def classify_lifecycle_states(
 
     Returns a dict of {finding.id: lifecycle_state} for every finding
     that was classified or reclassified.
+
+    ``now`` may be injected for deterministic tests; defaults to the real UTC clock.
     """
     from models import CorrelationFinding
 
-    now = datetime.now(timezone.utc)
+    if now is None:
+        now = datetime.now(timezone.utc)
     results: Dict[int, str] = {}
 
     profile = _get_profile(athlete_id, db)

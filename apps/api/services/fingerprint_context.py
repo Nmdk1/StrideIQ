@@ -372,15 +372,18 @@ def format_finding_line(f, verbose: bool = False) -> str:
     return ("- " if verbose else "  ") + entry
 
 
-def _format_closed_summary(closed_findings: list) -> str:
+def _format_closed_summary(closed_findings: list, *, now=None) -> str:
     """Format closed findings as a single grouped summary line.
 
     Instead of listing each closed finding individually (wasting prompt space),
     produce: "Previously solved: long runs (closed 8mo ago), sleep duration (closed 3mo ago)"
+
+    ``now`` may be injected for deterministic tests; defaults to the real UTC clock.
     """
     from datetime import datetime, timezone
 
-    now = datetime.now(timezone.utc)
+    if now is None:
+        now = datetime.now(timezone.utc)
     parts = []
     for f in closed_findings:
         inp = _translate(f.input_name)
