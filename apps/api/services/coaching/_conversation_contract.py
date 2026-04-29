@@ -169,16 +169,15 @@ def classify_conversation_contract(
         "tune-up",
         "mayor",
     )
+    # Strategy terms must be genuinely about race execution planning, not incidental.
+    # "tomorrow", "plan", "pace" are too broad — they appear in normal training conversation.
     strategy_terms = (
         "strategy",
-        "plan",
-        "pacing",
-        "pace",
-        "execution",
-        "execute",
+        "pacing strategy",
+        "execution plan",
+        "race plan",
         "tactic",
         "approach",
-        "tomorrow",
     )
     if message_same_day_race_context:
         return ConversationContract(
@@ -203,18 +202,12 @@ def classify_conversation_contract(
             max_words=260,
         )
 
-    if any(
-        token in lower
-        for token in (
-            "should i",
-            "do i",
-            "am i",
-            "move",
-            "postpone",
-            "shift",
-            "choose",
-            "decision",
-        )
+    # Require an explicit decision request — single words like "move" or "shift" are too
+    # ambiguous and fire on normal training conversation ("I moved the long run").
+    if re.search(
+        r"\b(should i|do i need to|am i supposed to|what should i do|"
+        r"postpone|cancel my|skip my|change my plan)\b",
+        lower,
     ):
         return ConversationContract(
             contract_type=ConversationContractType.DECISION_POINT,
@@ -276,102 +269,17 @@ def validate_conversation_contract_response(
             return False, "quick_check_too_long"
         return True, "ok"
 
-    if contract.contract_type == ConversationContractType.DECISION_POINT:
-        has_decision = any(
-            token in lower
-            for token in (
-                "decision:",
-                "default:",
-                "recommend",
-                "i'd",
-                "i would",
-                "should",
-                "run",
-                "rest",
-                "cross-train",
-                "move",
-                "skip",
-                "eat",
-                "take",
-                "do this",
-            )
-        )
-        has_tradeoff = any(
-            token in lower
-            for token in (
-                "tradeoff",
-                "trade-off",
-                "cost",
-                "risk",
-                "because",
-                "but",
-                "if",
-                "unless",
-                "watch",
-                "instead",
-            )
-        )
-        if not (has_decision and has_tradeoff):
-            return False, "decision_point_missing_frame"
-        return True, "ok"
-
-    if contract.contract_type == ConversationContractType.CORRECTION_DISPUTE:
-        has_verification = any(
-            token in lower
-            for token in (
-                "i searched",
-                "searched",
-                "verified",
-                "could not verify",
-                "can't verify",
-                "cannot verify",
-                "athlete-stated",
-                "you are right",
-                "you're right",
-            )
-        )
-        if not has_verification:
-            return False, "correction_dispute_missing_verification"
-        return True, "ok"
-
+    # For all other contract types, the contract is guidance to the LLM only —
+    # not a pass/fail gate. Lexical keyword checks on Kimi's natural-language output
+    # produce false failures (good coaching responses that don't happen to contain
+    # "objective", "course", "risk", "i searched", etc.) and are the primary cause
+    # of the V2 fail-closed response being shown to athletes.
+    # Only QUICK_CHECK has a structural enforcement (word count) that is safe to gate on.
     if contract.contract_type == ConversationContractType.EMOTIONAL_LOAD:
+        # Only block active prying — the positive "has next step" gate caused too many
+        # false failures on valid empathetic coaching responses.
         if _PRYING_RE.search(main):
             return False, "emotional_load_prying"
-        has_next_step = any(token in lower for token in ("next step", "eat", "meal", "snack", "drink", "do this"))
-        if not has_next_step:
-            return False, "emotional_load_missing_next_step"
-        return True, "ok"
-
-    if contract.contract_type == ConversationContractType.RACE_STRATEGY:
-        required_groups = {
-            "objective": ("objective", "goal", "target", "realistic", "race for"),
-            "pacing_shape": ("pacing", "pace", "effort shape", "open", "hold", "close", "surge"),
-            "course_risk": ("course", "hill", "rise", "gain", "turn", "wind", "weather", "risk"),
-        }
-        missing = [
-            name
-            for name, tokens in required_groups.items()
-            if not any(token in lower for token in tokens)
-        ]
-        if missing:
-            return False, "race_strategy_missing_packet"
-        return True, "ok"
-
-    if contract.contract_type == ConversationContractType.RACE_DAY:
-        required_groups = {
-            "timeline": ("timeline", "leave", "arrival", "arrive", "packet", "start"),
-            "warmup": ("warmup", "warm up", "strides", "drills"),
-            "execution": ("mile", "first", "second", "third", "effort", "pace"),
-            "cue": ("cue", "cues", "relax", "commit", "controlled"),
-        }
-        lower_text = lower
-        missing = [
-            name
-            for name, tokens in required_groups.items()
-            if not any(token in lower_text for token in tokens)
-        ]
-        if missing:
-            return False, "race_day_missing_execution_packet"
         return True, "ok"
 
     return True, "ok"

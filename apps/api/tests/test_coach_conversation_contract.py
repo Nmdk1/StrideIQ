@@ -76,8 +76,11 @@ def test_same_day_race_context_does_not_promote_unrelated_domains():
         conversation_context=context,
     )
 
-    assert nutrition.contract_type == ConversationContractType.DECISION_POINT
+    # "Am I underfueling?" is a data/analysis question — not an explicit decision request.
+    assert nutrition.contract_type == ConversationContractType.GENERAL
+    # "Should I run today?" is an explicit decision request.
     assert recovery.contract_type == ConversationContractType.DECISION_POINT
+    # "What should I do?" is an explicit decision request.
     assert between_plan.contract_type == ConversationContractType.DECISION_POINT
 
 
@@ -128,14 +131,20 @@ def test_pace_zone_correction_beats_thread_carried_race_day_context():
     assert contract.contract_type == ConversationContractType.CORRECTION_DISPUTE
 
 
-def test_race_day_contract_requires_execution_packet():
+def test_race_day_contract_classifies_correctly_and_passes_validation():
+    # Structural validation is removed from RACE_DAY — the contract is guidance to the
+    # LLM only. Both a thin and a full execution response pass validation. The contract
+    # type still fires so the LLM receives the correct system guidance.
     user_message = "I have a 5K this morning and I'm taking bicarb."
 
-    invalid, reason = validate_conversation_contract_response(
+    contract = classify_conversation_contract(user_message)
+    assert contract.contract_type == ConversationContractType.RACE_DAY
+
+    thin, thin_reason = validate_conversation_contract_response(
         user_message,
         "You are fit enough. Open controlled and trust your training.",
     )
-    valid, ok_reason = validate_conversation_contract_response(
+    full, full_reason = validate_conversation_contract_response(
         user_message,
         (
             "Timeline: take bicarb after arrival, then packet pickup, warmup, and start. "
@@ -145,10 +154,10 @@ def test_race_day_contract_requires_execution_packet():
         ),
     )
 
-    assert invalid is False
-    assert reason == "race_day_missing_execution_packet"
-    assert valid is True
-    assert ok_reason == "ok"
+    assert thin is True
+    assert thin_reason == "ok"
+    assert full is True
+    assert full_reason == "ok"
 
 
 def test_quick_check_rejects_and_trims_essay_response():
@@ -178,22 +187,28 @@ def test_quick_check_trim_prefers_clean_sentence_boundary():
     assert "This final sentence" not in trimmed
 
 
-def test_decision_point_requires_tradeoff_and_default_recommendation():
+def test_decision_point_classifies_correctly_and_passes_validation():
+    # Structural validation is removed from DECISION_POINT — the contract is guidance
+    # to the LLM only. Both a thin and a well-framed response pass. Contract type
+    # still fires so the LLM receives the correct system guidance.
     user_message = "Should I postpone threshold tomorrow?"
 
-    invalid, reason = validate_conversation_contract_response(
+    contract = classify_conversation_contract(user_message)
+    assert contract.contract_type == ConversationContractType.DECISION_POINT
+
+    thin, thin_reason = validate_conversation_contract_response(
         user_message,
         "You have been training a lot lately, so think about how you feel.",
     )
-    valid, ok_reason = validate_conversation_contract_response(
+    framed, framed_reason = validate_conversation_contract_response(
         user_message,
         "Decision: postpone threshold. Tradeoff: you preserve adaptation but lose one sharpness stimulus. Default: move it 24 hours.",
     )
 
-    assert invalid is False
-    assert reason == "decision_point_missing_frame"
-    assert valid is True
-    assert ok_reason == "ok"
+    assert thin is True
+    assert thin_reason == "ok"
+    assert framed is True
+    assert framed_reason == "ok"
 
 
 def test_decision_point_accepts_natural_coaching_without_exact_labels():
@@ -209,7 +224,9 @@ def test_decision_point_accepts_natural_coaching_without_exact_labels():
     assert reason == "ok"
 
 
-def test_workout_warmup_followup_does_not_become_race_day_from_thread_context():
+def test_warmup_decision_rule_question_classifies_as_general():
+    # "What is the decision rule?" is a general coaching question, not an explicit
+    # decision request. It does not match any narrow DECISION_POINT trigger patterns.
     contract = classify_conversation_contract(
         "If my legs feel flat in the warmup, what is the decision rule?",
         conversation_context=[
@@ -220,25 +237,31 @@ def test_workout_warmup_followup_does_not_become_race_day_from_thread_context():
         ],
     )
 
-    assert contract.contract_type == ConversationContractType.DECISION_POINT
+    assert contract.contract_type == ConversationContractType.GENERAL
 
 
-def test_correction_dispute_requires_verification_language():
+def test_correction_dispute_classifies_correctly_and_passes_validation():
+    # Structural verification-language validation removed from CORRECTION_DISPUTE.
+    # The contract is guidance to the LLM only. Both responses pass validation.
+    # Contract type still fires so the LLM receives the correct system guidance.
     user_message = "You are wrong, that race is in my activity history."
 
-    invalid, reason = validate_conversation_contract_response(
+    contract = classify_conversation_contract(user_message)
+    assert contract.contract_type == ConversationContractType.CORRECTION_DISPUTE
+
+    without_verify, reason1 = validate_conversation_contract_response(
         user_message,
         "I do not have that race, so let's move on.",
     )
-    valid, ok_reason = validate_conversation_contract_response(
+    with_verify, reason2 = validate_conversation_contract_response(
         user_message,
         'I searched activity history for "race" and found no match, so I cannot verify it from stored data yet.',
     )
 
-    assert invalid is False
-    assert reason == "correction_dispute_missing_verification"
-    assert valid is True
-    assert ok_reason == "ok"
+    assert without_verify is True
+    assert reason1 == "ok"
+    assert with_verify is True
+    assert reason2 == "ok"
 
 
 def test_emotional_load_rejects_prying_when_boundary_is_food():
@@ -259,14 +282,20 @@ def test_emotional_load_rejects_prying_when_boundary_is_food():
     assert ok_reason == "ok"
 
 
-def test_race_strategy_requires_execution_shape():
+def test_race_strategy_classifies_correctly_and_passes_validation():
+    # Structural packet validation removed from RACE_STRATEGY — the contract is guidance
+    # to the LLM only. Both a thin and a full strategy response pass validation.
+    # Contract type still fires so the LLM receives the correct system guidance.
     user_message = "Give me a 5K race strategy for tomorrow."
 
-    invalid, reason = validate_conversation_contract_response(
+    contract = classify_conversation_contract(user_message)
+    assert contract.contract_type == ConversationContractType.RACE_STRATEGY
+
+    thin, thin_reason = validate_conversation_contract_response(
         user_message,
         "You are fit and should believe in yourself.",
     )
-    valid, ok_reason = validate_conversation_contract_response(
+    full, full_reason = validate_conversation_contract_response(
         user_message,
         (
             "Objective: race assertively. Primary limiter: continuous pressure. "
@@ -277,7 +306,7 @@ def test_race_strategy_requires_execution_shape():
         ),
     )
 
-    assert invalid is False
-    assert reason == "race_strategy_missing_packet"
-    assert valid is True
-    assert ok_reason == "ok"
+    assert thin is True
+    assert thin_reason == "ok"
+    assert full is True
+    assert full_reason == "ok"

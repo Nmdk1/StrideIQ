@@ -332,6 +332,9 @@ async def test_visible_mode_uses_v2_packet_path_when_success(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_visible_mode_fails_closed_when_v2_turn_guard_fails(monkeypatch):
+    # When _finalize_v2_response_with_turn_guard returns (False, …), the V2 path must
+    # produce the canned fail-closed response without falling back to V1.
+    # We mock the guard directly so the test is independent of the specific trigger.
     import services.consent as consent_module
 
     coach = _coach_with_v1_path()
@@ -354,8 +357,12 @@ async def test_visible_mode_fails_closed_when_v2_turn_guard_fails(monkeypatch):
         "resolve_coach_runtime_v2_state",
         lambda athlete_id, db: _visible_state(),
     )
+    # Force the turn guard to reject the response.
+    coach._finalize_v2_response_with_turn_guard = MagicMock(
+        return_value=(False, "You have been training a lot lately, so think about how you feel.", "latest_turn_mismatch")
+    )
 
-    result = await coach.chat(uuid4(), "Should I postpone threshold tomorrow?")
+    result = await coach.chat(uuid4(), "What pace zone is my marathon?")
 
     assert "stopped instead of guessing" in result["response"]
     assert result["runtime_mode"] == RUNTIME_MODE_VISIBLE
