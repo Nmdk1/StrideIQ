@@ -1,5 +1,26 @@
 # Wiki Log
 
+## [2026-04-29] Coach contract validation gates removed — fail-closed bug fixed
+
+**Trigger:** AI coach repeatedly showing "I can't safely answer that yet. V2 could not complete the turn without risking a wrong answer, so I stopped instead of guessing." on legitimate coaching questions including basic training questions. Root cause identified as the conversation contract system.
+
+**Root cause:** Two compounding problems in `services/coaching/_conversation_contract.py`:
+1. Over-broad contract triggers — RACE_STRATEGY fired whenever a message contained any race word + "tomorrow", "plan", or "pace". A normal "I have a race on Saturday, how should I handle the week?" triggered RACE_STRATEGY. DECISION_POINT fired on "move", "shift", "am i", "do i" — single words that appear constantly in normal coaching questions.
+2. Brittle lexical validators — once a contract type fired, the response was checked for exact keyword groups. RACE_STRATEGY required "objective/goal" + "pacing/pace" + "course/hill/wind/risk" ALL present. DECISION_POINT required "tradeoff/risk/because" + "recommend/should/run". Any valid Kimi coaching response that didn't happen to contain those exact words was rejected and replaced with the canned fail-closed message.
+
+**Fix shipped:**
+- Removed structural validation from RACE_STRATEGY, RACE_DAY, DECISION_POINT, CORRECTION_DISPUTE, EMOTIONAL_LOAD. Contracts are now LLM guidance only — they shape the system prompt but do not fail-close on output.
+- DECISION_POINT trigger narrowed from ambiguous single words to explicit decision-request patterns: `should i`, `what should i do`, `do i need to`, `am i supposed to`, `postpone/cancel/skip my`, `change my plan`.
+- RACE_STRATEGY trigger: removed "tomorrow", "plan", "pace", "execute", "approach" from strategy_terms (too broad). Strategy terms are now only "strategy", "pacing strategy", "execution plan", "race plan", "tactic", "approach" — phrases that express explicit race planning intent.
+- QUICK_CHECK word-count gate retained (enforced by truncation, not fail-closed).
+- EMOTIONAL_LOAD prying check retained (the only behavioral safety check that matters).
+
+**Files changed:** `services/coaching/_conversation_contract.py`, `tests/test_coach_conversation_contract.py`, `tests/test_coach_runtime_v2_shell.py`
+
+**Wiki updated:** `docs/wiki/coach-architecture.md` — added entry in changelog.
+
+---
+
 ## [2026-04-24] Timezone two-model, autofill fix, briefing clock time removed
 
 **Trigger:** Three separate production issues surfaced in one session.
