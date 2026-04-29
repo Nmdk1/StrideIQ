@@ -172,6 +172,44 @@ def test_v2_packet_fetches_named_weekday_and_today_for_nutrition_question(
     assert "direct_nutrition_log_only" not in prompt
 
 
+def test_v2_named_day_nutrition_summary_uses_all_rows_before_entry_cap(
+    db_session,
+    test_athlete,
+):
+    today = date.today()
+    monday = today - timedelta(days=today.weekday())
+    entries = [
+        _entry(test_athlete, target_date=monday, calories=100, notes=f"Monday {i}")
+        for i in range(6)
+    ]
+    entries.extend(
+        _entry(test_athlete, target_date=today, calories=200, notes=f"Today {i}")
+        for i in range(18)
+    )
+    db_session.add_all(entries)
+    db_session.commit()
+
+    packet = assemble_v2_packet(
+        athlete_id=test_athlete.id,
+        db=db_session,
+        message=(
+            "Monday and today are my typical daily food intake. What do you "
+            "think of it to support my lifting and running?"
+        ),
+        conversation_context=[],
+        legacy_athlete_state="",
+    )
+    data = packet["blocks"]["nutrition_context"]["data"]
+    returned_notes = {entry["notes"] for entry in data["entries"]}
+
+    assert data["by_date"][monday.isoformat()]["calories"] == 600
+    assert data["by_date"][today.isoformat()]["calories"] == 3600
+    assert any(note.startswith("Monday") for note in returned_notes)
+    assert any(note.startswith("Today") for note in returned_notes)
+    assert data["coverage"]["entries_found"] == 24
+    assert data["coverage"]["entries_returned"] == 12
+
+
 def test_v2_packet_omits_nutrition_context_when_not_relevant(
     db_session,
     test_athlete,

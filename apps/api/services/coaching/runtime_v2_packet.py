@@ -358,6 +358,43 @@ def _summarize_nutrition_entries(
     }
 
 
+def _bounded_nutrition_context_entries(
+    entries: list[NutritionEntry],
+    *,
+    kind: str,
+) -> list[NutritionEntry]:
+    ordered = sorted(
+        entries,
+        key=lambda entry: (
+            entry.date or date.min,
+            entry.created_at or datetime.min.replace(tzinfo=timezone.utc),
+        ),
+        reverse=True,
+    )
+    if kind != "date_range_named_days":
+        return ordered[:NUTRITION_CONTEXT_ENTRY_LIMIT]
+
+    dates = sorted({entry.date for entry in ordered if entry.date}, reverse=True)
+    if not dates:
+        return ordered[:NUTRITION_CONTEXT_ENTRY_LIMIT]
+    per_date_limit = max(1, NUTRITION_CONTEXT_ENTRY_LIMIT // len(dates))
+    selected: list[NutritionEntry] = []
+    selected_ids: set[Any] = set()
+    for target_date in dates:
+        day_entries = [entry for entry in ordered if entry.date == target_date]
+        for entry in day_entries[:per_date_limit]:
+            selected.append(entry)
+            selected_ids.add(entry.id)
+    if len(selected) < NUTRITION_CONTEXT_ENTRY_LIMIT:
+        for entry in ordered:
+            if entry.id in selected_ids:
+                continue
+            selected.append(entry)
+            if len(selected) >= NUTRITION_CONTEXT_ENTRY_LIMIT:
+                break
+    return selected[:NUTRITION_CONTEXT_ENTRY_LIMIT]
+
+
 def build_nutrition_context_state(
     *,
     athlete_id: UUID,
@@ -405,14 +442,14 @@ def build_nutrition_context_state(
             NutritionEntry.date >= start_date,
             NutritionEntry.date <= end_date,
         )
-        entries_found = base_query.count()
-        entries = (
+        summary_entries = (
             base_query
             .order_by(NutritionEntry.date.desc(), NutritionEntry.created_at.desc())
-            .limit(NUTRITION_CONTEXT_ENTRY_LIMIT)
             .all()
         )
-        summary = _summarize_nutrition_entries(entries, today=today)
+        entries_found = len(summary_entries)
+        entries = _bounded_nutrition_context_entries(summary_entries, kind=kind)
+        summary = _summarize_nutrition_entries(summary_entries, today=today)
         coverage = {
             "start_date": start_date.isoformat(),
             "end_date": end_date.isoformat(),
