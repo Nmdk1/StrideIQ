@@ -102,26 +102,23 @@ def test_v2_guard_does_not_classify_race_answer_as_profile_from_age_language():
     assert reason is None
 
 
-def test_v2_guard_rejects_conversation_contract_mismatch():
+def test_v2_guard_allows_decision_point_without_structural_gate():
+    # DECISION_POINT structural validation was removed — the guard uses intent-band
+    # matching and voice enforcement, not rigid output structure enforcement.
     coach = _coach_for_v2_guard()
 
     ok, response, reason = coach._finalize_v2_response_with_turn_guard(
         athlete_id=uuid4(),
         user_message="Should I postpone threshold tomorrow?",
-        response_text="You have been training a lot lately, so think about how you feel.",
+        response_text="Skip it. The tradeoff: one missed threshold won't cost fitness, and compounding fatigue will.",
         conversation_context=[],
         turn_id="turn-4",
         is_synthetic_probe=False,
         is_organic=True,
     )
 
-    assert ok is False
-    assert response == "You have been training a lot lately, so think about how you feel."
-    assert reason == "conversation_contract:decision_point_missing_frame"
-    assert (
-        coach._record_turn_guard_event.call_args.kwargs["event"]
-        == "v2_guardrail_failed:conversation_contract:decision_point_missing_frame"
-    )
+    assert ok is True
+    assert reason is None
 
 
 def test_v2_guard_enforces_conversation_contract_output(monkeypatch):

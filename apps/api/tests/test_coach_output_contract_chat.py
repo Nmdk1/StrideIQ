@@ -365,18 +365,24 @@ def test_chat_v2_success_saves_model_name(monkeypatch):
     coach._query_kimi_with_fallback.assert_not_awaited()
 
 
-def test_v2_turn_guard_fails_closed_on_contract_failure(monkeypatch):
+def test_v2_turn_guard_fails_closed_on_guard_rejection(monkeypatch):
+    # When the turn guard rejects the V2 response, chat() must return the
+    # fail-closed message without calling the V1 Opus fallback.
     _enable_visible_v2(monkeypatch)
     coach = _build_chat_coach()
 
-    long_unframed_response = " ".join(["You have options."] * 80)
     coach.query_kimi_v2_packet = AsyncMock(
         return_value={
-            "response": long_unframed_response,
+            "response": "Some response the guard will reject.",
             "error": False,
             "model": "kimi-k2.6",
             "tools_called": [],
         }
+    )
+    # Inject a guard that always rejects so the fail-closed path is exercised
+    # deterministically regardless of which heuristics are currently active.
+    coach._finalize_v2_response_with_turn_guard = MagicMock(
+        return_value=(False, "Some response the guard will reject.", "latest_turn_mismatch")
     )
 
     result = asyncio.run(

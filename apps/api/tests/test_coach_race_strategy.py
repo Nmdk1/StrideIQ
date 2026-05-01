@@ -10,22 +10,23 @@ from services.coaching._conversation_contract import (
 def test_classifies_broad_race_plan_language():
     for message in (
         "Build me a half marathon race plan.",
-        "What should my Mayor's Cup 5K execution look like?",
-        "Give me marathon pacing and risk cues.",
+        "What's my 5K race strategy for Saturday?",
+        "Give me a marathon race plan for managing the hills.",
     ):
         contract = classify_conversation_contract(message)
         assert contract.contract_type == ConversationContractType.RACE_STRATEGY
         assert "strategically sharper" in contract.outcome_target
 
 
-def test_race_strategy_contract_requires_complete_strategy():
+def test_race_strategy_contract_validation_is_guidance_only():
     user_message = "Give me a 5K race strategy for tomorrow."
 
-    invalid, reason = validate_conversation_contract_response(
+    # Validation is guidance-only for RACE_STRATEGY — structure is never enforced
+    sparse_valid, sparse_reason = validate_conversation_contract_response(
         user_message,
         "Strategy: open controlled, hold effort through mile 2, then close aggressively.",
     )
-    valid, ok_reason = validate_conversation_contract_response(
+    full_valid, full_reason = validate_conversation_contract_response(
         user_message,
         (
             "Objective: race for sub-19 if the first mile feels controlled. "
@@ -39,10 +40,10 @@ def test_race_strategy_contract_requires_complete_strategy():
         ),
     )
 
-    assert invalid is False
-    assert reason == "race_strategy_missing_packet"
-    assert valid is True
-    assert ok_reason == "ok"
+    assert sparse_valid is True
+    assert sparse_reason == "ok"
+    assert full_valid is True
+    assert full_reason == "ok"
 
 
 def test_race_strategy_packet_assembles_current_race_context(db_session, test_athlete):

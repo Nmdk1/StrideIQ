@@ -75,10 +75,12 @@ def test_expired_required_field_surfaces_with_expired_reason(db_session):
     )
     db_session.commit()
 
+    # injury_assessment requires weekly_volume_mpw; volume_question does not
+    # (volume is derivable from recent activities).
     unknowns = compute_unknowns(
         db_session,
         athlete.id,
-        "volume_question",
+        "injury_assessment",
         now_utc=asserted + timedelta(days=31),
     )
 
