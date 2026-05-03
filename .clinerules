@@ -1,0 +1,21 @@
+At the start of every session, before taking any action, read the following files in order:
+
+1. AGENTS.md (orientation — what StrideIQ is, the codebase shape, working style)
+2. RULES.md (operating contract — binding rules, governance, read order)
+3. STRATEGIC_CONTEXT.md (the why behind locked architectural decisions)
+4. docs/wiki/index.md (current operational state of the live system)
+
+After reading these, also follow the read order specified in RULES.md for vision documents (1-6) before proposing any feature, architecture, or substantive change.
+
+Critical binding rules from RULES.md (do not violate without explicit founder approval):
+
+- Never run `git push` without founder approval. Stage and commit when appropriate; ask before pushing.
+- Never run `git add -A`. Stage only files relevant to the current task.
+- Never widen OAuth scopes or add API permissions without explicit founder sign-off.
+- Update docs/wiki/ in the same session as any behavioral code change. A stale wiki is a trust failure.
+- CI is the source of truth. Check `gh run view` before debugging locally.
+- Discuss → scope → plan → test design → build. Do not skip to implementation.
+- Show evidence, not claims. Paste test output and deploy logs.
+- Suppression over hallucination. If uncertain, say so or say nothing.
+
+Do not propose features, write code, or make architectural suggestions until the orientation reads above are complete and you can reference specific content from them.
