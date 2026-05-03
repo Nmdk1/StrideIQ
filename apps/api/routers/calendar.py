@@ -1279,18 +1279,12 @@ async def send_coach_message(
             f"Context: calendar day {request.context_date.isoformat()}.\n"
             f"Before answering, call get_calendar_day_context(day='{request.context_date.isoformat()}') "
             f"and cite planned workout + activity IDs and values.\n\n"
-            "AUTHORITATIVE FACT CAPSULE (MUST USE EXACTLY):\n"
+            "AUTHORITATIVE FACT CAPSULE:\n"
             + "\n".join(canonical_facts)
-            + "\n\nRESPONSE CONTRACT (MANDATORY):\n"
-            + "- Use the fact capsule for correctness but do NOT print raw capsule labels like 'Date:' or 'Recorded pace vs marathon pace'.\n"
-            + "- Return JSON with keys: assessment, implication, action (array), athlete_alignment_note, evidence (array), safety_status.\n"
-            + "- assessment must be interpretive (not purely numeric).\n"
-            + "- implication must explain why this matters for training direction.\n"
-            + "- action must include at least one concrete next step.\n"
-            + "- If pace-vs-marathon is present, use that exact relation and do not recompute.\n"
-            + "- Never contradict the fact capsule.\n"
-            + "- If any downstream data appears to conflict with the capsule, respond exactly: "
-            + "\"I cannot verify day facts safely right now.\""
+            + "\n\nGround your answer in these facts. "
+            + "Answer in natural coaching prose — no JSON, no capsule label reprinting, no markdown headers. "
+            + "If the pace relation is present, use it directly in your response. "
+            + "If evidence is partial or uncertain, name what is missing rather than refusing to answer."
         )
     elif request.context_type == "week" and request.context_week:
         augmented_message = (
@@ -1303,6 +1297,7 @@ async def send_coach_message(
         athlete_id=current_user.id,
         message=augmented_message,
         include_context=True,
+        suppress_thread_storage=True,
     )
 
     coach_response = (result.get("response", "") or "").strip()
@@ -1312,19 +1307,18 @@ async def send_coach_message(
             payload = _build_day_coach_contract_from_facts(day_data)
             coach_response = _format_day_coach_contract(payload)
         else:
+            # Try the legacy JSON path first (V1 responses may still return JSON).
             payload = _extract_json_object(coach_response)
             if payload and _valid_day_coach_contract(payload):
                 coach_response = _format_day_coach_contract(payload)
             else:
+                # V2 returns natural prose — sanitize labels and use directly.
                 sanitized = _sanitize_day_coach_text(coach_response)
-                if (
-                    not _looks_like_action(sanitized)
-                    or "recorded pace vs marathon pace" in sanitized.lower()
-                ):
+                if sanitized and len(sanitized) > 80:
+                    coach_response = sanitized
+                else:
                     payload = _build_day_coach_contract_from_facts(day_data)
                     coach_response = _format_day_coach_contract(payload)
-                else:
-                    coach_response = sanitized
     else:
         if result.get("error") or not coach_response or coach_response.lower().startswith("coach is temporarily unavailable"):
             coach_response = (

@@ -108,7 +108,7 @@ describe('Coach trust UX', () => {
     expect(screen.getByText('Decision Point')).toBeInTheDocument();
   });
 
-  it('prefills an athlete-led correction prompt', async () => {
+  it('does not render a correction button — athletes correct inline', async () => {
     coachGetHistoryMock.mockResolvedValue({
       messages: [
         {
@@ -124,14 +124,9 @@ describe('Coach trust UX', () => {
 
     renderCoachPage();
 
-    const correctionButton = await screen.findByRole('button', { name: "That's wrong" });
-    fireEvent.click(correctionButton);
-
-    await waitFor(() => {
-      expect(screen.getByPlaceholderText('Ask your coach anything...')).toHaveValue(
-        'That\'s wrong. Please verify the data and correct this answer: "That race does not exist in your history."'
-      );
-    });
+    // Wait for the message to appear, then confirm no correction button is rendered.
+    expect(await screen.findByText('That race does not exist in your history.')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: "That's wrong" })).not.toBeInTheDocument();
   });
 
   it('applies stream done metadata to the active assistant message', async () => {

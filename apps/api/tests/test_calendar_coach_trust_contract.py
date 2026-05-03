@@ -124,17 +124,11 @@ async def test_calendar_router_injects_authoritative_fact_capsule(monkeypatch, d
             },
         }
 
-    async def _fake_chat(self, athlete_id, message, include_context=True):
+    async def _fake_chat(self, athlete_id, message, include_context=True, suppress_thread_storage=False):
         captured["message"] = message
+        captured["suppress_thread_storage"] = suppress_thread_storage
         return {
-            "response": """{
-  "assessment": "Strong controlled run execution today.",
-  "implication": "This supports stable build progression for this phase.",
-  "action": ["Keep tomorrow easy and protect recovery before the next quality day."],
-  "athlete_alignment_note": "Aligned with reported effort.",
-  "evidence": ["2026-02-10: run paced slower by 0:09/mi vs marathon reference"],
-  "safety_status": "ok"
-}""",
+            "response": "Strong controlled run execution today. This supports stable build progression. Keep tomorrow easy and protect recovery before the next quality day.",
             "error": False,
         }
 
@@ -149,19 +143,22 @@ async def test_calendar_router_injects_authoritative_fact_capsule(monkeypatch, d
     resp = await calendar_router.send_coach_message(req, current_user=test_athlete, db=db_session)
 
     msg = captured.get("message", "")
-    assert "AUTHORITATIVE FACT CAPSULE (MUST USE EXACTLY):" in msg
-    assert "RESPONSE CONTRACT (MANDATORY):" in msg
+    assert "AUTHORITATIVE FACT CAPSULE:" in msg
     assert "Date: 2026-02-10" in msg
     assert "Weekday: Tuesday" in msg
     assert "Recorded pace vs marathon pace: slower by 0:09/mi" in msg
-    assert "Return JSON with keys: assessment, implication, action" in msg
-    assert "Next step:" in resp.response
+    # JSON format mandate removed — prose instruction used instead
+    assert "Return JSON" not in msg
+    assert "RESPONSE CONTRACT (MANDATORY)" not in msg
+    # suppress_thread_storage must be True so calendar context does not pollute the open chat
+    assert captured.get("suppress_thread_storage") is True
     assert "Strong controlled run execution today." in resp.response
     assert "Recorded pace vs marathon pace" not in resp.response
 
 
 @pytest.mark.asyncio
-async def test_calendar_router_strips_internal_labels_and_enforces_action(monkeypatch, db_session, test_athlete):
+async def test_calendar_router_strips_internal_labels_from_prose_response(monkeypatch, db_session, test_athlete):
+    """V2 returns prose; the router must strip capsule labels and pass the prose through."""
     def _fake_day_context(*_args, **_kwargs):
         return {
             "ok": True,
@@ -181,9 +178,13 @@ async def test_calendar_router_strips_internal_labels_and_enforces_action(monkey
             },
         }
 
-    async def _fake_chat(self, athlete_id, message, include_context=True):
+    async def _fake_chat(self, athlete_id, message, include_context=True, suppress_thread_storage=False):
         return {
-            "response": "**Date: 2026-02-10 (Tuesday)**\nRecorded pace vs marathon pace: slower by 0:09/mi.\nYou ran 10 miles at 7:06/mi.",
+            "response": (
+                "You ran 10 miles at 7:06/mi on Tuesday — 9 seconds per mile slower than marathon pace. "
+                "That is controlled aerobic work. Keep the easy day tomorrow and protect recovery "
+                "before the next quality session. Recorded pace vs marathon pace: slower by 0:09/mi."
+            ),
             "error": False,
         }
 
@@ -197,9 +198,10 @@ async def test_calendar_router_strips_internal_labels_and_enforces_action(monkey
     )
     resp = await calendar_router.send_coach_message(req, current_user=test_athlete, db=db_session)
     lower = resp.response.lower()
+    # Capsule label must be stripped from the prose
     assert "recorded pace vs marathon pace" not in lower
-    assert "next step:" in lower
-    assert "-" in resp.response
+    # Prose content must be preserved
+    assert "controlled aerobic work" in lower or "7:06" in resp.response
 
 
 def test_ai_coach_registers_compute_running_math_tool():

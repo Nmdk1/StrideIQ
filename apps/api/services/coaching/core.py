@@ -509,6 +509,7 @@ Policy:
         include_context: bool = True,
         is_synthetic_probe: bool = False,
         finding_id: Optional[str] = None,
+        suppress_thread_storage: bool = False,
     ) -> Dict[str, Any]:
         """
         Send a message to the AI coach and get a response.
@@ -698,13 +699,14 @@ Policy:
                 is_synthetic_probe=detected_synthetic_probe,
                 is_organic=is_organic,
             )
-            self._save_chat_messages(
-                athlete_id,
-                message,
-                response,
-                model="deterministic",
-                runtime_metadata=runtime_state.as_metadata(),
-            )
+            if not suppress_thread_storage:
+                self._save_chat_messages(
+                    athlete_id,
+                    message,
+                    response,
+                    model="deterministic",
+                    runtime_metadata=runtime_state.as_metadata(),
+                )
             return with_runtime_metadata(
                 {
                     "response": response,
@@ -1304,15 +1306,16 @@ Policy:
                     runtime_metadata["unknowns_count"] = packet_telemetry.get(
                         "unknowns_count"
                     )
-                self._save_chat_messages(
-                    athlete_id,
-                    message,
-                    guarded_response,
-                    model=result.get("model", "unknown"),
-                    tools_used=tools_used,
-                    conversation_contract=conversation_contract_type,
-                    runtime_metadata=runtime_metadata,
-                )
+                if not suppress_thread_storage:
+                    self._save_chat_messages(
+                        athlete_id,
+                        message,
+                        guarded_response,
+                        model=result.get("model", "unknown"),
+                        tools_used=tools_used,
+                        conversation_contract=conversation_contract_type,
+                        runtime_metadata=runtime_metadata,
+                    )
                 result["tools_used"] = tools_used
                 result["tool_count"] = len(tools_used)
                 result["conversation_contract"] = conversation_contract_type

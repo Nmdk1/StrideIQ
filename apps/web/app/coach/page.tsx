@@ -69,48 +69,32 @@ function formatToolLabel(toolName: string): string {
 
 function CoachTrustControls({
   message,
-  onCorrect,
 }: {
   message: Message;
-  onCorrect: () => void;
 }) {
   const tools = message.toolsUsed || [];
   const hasTrustMetadata = tools.length > 0;
-  const hasAnswer = Boolean((message.content || '').trim());
 
-  if (!hasTrustMetadata && !hasAnswer) return null;
+  if (!hasTrustMetadata) return null;
 
   return (
     <div className="flex flex-wrap items-center gap-2 pt-1">
-      {hasTrustMetadata && (
-        <div className="flex flex-wrap items-center gap-1.5" aria-label="Coach trust metadata">
-          {tools.slice(0, 3).map((tool) => (
-            <Badge
-              key={tool}
-              variant="outline"
-              className="border-emerald-500/30 bg-emerald-500/10 text-[11px] font-medium text-emerald-200"
-            >
-              Checked: {formatToolLabel(tool)}
-            </Badge>
-          ))}
-          {tools.length > 3 && (
-            <Badge variant="outline" className="border-slate-700 text-[11px] text-slate-300">
-              +{tools.length - 3} more
-            </Badge>
-          )}
-        </div>
-      )}
-      {hasAnswer && (
-        <Button
-          type="button"
-          size="sm"
-          variant="ghost"
-          onClick={onCorrect}
-          className="h-7 px-2 text-xs text-slate-400 hover:bg-slate-800 hover:text-orange-200"
-        >
-          That&apos;s wrong
-        </Button>
-      )}
+      <div className="flex flex-wrap items-center gap-1.5" aria-label="Coach trust metadata">
+        {tools.slice(0, 3).map((tool) => (
+          <Badge
+            key={tool}
+            variant="outline"
+            className="border-emerald-500/30 bg-emerald-500/10 text-[11px] font-medium text-emerald-200"
+          >
+            Checked: {formatToolLabel(tool)}
+          </Badge>
+        ))}
+        {tools.length > 3 && (
+          <Badge variant="outline" className="border-slate-700 text-[11px] text-slate-300">
+            +{tools.length - 3} more
+          </Badge>
+        )}
+      </div>
     </div>
   );
 }
@@ -414,14 +398,6 @@ function CoachPageInner() {
     }
   };
 
-  const handleCorrection = (message: Message) => {
-    const excerpt = (message.content || '').replace(/\s+/g, ' ').slice(0, 180);
-    const correctionPrompt = excerpt
-      ? `That's wrong. Please verify the data and correct this answer: "${excerpt}"`
-      : "That's wrong. Please verify the data and correct this answer.";
-    setInput(correctionPrompt);
-    requestAnimationFrame(() => inputRef.current?.focus());
-  };
   
   const handleSend = async (messageText?: string) => {
     const text = messageText || input.trim();
@@ -843,7 +819,7 @@ function CoachPageInner() {
                                       )}
                                       <CoachTrustControls
                                         message={message}
-                                        onCorrect={() => handleCorrection(message)}
+
                                       />
                                       {message.timedOut && message.retryMessage && (
                                         <div className="flex items-center gap-2">
@@ -943,7 +919,7 @@ function CoachPageInner() {
                                       )}
                                       <CoachTrustControls
                                         message={message}
-                                        onCorrect={() => handleCorrection(message)}
+
                                       />
                                       {message.timedOut && message.retryMessage && (
                                         <div className="flex items-center gap-2">
